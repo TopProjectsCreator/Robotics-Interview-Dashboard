@@ -50,6 +50,7 @@
 - [Robotics logo mark](robotics-logo-mark.md) — use the exact production favicon image everywhere; do not redraw the icon or substitute Lucide.
 - [TipTap no-op updates](tiptap-noop-updates.md) — initialization can emit an update with unchanged HTML; only mark content dirty when it differs from the saved value.
 - [AI-built workspaces](ai-built-workspaces.md) — generate arbitrary team workspaces from scratch and isolate their data inside the existing Supabase database.
+- [Public demo isolation](demo-mode-isolation.md) — disabled queries can still expose cached team data or be manually refetched; guard consumers and side effects too.
 - [Sitemap page scope](sitemap-page-scope.md) — the sitemap lists frontend pages only; API endpoints live in the OpenAPI spec and must not be re-added.
 - [Robolyst product source](robolyst-product-source.md) — use robolyst.org for FTC management and scouting details; robolyst.com is only a tagline page.
 - [Codebase line counting](codebase-line-counting.md) — measure hand-written code from `git ls-files`, excluding node_modules, dist, generated clients, locks, and binary assets; the repo is ~167k code lines, not ~19.6M.

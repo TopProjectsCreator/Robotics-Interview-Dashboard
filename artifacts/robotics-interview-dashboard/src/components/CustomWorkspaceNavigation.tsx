@@ -5,11 +5,13 @@ import type { AccessibleCustomWorkspace } from "../lib/customWorkspaces";
 export function CustomWorkspaceOverviewCard({
   workspace,
   number,
+  href: hrefOverride,
 }: {
   workspace: AccessibleCustomWorkspace;
   number: number;
+  href?: string;
 }) {
-  const href = `/custom-workspaces/${encodeURIComponent(workspace.id)}`;
+  const href = hrefOverride ?? `/custom-workspaces/${encodeURIComponent(workspace.id)}`;
   const isDraft = workspace.status === "draft";
   return (
     <Link

@@ -92,7 +92,14 @@ import PublicDashboard from "@/pages/public-dashboard";
 import Pricing from "@/pages/pricing";
 import ComparePage from "@/pages/compare";
 import AboutPage from "@/pages/about";
-import RoboticsDemoPage from "@/pages/demo";
+import {
+  DEMO_CUSTOM_WORKSPACES,
+  DemoBadge,
+  DemoMetadata,
+  DemoWorkspaceContent,
+  parseDemoView,
+  type DemoView,
+} from "@/pages/demo";
 import ChatLanding from "@/pages/chat-landing";
 import PartsLanding from "@/pages/parts-landing";
 import CodeLanding from "@/pages/code-landing";
@@ -3200,7 +3207,16 @@ function SyncStatus() {
   </div>;
 }
 
-function Shell({ children }: { children: ReactNode }) { const streamHealthy = useRealtimeHealthy();
+function Shell({
+  children,
+  demoMode = false,
+  demoView = "overview",
+}: {
+  children: ReactNode;
+  demoMode?: boolean;
+  demoView?: DemoView;
+}) {
+  const streamHealthy = useRealtimeHealthy();
   const [location, setLocation] = useLocation();
   const [mobileNav, setMobileNav] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
@@ -3222,18 +3238,18 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     }
   };
   const fullscreen = useFullscreen();
-  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const teamBranding = useTeamBranding(session.data?.teamId, session.data?.authenticated === true);
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode } });
+  const teamBranding = useTeamBranding(session.data?.teamId, !demoMode && session.data?.authenticated === true);
   const logout = useLogout();
-  usePresenceHeartbeat(session.data?.authenticated === true, location);
-  useRealtimeSync(session.data?.authenticated === true);
+  usePresenceHeartbeat(!demoMode && session.data?.authenticated === true, location);
+  useRealtimeSync(!demoMode && session.data?.authenticated === true);
   useGlobalChatNotifications({
     myLabel: session.data?.label ?? "",
     interviewerId: session.data?.interviewerId ?? "",
     teamId: session.data?.teamId ?? "",
     viewingPeer: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("peer")?.trim() || null,
     viewingChannel: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("channel")?.trim() || null,
-    enabled: session.data?.authenticated === true,
+    enabled: !demoMode && session.data?.authenticated === true,
   });
   const qc = useQueryClient();
   useEffect(() => {
@@ -3260,22 +3276,27 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   useEffect(() => {
     setMobileNav(false);
   }, [location]);
-  useEffect(() => listenForAuthSessionEnd(() => {
-    forgetCurrentSessionQueryAuthentication();
-    markAuthSessionEndedByAnotherTab();
-    clearUserScopedRecords(qc);
-    setLocation(getAuthRedirectPath(getCurrentPathWithQuery()));
-  }), [qc, setLocation]);
+  useEffect(() => {
+    if (demoMode) return;
+    return listenForAuthSessionEnd(() => {
+      forgetCurrentSessionQueryAuthentication();
+      markAuthSessionEndedByAnotherTab();
+      clearUserScopedRecords(qc);
+      setLocation(getAuthRedirectPath(getCurrentPathWithQuery()));
+    });
+  }, [demoMode, qc, setLocation]);
   const broadcasts = useGetMyBroadcasts({
     query: {
       queryKey: getGetMyBroadcastsQueryKey(),
       refetchInterval: streamHealthy ? false : (15000),
-      enabled: session.data?.authenticated === true,
+      enabled: !demoMode && session.data?.authenticated === true,
     },
   });
   const ackBroadcast = useAckBroadcast();
   const [dismissedBroadcasts, setDismissedBroadcasts] = useState<string[]>([]);
-  const pendingBroadcast = (broadcasts.data?.items ?? []).filter((b) => b.kind === "message" && !dismissedBroadcasts.includes(b.id))[0];
+  const pendingBroadcast = demoMode
+    ? undefined
+    : (broadcasts.data?.items ?? []).filter((b) => b.kind === "message" && !dismissedBroadcasts.includes(b.id))[0];
   const dismissBroadcast = (id: string) => {
     setDismissedBroadcasts((current) => (current.includes(id) ? current : [...current, id]));
     ackBroadcast.mutate(
@@ -3286,6 +3307,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   const [notifyState, setNotifyState] = useState<string>(() => browserNotifyPermission());
   const seenBroadcasts = useRef<Set<string> | null>(null);
   useEffect(() => {
+    if (demoMode) return;
     const items = (broadcasts.data?.items ?? []).filter((b) => b.kind === "message");
     if (seenBroadcasts.current === null) {
       // Seed on first load so pending popups don't all push at once.
@@ -3308,30 +3330,33 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
         // OS notifications unavailable — the in-app popup still shows.
       }
     }
-  }, [broadcasts.data, dismissedBroadcasts]);
-  const isCoordinator = session.data?.role === "coordinator";
-  const isTreasurer = session.data?.role === "treasurer";
-  const activeTeamName = session.data?.teamId === "default"
-    ? "Wolverines / Team 23442"
-    : session.data?.teamName?.trim() || "Robotics team";
+  }, [demoMode, broadcasts.data, dismissedBroadcasts]);
+  const isCoordinator = !demoMode && session.data?.role === "coordinator";
+  const isTreasurer = !demoMode && session.data?.role === "treasurer";
+  const activeTeamName = demoMode
+    ? "Demo Robotics"
+    : session.data?.teamId === "default"
+      ? "Wolverines / Team 23442"
+      : session.data?.teamName?.trim() || "Robotics team";
   const shellPath = location.split(/[?#]/, 1)[0];
   // Only fetch visibility for a signed-in account: no private request may be
   // issued before sign-in.
-  const isSignedIn = session.data?.authenticated === true;
-  const sessionUserId = session.data?.interviewerId;
+  const isSignedIn = !demoMode && session.data?.authenticated === true;
+  const sessionUserId = demoMode ? undefined : session.data?.interviewerId;
   const customWorkspacesQuery = useAccessibleCustomWorkspaces(
     isSignedIn,
     session.data?.teamId,
     sessionUserId,
   );
   useEffect(() => {
+    if (demoMode) return;
     const refreshCustomWorkspaces = () => {
       void customWorkspacesQuery.refetch();
     };
     window.addEventListener("custom-workspaces:refresh", refreshCustomWorkspaces);
     return () => window.removeEventListener("custom-workspaces:refresh", refreshCustomWorkspaces);
-  }, [customWorkspacesQuery.refetch]);
-  const customWorkspaces = customWorkspacesQuery.data ?? [];
+  }, [demoMode, customWorkspacesQuery.refetch]);
+  const customWorkspaces = demoMode ? DEMO_CUSTOM_WORKSPACES : customWorkspacesQuery.data ?? [];
   // Accounts always have a role; default a missing one to the most restricted
   // role so legacy role-based settings keep working (as before the per-user switch).
   const sessionRole = session.data?.role ?? "interviewer";
@@ -3339,6 +3364,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   const workspaceVisibilityLoading = isSignedIn && !isCoordinator && workspaceVisibility.isLoading;
   const visibility = workspaceVisibility.visibility;
   const visibleWorkspaces = useMemo(() => {
+    if (demoMode) return new Set<WorkspaceKey>(["chat", "parts", "cad", "code"]);
     const set = new Set<WorkspaceKey>();
     // Per-user access: coordinators always see everything (enforced inside
     // userCanSeeWorkspace), everyone else sees exactly their own workspaces.
@@ -3346,10 +3372,10 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
       set.add(key);
     }
     return set;
-  }, [visibility, sessionUserId, sessionRole]);
+  }, [demoMode, visibility, sessionUserId, sessionRole]);
   const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
-  const isDashboardPath = shellPath === "/dashboard";
-  const isInterviewPath =
+  const isDashboardPath = demoMode ? demoView === "overview" : shellPath === "/dashboard";
+  const isInterviewPath = !demoMode && (
     shellPath === "/interview" ||
     shellPath.startsWith("/interview/") ||
     shellPath === "/applicants" ||
@@ -3360,19 +3386,20 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     shellPath === "/attendance" ||
     shellPath.startsWith("/attendance/") ||
     shellPath === "/big-screen" ||
-    shellPath.startsWith("/big-screen/");
-  const isChatPath =
-    shellPath === "/chat" ||
-    shellPath.startsWith("/chat/") ||
-    shellPath === "/assistant" ||
-    shellPath.startsWith("/assistant/") ||
-    shellPath.startsWith("/spreadsheets/");
-  const isPartsPath = shellPath === "/parts" || shellPath.startsWith("/parts/");
-  const isCadPath = shellPath === "/cad" || shellPath.startsWith("/cad/");
-  const isCodePath = shellPath === "/code" || shellPath.startsWith("/code/");
+    shellPath.startsWith("/big-screen/"));
+  const isChatPath = demoMode
+    ? demoView === "chat"
+    : shellPath === "/chat" ||
+      shellPath.startsWith("/chat/") ||
+      shellPath === "/assistant" ||
+      shellPath.startsWith("/assistant/") ||
+      shellPath.startsWith("/spreadsheets/");
+  const isPartsPath = demoMode ? demoView === "parts" : shellPath === "/parts" || shellPath.startsWith("/parts/");
+  const isCadPath = demoMode ? demoView === "cad" : shellPath === "/cad" || shellPath.startsWith("/cad/");
+  const isCodePath = demoMode ? demoView === "code" : shellPath === "/code" || shellPath.startsWith("/code/");
   const isTreasurerRosterPath =
     shellPath === "/applicants" || shellPath.startsWith("/applicants/");
-  const restrictedAllowed =
+  const restrictedAllowed = demoMode ||
     location.split(/[?#]/, 1)[0].startsWith("/custom-workspaces") ||
     // /dashboard is the per-user home: every signed-in account can open it and
     // sees only their own workspaces there.
@@ -3397,13 +3424,15 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
   useEffect(() => {
     if (blockedFromCurrent) setLocation(homeWorkspace ? `/${homeWorkspace}` : "/dashboard");
   }, [blockedFromCurrent, setLocation, homeWorkspace]);
-  if (session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
-  if (!session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
+  if (!demoMode && session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
+  if (!demoMode && !session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
   if (workspaceVisibilityLoading && !isDashboardPath) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (blockedFromCurrent) return null;
-  const workspaceArea = workspaceAreaForPath(location);
-  const isChatWorkspaceRoute = location.split(/[?#]/, 1)[0] === "/chat";
-  const isCadWorkspaceRoute = location.split(/[?#]/, 1)[0] === "/cad";
+  const workspaceArea = demoMode
+    ? demoView === "chat" ? "chat" : demoView === "parts" ? "parts" : demoView === "cad" ? "cad" : demoView === "code" ? "code" : "overview"
+    : workspaceAreaForPath(location);
+  const isChatWorkspaceRoute = demoMode ? demoView === "chat" : location.split(/[?#]/, 1)[0] === "/chat";
+  const isCadWorkspaceRoute = demoMode ? demoView === "cad" : location.split(/[?#]/, 1)[0] === "/cad";
   const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
     interview: ClipboardList,
     chat: MessageSquare,
@@ -3416,12 +3445,20 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
     cad: Boxes,
     code: SquareTerminal,
   };
-  const nav = [
+  const regularNav = [
     ...getWorkspaceNavigation(workspaceArea, visibleWorkspaces),
     // Treasurers keep the read-only applicant roster, which is granted
     // separately from the rest of the Interview workspace.
     ...(isTreasurer ? getCrossWorkspaceSections(visibleWorkspaces) : []),
   ].map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
+  const demoNav = [
+    { href: "/demo?view=overview", label: "Overview", icon: LayoutDashboard, kind: "section" as const, workspace: "chat" as WorkspaceKey, demoView: "overview" as DemoView },
+    { href: "/demo?view=chat", label: "Chat", icon: MessageSquare, kind: "workspace" as const, workspace: "chat" as WorkspaceKey, demoView: "chat" as DemoView },
+    { href: "/demo?view=parts", label: "Parts", icon: Box, kind: "workspace" as const, workspace: "parts" as WorkspaceKey, demoView: "parts" as DemoView },
+    { href: "/demo?view=cad", label: "CAD", icon: Boxes, kind: "workspace" as const, workspace: "cad" as WorkspaceKey, demoView: "cad" as DemoView },
+    { href: "/demo?view=code", label: "Code", icon: SquareTerminal, kind: "workspace" as const, workspace: "code" as WorkspaceKey, demoView: "code" as DemoView },
+  ];
+  const nav = demoMode ? demoNav : regularNav;
   return (
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
       {mobileNav && <button type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-25 bg-black/45 backdrop-blur-[1px] xl:hidden" data-testid="button-close-mobile-navigation" />}
@@ -3429,20 +3466,25 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
         <div className="px-3"><Logo dark teamName={activeTeamName} /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
         <nav className="space-y-1" aria-label="Workspace links">
-          {nav.map(({ href, label, icon: Icon, kind, workspace }) => {
-            const active = kind === "workspace"
-              ? workspaceArea === workspace
-              : location === href ||
-                (href !== "/assistant" && location.startsWith(`${href}/`)) ||
-                (href === "/chat" && location.startsWith("/spreadsheets/"));
+          {nav.map((item) => {
+            const { href, label, icon: Icon, kind, workspace } = item;
+            const active = demoMode
+              ? "demoView" in item && item.demoView === demoView
+              : kind === "workspace"
+                ? workspaceArea === workspace
+                : location === href ||
+                  (href !== "/assistant" && location.startsWith(`${href}/`)) ||
+                  (href === "/chat" && location.startsWith("/spreadsheets/"));
             return (
               <Link
                 key={href}
                 href={href}
-                data-testid={`link-${label.toLowerCase().replaceAll(" ", "-")}`}
+                data-testid={demoMode && "demoView" in item
+                  ? `link-demo-view-${item.demoView}`
+                  : `link-${label.toLowerCase().replaceAll(" ", "-")}`}
                 onClick={() => setMobileNav(false)}
                 aria-current={active ? "page" : undefined}
-                style={active && kind === "workspace" && teamBranding.data?.primaryColor
+                style={!demoMode && active && kind === "workspace" && teamBranding.data?.primaryColor
                   ? { backgroundColor: teamBranding.data.primaryColor, color: readableBrandForeground(teamBranding.data.primaryColor) }
                   : undefined}
                 className={`flex items-center gap-3 text-sm font-medium transition ${
@@ -3452,7 +3494,7 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
                 } ${
                   active
                     ? kind === "workspace"
-                      ? teamBranding.data?.primaryColor ? "" : "bg-[#f8c84a] text-[#1d2c36]"
+                      ? !demoMode && teamBranding.data?.primaryColor ? "" : "bg-[#f8c84a] text-[#1d2c36]"
                       : "bg-[#243d4d] text-white"
                     : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"
                 }`}
@@ -3463,13 +3505,46 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
               </Link>
             );
           })}
-          <CustomWorkspaceSidebarLinks
-            workspaces={customWorkspaces}
-            currentPath={shellPath}
-            onNavigate={() => setMobileNav(false)}
-          />
+          {demoMode ? (
+            <>
+              <div className="mono mb-1 mt-5 px-4 text-[9px] uppercase tracking-[.2em] text-[#78949d]" data-testid="label-custom-apps">Custom apps</div>
+              {DEMO_CUSTOM_WORKSPACES.map((workspace) => {
+                const view = `custom-${workspace.id}` as DemoView;
+                const href = `/demo?view=${view}`;
+                const active = demoView === view;
+                return (
+                  <Link
+                    key={workspace.id}
+                    href={href}
+                    title={workspace.title}
+                    aria-current={active ? "page" : undefined}
+                    onClick={() => setMobileNav(false)}
+                    data-testid={`link-demo-custom-app-${workspace.id}`}
+                    className={`flex min-h-11 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#73c9c0] focus-visible:ring-offset-2 focus-visible:ring-offset-[#172a3a] ${
+                      active ? "bg-[#243d4d] text-white" : "text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"
+                    }`}
+                  >
+                    {workspace.iconDataUrl && <img src={workspace.iconDataUrl} alt="" className="h-5 w-5 shrink-0 object-contain" />}
+                    <span className="min-w-0 flex-1 truncate">{workspace.title}</span>
+                  </Link>
+                );
+              })}
+            </>
+          ) : (
+            <CustomWorkspaceSidebarLinks
+              workspaces={customWorkspaces}
+              currentPath={shellPath}
+              onNavigate={() => setMobileNav(false)}
+            />
+          )}
         </nav>
-        {workspaceArea === "interview" && displayPromoVisible && (
+        {demoMode && (
+          <div className="mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4" data-testid="demo-sample-notice">
+            <div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 rounded-full bg-[#f8c84a]" />Sample workspace</div>
+            <p className="mt-2 text-[11px] leading-5 text-[#a7bdc3]">All names and records are fictional. Nothing here is connected to a real team.</p>
+          </div>
+        )}
+        {!demoMode && workspaceArea === "interview" && displayPromoVisible && (
           <div className="relative mt-auto rounded-2xl border border-[#365161] bg-[#1d3545] p-4">
             <button onClick={dismissDisplayPromo} aria-label="Dismiss display promo" title="Dismiss" data-testid="button-dismiss-display-promo" className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-md text-[#617d86] transition hover:bg-[#243d4d] hover:text-white"><X size={13} /></button>
             <div className="flex items-center gap-2 text-xs font-semibold"><span className="h-2 w-2 animate-pulse rounded-full bg-[#51d2ad]" />Live event link</div>
@@ -3477,20 +3552,31 @@ function Shell({ children }: { children: ReactNode }) { const streamHealthy = us
             <Link href="/display" target="_blank" data-testid="link-open-display" className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#f8c84a]">Open display <ArrowRight size={13} /></Link>
           </div>
         )}
-        <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
+        {demoMode ? (
+          <Link href="/auth?createTeam=1" data-testid="link-demo-create-team" className="mt-4 flex min-h-11 items-center gap-3 rounded-xl bg-[#f8c84a] px-3 py-3 text-sm font-semibold text-[#1d2c36] hover:bg-[#f6d46d]">
+            <Plus size={18} />Create your team
+          </Link>
+        ) : (
+          <button onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(qc); setLocation("/"); } })} data-testid="button-logout" className="mt-4 flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-[#a7bdc3] hover:bg-[#243d4d] hover:text-white"><LogOut size={18} />End session</button>
+        )}
       </aside>
       <div className={`xl:pl-[248px]${isCadWorkspaceRoute ? " cad-workspace-shell" : ""}${isChatWorkspaceRoute ? " chat-workspace-shell" : ""}`}>
         <header data-testid="workspace-header" className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-[#dce5e5] bg-[#f3f6f5]/95 px-3 backdrop-blur-md dark:border-[#2a3f52] dark:bg-[hsl(var(--background)_/_95%)] sm:h-16 sm:px-5 lg:h-[72px] lg:px-9"
           style={{ paddingTop: "env(safe-area-inset-top)", paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
           <button ref={mobileMenuButtonRef} type="button" onClick={() => setMobileNav(!mobileNav)} aria-label={mobileNav ? "Close navigation" : "Open navigation"} aria-expanded={mobileNav} aria-controls="workspace-sidebar" data-testid="button-mobile-menu" className="mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-[#365965] hover:bg-[#e3ebeb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] dark:text-[#9db2bd] dark:hover:bg-[#1e3340] xl:hidden"><Menu size={21} /></button>
           <div className="min-w-0 flex-1"><p className="mono max-w-[38vw] truncate text-[9px] uppercase tracking-[.14em] text-[#7c8c91] dark:text-[#93a8b2] sm:max-w-[45vw] sm:text-[10px] sm:tracking-[.2em]">{activeTeamName}</p><p className="truncate text-sm font-semibold dark:text-[#e8eef2]">Team workspace</p></div>
-          <div className="ml-1 flex shrink-0 items-center gap-0.5 sm:ml-2 sm:gap-2">
-            <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f] dark:text-[#6fce8f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42] dark:text-[#e89890]" /> : <Bell size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>
-            <FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} />
-            <ThemeToggle />
-            <div className="hidden items-center sm:flex"><SyncStatus /></div>
-            <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />
-          </div>
+           <div className="ml-1 flex shrink-0 items-center gap-1 sm:ml-2 sm:gap-2">
+             {!demoMode && <button onClick={async () => { try { if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission(); } catch { /* ignore */ } setNotifyState(browserNotifyPermission()); }} title={notifyState === "granted" ? "Browser notifications on — broadcasts will pop up even in another tab" : notifyState === "denied" ? "Browser notifications blocked — allow them in the browser site settings, then click again" : notifyState === "unsupported" ? "This browser does not support notifications" : "Turn on browser notifications for broadcasts"} aria-label="Browser notifications" data-testid="button-notify-permission" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{notifyState === "granted" ? <Bell size={17} className="text-[#28a47f] dark:text-[#6fce8f]" /> : notifyState === "denied" ? <BellOff size={17} className="text-[#b34a42] dark:text-[#e89890]" /> : <Bell size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>}
+             <FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} />
+             <ThemeToggle />
+             {!demoMode && <div className="hidden items-center sm:flex"><SyncStatus /></div>}
+             {demoMode ? (
+               <>
+                 <div className="hidden items-center md:flex"><DemoBadge /></div>
+                 <Link href="/auth?createTeam=1" data-testid="link-demo-header-create-team" className="inline-flex min-h-9 items-center rounded-lg bg-[#f8c84a] px-2.5 text-[10px] font-semibold text-[#1d2c36] transition hover:bg-[#f6d46d] sm:px-3 sm:text-xs">Create a team</Link>
+               </>
+             ) : <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />}
+           </div>
         </header>
         <main className={`mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9${isCadWorkspaceRoute ? " cad-workspace-main" : ""}${isChatWorkspaceRoute ? " chat-workspace-main" : ""}`}
           style={{ paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
@@ -3662,24 +3748,27 @@ function CustomCharts() {
   return <Section title="Custom charts" kicker="Choose axes for bars and lines, or a group and measure for pie charts. Shared with the other admins."><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Group by" : "X axis"}<select value={xAxis} onChange={event => setXAxis(event.target.value as CustomChartXAxis)} data-testid="select-chart-x-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_X_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Measure" : "Y axis"}<select value={yAxis} onChange={event => setYAxis(event.target.value as CustomChartYAxis)} data-testid="select-chart-y-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_Y_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Diagram<select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => { const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart); const title = currentChart === "pie" ? `${axisLabel(currentXAxis)} distribution` : `${axisLabel(currentXAxis)} × ${axisLabel(currentYAxis)}`; return <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{title}</p><p className="mt-1 text-[11px] text-[#7c8c91]">{currentChart === "pie" ? `Grouped by ${axisLabel(currentXAxis)} · measured as ${axisLabel(currentYAxis)}` : `X: ${axisLabel(currentXAxis)} · Y: ${axisLabel(currentYAxis)}`}</p></div><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${title} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><div className="mb-3 flex flex-wrap gap-2"><select value={currentXAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { xAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Group by" : "X axis"} for ${title}`} data-testid={`select-chart-x-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs"><option value={currentXAxis}>{axisLabel(currentXAxis)}</option>{CUSTOM_CHART_X_AXES.filter(entry => entry.value !== currentXAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={currentYAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { yAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Measure" : "Y axis"} for ${title}`} data-testid={`select-chart-y-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs"><option value={currentYAxis}>{axisLabel(currentYAxis)}</option>{CUSTOM_CHART_Y_AXES.filter(entry => entry.value !== currentYAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></div><CustomChartView data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} /></div>; })}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Choose a group and measure for pie, or X and Y for bars and lines.</p>}</Section>;
 }
 
-function WorkspaceOverview() {
-  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const sessionUserId = session.data?.interviewerId;
+function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode } });
+  const sessionUserId = demoMode ? undefined : session.data?.interviewerId;
   const sessionRole = session.data?.role ?? "interviewer";
-  const { visibility } = useWorkspaceVisibility(session.data?.authenticated === true, sessionRole, sessionUserId);
+  const { visibility } = useWorkspaceVisibility(!demoMode && session.data?.authenticated === true, sessionRole, sessionUserId);
   const customWorkspacesQuery = useAccessibleCustomWorkspaces(
-    session.data?.authenticated === true,
+    !demoMode && session.data?.authenticated === true,
     session.data?.teamId,
     sessionUserId,
   );
-  const customWorkspaces = customWorkspacesQuery.data ?? [];
-  const isCoordinator = sessionRole === "coordinator";
-  const canSee = (key: WorkspaceKey) =>
-    userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key);
+  const customWorkspaces = demoMode ? DEMO_CUSTOM_WORKSPACES : customWorkspacesQuery.data ?? [];
+  const isCoordinator = !demoMode && sessionRole === "coordinator";
+  const canSee = (key: WorkspaceKey) => demoMode
+    ? key !== "interview"
+    : userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key);
   // Per-user workspace list in canonical order: numbering and the count below
   // are relative to what this person can open, so the same workspace can be
   // Workspace 01 for one person and Workspace 03 for another.
-  const visibleList = WORKSPACE_KEYS.filter((key) => canSee(key));
+  const visibleList = demoMode
+    ? ["chat", "parts", "cad", "code"] as WorkspaceKey[]
+    : WORKSPACE_KEYS.filter((key) => canSee(key));
   const workspaceNumber = (key: WorkspaceKey) =>
     String(visibleList.indexOf(key) + 1).padStart(2, "0");
   const totalSpaces = visibleList.length + customWorkspaces.length;
@@ -3689,12 +3778,12 @@ function WorkspaceOverview() {
       <div className="mx-auto max-w-[1120px]">
         <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-[#16869a] dark:text-[#73c9c0]">{session.data?.teamId === "default" ? "Wolverines / Team 23442" : session.data?.teamName || "Robotics team"} · {isCoordinator ? "Admin workspace" : "Team workspace"}</p>
+            <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-[#16869a] dark:text-[#73c9c0]">{demoMode ? "Demo Robotics" : session.data?.teamId === "default" ? "Wolverines / Team 23442" : session.data?.teamName || "Robotics team"} · {demoMode ? "Sample workspace" : isCoordinator ? "Admin workspace" : "Team workspace"}</p>
             <h1 className="text-3xl font-semibold tracking-[-.05em] sm:text-[2.6rem]">Choose a workspace</h1>
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {isCoordinator && (
+            {isCoordinator && !demoMode && (
               <Link
                 href="/custom-workspaces"
                 data-testid="link-create-workspace"
@@ -3709,7 +3798,7 @@ function WorkspaceOverview() {
             </span>
           </div>
         </header>
-        {customWorkspacesQuery.isError && (
+        {!demoMode && customWorkspacesQuery.isError && (
           <p className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#e6c4bd] bg-[#fff4f1] p-4 text-sm text-[#7b3c32] dark:border-[#70433e] dark:bg-[#382725] dark:text-[#f1c4ba]" role="alert" data-testid="status-custom-workspace-list-error">
             <span>Custom apps could not be loaded.</span>
             <button type="button" onClick={() => void customWorkspacesQuery.refetch()} className="min-h-11 rounded-full border border-current px-4 font-semibold" data-testid="button-retry-custom-workspace-list">
@@ -3717,7 +3806,7 @@ function WorkspaceOverview() {
             </button>
           </p>
         )}
-        {visibleList.length === 0 && customWorkspaces.length === 0 && !customWorkspacesQuery.isLoading && (
+        {!demoMode && visibleList.length === 0 && customWorkspaces.length === 0 && !customWorkspacesQuery.isLoading && (
           <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]" data-testid="no-workspaces">
             No workspaces are assigned to your account yet. Ask an admin to add you in Settings → Workspace access.
           </p>
@@ -3774,7 +3863,7 @@ function WorkspaceOverview() {
 
         {canSee("chat") && (
         <Link
-          href="/chat"
+          href={demoMode ? "/demo?view=chat" : "/chat"}
           data-testid="link-workspace-chat"
           className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#b8d8d3] bg-gradient-to-br from-[#e8f5f0] via-[#e1f2ed] to-[#d3e9e5] p-6 text-[#183a4b] shadow-[0_20px_45px_rgba(26,73,73,.10)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(26,73,73,.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16869a] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#35616a] dark:bg-gradient-to-br dark:from-[#173542] dark:via-[#1a3d49] dark:to-[#214c55] dark:text-[#e8eff2] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
         >
@@ -3821,7 +3910,7 @@ function WorkspaceOverview() {
 
         {canSee("parts") && (
         <Link
-          href="/parts"
+          href={demoMode ? "/demo?view=parts" : "/parts"}
           data-testid="link-workspace-parts"
           className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#e2d4a5] bg-gradient-to-br from-[#fff8df] via-[#f8edc7] to-[#efe2b4] p-6 text-[#26313a] shadow-[0_20px_45px_rgba(82,69,28,.10)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(82,69,28,.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b47c16] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#6f6039] dark:bg-gradient-to-br dark:from-[#3c3525] dark:via-[#453c29] dark:to-[#51442a] dark:text-[#f4efdf] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
         >
@@ -3859,7 +3948,7 @@ function WorkspaceOverview() {
 
         {canSee("cad") && (
         <Link
-          href="/cad"
+          href={demoMode ? "/demo?view=cad" : "/cad"}
           data-testid="link-workspace-cad"
           className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#c9d6e6] bg-gradient-to-br from-[#eef3fa] via-[#e4ecf7] to-[#d5e1f0] p-6 text-[#1d2c3e] shadow-[0_20px_45px_rgba(38,62,96,.10)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(38,62,96,.18)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#263e60] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#3c506b] dark:bg-gradient-to-br dark:from-[#1d2c40] dark:via-[#233449] dark:to-[#2b4059] dark:text-[#e8eff2] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
         >
@@ -3897,7 +3986,7 @@ function WorkspaceOverview() {
 
         {canSee("code") && (
         <Link
-          href="/code"
+          href={demoMode ? "/demo?view=code" : "/code"}
           data-testid="link-workspace-code"
           className="group relative isolate flex min-h-[350px] flex-col overflow-hidden rounded-[28px] border border-[#3c4a57] bg-gradient-to-br from-[#232c36] via-[#2a3542] to-[#333f4e] p-6 text-[#eef2f5] shadow-[0_20px_45px_rgba(20,28,36,.20)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_28px_55px_rgba(20,28,36,.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f8c84a] focus-visible:ring-offset-4 focus-visible:ring-offset-[#f1f5f4] dark:border-[#4a5a6b] dark:focus-visible:ring-offset-[#101b23] sm:min-h-[370px] sm:p-7"
         >
@@ -3940,11 +4029,40 @@ function WorkspaceOverview() {
             key={workspace.id}
             workspace={workspace}
             number={visibleList.length + index + 1}
+            href={demoMode ? `/demo?view=custom-${workspace.id}` : undefined}
           />
         ))}
       </div>
       </div>
     </div>
+  );
+}
+
+function isDemoWorkspaceContentView(view: DemoView): view is "chat" | "parts" | "code" | "cad" {
+  return view === "chat" || view === "parts" || view === "code" || view === "cad";
+}
+
+function DemoPage() {
+  const demoView = parseDemoView(useSearch());
+  const customWorkspace = DEMO_CUSTOM_WORKSPACES.find((workspace) => `custom-${workspace.id}` === demoView);
+  return (
+    <>
+      <DemoMetadata />
+      <Shell demoMode demoView={demoView}>
+        {demoView === "overview" ? (
+          <WorkspaceOverview demoMode />
+        ) : customWorkspace ? (
+          <Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}>
+            <CustomWorkspaceAppPage
+              workspaceId={customWorkspace.id}
+              demoWorkspace={customWorkspace}
+            />
+          </Suspense>
+        ) : isDemoWorkspaceContentView(demoView) ? (
+          <DemoWorkspaceContent view={demoView} />
+        ) : null}
+      </Shell>
+    </>
   );
 }
 
@@ -9403,7 +9521,7 @@ function Router() {
     <ErrorBoundary FallbackComponent={CrashFallback}>
       <Switch>
         <Route path="/" component={PublicDashboard} />
-        <Route path="/demo" component={RoboticsDemoPage} />
+        <Route path="/demo" component={DemoPage} />
         <Route path="/pricing" component={Pricing} />
         <Route path="/compare" component={ComparePage} />
         <Route path="/about" component={AboutPage} />

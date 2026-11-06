@@ -5,6 +5,84 @@ import {
   LayoutDashboard, MessageSquare, Package, Search, ShieldCheck, Sparkles,
   Wrench, CircleDot, CalendarDays, GitBranch, Eye,
 } from "lucide-react";
+import type { CustomWorkspace } from "@workspace/api-client-react";
+
+export type DemoView =
+  | "overview"
+  | "chat"
+  | "parts"
+  | "code"
+  | "cad"
+  | "custom-build-tracker"
+  | "custom-field-test-log";
+
+export type DemoCustomWorkspace = Pick<
+  CustomWorkspace,
+  "id" | "title" | "description" | "status" | "iconDataUrl" | "tabs" | "html" | "capabilities"
+> & { html: string };
+
+export const DEMO_CUSTOM_WORKSPACES: DemoCustomWorkspace[] = [
+  {
+    id: "build-tracker",
+    title: "Build Tracker",
+    description: "Track robot milestones, owners, and next steps for build season.",
+    status: "published",
+    iconDataUrl: "/demo-build-tracker.svg",
+    tabs: [],
+    capabilities: [],
+    html: `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><main class="mx-auto max-w-6xl space-y-6 p-5 sm:p-8">
+  <header class="flex flex-wrap items-end justify-between gap-4">
+    <div><p class="font-mono text-xs uppercase tracking-[.18em] text-muted-foreground">Custom workspace · sample app</p><h1 class="mt-2 text-3xl font-semibold tracking-tight">Build Tracker</h1><p class="mt-2 max-w-2xl text-sm text-muted-foreground">A fictional snapshot of this season’s robot milestones and build tasks.</p></div>
+    <span class="rounded-full border px-3 py-1.5 text-xs font-semibold">Sample data · read-only</span>
+  </header>
+  <section class="grid gap-4 sm:grid-cols-3">
+    <article class="rounded-2xl border bg-card p-5"><p class="text-sm text-muted-foreground">Milestones</p><p class="mt-2 text-3xl font-semibold">8</p><p class="mt-1 text-xs text-muted-foreground">3 complete · 3 active · 2 upcoming</p></article>
+    <article class="rounded-2xl border bg-card p-5"><p class="text-sm text-muted-foreground">Next event</p><p class="mt-2 text-xl font-semibold">Scrimmage 01</p><p class="mt-1 text-xs text-muted-foreground">Saturday · sample schedule</p></article>
+    <article class="rounded-2xl border bg-card p-5"><p class="text-sm text-muted-foreground">Robot status</p><p class="mt-2 text-xl font-semibold">Integration</p><p class="mt-1 text-xs text-muted-foreground">Drivebase and intake in progress</p></article>
+  </section>
+  <section class="overflow-hidden rounded-2xl border bg-card">
+    <div class="border-b p-5"><p class="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">This week</p><h2 class="mt-1 text-lg font-semibold">Build milestones</h2></div>
+    <div class="divide-y">
+      <article class="flex flex-wrap items-center justify-between gap-3 p-5"><div><h3 class="font-medium">Finish intake roller test</h3><p class="mt-1 text-sm text-muted-foreground">Maya Chen · Subsystem fit</p></div><span class="rounded-full border bg-muted px-2.5 py-1 text-xs font-medium">In progress</span></article>
+      <article class="flex flex-wrap items-center justify-between gap-3 p-5"><div><h3 class="font-medium">Run autonomous path on field tiles</h3><p class="mt-1 text-sm text-muted-foreground">Sam Rivera · Robot software</p></div><span class="rounded-full border bg-muted px-2.5 py-1 text-xs font-medium">Needs review</span></article>
+      <article class="flex flex-wrap items-center justify-between gap-3 p-5"><div><h3 class="font-medium">Label spare parts bins</h3><p class="mt-1 text-sm text-muted-foreground">Nora Patel · Shop organization</p></div><span class="rounded-full border bg-muted px-2.5 py-1 text-xs font-medium">Complete</span></article>
+    </div>
+  </section>
+</main></body></html>`,
+  },
+  {
+    id: "field-test-log",
+    title: "Field Test Log",
+    description: "Keep drive, mechanism, and autonomous test notes together.",
+    status: "published",
+    iconDataUrl: "/demo-field-test-log.svg",
+    tabs: [],
+    capabilities: [],
+    html: `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body><main class="mx-auto max-w-6xl space-y-6 p-5 sm:p-8">
+  <header class="flex flex-wrap items-end justify-between gap-4">
+    <div><p class="font-mono text-xs uppercase tracking-[.18em] text-muted-foreground">Custom workspace · sample app</p><h1 class="mt-2 text-3xl font-semibold tracking-tight">Field Test Log</h1><p class="mt-2 max-w-2xl text-sm text-muted-foreground">Fictional test runs that connect changes to repeatable results.</p></div>
+    <span class="rounded-full border px-3 py-1.5 text-xs font-semibold">Sample data · read-only</span>
+  </header>
+  <section class="grid gap-4 sm:grid-cols-3">
+    <article class="rounded-2xl border bg-card p-5"><p class="text-sm text-muted-foreground">Runs this week</p><p class="mt-2 text-3xl font-semibold">12</p></article>
+    <article class="rounded-2xl border bg-card p-5"><p class="text-sm text-muted-foreground">Latest result</p><p class="mt-2 text-xl font-semibold">Autonomous path · pass</p></article>
+    <article class="rounded-2xl border bg-card p-5"><p class="text-sm text-muted-foreground">Open follow-up</p><p class="mt-2 text-xl font-semibold">2 notes</p></article>
+  </section>
+  <section class="overflow-hidden rounded-2xl border bg-card">
+    <div class="border-b p-5"><p class="text-xs font-semibold uppercase tracking-[.14em] text-muted-foreground">Recent sample runs</p><h2 class="mt-1 text-lg font-semibold">Test history</h2></div>
+    <div class="overflow-x-auto"><table class="w-full min-w-[620px] text-left text-sm"><thead class="bg-muted/50 text-xs text-muted-foreground"><tr><th class="px-5 py-3 font-medium">Run</th><th class="px-5 py-3 font-medium">Area</th><th class="px-5 py-3 font-medium">Result</th><th class="px-5 py-3 font-medium">Owner</th><th class="px-5 py-3 font-medium">Date</th></tr></thead><tbody class="divide-y">
+      <tr><td class="px-5 py-4 font-medium">Autonomous path A</td><td class="px-5 py-4">Robot software</td><td class="px-5 py-4">Pass</td><td class="px-5 py-4">Sam Rivera</td><td class="px-5 py-4">Nov 5</td></tr>
+      <tr><td class="px-5 py-4 font-medium">Intake transfer</td><td class="px-5 py-4">Mechanism</td><td class="px-5 py-4">Needs adjustment</td><td class="px-5 py-4">Maya Chen</td><td class="px-5 py-4">Nov 4</td></tr>
+      <tr><td class="px-5 py-4 font-medium">Drivebase straight-line</td><td class="px-5 py-4">Drive</td><td class="px-5 py-4">Pass</td><td class="px-5 py-4">Leo Park</td><td class="px-5 py-4">Nov 3</td></tr>
+    </tbody></table></div>
+  </section>
+</main></body></html>`,
+  },
+];
 
 type WorkspaceView = "overview" | "chat" | "plan" | "parts" | "code" | "cad";
 
@@ -55,7 +133,7 @@ const viewTitles: Record<WorkspaceView, { eyebrow: string; title: string; descri
   cad: { eyebrow: "WORKSPACE / CAD", title: "Intake assembly · rev C.", description: "A design review note, connected to the build conversation." },
 };
 
-function DemoBadge() {
+export function DemoBadge() {
   return <span className="inline-flex items-center gap-1.5 rounded-full border border-[#dfb84d]/40 bg-[#f1ca5b]/15 px-2.5 py-1 font-mono text-[9px] font-bold uppercase tracking-[.12em] text-[#896514] dark:border-[#dfb84d]/30 dark:bg-[#dfb84d]/10 dark:text-[#f1cf6f]"><Eye size={11} /> Fictional demo · read-only</span>;
 }
 
@@ -273,4 +351,78 @@ export default function RoboticsDemoPage() {
       </div>
     </div>
   </main>;
+}
+
+export function parseDemoView(search: string): DemoView {
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  const view = params.get("view");
+  if (
+    view === "chat" ||
+    view === "parts" ||
+    view === "code" ||
+    view === "cad" ||
+    view === "custom-build-tracker" ||
+    view === "custom-field-test-log"
+  ) return view;
+  return "overview";
+}
+
+export function DemoMetadata() {
+  useEffect(() => {
+    const description = "Explore a fictional, read-only robotics workspace. See how teams connect chat, parts, CAD, code, and custom apps in one place—no sign-in or live team data needed.";
+    const title = "Live demo · Robotics Team Workspace";
+    const descriptionMeta = document.querySelector<HTMLMetaElement>('meta[name="description"]');
+    const openGraphTitleMeta = document.querySelector<HTMLMetaElement>('meta[property="og:title"]');
+    const openGraphDescriptionMeta = document.querySelector<HTMLMetaElement>('meta[property="og:description"]');
+    const twitterTitleMeta = document.querySelector<HTMLMetaElement>('meta[name="twitter:title"]');
+    const twitterDescriptionMeta = document.querySelector<HTMLMetaElement>('meta[name="twitter:description"]');
+    const previousTitle = document.title;
+    const previousDescription = descriptionMeta?.content;
+    const previousOpenGraphTitle = openGraphTitleMeta?.content;
+    const previousOpenGraphDescription = openGraphDescriptionMeta?.content;
+    const previousTwitterTitle = twitterTitleMeta?.content;
+    const previousTwitterDescription = twitterDescriptionMeta?.content;
+
+    document.title = title;
+    if (descriptionMeta) descriptionMeta.content = description;
+    if (openGraphTitleMeta) openGraphTitleMeta.content = title;
+    if (openGraphDescriptionMeta) openGraphDescriptionMeta.content = description;
+    if (twitterTitleMeta) twitterTitleMeta.content = title;
+    if (twitterDescriptionMeta) twitterDescriptionMeta.content = description;
+
+    return () => {
+      document.title = previousTitle;
+      if (descriptionMeta && previousDescription !== undefined) descriptionMeta.content = previousDescription;
+      if (openGraphTitleMeta && previousOpenGraphTitle !== undefined) openGraphTitleMeta.content = previousOpenGraphTitle;
+      if (openGraphDescriptionMeta && previousOpenGraphDescription !== undefined) openGraphDescriptionMeta.content = previousOpenGraphDescription;
+      if (twitterTitleMeta && previousTwitterTitle !== undefined) twitterTitleMeta.content = previousTwitterTitle;
+      if (twitterDescriptionMeta && previousTwitterDescription !== undefined) twitterDescriptionMeta.content = previousTwitterDescription;
+    };
+  }, []);
+
+  return null;
+}
+
+export function DemoWorkspaceContent({ view }: { view: "chat" | "parts" | "code" | "cad" }) {
+  const active = viewTitles[view];
+  return (
+    <div className="fade-up" data-testid="robotics-demo-page">
+      <header className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+        <div>
+          <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-[#16869a] dark:text-[#73c9c0]">{active.eyebrow}</p>
+          <h1 className="text-3xl font-semibold tracking-[-.045em] md:text-4xl" data-testid="text-demo-view-title">{active.title}</h1>
+          <p className="mt-2 max-w-2xl text-sm text-[#718189] dark:text-[#afc1c9]">{active.description}</p>
+        </div>
+        <DemoBadge />
+      </header>
+
+      {view === "chat" && <div className="max-w-4xl"><ChatPanel /></div>}
+      {view === "parts" && <div className="max-w-4xl"><PartsPanel /><p className="mt-3 flex items-center gap-2 text-xs text-[#718189] dark:text-[#afc1c9]"><Package size={14} /> All inventory values are fictional sample data.</p></div>}
+      {view === "code" && <div className="max-w-4xl"><CodePanel /></div>}
+      {view === "cad" && <div className="max-w-4xl"><CadPanel /></div>}
+      <footer className="mt-9 border-t border-[#dce5e5] pt-4 text-xs text-[#718189] dark:border-[#2a3f52] dark:text-[#afc1c9]">
+        Sample content only · No live team records or services are connected.
+      </footer>
+    </div>
+  );
 }

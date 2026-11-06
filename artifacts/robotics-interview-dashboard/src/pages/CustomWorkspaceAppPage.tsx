@@ -8,7 +8,10 @@ import { getStoredAuthToken } from "../authSession";
 import { sandboxDocument } from "../lib/customWorkspaceRuntime";
 
 const API = "/api/custom-workspaces";
-type Workspace = CustomWorkspace & { critiqueRounds?: number; verifiedCritiqueRounds?: number };
+type Workspace = Pick<
+  CustomWorkspace,
+  "id" | "title" | "description" | "status" | "iconDataUrl" | "tabs" | "html" | "capabilities"
+> & { critiqueRounds?: number; verifiedCritiqueRounds?: number };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -24,23 +27,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
-export function CustomWorkspaceAppPage({ workspaceId, tabId }: { workspaceId: string; tabId?: string }) {
+export function CustomWorkspaceAppPage({
+  workspaceId,
+  tabId,
+  demoWorkspace,
+}: {
+  workspaceId: string;
+  tabId?: string;
+  demoWorkspace?: Workspace;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [, setLocation] = useLocation();
   const { resolvedTheme } = useTheme();
-  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey(), enabled: !demoWorkspace } });
   const teamId = session.data?.teamId ?? "";
   const interviewerId = session.data?.interviewerId ?? "";
   const workspaceQuery = useQuery({
     queryKey: ["custom-workspace", workspaceId, teamId, interviewerId],
-    enabled: Boolean(workspaceId) && session.data?.authenticated === true,
+    enabled: !demoWorkspace && Boolean(workspaceId) && session.data?.authenticated === true,
     queryFn: async () => (await request<{ workspace: Workspace }>(
       `${API}/${encodeURIComponent(workspaceId)}`,
     )).workspace,
     staleTime: 30_000,
     refetchInterval: 30_000,
   });
-  const workspace = workspaceQuery.data;
+  const workspace = demoWorkspace ?? workspaceQuery.data;
   const tabs = workspace?.tabs ?? [];
   const activeTab = tabId ? tabs.find((tab) => tab.id === tabId) : tabs[0];
   const activeTabId = activeTab?.id ?? null;
@@ -109,7 +120,7 @@ export function CustomWorkspaceAppPage({ workspaceId, tabId }: { workspaceId: st
     return () => window.removeEventListener("message", onMessage);
   }, [workspace]);
 
-  if (workspaceQuery.isLoading) {
+  if (!demoWorkspace && workspaceQuery.isLoading) {
     return (
       <div className="flex min-h-[45vh] items-center justify-center rounded-3xl border border-[#dce5e5] bg-white text-sm text-[#60757c] dark:border-[#2a3f52] dark:bg-[#15232d] dark:text-[#b3c3cb]" data-testid="status-custom-app-loading">
         <LoaderCircle size={18} className="mr-2 animate-spin" aria-hidden="true" />
@@ -118,7 +129,7 @@ export function CustomWorkspaceAppPage({ workspaceId, tabId }: { workspaceId: st
     );
   }
 
-  if (workspaceQuery.isError || !workspace || typeof workspace.html !== "string") {
+  if ((!demoWorkspace && workspaceQuery.isError) || !workspace || typeof workspace.html !== "string") {
     return (
       <section className="mx-auto max-w-3xl rounded-3xl border border-[#dce5e5] bg-white p-6 text-[#182232] dark:border-[#2a3f52] dark:bg-[#15232d] dark:text-[#e8eff2]" data-testid="status-custom-app-error">
         <Link href="/dashboard" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-[#16869a] hover:underline dark:text-[#73c9c0]" data-testid="link-back-to-workspaces">
