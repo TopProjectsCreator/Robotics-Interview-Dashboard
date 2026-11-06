@@ -2495,6 +2495,203 @@ export interface SpreadsheetUpdateInput {
   data?: SpreadsheetData;
 }
 
+export interface CalendarEvent {
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+  /** @maxLength 12000 */
+  description: string;
+  startAt: string;
+  endAt: string;
+  allDay: boolean;
+  /** @maxLength 500 */
+  location: string;
+  /**
+     * @maxItems 32
+     * @items.maxLength 80
+     */
+  assignees: string[];
+  /** @maxLength 16 */
+  color: string;
+  /**
+     * Set when this event was imported from a subscribed iCal feed.
+     * @nullable
+     */
+  feedId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+}
+
+export interface CalendarFeed {
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  name: string;
+  /** @maxLength 2048 */
+  url: string;
+  /** @maxLength 16 */
+  color: string;
+  /** @nullable */
+  lastFetchedAt: string | null;
+  /** @nullable */
+  lastError: string | null;
+}
+
+export type CalendarDataKind = typeof CalendarDataKind[keyof typeof CalendarDataKind];
+
+
+export const CalendarDataKind = {
+  calendar: 'calendar',
+} as const;
+
+export type CalendarDataVersion = typeof CalendarDataVersion[keyof typeof CalendarDataVersion];
+
+
+export const CalendarDataVersion = {
+  NUMBER_1: 1,
+} as const;
+
+export interface CalendarData {
+  kind: CalendarDataKind;
+  version: CalendarDataVersion;
+  /** @maxLength 500 */
+  description: string;
+  /** @maxItems 2000 */
+  events: CalendarEvent[];
+  /** @maxItems 50 */
+  feeds: CalendarFeed[];
+}
+
+export type CalendarScope = typeof CalendarScope[keyof typeof CalendarScope];
+
+
+export const CalendarScope = {
+  shared: 'shared',
+  direct: 'direct',
+  channel: 'channel',
+} as const;
+
+export interface Calendar {
+  id: string;
+  title: string;
+  data: CalendarData;
+  createdBy: string;
+  scope: CalendarScope;
+  /** @nullable */
+  peer: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CalendarCreateInputScope = typeof CalendarCreateInputScope[keyof typeof CalendarCreateInputScope];
+
+
+export const CalendarCreateInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+  channel: 'channel',
+} as const;
+
+export interface CalendarCreateInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title: string;
+  scope: CalendarCreateInputScope;
+  /** @nullable */
+  recipient?: string | null;
+  /**
+     * Invite-only channel id for a channel-scope calendar.
+     * @nullable
+     */
+  channelId?: string | null;
+}
+
+export interface CalendarEventInput {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+  /** @maxLength 12000 */
+  description?: string;
+  startAt: string;
+  endAt?: string;
+  allDay?: boolean;
+  /** @maxLength 500 */
+  location?: string;
+  /**
+     * @maxItems 32
+     * @items.maxLength 80
+     */
+  assignees?: string[];
+  /** @maxLength 16 */
+  color?: string;
+}
+
+export interface CalendarEventPatch {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title?: string;
+  /** @maxLength 12000 */
+  description?: string;
+  startAt?: string;
+  endAt?: string;
+  allDay?: boolean;
+  /** @maxLength 500 */
+  location?: string;
+  /**
+     * @maxItems 32
+     * @items.maxLength 80
+     */
+  assignees?: string[];
+  /** @maxLength 16 */
+  color?: string;
+}
+
+export type CalendarOperationInputOperation = typeof CalendarOperationInputOperation[keyof typeof CalendarOperationInputOperation];
+
+
+export const CalendarOperationInputOperation = {
+  rename_calendar: 'rename_calendar',
+  create_event: 'create_event',
+  update_event: 'update_event',
+  delete_event: 'delete_event',
+  add_ical_feed: 'add_ical_feed',
+  remove_ical_feed: 'remove_ical_feed',
+  refresh_ical_feed: 'refresh_ical_feed',
+} as const;
+
+export interface CalendarOperationInput {
+  operation: CalendarOperationInputOperation;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title?: string;
+  /** @maxLength 500 */
+  description?: string;
+  event?: CalendarEventInput;
+  eventPatch?: CalendarEventPatch;
+  eventId?: string;
+  /** @maxLength 2048 */
+  feedUrl?: string;
+  /** @maxLength 80 */
+  feedName?: string;
+  feedId?: string;
+  /** @maxLength 16 */
+  feedColor?: string;
+}
+
 export interface ReorderQueueInput {
   applicantIds: string[];
 }

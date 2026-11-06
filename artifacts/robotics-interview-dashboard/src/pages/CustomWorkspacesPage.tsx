@@ -435,6 +435,7 @@ function builderActivityLabel(activity: BuilderRun["activities"][number]): strin
       // Older saved activity may not include structured input.
     }
   }
+  if (activity.tool === "preview_custom_workspace") return "Preview draft";
   return tool;
 }
 
@@ -700,6 +701,17 @@ export function CustomWorkspacesPage() {
       try {
         if (message.method === "data.list" && active.capabilities.includes("data")) {
           respond((await request<{ records: unknown[] }>(`${API}/${active.id}/data`)).records);
+        } else if (message.method === "data.query" && active.capabilities.includes("data")) {
+          const query = (message.payload ?? {}) as { limit?: number; offset?: number; search?: string; filters?: Record<string, unknown>; sortBy?: string; sortDir?: string };
+          const params = new URLSearchParams();
+          if (typeof query.limit === "number") params.set("limit", String(query.limit));
+          if (typeof query.offset === "number") params.set("offset", String(query.offset));
+          if (typeof query.search === "string" && query.search) params.set("search", query.search);
+          if (query.filters && typeof query.filters === "object") params.set("filters", JSON.stringify(query.filters));
+          if (typeof query.sortBy === "string" && query.sortBy) params.set("sortBy", query.sortBy);
+          if (query.sortDir === "asc" || query.sortDir === "desc") params.set("sortDir", query.sortDir);
+          const suffix = params.toString() ? `?${params.toString()}` : "";
+          respond(await request<{ records: unknown[]; total: number; limit: number; offset: number }>(`${API}/${active.id}/data/query${suffix}`));
         } else if (message.method === "data.create" && active.capabilities.includes("data")) {
           const record = (message.payload as { record?: unknown } | undefined)?.record;
           respond((await request<{ record: unknown }>(`${API}/${active.id}/data`, {
@@ -775,7 +787,7 @@ export function CustomWorkspacesPage() {
     try {
       const beforeIds = new Set(items.map((item) => item.id));
       const capabilityText = capabilities.length ? capabilities.join(", ") : "none";
-      const run = await runBuilderAgent(`Build a custom workspace app for the team. Requirements: ${prompt}\n\nMake every app-specific visual yourself as original SVG/source assets: create a bespoke assets/icon.svg before finishing and add local SVG illustrations or decorative assets when the app needs them. Keep the icon compact (under 20 KB), recognizable for this app, and readable on both light and dark host surfaces; display it in the app interface. Do not use generic sparkle icons, stock placeholders, lorem ipsum, default test names, or a fixed mock template. Build real interactions and useful app-specific content; if real records are unavailable, use a clear empty state rather than presenting invented records as real. Keep assets standalone, self-contained, local, and safe; do not fetch external images. Only grant these workspace capabilities: ${capabilityText}. Create the draft, then use the custom workspace file tools to inspect and refine its persistent source tree. Immediately after the initial draft and source files are saved, start critique round 1 and continue through all five independently verified rounds without waiting for Publish. If a critique or verification fails, keep editing and retry automatically. Keep it as a draft for coordinator review; do not publish.`, beforeIds);
+      const run = await runBuilderAgent(`Build a custom workspace app for the team. Requirements: ${prompt}\n\nMake every app-specific visual yourself as original SVG/source assets: create a bespoke assets/icon.svg before finishing and add local SVG illustrations or decorative assets when the app needs them. Keep the icon compact (under 20 KB), recognizable for this app, and readable on both light and dark host surfaces; display it in the app interface. Do not use generic sparkle icons, stock placeholders, lorem ipsum, default test names, or a fixed mock template. This is a real tool, not a mock visual: NEVER seed, invent, or display mock, fake, sample, demo, or placeholder records. Build real interactions and useful app-specific content; if real records are unavailable, use a clear empty state with a real action to create the first record rather than presenting invented records as real. Only ever display records the user entered, uploaded, or saved through this app. Keep assets standalone, self-contained, local, and safe; do not fetch external images. Use window.workspaceAPI.data.query (search/filters/sort/pagination) for list screens where filtering or paging matters. Only grant these workspace capabilities: ${capabilityText}. Create the draft, then use the custom workspace file tools to inspect and refine its persistent source tree. Immediately after the initial draft and source files are saved, start critique round 1 and continue through all five independently verified rounds without waiting for Publish. If a critique or verification fails, keep editing and retry automatically. Keep it as a draft for coordinator review; do not publish.`, beforeIds);
       const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
       const draft = workspaces.find((workspace) => !beforeIds.has(workspace.id) && workspace.status === "draft");
       if (run?.status === "waiting_for_answer") {

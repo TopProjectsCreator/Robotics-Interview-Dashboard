@@ -270,9 +270,9 @@ try {
       `${height}px message history should scroll independently: ${JSON.stringify(geometry)}`);
     assert.ok(geometry.mainScrollHeight <= geometry.mainClientHeight + 1,
       `${height}px chat page should not need document scrolling: ${JSON.stringify(geometry)}`);
-    assert.equal(await desktopPage.getByTestId("button-chat-team").isVisible(), true,
+    assert.equal(await desktopPage.getByTestId("select-chat-conversation").isVisible(), true,
       `${height}px team conversation control should remain visible`);
-    const teamControl = await desktopPage.getByTestId("button-chat-team").boundingBox();
+    const teamControl = await desktopPage.getByTestId("select-chat-conversation").boundingBox();
     assert.ok(teamControl && teamControl.y >= 0 && teamControl.y + teamControl.height <= height,
       `${height}px conversation controls should remain within the viewport: ${JSON.stringify(geometry)}`);
     assert.equal(await desktopPage.getByTestId("input-interviewer-chat").isVisible(), true,

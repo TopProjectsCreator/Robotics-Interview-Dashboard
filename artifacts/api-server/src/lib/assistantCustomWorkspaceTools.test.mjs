@@ -178,7 +178,7 @@ test("catalog exposes standard data actions and only enabled actions for accessi
   workspaces.set("workspace-draft", workspace({ id: "workspace-draft", status: "draft" }));
   const tools = await listAssistantCustomWorkspaceTools("owner", "team-a");
   const names = tools.map((tool) => tool.function.name);
-  assert.equal(names.length, 14, "the coordinator can use only accessible published data workspaces");
+  assert.equal(names.length, 16, "the coordinator can use only accessible published data workspaces");
   assert.ok(names.includes(workspaceAssistantToolName("workspace-a", "save_item")));
   assert.ok(names.includes(workspaceAssistantToolName("workspace-selected", "find_by_status")));
   assert.equal(names.some((name) => name.includes("workspace-private")), false);

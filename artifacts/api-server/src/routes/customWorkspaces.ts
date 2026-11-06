@@ -1,9 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
@@ -30,6 +25,22 @@ import {
   customWorkspaceBuilderRunTargetsWorkspace,
   waitForAssistantBuilderWorkToSettle,
 } from "../lib/assistantBuilderJobs";
+import {
+  setWorkspaceVisualTools as setSharedWorkspaceVisualTools,
+  type WorkspaceRuntimeIssue,
+  type WorkspaceVisualTools,
+} from "../lib/customWorkspacePreview";
+import {
+  buildRecordQuerySql,
+  parseRecordQuery,
+} from "../lib/assistantCustomWorkspaceTools";
+
+export type { WorkspaceRuntimeIssue, WorkspaceVisualTools };
+
+/** Test seam: deterministic visual-QA capture for the shared preview lib. */
+export function setWorkspaceVisualTools(overrides: Partial<WorkspaceVisualTools>): void {
+  setSharedWorkspaceVisualTools(overrides);
+}
 
 /** Builder-management guard that also supports legacy admin accounts. */
 function requireCustomWorkspaceAdmin(req: Request, res: Response, next: NextFunction): void {
@@ -59,8 +70,6 @@ const CAPABILITIES = new Set(["data", "llm"]);
 const MAX_HTML_BYTES = 120_000;
 const MAX_RECORD_BYTES = 16_000;
 const requestWindows = new Map<string, { startedAt: number; count: number }>();
-const execFileAsync = promisify(execFile);
-const VISUAL_REPAIR_LIMIT = 2;
 
 async function retryAiCall<T>(operation: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
@@ -75,11 +84,6 @@ async function retryAiCall<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
-function escapeAttribute(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-}
-
-type WorkspaceRuntimeIssue = { kind: string; message: string };
 type WorkspaceSourceFile = { path: string; content: string };
 
 function compileWorkspaceFiles(sourceFiles: WorkspaceSourceFile[]): string | null {
@@ -95,236 +99,6 @@ function compileWorkspaceFiles(sourceFiles: WorkspaceSourceFile[]): string | nul
       const js = files.get(src.replace(/^\.\//, ""));
       return js === undefined ? tag : `<script${before}${after}>${js.replace(/<\/script/gi, "<\\/script")}</script>`;
     });
-}
-
-function visualSandboxDocument(html: string, darkMode: boolean): string {
-  const policy = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; form-action 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'">`;
-  const dashboardTheme = `<style>
-  :root {
-    --background: 216 38% 96%; --foreground: 220 25% 16%; --border: 215 25% 86%;
-    --card: 0 0% 100%; --card-foreground: 220 25% 16%; --card-border: 215 25% 87%;
-    --primary: 190 76% 37%; --primary-foreground: 0 0% 100%; --secondary: 215 26% 91%;
-    --secondary-foreground: 220 25% 21%; --muted: 215 26% 92%; --muted-foreground: 216 13% 44%;
-    --accent: 42 91% 62%; --accent-foreground: 220 32% 13%; --input: 215 22% 80%; --ring: 190 76% 37%;
-    --workspace-navy: #183a4b; --workspace-teal: #16869a; --workspace-yellow: #f8c84a;
-    --app-font-sans: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
-    --app-font-mono: 'DM Mono', ui-monospace, monospace;
-  }
-  :root.dark {
-    color-scheme: dark;
-    --background: 220 32% 7%; --foreground: 210 20% 90%; --border: 215 20% 22%;
-    --card: 218 28% 11%; --card-foreground: 210 20% 90%; --card-border: 215 20% 22%;
-    --primary: 190 55% 55%; --primary-foreground: 220 32% 8%; --secondary: 215 22% 18%;
-    --secondary-foreground: 210 18% 88%; --muted: 215 22% 16%; --muted-foreground: 214 14% 62%;
-    --accent: 215 22% 18%; --accent-foreground: 210 20% 90%; --input: 215 20% 26%; --ring: 190 60% 55%;
-    --workspace-navy: #e5edf2; --workspace-teal: #6fc3cf; --workspace-yellow: #e8c85a;
-  }
-  html, body { min-height: 100%; }
-  body { margin: 0; background: hsl(var(--background)); color: hsl(var(--foreground)); font-family: var(--app-font-sans); }
-  </style>`;
-  const reporter = `<script>
-(() => {
-  const send = (kind, message) => {
-    try { window.parent.postMessage({ channel: "workspace-runtime-diagnostic", kind, message: String(message).replace(/\\s+/g, " ").slice(0, 500) }, "*"); } catch {}
-  };
-  window.addEventListener("error", (event) => {
-    const target = event.target;
-    if (target && target !== window) {
-      const name = target.localName || target.tagName || "resource";
-      const url = target.currentSrc || target.src || target.href || target.getAttribute?.("src") || target.getAttribute?.("href") || "";
-      send("Asset load failure", name + (url ? " " + url : ""));
-      return;
-    }
-    send("JavaScript exception", (event.message || "Script execution failed") + (event.filename ? " (" + event.filename + ":" + event.lineno + ")" : ""));
-  }, true);
-  window.addEventListener("unhandledrejection", (event) => {
-    const reason = event.reason;
-    send("Unhandled promise rejection", reason && typeof reason === "object" && "message" in reason ? reason.message : reason ?? "Promise rejected");
-  });
-  document.addEventListener("securitypolicyviolation", (event) => {
-    send("Blocked resource", (event.blockedURI || "unknown resource") + " (" + event.violatedDirective + ")");
-  });
-})();
-</script>`;
-  // Keep one known diagnostic-friendly policy. A draft's own CSP meta can only
-  // add a second, stricter policy and accidentally disable the injected reporter.
-  const cleanHtml = html.replace(
-    /<meta\b(?=[^>]*\bhttp-equiv\s*=\s*(?:"content-security-policy"|'content-security-policy'|content-security-policy))[^>]*>/gi,
-    "",
-  );
-  const themedHtml = /<html\b([^>]*)>/i.test(cleanHtml)
-    ? cleanHtml.replace(/<html\b([^>]*)>/i, (_tag, attrs: string) => {
-      const existingClass = attrs.match(/\bclass=(["'])(.*?)\1/i);
-      if (existingClass) {
-        const retainedClasses = existingClass[2].split(/\s+/).filter((name) => name && name !== "dark");
-        if (darkMode) retainedClasses.push("dark");
-        return `<html${attrs.replace(existingClass[0], `class="${retainedClasses.join(" ")}"`)}>`;
-      }
-      return `<html${attrs}${darkMode ? ' class="dark"' : ""}>`;
-    })
-    : `<!doctype html><html${darkMode ? ' class="dark"' : ""}>${cleanHtml}</html>`;
-  const document = /<head\b[^>]*>/i.test(themedHtml)
-    ? themedHtml.replace(/<head\b[^>]*>/i, (head) => `${head}${policy}${dashboardTheme}${reporter}`)
-    : themedHtml.replace(/<html\b[^>]*>/i, (root) => `${root}<head>${policy}${dashboardTheme}${reporter}</head>`);
-  const wrapperBackground = darkMode ? "#0c121a" : "#f3f6f5";
-  const wrapper = `<!doctype html><html><head><script>
-(() => {
-  document.addEventListener("DOMContentLoaded", () => {
-    const frame = document.getElementById("workspace-preview");
-    const issues = [];
-    let captured = false;
-    window.addEventListener("message", (event) => {
-      if (event.source !== frame.contentWindow || event.data?.channel !== "workspace-runtime-diagnostic") return;
-      const issue = { kind: String(event.data.kind || "Runtime error").slice(0, 80), message: String(event.data.message || "").slice(0, 500) };
-      if (!issues.some((existing) => existing.kind === issue.kind && existing.message === issue.message) && issues.length < 20) issues.push(issue);
-    });
-    const finish = () => {
-      if (captured) return;
-      captured = true;
-      document.documentElement.setAttribute("data-qa-runtime", encodeURIComponent(JSON.stringify(issues)));
-    };
-    frame.addEventListener("load", () => setTimeout(finish, 4500), { once: true });
-    setTimeout(finish, 4800);
-  });
-})();
-</script></head><body style="margin:0;width:1280px;height:900px;overflow:hidden;background:${wrapperBackground}"><iframe id="workspace-preview" sandbox="allow-scripts" style="width:1280px;height:900px;border:0" srcdoc="${escapeAttribute(document)}"></iframe></body></html>`;
-  return wrapper;
-}
-
-type WorkspaceTheme = "light" | "dark";
-
-async function captureWorkspaceScreenshot(
-  html: string,
-  theme: WorkspaceTheme,
-): Promise<{ screenshot: string; runtimeIssues: WorkspaceRuntimeIssue[] }> {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "workspace-visual-qa-"));
-  const source = path.join(directory, "preview.html");
-  const screenshot = path.join(directory, "preview.png");
-  try {
-    await writeFile(source, visualSandboxDocument(html, theme === "dark"), "utf8");
-    const { stdout } = await execFileAsync(process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", [
-      "--headless", "--disable-gpu", "--disable-dev-shm-usage",
-      "--disable-background-networking", "--host-resolver-rules=MAP * ~NOTFOUND",
-      "--hide-scrollbars", "--window-size=1280,900", "--virtual-time-budget=5000", "--dump-dom",
-      `--screenshot=${screenshot}`, `file://${source}`,
-    ], { timeout: 20000, maxBuffer: 1024 * 1024 });
-    const encodedIssues = stdout.match(/data-qa-runtime="([^"]*)"/)?.[1];
-    if (!encodedIssues) throw new Error("The isolated preview did not return its runtime diagnostics.");
-    const runtimeIssues = JSON.parse(decodeURIComponent(encodedIssues)) as WorkspaceRuntimeIssue[];
-    return { screenshot: (await readFile(screenshot)).toString("base64"), runtimeIssues };
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
-}
-
-/**
- * Test seam for the browser-visual step. The real capture needs a headless
- * Chromium, which is not present everywhere (and is absent on Render), so the
- * tools are swappable: tests inject a deterministic capture instead of
- * requiring a machine-specific binary, and production reports a clear
- * failure instead of crashing the stream when Chromium is missing.
- */
-export type WorkspaceVisualTools = {
-  capture: typeof captureWorkspaceScreenshot;
-  inspect: typeof inspectWorkspaceScreenshot;
-  repair: typeof repairWorkspaceHtml;
-};
-
-let visualTools: WorkspaceVisualTools = {
-  capture: captureWorkspaceScreenshot,
-  inspect: inspectWorkspaceScreenshot,
-  repair: repairWorkspaceHtml,
-};
-
-export function setWorkspaceVisualTools(overrides: Partial<WorkspaceVisualTools>): void {
-  visualTools = { ...visualTools, ...overrides };
-}
-
-async function inspectWorkspaceScreenshot(
-  requirements: string,
-  theme: WorkspaceTheme,
-  screenshotBase64: string,
-  teamId = DEFAULT_TEAM_ID,
-): Promise<{ passed: boolean; issues: string[]; repair: string }> {
-  const model = await getAssistantModel(teamId);
-  const completion = await retryAiCall(() => openai.chat.completions.create({
-    model,
-    max_completion_tokens: 8192,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `Act as the visual QA agent for an app embedded in the Robotics team workspace. Review the rendered 1280x900 ${theme.toUpperCase()}-THEME screenshot against the requirements and the host dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. For dark mode, ensure text, controls, cards, borders, and states remain readable against dark surfaces, and reject hard-coded light surfaces or colors that become low-contrast or off-brand. Reject unrelated palettes, oversized marketing hero styling, or duplicated host navigation as brand mismatches. Also check for blank or broken rendering, clipped/overlapping content, unreadable contrast, missing key UI, and obvious layout defects. Pass only when this theme is coherent, meets the brief, and visually belongs to the host workspace. Return JSON only: {"passed":boolean,"issues":string[],"repair":string}. If passed, repair must be empty. If not, give precise changes.`,
-      },
-      {
-        role: "user",
-        content: [
-          { type: "text", text: `Requirements:\n${requirements}\n\nReview this ${theme} theme screenshot.` },
-          { type: "image_url", image_url: { url: `data:image/png;base64,${screenshotBase64}` } },
-        ],
-      },
-    ],
-  }));
-  const raw = completion.choices[0]?.message.content ?? "";
-  const result = JSON.parse(raw) as { passed?: unknown; issues?: unknown; repair?: unknown };
-  return {
-    passed: result.passed === true,
-    issues: Array.isArray(result.issues) ? result.issues.filter((item): item is string => typeof item === "string").slice(0, 8) : [],
-    repair: typeof result.repair === "string" ? result.repair.slice(0, 4000) : "",
-  };
-}
-
-async function repairWorkspaceHtml(
-  requirements: string,
-  html: string,
-  repair: string,
-  sourceFiles: WorkspaceSourceFile[],
-  teamId = DEFAULT_TEAM_ID,
-): Promise<{ title: string; description: string; html: string; sourceFiles: WorkspaceSourceFile[] }> {
-  const model = await getAssistantModel(teamId);
-  const completion = await retryAiCall(() => openai.chat.completions.create({
-    model,
-    max_completion_tokens: 8192,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: "Repair the standalone internal app using the visual QA findings for BOTH light and dark theme screenshots and the browser runtime findings. Preserve and apply the Robotics dashboard design system: navy hierarchy, teal primary actions, restrained yellow accents, cool light/dark surfaces, white cards, subtle borders, rounded corners, and compact practical layouts. In dark mode, ensure text, controls, cards, borders, and interactive states have readable contrast and avoid hard-coded light surfaces or colors that conflict with the host palette. Do not introduce a competing brand or duplicate the host navigation. Inspect the supplied saved source files when tracing local asset references; fix JavaScript exceptions, unhandled rejections, missing or blocked resources, and style mismatches as well as visible defects. Preserve unrelated working behavior. Keep all code inline, accessible, mobile responsive, and offline. Do not add network access or external resources. Return JSON only: {\"title\":string,\"description\":string,\"html\":string,\"sourceFiles\":[{\"path\":string,\"content\":string}]}. Include every supplied source file, with repaired contents where needed.",
-      },
-      {
-        role: "user",
-        content: JSON.stringify({ requirements, visualAndRuntimeFindings: repair, html, savedSourceFiles: sourceFiles }),
-      },
-    ],
-  }));
-  const result = JSON.parse(completion.choices[0]?.message.content ?? "") as Record<string, unknown>;
-  const repairedHtml = typeof result.html === "string" ? result.html : "";
-  const title = clipped(result.title, 120);
-  if (!repairedHtml || !title || Buffer.byteLength(repairedHtml, "utf8") > MAX_HTML_BYTES) {
-    throw new Error("The visual QA repair did not produce a valid app.");
-  }
-  let repairedSourceFiles = sourceFiles;
-  if (Array.isArray(result.sourceFiles)) {
-    const byPath = new Map(sourceFiles.map((file) => [file.path, file.content]));
-    for (const file of result.sourceFiles) {
-      if (
-        !file || typeof file !== "object" || typeof file.path !== "string" ||
-        typeof file.content !== "string" || !byPath.has(file.path) ||
-        Buffer.byteLength(file.content, "utf8") > MAX_HTML_BYTES
-      ) continue;
-      byPath.set(file.path, file.content);
-    }
-    repairedSourceFiles = [...byPath].map(([path, content]) => ({ path, content }));
-  } else {
-    repairedSourceFiles = sourceFiles.map((file) => file.path === "index.html"
-      ? { ...file, content: repairedHtml }
-      : file);
-  }
-  const compiledHtml = compileWorkspaceFiles(repairedSourceFiles) ?? repairedHtml;
-  if (Buffer.byteLength(compiledHtml, "utf8") > MAX_HTML_BYTES) {
-    throw new Error("The repaired workspace files compile to an app that is too large.");
-  }
-  return { title, description: clipped(result.description, 1000), html: compiledHtml, sourceFiles: repairedSourceFiles };
 }
 
 type WorkspaceRow = {
@@ -816,7 +590,7 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
       messages: [
         {
           role: "system",
-          content: `Build a complete, responsive internal web application from the user's requirements that looks native inside the Robotics team workspace. The preview automatically injects the complete compiled Robotics dashboard stylesheet, including its Tailwind utilities, shared typography, palette, and light/dark styles. Use that stylesheet as the app's stylesheet: prefer its existing classes and the injected --background, --foreground, --card, --border, --primary, --muted, --accent, --workspace-navy, --workspace-teal, and --workspace-yellow tokens. Do not introduce custom color literals, unrelated hues, gradients, or competing theme variables; use semantic surfaces and theme tokens so every color stays within the dashboard palette in both modes. Use navy headings, teal primary actions, restrained yellow accents, cool-gray surfaces, white cards, subtle borders, 10–16px corners, and compact mono metadata. Add only layout or app-specific structural CSS where the stylesheet has no suitable rule. Do not duplicate the host sidebar/header/navigation or use oversized marketing hero styling. Before considering the build finished, complete exactly five sequential critique rounds (1 through 5); all five are mandatory, even when a round has no eligible fixes. Each critique must produce exactly 10 ranked actionable flaws scored 1–10. Implement every score above 6 and every score below 6 for rounds 1–4, then re-critique the updated source; on round 5 implement only scores above 6. Do not stop early, skip a round, or omit a finding because its fix is large. Return JSON only: {"title":string,"description":string,"html":string}. The html must be a complete standalone document with inline CSS and JavaScript, no external dependencies, URLs, scripts, or network requests. Use semantic accessible HTML, mobile-first layout, and real interactive behavior. The only permitted integrations are capabilities selected by the user: ${capabilities.join(", ") || "none"}. For data use window.workspaceAPI.data.list(), .create(record), .update(id, record), .delete(id). For LLM use window.workspaceAPI.llm.ask(prompt). Do not access localStorage, cookies, parent DOM, or browser APIs for network access. Do not invent credentials. Do not include applicant or private team data unless the user explicitly asks. Produce actual app behavior, not a mockup.`,
+          content: `Build a complete, responsive internal web application from the user's requirements that looks native inside the Robotics team workspace. The preview automatically injects the complete compiled Robotics dashboard stylesheet, including its Tailwind utilities, shared typography, palette, and light/dark styles. Use that stylesheet as the app's stylesheet: prefer its existing classes and the injected --background, --foreground, --card, --border, --primary, --muted, --accent, --workspace-navy, --workspace-teal, and --workspace-yellow tokens. Do not introduce custom color literals, unrelated hues, gradients, or competing theme variables; use semantic surfaces and theme tokens so every color stays within the dashboard palette in both modes. Use navy headings, teal primary actions, restrained yellow accents, cool-gray surfaces, white cards, subtle borders, 10–16px corners, and compact mono metadata. Add only layout or app-specific structural CSS where the stylesheet has no suitable rule. Do not duplicate the host sidebar/header/navigation or use oversized marketing hero styling. Before considering the build finished, complete exactly five sequential critique rounds (1 through 5); all five are mandatory, even when a round has no eligible fixes. Each critique must produce exactly 10 ranked actionable flaws scored 1–10. Implement every score above 6 and every score below 6 for rounds 1–4, then re-critique the updated source; on round 5 implement only scores above 6. Do not stop early, skip a round, or omit a finding because its fix is large. Return JSON only: {"title":string,"description":string,"html":string}. The html must be a complete standalone document with inline CSS and JavaScript, no external dependencies, URLs, scripts, or network requests. Use semantic accessible HTML, mobile-first layout, and real interactive behavior. The only permitted integrations are capabilities selected by the user: ${capabilities.join(", ") || "none"}. For data use window.workspaceAPI.data.list(), .create(record), .update(id, record), .delete(id). For LLM use window.workspaceAPI.llm.ask(prompt). Do not access localStorage, cookies, parent DOM, or browser APIs for network access. Do not invent credentials. Do not include applicant or private team data unless the user explicitly asks. Produce actual app behavior, not a mockup. This is a real tool, not a visual demo: NEVER seed, invent, or display mock, fake, sample, or demo records. Do not hard-code stand-in data, lorem ipsum, default test names, or placeholder screens. If records do not exist yet, render a clear empty state with a real action to create the first record; only ever display records the user entered, uploaded, or saved through this app. Treat any such invented content as a critical defect.`,
         },
         { role: "user", content: prompt },
       ],
@@ -970,7 +744,7 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "Revise the supplied standalone internal web application to meet the requested changes while preserving the Robotics dashboard design system. The preview automatically injects the complete compiled Robotics dashboard stylesheet, including its Tailwind utilities, shared typography, palette, and light/dark styles. Treat it as the app's stylesheet: prefer its existing classes and the injected --background, --foreground, --card, --border, --primary, --muted, --accent, --workspace-navy, --workspace-teal, and --workspace-yellow tokens. Do not introduce custom color literals, unrelated hues, gradients, or competing theme variables; use the same semantic palette in both modes. Add only layout or app-specific structural CSS if the shared stylesheet has no suitable rule. Preserve navy/teal hierarchy, restrained yellow accents, cool surfaces, subtle borders, rounded corners, and compact practical layouts. Do not duplicate the host navigation. Before reporting the revision finished, complete exactly five sequential critique rounds (1 through 5); all five are mandatory, even when a round has no eligible fixes. Each critique must produce exactly 10 ranked actionable flaws scored 1–10. Implement every score above 6 and every score below 6 for rounds 1–4, re-critique the updated source, and on round 5 implement only scores above 6. Do not stop early, skip a round, or omit a finding because its fix is large. Keep it responsive and accessible, use inline CSS/JavaScript only, and do not add external URLs, scripts, or direct network access. Preserve working behavior not affected by the request. Return JSON only: {\"title\":string,\"description\":string,\"html\":string}." },
+        { role: "system", content: "Revise the supplied standalone internal web application to meet the requested changes while preserving the Robotics dashboard design system. The preview automatically injects the complete compiled Robotics dashboard stylesheet, including its Tailwind utilities, shared typography, palette, and light/dark styles. Treat it as the app's stylesheet: prefer its existing classes and the injected --background, --foreground, --card, --border, --primary, --muted, --accent, --workspace-navy, --workspace-teal, and --workspace-yellow tokens. Do not introduce custom color literals, unrelated hues, gradients, or competing theme variables; use the same semantic palette in both modes. Add only layout or app-specific structural CSS if the shared stylesheet has no suitable rule. Preserve navy/teal hierarchy, restrained yellow accents, cool surfaces, subtle borders, rounded corners, and compact practical layouts. Do not duplicate the host navigation. Before reporting the revision finished, complete exactly five sequential critique rounds (1 through 5); all five are mandatory, even when a round has no eligible fixes. Each critique must produce exactly 10 ranked actionable flaws scored 1–10. Implement every score above 6 and every score below 6 for rounds 1–4, re-critique the updated source, and on round 5 implement only scores above 6. Do not stop early, skip a round, or omit a finding because its fix is large. Keep it responsive and accessible, use inline CSS/JavaScript only, and do not add external URLs, scripts, or direct network access. This is a real tool, not a visual demo: NEVER seed, invent, or display mock, fake, sample, or demo records, stand-in data, lorem ipsum, default test names, or placeholder screens. If records do not exist yet, keep a clear empty state with a real action to create the first record; only ever display records the user entered, uploaded, or saved through this app. Treat any such invented content as a critical defect. Preserve working behavior not affected by the request. Return JSON only: {\"title\":string,\"description\":string,\"html\":string}." },
         { role: "user", content: JSON.stringify({ requirements: instruction, existing: { title: current.title, description: current.description, html: current.html, capabilities: current.capabilities } }) },
       ],
     });
@@ -1395,6 +1169,68 @@ router.get("/custom-workspaces/:id/data", requireAdmin, async (req, res): Promis
     [workspace.id, teamId],
   );
   res.json({ records: result.rows });
+});
+
+/**
+ * Paged, filterable record query for the app runtime bridge
+ * (`window.workspaceAPI.data.query`). Reuses the assistant query
+ * validation so apps and the assistant share one contract.
+ */
+router.get("/custom-workspaces/:id/data/query", requireAdmin, async (req, res): Promise<void> => {
+  const workspace = await accessibleWorkspace(req, res, String(req.params.id ?? ""));
+  if (!workspace) return;
+  if (!workspace.capabilities.includes("data")) {
+    res.status(403).json({ error: "This workspace has not been granted data access." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const limit = req.query.limit === undefined ? undefined : Number(req.query.limit);
+  const offset = req.query.offset === undefined ? undefined : Number(req.query.offset);
+  const search = typeof req.query.search === "string" ? req.query.search : undefined;
+  const sortBy = typeof req.query.sortBy === "string" ? req.query.sortBy : undefined;
+  const sortDir = req.query.sortDir === "asc" || req.query.sortDir === "desc" ? req.query.sortDir : undefined;
+  let filters: Record<string, unknown> | undefined;
+  if (typeof req.query.filters === "string" && req.query.filters) {
+    try {
+      filters = JSON.parse(req.query.filters) as Record<string, unknown>;
+    } catch {
+      res.status(400).json({ error: "Query \"filters\" must be a JSON object." });
+      return;
+    }
+  }
+  const parsed = parseRecordQuery({
+    ...(limit !== undefined ? { limit } : {}),
+    ...(offset !== undefined ? { offset } : {}),
+    ...(search !== undefined ? { search } : {}),
+    ...(filters !== undefined ? { filters } : {}),
+    ...(sortBy !== undefined ? { sortBy } : {}),
+    ...(sortDir !== undefined ? { sortDir } : {}),
+  });
+  if ("error" in parsed) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const { clauses, values, orderBy } = buildRecordQuerySql(parsed, { workspaceId: workspace.id, teamId });
+  const where = clauses.join(" and ");
+  const [totalResult, pageResult] = await Promise.all([
+    pool.query<{ count: number | string }>(
+      `select count(*)::int as "count" from "custom_workspace_data" where ${where}`,
+      values,
+    ),
+    pool.query(
+      `select "id", "value", "created_at" as "createdAt", "updated_at" as "updatedAt"
+         from "custom_workspace_data"
+        where ${where}
+        order by ${orderBy} limit $${values.length + 1} offset $${values.length + 2}`,
+      [...values, parsed.limit, parsed.offset],
+    ),
+  ]);
+  res.json({
+    records: pageResult.rows,
+    total: Number(totalResult.rows[0]?.count ?? 0),
+    limit: parsed.limit,
+    offset: parsed.offset,
+  });
 });
 
 router.post("/custom-workspaces/:id/data", requireAdmin, async (req, res): Promise<void> => {

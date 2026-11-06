@@ -43,8 +43,82 @@ type WorkspaceToolSource = {
 
 export const CUSTOM_WORKSPACE_TOOL_NAME_PATTERN = /^cw_[a-f0-9]{16}_[a-z][a-z0-9_]{0,31}$/;
 export const CUSTOM_WORKSPACE_RESERVED_ACTIONS = new Set([
-  "list_records", "get_record", "create_record", "update_record", "delete_record",
+  "list_records", "query_records", "get_record", "create_record", "update_record", "delete_record",
 ]);
+
+export interface WorkspaceRecordQuery {
+  limit: number;
+  offset: number;
+  search: string | null;
+  filters: Record<string, string | number | boolean>;
+  sortBy: string | null;
+  sortDir: "asc" | "desc";
+}
+
+const RECORD_FIELD_PATTERN = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/;
+const RECORD_COLUMN_FIELDS = new Set(["id", "createdAt", "updatedAt"]);
+
+/**
+ * Normalize assistant query arguments into a safe SQL-ready shape. Field
+ * names must be plain identifiers (never raw SQL fragments); filter values
+ * are bound parameters, never interpolated.
+ */
+export function parseRecordQuery(args: Record<string, unknown>): WorkspaceRecordQuery | { error: string } {
+  const limit = args.limit === undefined ? 50 : Number(args.limit);
+  const offset = args.offset === undefined ? 0 : Number(args.offset);
+  const search = typeof args.search === "string" && args.search.trim() ? args.search.trim().slice(0, 200) : null;
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) return { error: "Query \"limit\" must be an integer from 1 to 50." };
+  if (!Number.isInteger(offset) || offset < 0 || offset > 10000) return { error: "Query \"offset\" must be an integer from 0 to 10000." };
+  const filters: Record<string, string | number | boolean> = {};
+  if (args.filters !== undefined) {
+    if (!isPlainObject(args.filters)) return { error: "Query \"filters\" must be an object of field names to exact values." };
+    const entries = Object.entries(args.filters);
+    if (entries.length > 12) return { error: "Query \"filters\" may contain at most 12 fields." };
+    for (const [key, value] of entries) {
+      if (!RECORD_FIELD_PATTERN.test(key)) return { error: `Query filter field "${key.slice(0, 40)}" is not a valid field name.` };
+      if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+        return { error: `Query filter field "${key.slice(0, 40)}" must be a string, number, or boolean.` };
+      }
+      filters[key] = value;
+    }
+  }
+  const sortBy = args.sortBy === undefined ? null : String(args.sortBy);
+  if (sortBy !== null && !RECORD_COLUMN_FIELDS.has(sortBy) && !RECORD_FIELD_PATTERN.test(sortBy)) {
+    return { error: "Query \"sortBy\" must be a record field name or a column (id, createdAt, updatedAt)." };
+  }
+  const sortDir = args.sortDir === undefined || args.sortDir === "desc" ? "desc" : args.sortDir === "asc" ? "asc" : null;
+  if (sortDir === null) return { error: "Query \"sortDir\" must be \"asc\" or \"desc\"." };
+  return { limit, offset, search, filters, sortBy, sortDir };
+}
+
+/** Map a validated query to a parameterized WHERE clause + ORDER BY. */
+export function buildRecordQuerySql(
+  query: WorkspaceRecordQuery,
+  ids: { workspaceId: string; teamId: string },
+): { clauses: string[]; values: unknown[]; orderBy: string } {
+  const clauses: string[] = ['"workspace_id" = $1'];
+  const values: unknown[] = [ids.workspaceId];
+  const teamPlaceholder = `$${values.length + 1}`;
+  clauses.push(teamSqlCondition('"team_id"', teamPlaceholder));
+  values.push(ids.teamId);
+  for (const [field, value] of Object.entries(query.filters)) {
+    values.push(JSON.stringify(value));
+    clauses.push(`"value" -> ${JSON.stringify(field)} = $${values.length}::jsonb`);
+  }
+  if (query.search) {
+    values.push(`%${query.search}%`);
+    clauses.push(`"value"::text ilike $${values.length}`);
+  }
+  const direction = query.sortDir.toUpperCase();
+  const orderBy = query.sortBy && !RECORD_COLUMN_FIELDS.has(query.sortBy)
+    ? `("value" ->> ${JSON.stringify(query.sortBy)}) ${direction} NULLS LAST, "updated_at" desc`
+    : query.sortBy === "id"
+      ? `"id" ${direction}`
+      : query.sortBy === "createdAt"
+        ? `"created_at" ${direction}`
+        : `"updated_at" ${direction}`;
+  return { clauses, values, orderBy };
+}
 const MAX_DECLARATIONS = 24;
 const MAX_SCHEMA_BYTES = 12_000;
 const MAX_ARGUMENT_BYTES = 16_000;
@@ -259,6 +333,24 @@ const standardWorkspaceActions = [
     parameters: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50 } }, additionalProperties: false },
   },
   {
+    action: "query_records",
+    label: "Query workspace records",
+    description: "Search, filter, sort, and page records saved by this custom workspace. Filter by exact field values, search text across records, and sort by any record field or timestamp. Returns the total match count plus one page (max 50 records).",
+    write: false,
+    parameters: {
+      type: "object",
+      properties: {
+        limit: { type: "integer", minimum: 1, maximum: 50 },
+        offset: { type: "integer", minimum: 0, maximum: 10000 },
+        search: { type: "string", maxLength: 200 },
+        filters: { type: "object", additionalProperties: true, description: "Exact field-value matches, e.g. {status: \"open\"}." },
+        sortBy: { type: "string", maxLength: 64, description: "Record field name, or id / createdAt / updatedAt." },
+        sortDir: { type: "string", enum: ["asc", "desc"] },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     action: "get_record",
     label: "Read a workspace record",
     description: "Read one record by its exact ID from this custom workspace.",
@@ -426,11 +518,25 @@ export async function runAssistantCustomWorkspaceTool(
     return { content: "This workspace has an invalid saved action definition. No data was changed.", detail: "workspace action definition invalid" };
   }
   const declaration = declarations.find((item) => item.name === action && item.enabled);
-  let operation: WorkspaceToolDeclaration["operation"];
+  let operation: WorkspaceToolDeclaration["operation"] | "query";
   let operationDeclaration: WorkspaceToolDeclaration;
   if (standard) {
-    operation = standard.action.replace(/_records?$/, "") as WorkspaceToolDeclaration["operation"];
-    const standardSchema: WorkspaceToolDeclaration["inputSchema"] = standard.action === "list_records"
+    operation = standard.action.replace(/_records?$/, "") as WorkspaceToolDeclaration["operation"] | "query";
+    const standardSchema: WorkspaceToolDeclaration["inputSchema"] = standard.action === "query_records"
+      ? {
+        type: "object",
+        properties: {
+          limit: { type: "integer", minimum: 1, maximum: 50 },
+          offset: { type: "integer", minimum: 0, maximum: 10000 },
+          search: { type: "string", maxLength: 200 },
+          filters: { type: "object" } as unknown as WorkspaceToolField,
+          sortBy: { type: "string", maxLength: 64 },
+          sortDir: { type: "string", enum: ["asc", "desc"] },
+        },
+        required: [],
+        additionalProperties: false,
+      }
+      : standard.action === "list_records"
       ? { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 50 } }, required: [], additionalProperties: false }
       : standard.action === "get_record" || standard.action === "delete_record"
         ? { type: "object", properties: { recordId: { type: "string", maxLength: 64 } }, required: ["recordId"], additionalProperties: false }
@@ -461,6 +567,43 @@ export async function runAssistantCustomWorkspaceTool(
   const teamId = context.teamId;
   const workspaceId = workspace.id;
   try {
+    if (action === "query_records") {
+      const parsed = parseRecordQuery(args);
+      if ("error" in parsed) {
+        return { content: `The record query was rejected: ${parsed.error}`, detail: "invalid record query" };
+      }
+      const { clauses, values, orderBy } = buildRecordQuerySql(parsed, { workspaceId, teamId });
+      const where = clauses.join(" and ");
+      const [totalResult, pageResult] = await Promise.all([
+        pool.query<{ count: number | string }>(
+          `select count(*)::int as "count" from "custom_workspace_data" where ${where}`,
+          values,
+        ),
+        pool.query(
+          `select "id", "value", "created_at" as "createdAt", "updated_at" as "updatedAt"
+             from "custom_workspace_data"
+            where ${where}
+            order by ${orderBy} limit $${values.length + 1} offset $${values.length + 2}`,
+          [...values, parsed.limit, parsed.offset],
+        ),
+      ]);
+      const records: unknown[] = [];
+      for (const row of pageResult.rows) {
+        const next = [...records, row];
+        if (Buffer.byteLength(JSON.stringify({ records: next }), "utf8") > MAX_RESULT_BYTES) break;
+        records.push(row);
+      }
+      return {
+        content: boundedResult({
+          records,
+          total: Number(totalResult.rows[0]?.count ?? 0),
+          limit: parsed.limit,
+          offset: parsed.offset,
+          truncated: records.length < pageResult.rows.length,
+        }),
+        detail: `queried ${records.length} of ${totalResult.rows[0]?.count ?? 0} records in ${workspace.title}`,
+      };
+    }
     if (operation === "list") {
       const limit = standard ? Math.max(1, Math.min(50, Number(args.limit) || 50)) : 50;
       const result = await pool.query(
@@ -538,7 +681,9 @@ export async function runAssistantCustomWorkspaceTool(
 }
 
 function validateStandardArguments(args: Record<string, unknown>, action: string): string | null {
-  const allowed = action === "list_records" ? ["limit"]
+  const allowed = action === "query_records"
+    ? ["limit", "offset", "search", "filters", "sortBy", "sortDir"]
+    : action === "list_records" ? ["limit"]
     : action === "create_record" ? ["record"]
       : ["recordId", ...(action === "update_record" ? ["record"] : [])];
   if (Buffer.byteLength(JSON.stringify(args), "utf8") > MAX_ARGUMENT_BYTES) return "Input is larger than 16 KB.";
@@ -546,6 +691,34 @@ function validateStandardArguments(args: Record<string, unknown>, action: string
   if (action === "list_records" && args.limit !== undefined &&
     (!Number.isInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 50)) {
     return "Input \"limit\" must be an integer from 1 to 50.";
+  }
+  if (action === "query_records") {
+    if (args.limit !== undefined && (!Number.isInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 50)) {
+      return "Input \"limit\" must be an integer from 1 to 50.";
+    }
+    if (args.offset !== undefined && (!Number.isInteger(args.offset) || Number(args.offset) < 0 || Number(args.offset) > 10000)) {
+      return "Input \"offset\" must be an integer from 0 to 10000.";
+    }
+    if (args.search !== undefined && (typeof args.search !== "string" || args.search.length > 200)) {
+      return "Input \"search\" must be text of at most 200 characters.";
+    }
+    if (args.filters !== undefined) {
+      if (!isPlainObject(args.filters)) return "Input \"filters\" must be an object.";
+      if (Object.keys(args.filters).length > 12) return "Input \"filters\" may contain at most 12 fields.";
+      for (const [key, value] of Object.entries(args.filters)) {
+        if (!RECORD_FIELD_PATTERN.test(key)) return `Input "filters" field "${key.slice(0, 40)}" is not a valid field name.`;
+        if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") {
+          return `Input "filters" field "${key.slice(0, 40)}" must be a string, number, or boolean.`;
+        }
+      }
+    }
+    if (args.sortBy !== undefined && (typeof args.sortBy !== "string" || args.sortBy.length > 64 ||
+      (!RECORD_COLUMN_FIELDS.has(args.sortBy) && !RECORD_FIELD_PATTERN.test(args.sortBy)))) {
+      return "Input \"sortBy\" must be a record field name or a column (id, createdAt, updatedAt).";
+    }
+    if (args.sortDir !== undefined && args.sortDir !== "asc" && args.sortDir !== "desc") {
+      return "Input \"sortDir\" must be \"asc\" or \"desc\".";
+    }
   }
   if (["get_record", "update_record", "delete_record"].includes(action) &&
     (typeof args.recordId !== "string" || !args.recordId.length || args.recordId.length > 64)) {

@@ -45,6 +45,19 @@ export class AssistantModelPolicyError extends Error {
 
 export const MAX_ASSISTANT_POLICY_MODELS = 100;
 
+/** The provider's keyless catalog marks free models explicitly. A `:free`
+ * suffix alone is not reliable, so only `isFree === true` counts. */
+export function isFreeAssistantCatalogModel(model: AssistantCatalogModel): boolean {
+  return model.isFree === true;
+}
+
+export function isFreeAssistantModelId(
+  modelId: string,
+  catalog: readonly AssistantCatalogModel[],
+): boolean {
+  return catalog.some((model) => model.id === modelId && isFreeAssistantCatalogModel(model));
+}
+
 const MODEL_CATALOG_CACHE_MS = 5 * 60 * 1000;
 let cachedCatalog: { expiresAt: number; models: AssistantCatalogModel[] } | undefined;
 let catalogRequest: Promise<AssistantCatalogModel[]> | undefined;
@@ -74,7 +87,9 @@ function unavailablePolicyModelIds(
   policy: AssistantModelPolicy,
   catalog: readonly AssistantCatalogModel[],
 ): string[] {
-  const availableIds = new Set(catalog.map((model) => model.id));
+  const availableIds = new Set(
+    catalog.filter(isFreeAssistantCatalogModel).map((model) => model.id),
+  );
   return [...new Set([policy.defaultModel, ...policy.modelIds])]
     .filter((modelId) => !availableIds.has(modelId));
 }
@@ -83,9 +98,9 @@ export function resolveAssistantModel(
   preferredModel: string,
   catalog: readonly AssistantCatalogModel[],
 ): string {
-  if (catalog.some((model) => model.id === preferredModel)) return preferredModel;
-  if (catalog.some((model) => model.id === DEFAULT_ASSISTANT_MODEL)) return DEFAULT_ASSISTANT_MODEL;
-  return catalog.find((model) => model.isFree === true)?.id ?? DEFAULT_ASSISTANT_MODEL;
+  if (isFreeAssistantModelId(preferredModel, catalog)) return preferredModel;
+  if (isFreeAssistantModelId(DEFAULT_ASSISTANT_MODEL, catalog)) return DEFAULT_ASSISTANT_MODEL;
+  return catalog.find(isFreeAssistantCatalogModel)?.id ?? DEFAULT_ASSISTANT_MODEL;
 }
 
 function validatePolicyShape(value: unknown): AssistantModelPolicy {
@@ -141,10 +156,23 @@ function validatePolicyAgainstCatalog(
       503,
     );
   }
+  if (!isFreeAssistantModelId(policy.defaultModel, catalog)) {
+    throw new AssistantModelPolicyError(
+      `The configured default model "${policy.defaultModel}" is not a free model. Choose a free model in Assistant settings.`,
+      503,
+    );
+  }
   const unavailable = policy.modelIds.filter((id) => !availableIds.has(id));
   if (unavailable.length) {
     throw new AssistantModelPolicyError(
       `The model policy references unavailable model${unavailable.length > 1 ? "s" : ""}: ${unavailable.join(", ")}. Update the team policy in Assistant settings.`,
+      503,
+    );
+  }
+  const notFree = policy.modelIds.filter((id) => !isFreeAssistantModelId(id, catalog));
+  if (notFree.length) {
+    throw new AssistantModelPolicyError(
+      `The model policy references model${notFree.length > 1 ? "s" : ""} that are not free: ${notFree.join(", ")}. Update the team policy in Assistant settings.`,
       503,
     );
   }
@@ -168,7 +196,9 @@ export function effectiveAssistantModels(
   catalog: readonly AssistantCatalogModel[],
 ): AssistantCatalogModel[] {
   validatePolicyAgainstCatalog(policy, catalog);
-  return catalog.filter((model) => modelIsAllowed(model.id, policy));
+  return catalog.filter(
+    (model) => isFreeAssistantCatalogModel(model) && modelIsAllowed(model.id, policy),
+  );
 }
 
 export async function getAssistantModelPolicy(teamId?: string): Promise<AssistantModelPolicy> {
@@ -377,6 +407,9 @@ export async function resolveTeamAssistantModel(
     }
     if (!catalog.some((model) => model.id === requestedModel)) {
       throw new AssistantModelPolicyError("That model is no longer available in the provider catalog.", 400);
+    }
+    if (!isFreeAssistantModelId(requestedModel, catalog)) {
+      throw new AssistantModelPolicyError("That model is not a free model and cannot be selected.", 400);
     }
     return requestedModel;
   }
