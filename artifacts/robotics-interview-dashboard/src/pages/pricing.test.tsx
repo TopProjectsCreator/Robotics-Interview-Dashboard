@@ -128,17 +128,20 @@ describe("multi-team platform positioning", () => {
 
     expect(descriptions).toHaveLength(3);
     expect(new Set(descriptions)).toEqual(new Set([
-      "Robotics workspace built by Team 23442 for robotics teams everywhere. Bring planning, team chat, CAD, parts, and project knowledge together in one place.",
+      "A shared workspace for robotics teams, built by Team 23442 for you. Plan, chat, manage CAD and code, and keep project knowledge together. Free for FTC teams.",
     ]));
-    expect(descriptions[0]).toHaveLength(153);
+    expect(descriptions[0]).toHaveLength(157);
     expect(descriptions[0]).not.toMatch(/workspace for Team 23442/i);
   });
 
-  it("credits Team 23442 as the creator while welcoming other robotics teams", () => {
+  it("keeps creator credit out of the hero and offers clear team entry paths", () => {
     renderWithRouter(<PublicDashboard />);
-    expect(screen.getByTestId("public-dashboard-creator-credit")).toHaveTextContent(
-      "Made by Team 23442 for robotics teams like yours",
-    );
+    expect(screen.queryByTestId("public-dashboard-creator-credit")).not.toBeInTheDocument();
+    expect(screen.getByTestId("public-dashboard-footer-credit")).toHaveTextContent("Made by Team 23442");
+    expect(screen.getByTestId("link-hero-start-team")).toHaveAttribute("href", "/auth?createTeam=1");
+    expect(screen.getByTestId("link-hero-demo")).toHaveAttribute("href", "/demo");
+    expect(screen.getByTestId("link-hero-existing-team")).toHaveAttribute("href", "/auth");
+    expect(screen.getByTestId("text-hero-free-for-ftc")).toHaveTextContent("Free for FTC teams");
   });
 
   it("keeps the about page clear that the workspace is for other robotics teams", () => {
@@ -151,8 +154,20 @@ describe("multi-team platform positioning", () => {
 
   it("frames the tryout page as made for teams beyond Team 23442", () => {
     renderWithRouter(<Landing />);
-    expect(screen.getByTestId("landing-creator-credit")).toHaveTextContent(
-      "Made by Team 23442 for robotics teams like yours",
-    );
+    expect(screen.queryByTestId("landing-creator-credit")).not.toBeInTheDocument();
+    expect(screen.getByTestId("landing-footer-credit")).toHaveTextContent("MADE BY TEAM 23442");
+    expect(screen.getByTestId("landing-page")).toHaveTextContent("Built for robotics teams");
+  });
+
+  it("opens team creation directly from the start-team link", () => {
+    window.history.replaceState({}, "", "/auth?createTeam=1");
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    vi.stubGlobal("scrollTo", vi.fn());
+
+    render(<App />);
+
+    expect(screen.getByRole("dialog", { name: "Create a new team" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Name your team." })).toBeInTheDocument();
+    expect(screen.getByText(/Create a private workspace for your robotics team/i)).toBeInTheDocument();
   });
 });

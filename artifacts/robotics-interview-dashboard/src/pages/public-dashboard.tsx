@@ -161,7 +161,7 @@ export default function PublicDashboard() {
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#153642] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#214b57] dark:bg-[#efc34f] dark:text-[#153642] dark:hover:bg-[#f4d477]"
               data-testid="link-public-sign-in"
             >
-              Team sign in <ArrowRight size={14} />
+              Create or join a team <ArrowRight size={14} />
             </Link>
           </nav>
 
@@ -199,28 +199,29 @@ export default function PublicDashboard() {
               Plan together, review designs, organize team knowledge, and keep projects moving across shared tools built for the work behind the robot.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <a
-                href="#capabilities"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#153642] px-5 text-xs font-bold text-white shadow-[0_9px_20px_rgba(21,54,66,.13)] transition hover:-translate-y-0.5 hover:bg-[#214b57] dark:bg-[#efc34f] dark:text-[#153642] dark:hover:bg-[#f4d477]"
-                data-testid="link-hero-capabilities"
-              >
-                Explore the platform <ArrowRight size={15} />
-              </a>
               <Link
-                href="/auth"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-[#bed4ce] bg-white/65 px-5 text-xs font-bold text-[#153642] transition hover:border-[#168b94] hover:text-[#168b94] dark:border-[#3b646b] dark:bg-[#122a32]/70 dark:text-[#e3efeb] dark:hover:text-[#7edbd0]"
-                data-testid="link-hero-sign-in"
+                href="/auth?createTeam=1"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#153642] px-5 text-xs font-bold text-white shadow-[0_9px_20px_rgba(21,54,66,.13)] transition hover:-translate-y-0.5 hover:bg-[#214b57] dark:bg-[#efc34f] dark:text-[#153642] dark:hover:bg-[#f4d477]"
+                data-testid="link-hero-start-team"
               >
-                Team sign in <ArrowRight size={15} />
+                Start your team — free <ArrowRight size={15} />
+              </Link>
+              <Link
+                href="/demo"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-[#bed4ce] bg-white/65 px-5 text-xs font-bold text-[#153642] transition hover:border-[#168b94] hover:text-[#168b94] dark:border-[#3b646b] dark:bg-[#122a32]/70 dark:text-[#e3efeb] dark:hover:text-[#7edbd0]"
+                data-testid="link-hero-demo"
+              >
+                Try the live demo <ArrowRight size={15} />
               </Link>
             </div>
-            <Link
-              href="/about"
-              className="mt-5 inline-flex rounded-full border border-[#bed4ce] bg-white/70 px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-[#315d62] no-underline transition-colors hover:border-[#168b94] hover:text-[#117078] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#168b94] dark:border-[#3b646b] dark:bg-[#122a32]/70 dark:text-[#a7d7cd] dark:hover:border-[#7edbd0] dark:hover:text-[#7edbd0] dark:focus-visible:outline-[#7edbd0]"
-              data-testid="public-dashboard-creator-credit"
-            >
-              Made by Team 23442 for robotics teams like yours · Ishaan Bansal
-            </Link>
+            <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+              <Link href="/auth" className="font-semibold text-[#315d62] underline underline-offset-4 hover:text-[#168b94] dark:text-[#a7d7cd] dark:hover:text-[#7edbd0]" data-testid="link-hero-existing-team">
+                Have a team code? Sign in
+              </Link>
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-[#315d62] dark:text-[#a7d7cd]" data-testid="text-hero-free-for-ftc">
+                Free for FTC teams
+              </span>
+            </div>
           </div>
 
           <div className="relative min-w-0">
@@ -471,13 +472,13 @@ export default function PublicDashboard() {
               className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#efc34f] px-5 text-xs font-bold text-[#153642] transition hover:bg-[#f4d477]"
               data-testid="link-team-access"
             >
-              Team sign in <ArrowRight size={15} />
+              Create or join a team <ArrowRight size={15} />
             </Link>
           </div>
         </section>
 
         <footer className="flex flex-col gap-3 border-t border-[#d9e6e1] py-6 font-mono text-[11px] sm:text-[9px] uppercase tracking-[.08em] text-[#70868b] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
-          <span>Robotics team workspace</span>
+          <span data-testid="public-dashboard-footer-credit">Made by Team 23442 · Ishaan Bansal</span>
           <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
             <Link href="/about" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-about">About</Link>
             <Link href="/pricing" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-pricing">Pricing</Link>

@@ -92,6 +92,7 @@ import PublicDashboard from "@/pages/public-dashboard";
 import Pricing from "@/pages/pricing";
 import ComparePage from "@/pages/compare";
 import AboutPage from "@/pages/about";
+import RoboticsDemoPage from "@/pages/demo";
 import ChatLanding from "@/pages/chat-landing";
 import PartsLanding from "@/pages/parts-landing";
 import CodeLanding from "@/pages/code-landing";
@@ -2689,7 +2690,7 @@ function NewTeamWizard({ onClose, onCreated }: { onClose: () => void; onCreated:
   const stepLabel = wizardStep === "team" ? "Step 1 of 3" : wizardStep === "code" ? "Step 2 of 3" : "Step 3 of 3";
   const heading = wizardStep === "team" ? "Name your team." : wizardStep === "code" ? "Set a team access code." : "Create your coordinator account.";
   const description = wizardStep === "team"
-    ? "Each team is completely separate with its own access code, members, and data."
+    ? "Create a private workspace for your robotics team, with its own members, access code, and data."
     : wizardStep === "code"
       ? "Share this code with your teammates so they can join. Type your own or roll a random one."
       : "You will be the first admin. Sign in with this name and password from now on.";
@@ -2713,10 +2714,12 @@ function NewTeamWizard({ onClose, onCreated }: { onClose: () => void; onCreated:
 
 function Login() {
   type LoginStep = "event" | "interviewer" | "add" | "password";
+  const search = useSearch();
+  const createTeamRequested = new URLSearchParams(search).get("createTeam") === "1";
   const [step, setStep] = useState<LoginStep>("event");
   const [eventPassword, setEventPassword] = useState("");
   const [teamName, setTeamName] = useState("");
-  const [newTeamOpen, setNewTeamOpen] = useState(false);
+  const [newTeamOpen, setNewTeamOpen] = useState(createTeamRequested);
   const [selectedId, setSelectedId] = useState("");
   const [personalPassword, setPersonalPassword] = useState("");
   const [newName, setNewName] = useState("");
@@ -2724,6 +2727,13 @@ function Login() {
   const [sessionEndedInAnotherTab, setSessionEndedInAnotherTab] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [location, setLocation] = useLocation();
+  useEffect(() => {
+    if (createTeamRequested) setNewTeamOpen(true);
+  }, [createTeamRequested]);
+  const closeNewTeam = () => {
+    setNewTeamOpen(false);
+    if (createTeamRequested) setLocation("/auth");
+  };
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
@@ -2980,7 +2990,7 @@ function Login() {
   const stepLabel = step === "event" ? "Step 1 of 3" : step === "interviewer" ? "Step 2 of 3" : "Step 3 of 3";
   const heading = step === "event" ? "Enter your team access code." : step === "interviewer" ? "Who are you?" : step === "add" ? "Add a team member." : selected ? `Sign in as ${selected.displayName}.` : `Set up ${newName}.`;
   const description = step === "event"
-    ? "Use your team access code to continue to the robotics workspace."
+    ? "Create a workspace for your robotics team, or enter its access code to join."
     : step === "interviewer"
       ? "Choose your team account, or add a team member."
       : step === "add"
@@ -2999,11 +3009,11 @@ function Login() {
           <div>
             <p className="mono mb-5 text-xs uppercase tracking-[.28em] text-[#f8c84a]">Robotics team workspace</p>
             <h1 className="max-w-xl text-6xl font-semibold leading-[.95] tracking-[-.05em] xl:text-8xl">
-              One team.<br />
-              <span className="text-[#f8c84a]">Build together.</span>
+              Your team’s work.<br />
+              <span className="text-[#f8c84a]">All in one place.</span>
             </h1>
             <p className="mt-8 max-w-md text-lg leading-7 text-[#abc0c7]">
-              A shared home for our people, projects, conversations, and everything we build together.
+              A shared workspace for robotics teams. Create one for your team or join with its access code.
             </p>
           </div>
           <div className="mono flex flex-wrap gap-3 text-[10px] uppercase tracking-[.2em] text-[#76929c]">
@@ -3055,8 +3065,8 @@ function Login() {
                   <button disabled={!eventPassword.trim() || verifyEventPasscode.isPending} data-testid="button-event-passcode" className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-[#16869a] font-semibold text-white transition hover:bg-[#106d7a] disabled:cursor-not-allowed disabled:opacity-50">{verifyEventPasscode.isPending ? "Checking code…" : "Continue"} <ArrowRight size={17} /></button>
                 </form>
                 <div className="mt-4 flex items-center gap-3 text-xs text-[#7c8c91] dark:text-[#91a8b1]"><span className="h-px flex-1 bg-[#d7e0e0] dark:bg-[#314955]" /><span>or</span><span className="h-px flex-1 bg-[#d7e0e0] dark:bg-[#314955]" /></div>
-                <button type="button" onClick={() => setNewTeamOpen(true)} data-testid="button-new-team" className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#9bbec0] px-4 text-sm font-semibold text-[#16869a] transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#47747c] dark:text-[#80d2ca] dark:hover:bg-[#203b47]"><Plus size={17} /> New team</button>
-                <p className="mt-2 text-center text-[11px] leading-4 text-[#8a999d] dark:text-[#8ba0ab]">Start a separate team with its own access code. Your current team's data stays untouched.</p>
+                <button type="button" onClick={() => setNewTeamOpen(true)} data-testid="button-new-team" className="mt-4 flex h-14 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-[#9bbec0] px-4 text-sm font-semibold text-[#16869a] transition hover:border-[#16869a] hover:bg-[#f3fbfa] dark:border-[#47747c] dark:text-[#80d2ca] dark:hover:bg-[#203b47]"><Plus size={17} /> Create your team — free</button>
+                <p className="mt-2 text-center text-[11px] leading-4 text-[#8a999d] dark:text-[#8ba0ab]">Each robotics team gets a private workspace and access code. Team data stays separate by default.</p>
               </>
             )}
 
@@ -3144,7 +3154,7 @@ function Login() {
           </div>
         </section>
       </div>
-      {newTeamOpen && <NewTeamWizard onClose={() => setNewTeamOpen(false)} onCreated={finishTeamCreation} />}
+      {newTeamOpen && <NewTeamWizard onClose={closeNewTeam} onCreated={finishTeamCreation} />}
     </main>
   );
 }
@@ -9393,6 +9403,7 @@ function Router() {
     <ErrorBoundary FallbackComponent={CrashFallback}>
       <Switch>
         <Route path="/" component={PublicDashboard} />
+        <Route path="/demo" component={RoboticsDemoPage} />
         <Route path="/pricing" component={Pricing} />
         <Route path="/compare" component={ComparePage} />
         <Route path="/about" component={AboutPage} />

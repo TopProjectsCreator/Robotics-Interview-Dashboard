@@ -47,7 +47,6 @@ export default function Landing() {
             <Link href="/auth" className="landing-primary-button" data-testid="link-hero-coordinator-login">Open admin workspace <ArrowRight size={17} /></Link>
             <a href="#control-room" className="landing-secondary-button" data-testid="link-see-control-room">See the operating view <ChevronRight size={16} /></a>
           </div>
-          <p className="mt-5 inline-flex rounded-full border border-[#cbded7] bg-white/70 px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-[#315d62]" data-testid="landing-creator-credit">Made by Team 23442 for robotics teams like yours · Ishaan Bansal</p>
           <div className="landing-hero-note"><ShieldCheck size={15} /><span>Private admin workspace</span><span className="landing-note-separator" /><span>No applicant data on the public display</span></div>
         </div>
         <div className="landing-hero-visual fade-up delay-2" aria-label="Illustration of the live interview control room">
@@ -107,7 +106,7 @@ export default function Landing() {
         <div className="landing-image-collage">
           <div className="landing-image-main flex flex-col justify-between rounded-2xl border border-[#45636a] bg-[#153642] p-6 text-white">
             <div className="flex items-center justify-between"><span className="mono text-[10px] uppercase tracking-[.18em] text-[#9dc7bf]">Team operations</span><span className="h-2 w-2 rounded-full bg-[#51d2ad]" /></div>
-            <div><p className="text-3xl font-semibold tracking-[-.04em]">One team.<br />One shared view.</p><div className="mt-5 flex gap-2"><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Queue</span><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Chat</span><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Parts</span></div></div>
+            <div><p className="text-3xl font-semibold tracking-[-.04em]">Your team.<br />One shared view.</p><div className="mt-5 flex gap-2"><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Queue</span><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Chat</span><span className="rounded-lg bg-white/10 px-3 py-2 text-xs">Parts</span></div></div>
           </div>
           <div className="landing-image-small flex items-end rounded-2xl border border-[#c5d9d3] bg-[linear-gradient(145deg,#dceee7,#b8d7d1)] p-4 text-[#153642]"><span className="mono text-[10px] uppercase tracking-[.16em]">Built for your robotics team</span></div>
           <span className="landing-image-caption mono">TEAM WORKSPACE / LIVE</span>
@@ -130,7 +129,7 @@ export default function Landing() {
         <div className="landing-final-actions"><p>Open the admin workspace or preview the public display. The operating view is ready when you are.</p><Link href="/auth" className="landing-primary-button" data-testid="link-final-coordinator-login">Enter admin workspace <ArrowRight size={17} /></Link><Link href="/display" target="_blank" className="landing-final-display-link" data-testid="link-final-public-display"><Monitor size={15} /> Preview public display</Link></div>
       </section>
 
-      <footer className="landing-footer"><div className="landing-brand landing-footer-brand"><BrandMark /><span><b>ROBOTICS</b><small className="mono">TRYOUT CONTROL</small></span></div><div className="flex flex-wrap gap-x-4 gap-y-2"><a href="/privacy" className="mono landing-footer-meta underline-offset-4 hover:underline">Privacy</a><a href="/terms" className="mono landing-footer-meta underline-offset-4 hover:underline">Terms</a><a href="/terms" title="These are draft, informational policies and are not legal advice. Have a qualified lawyer review them for the operator’s location and the people whose information is handled before relying on them." className="mono landing-footer-meta underline-offset-4 hover:underline">Draft policies · not legal advice</a></div><div className="mono landing-footer-meta">ROBOTICS TEAM OPERATIONS</div><span className="mono landing-footer-status"><span /> SYSTEM READY</span></footer>
+      <footer className="landing-footer"><div className="landing-brand landing-footer-brand"><BrandMark /><span><b>ROBOTICS</b><small className="mono">TRYOUT CONTROL</small></span></div><div className="flex flex-wrap gap-x-4 gap-y-2"><a href="/privacy" className="mono landing-footer-meta underline-offset-4 hover:underline">Privacy</a><a href="/terms" className="mono landing-footer-meta underline-offset-4 hover:underline">Terms</a><a href="/terms" title="These are draft, informational policies and are not legal advice. Have a qualified lawyer review them for the operator’s location and the people whose information is handled before relying on them." className="mono landing-footer-meta underline-offset-4 hover:underline">Draft policies · not legal advice</a></div><div className="mono landing-footer-meta" data-testid="landing-footer-credit">MADE BY TEAM 23442 · ISHAAN BANSAL</div><span className="mono landing-footer-status"><span /> SYSTEM READY</span></footer>
     </main>
   );
 }
