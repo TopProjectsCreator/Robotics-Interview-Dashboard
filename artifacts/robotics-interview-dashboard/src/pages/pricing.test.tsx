@@ -5,10 +5,13 @@ import { Router } from "wouter";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
+import About from "./about";
+import Landing from "./landing";
 import Pricing from "./pricing";
 import PublicDashboard from "./public-dashboard";
 
 const pricingStyles = readFileSync("src/pages/pricing.css", "utf8");
+const appShell = readFileSync("index.html", "utf8");
 
 function renderWithRouter(ui: ReactNode) {
   return render(<Router>{ui}</Router>);
@@ -28,7 +31,7 @@ describe("team pricing page", () => {
     expect(screen.getByRole("article", { name: "The robotics team workspace plan" })).toHaveTextContent("$0");
     expect(screen.getAllByText("THE TEAM PLAN")).toHaveLength(2);
     expect(screen.getByTestId("pricing-page")).toHaveTextContent("No payment card required");
-    expect(screen.getByTestId("pricing-page")).toHaveTextContent(/Made by Team 23442, for your team/i);
+    expect(screen.getByTestId("pricing-page")).toHaveTextContent(/Made by Team 23442, for robotics teams like yours/i);
     expect(screen.getByTestId("pricing-page")).not.toHaveTextContent(/checkout|billing|subscription|interview|applicant/i);
     expect(document.querySelectorAll(".pricing-page__plan-card")).toHaveLength(1);
   });
@@ -115,5 +118,41 @@ describe("team pricing page", () => {
     unmount();
     expect(document.title).toBe(previousTitle);
     expect(document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content).toBe(previousDescription);
+  });
+});
+
+describe("multi-team platform positioning", () => {
+  it("describes the shared platform as built for robotics teams everywhere", () => {
+    const descriptions = [...appShell.matchAll(/<meta (?:name|property)="(?:description|og:description|twitter:description)" content="([^"]+)"/g)]
+      .map((match) => match[1]);
+
+    expect(descriptions).toHaveLength(3);
+    expect(new Set(descriptions)).toEqual(new Set([
+      "Robotics workspace built by Team 23442 for robotics teams everywhere. Bring planning, team chat, CAD, parts, and project knowledge together in one place.",
+    ]));
+    expect(descriptions[0]).toHaveLength(153);
+    expect(descriptions[0]).not.toMatch(/workspace for Team 23442/i);
+  });
+
+  it("credits Team 23442 as the creator while welcoming other robotics teams", () => {
+    renderWithRouter(<PublicDashboard />);
+    expect(screen.getByTestId("public-dashboard-creator-credit")).toHaveTextContent(
+      "Made by Team 23442 for robotics teams like yours",
+    );
+  });
+
+  it("keeps the about page clear that the workspace is for other robotics teams", () => {
+    renderWithRouter(<About />);
+    expect(screen.getByRole("heading", { name: /Made by Team 23442 for robotics teams like yours/i })).toBeInTheDocument();
+    expect(screen.getByTestId("about-team-23442")).toHaveTextContent(
+      "built this workspace to bring robotics engineering, collaboration, and shared knowledge into one place for teams like yours",
+    );
+  });
+
+  it("frames the tryout page as made for teams beyond Team 23442", () => {
+    renderWithRouter(<Landing />);
+    expect(screen.getByTestId("landing-creator-credit")).toHaveTextContent(
+      "Made by Team 23442 for robotics teams like yours",
+    );
   });
 });

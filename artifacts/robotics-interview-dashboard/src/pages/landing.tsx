@@ -47,7 +47,7 @@ export default function Landing() {
             <Link href="/auth" className="landing-primary-button" data-testid="link-hero-coordinator-login">Open admin workspace <ArrowRight size={17} /></Link>
             <a href="#control-room" className="landing-secondary-button" data-testid="link-see-control-room">See the operating view <ChevronRight size={16} /></a>
           </div>
-          <p className="mt-5 inline-flex rounded-full border border-[#cbded7] bg-white/70 px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-[#315d62]" data-testid="landing-creator-credit">Created by Team 23442 · Ishaan Bansal</p>
+          <p className="mt-5 inline-flex rounded-full border border-[#cbded7] bg-white/70 px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-[#315d62]" data-testid="landing-creator-credit">Made by Team 23442 for robotics teams like yours · Ishaan Bansal</p>
           <div className="landing-hero-note"><ShieldCheck size={15} /><span>Private admin workspace</span><span className="landing-note-separator" /><span>No applicant data on the public display</span></div>
         </div>
         <div className="landing-hero-visual fade-up delay-2" aria-label="Illustration of the live interview control room">

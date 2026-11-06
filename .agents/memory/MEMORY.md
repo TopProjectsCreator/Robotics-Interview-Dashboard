@@ -63,3 +63,4 @@
 - [Mobile browser fixtures](mobile-browser-fixtures.md) — import the app’s shared stylesheet into component-level browser fixtures so mobile hit testing matches the real UI.
 - [Shared Parts supplier catalog](shared-parts-supplier-catalog.md) — supplier product rows are shared across teams; stock and saved inventory details remain team-specific.
 - [Chat notification cursor precision](chat-notification-cursor-precision.md) — preserve timestamp microseconds with message IDs for reliable keyset pagination.
+- [Multi-team platform positioning](multi-team-platform-positioning.md) — public copy should credit Team 23442 as the builder and clearly invite robotics teams broadly.

@@ -219,7 +219,7 @@ export default function PublicDashboard() {
               className="mt-5 inline-flex rounded-full border border-[#bed4ce] bg-white/70 px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-[#315d62] no-underline transition-colors hover:border-[#168b94] hover:text-[#117078] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#168b94] dark:border-[#3b646b] dark:bg-[#122a32]/70 dark:text-[#a7d7cd] dark:hover:border-[#7edbd0] dark:hover:text-[#7edbd0] dark:focus-visible:outline-[#7edbd0]"
               data-testid="public-dashboard-creator-credit"
             >
-              Built by Team 23442 · Ishaan Bansal
+              Made by Team 23442 for robotics teams like yours · Ishaan Bansal
             </Link>
           </div>
 

@@ -165,11 +165,11 @@ export default function AboutPage() {
               />
               <div>
                 <p className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[.16em] text-[#168b94] dark:text-[#7edbd0]">The team behind the workspace</p>
-                <h2 id="made-by-heading" className="text-2xl font-semibold leading-tight tracking-[-.06em] text-[#153642] dark:text-[#e3efeb] sm:text-3xl lg:text-4xl">Made by Team 23442.</h2>
+                <h2 id="made-by-heading" className="text-2xl font-semibold leading-tight tracking-[-.06em] text-[#153642] dark:text-[#e3efeb] sm:text-3xl lg:text-4xl">Made by Team 23442 for robotics teams like yours.</h2>
               </div>
             </div>
             <p className="mt-4 max-w-[560px] text-sm leading-6 text-[#43616a] dark:text-[#aac1be] sm:text-base sm:leading-7">
-              Team 23442—the Wolverines—built this workspace to bring the engineering, collaboration, and shared knowledge behind robotics into one place.
+              Team 23442—the Wolverines—built this workspace to bring robotics engineering, collaboration, and shared knowledge into one place for teams like yours.
             </p>
             <a
               href="https://pinelakeroboticsteam.lovable.app/"
