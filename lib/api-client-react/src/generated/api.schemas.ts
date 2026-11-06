@@ -3129,6 +3129,104 @@ export interface AssistantModelList {
   policyError?: string;
 }
 
+export type AssistantProviderCatalogItemProtocol = typeof AssistantProviderCatalogItemProtocol[keyof typeof AssistantProviderCatalogItemProtocol];
+
+
+export const AssistantProviderCatalogItemProtocol = {
+  'anthropic-messages': 'anthropic-messages',
+  'gemini-generate-content': 'gemini-generate-content',
+  'openai-chat-completions': 'openai-chat-completions',
+  'openai-responses': 'openai-responses',
+  'openai-compatible': 'openai-compatible',
+} as const;
+
+export interface AssistantProviderCatalogItem {
+  id: string;
+  name: string;
+  protocol: AssistantProviderCatalogItemProtocol;
+  description?: string;
+  website?: string;
+  /** @minimum 0 */
+  modelCount: number;
+}
+
+export interface AssistantProviderCatalog {
+  items: AssistantProviderCatalogItem[];
+  /** @nullable */
+  refreshedAt: string | null;
+}
+
+export interface AssistantProviderModelCatalogItem {
+  id: string;
+  name: string;
+  description?: string;
+  /** @nullable */
+  contextLength?: number | null;
+  inputModalities: string[];
+  outputModalities: string[];
+  toolCalling: boolean;
+  reasoning: boolean;
+}
+
+export interface AssistantProviderModelCatalog {
+  items: AssistantProviderModelCatalogItem[];
+}
+
+export interface AssistantProviderConfigurationInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  providerId: string;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  modelId: string;
+  /**
+     * @minLength 1
+     * @maxLength 4096
+     */
+  apiKey: string;
+  /** @maxLength 2000 */
+  endpointUrl?: string;
+}
+
+/**
+ * @nullable
+ */
+export type AssistantProviderConfigurationStatusProtocol = typeof AssistantProviderConfigurationStatusProtocol[keyof typeof AssistantProviderConfigurationStatusProtocol] | null;
+
+
+export const AssistantProviderConfigurationStatusProtocol = {
+  'anthropic-messages': 'anthropic-messages',
+  'gemini-generate-content': 'gemini-generate-content',
+  'openai-chat-completions': 'openai-chat-completions',
+  'openai-responses': 'openai-responses',
+  'openai-compatible': 'openai-compatible',
+} as const;
+
+export interface AssistantProviderConfigurationStatus {
+  configured: boolean;
+  /** @nullable */
+  providerId: string | null;
+  /** @nullable */
+  providerName: string | null;
+  /** @nullable */
+  modelId: string | null;
+  /** @nullable */
+  protocol: AssistantProviderConfigurationStatusProtocol;
+  /** @nullable */
+  endpointUrl: string | null;
+  /** @nullable */
+  updatedAt: string | null;
+}
+
+export interface AssistantProviderValidation {
+  valid: boolean;
+  message: string;
+}
+
 /**
  * @nullable
  */
@@ -3946,6 +4044,21 @@ export type DisconnectCustomMcpParams = {
  * @maxLength 128
  */
 connectionId: string;
+};
+
+export type ListAssistantProviderCatalogParams = {
+/**
+ * @maxLength 120
+ */
+search?: string;
+refresh?: boolean;
+};
+
+export type SearchModelsByProviderParams = {
+/**
+ * @maxLength 120
+ */
+search?: string;
 };
 
 export type GetAssistantConversationMessagesParams = {

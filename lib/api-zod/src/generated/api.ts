@@ -3539,6 +3539,148 @@ export const ListAssistantModelsResponse = zod.object({
 
 
 /**
+ * @summary Search supported AI providers
+ */
+export const listAssistantProviderCatalogQuerySearchMax = 120;
+
+
+
+export const ListAssistantProviderCatalogQueryParams = zod.object({
+  "search": zod.coerce.string().max(listAssistantProviderCatalogQuerySearchMax).optional(),
+  "refresh": zod.coerce.boolean().optional()
+})
+
+export const listAssistantProviderCatalogResponseItemsItemModelCountMin = 0;
+
+
+
+export const ListAssistantProviderCatalogResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "protocol": zod.enum(['anthropic-messages', 'gemini-generate-content', 'openai-chat-completions', 'openai-responses', 'openai-compatible']),
+  "description": zod.string().optional(),
+  "website": zod.string().optional(),
+  "modelCount": zod.number().int().min(listAssistantProviderCatalogResponseItemsItemModelCountMin)
+})),
+  "refreshedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Search models offered by a provider
+ */
+export const searchModelsByProviderPathProviderIdMax = 120;
+
+
+
+export const SearchModelsByProviderParams = zod.object({
+  "providerId": zod.coerce.string().max(searchModelsByProviderPathProviderIdMax)
+})
+
+export const searchModelsByProviderQuerySearchMax = 120;
+
+
+
+export const SearchModelsByProviderQueryParams = zod.object({
+  "search": zod.coerce.string().max(searchModelsByProviderQuerySearchMax).optional()
+})
+
+export const SearchModelsByProviderResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "description": zod.string().optional(),
+  "contextLength": zod.number().int().nullish(),
+  "inputModalities": zod.array(zod.string()),
+  "outputModalities": zod.array(zod.string()),
+  "toolCalling": zod.boolean(),
+  "reasoning": zod.boolean()
+}))
+})
+
+
+/**
+ * @summary Read safe status for the signed-in team's AI provider
+ */
+export const GetAssistantProviderConfigurationResponse = zod.object({
+  "configured": zod.boolean(),
+  "providerId": zod.string().nullable(),
+  "providerName": zod.string().nullable(),
+  "modelId": zod.string().nullable(),
+  "protocol": zod.union([zod.literal('anthropic-messages'),zod.literal('gemini-generate-content'),zod.literal('openai-chat-completions'),zod.literal('openai-responses'),zod.literal('openai-compatible'),zod.literal(null)]).nullable(),
+  "endpointUrl": zod.string().nullable(),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Coordinator-only. Credentials are encrypted at rest and are never returned.
+ * @summary Save a team AI provider and credential
+ */
+export const saveAssistantProviderConfigurationBodyProviderIdMax = 120;
+
+export const saveAssistantProviderConfigurationBodyModelIdMax = 255;
+
+export const saveAssistantProviderConfigurationBodyApiKeyMax = 4096;
+
+export const saveAssistantProviderConfigurationBodyEndpointUrlMax = 2000;
+
+
+
+export const SaveAssistantProviderConfigurationBody = zod.object({
+  "providerId": zod.string().min(1).max(saveAssistantProviderConfigurationBodyProviderIdMax),
+  "modelId": zod.string().min(1).max(saveAssistantProviderConfigurationBodyModelIdMax),
+  "apiKey": zod.string().min(1).max(saveAssistantProviderConfigurationBodyApiKeyMax),
+  "endpointUrl": zod.string().max(saveAssistantProviderConfigurationBodyEndpointUrlMax).optional()
+})
+
+export const SaveAssistantProviderConfigurationResponse = zod.object({
+  "configured": zod.boolean(),
+  "providerId": zod.string().nullable(),
+  "providerName": zod.string().nullable(),
+  "modelId": zod.string().nullable(),
+  "protocol": zod.union([zod.literal('anthropic-messages'),zod.literal('gemini-generate-content'),zod.literal('openai-chat-completions'),zod.literal('openai-responses'),zod.literal('openai-compatible'),zod.literal(null)]).nullable(),
+  "endpointUrl": zod.string().nullable(),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Coordinator-only. The current server-configured provider becomes active again.
+ * @summary Remove the signed-in team's AI provider credential
+ */
+export const RemoveAssistantProviderConfigurationResponse = zod.void()
+
+
+/**
+ * Coordinator-only. The credential is used only for the provider test and is never returned or logged.
+ * @summary Test a provider credential without saving it
+ */
+export const validateAssistantProviderConfigurationBodyProviderIdMax = 120;
+
+export const validateAssistantProviderConfigurationBodyModelIdMax = 255;
+
+export const validateAssistantProviderConfigurationBodyApiKeyMax = 4096;
+
+export const validateAssistantProviderConfigurationBodyEndpointUrlMax = 2000;
+
+
+
+export const ValidateAssistantProviderConfigurationBody = zod.object({
+  "providerId": zod.string().min(1).max(validateAssistantProviderConfigurationBodyProviderIdMax),
+  "modelId": zod.string().min(1).max(validateAssistantProviderConfigurationBodyModelIdMax),
+  "apiKey": zod.string().min(1).max(validateAssistantProviderConfigurationBodyApiKeyMax),
+  "endpointUrl": zod.string().max(validateAssistantProviderConfigurationBodyEndpointUrlMax).optional()
+})
+
+export const ValidateAssistantProviderConfigurationResponse = zod.object({
+  "valid": zod.boolean(),
+  "message": zod.string()
+})
+
+
+/**
  * @summary Get the signed-in team's assistant model policy
  */
 export const getAssistantModelPolicyResponseModelIdsMax = 100;

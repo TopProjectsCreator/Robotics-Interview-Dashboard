@@ -16,6 +16,8 @@ import {
 } from "../lib/assistantModel";
 import { resolveFreeVisionFallback } from "../lib/partsVisionRouting";
 import { requestTeamId } from "../middlewares/adminAuth";
+import { teamAssistantAI } from "../lib/teamAssistantAi";
+import { getTeamAssistantProvider } from "../lib/assistantProviderConfiguration";
 
 const router: IRouter = Router();
 const FREE_VISION_ROUTER = "openrouter/free";
@@ -73,6 +75,7 @@ function safeFailureDiagnostics(error: unknown) {
 }
 
 async function findFallbackModel(teamId: string, primaryModel: string): Promise<string | undefined> {
+  if (await getTeamAssistantProvider(teamId)) return undefined;
   const { policy, effectiveModels } = await getAssistantModelPolicyWithCatalog(teamId);
   if (policy.locked) return undefined;
   return resolveFreeVisionFallback([primaryModel, FREE_VISION_ROUTER], effectiveModels);
@@ -130,7 +133,7 @@ Do not infer a manufacturer, supplier, product link, or exact product identity. 
 
   for (let attempt = 1; attempt <= MAX_VISION_ATTEMPTS; attempt += 1) {
     try {
-      const completion = await openai.chat.completions.create({
+      const completion = await teamAssistantAI(teamId).chat.completions.create({
         model,
         temperature: 0,
         max_tokens: 500,

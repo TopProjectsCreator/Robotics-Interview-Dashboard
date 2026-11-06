@@ -44,6 +44,11 @@ import type {
   AssistantPendingQuestionsResponse,
   AssistantPromptQueue,
   AssistantPromptRun,
+  AssistantProviderCatalog,
+  AssistantProviderConfigurationInput,
+  AssistantProviderConfigurationStatus,
+  AssistantProviderModelCatalog,
+  AssistantProviderValidation,
   AssistantQuestionAnswersInput,
   AssistantQueueInput,
   AssistantResponse,
@@ -179,6 +184,7 @@ import type {
   InterviewerPasswordUpdateInput,
   InterviewerRoleUpdateInput,
   ListApplicantsParams,
+  ListAssistantProviderCatalogParams,
   ListCadModelsParams,
   ListInterviewWhiteboardsParams,
   ListInterviewersParams,
@@ -238,6 +244,7 @@ import type {
   ScheduledChatMessage,
   ScheduledChatTime,
   ScheduledChatTimeInput,
+  SearchModelsByProviderParams,
   SearchPartsCatalogParams,
   SearchPartsCatalogStreamParams,
   SeatingAssignInput,
@@ -9613,6 +9620,472 @@ export function useListAssistantModels<TData = Awaited<ReturnType<typeof listAss
 
 
 
+
+export const getListAssistantProviderCatalogUrl = (params?: ListAssistantProviderCatalogParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/assistant/providers?${stringifiedParams}` : `/api/assistant/providers`
+}
+
+/**
+ * @summary Search supported AI providers
+ */
+export const listAssistantProviderCatalog = async (params?: ListAssistantProviderCatalogParams, options?: Parameters<typeof customFetch>[1]): Promise<AssistantProviderCatalog> => {
+
+  return customFetch<AssistantProviderCatalog>(getListAssistantProviderCatalogUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAssistantProviderCatalogQueryKey = (params?: ListAssistantProviderCatalogParams,) => {
+    return [
+    `/api/assistant/providers`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAssistantProviderCatalogQueryOptions = <TData = Awaited<ReturnType<typeof listAssistantProviderCatalog>>, TError = ErrorType<ErrorResponse>>(params?: ListAssistantProviderCatalogParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAssistantProviderCatalog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAssistantProviderCatalogQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAssistantProviderCatalog>>> = ({ signal }) => listAssistantProviderCatalog(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAssistantProviderCatalog>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAssistantProviderCatalogQueryResult = NonNullable<Awaited<ReturnType<typeof listAssistantProviderCatalog>>>
+export type ListAssistantProviderCatalogQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Search supported AI providers
+ */
+
+export function useListAssistantProviderCatalog<TData = Awaited<ReturnType<typeof listAssistantProviderCatalog>>, TError = ErrorType<ErrorResponse>>(
+ params?: ListAssistantProviderCatalogParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAssistantProviderCatalog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAssistantProviderCatalogQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSearchModelsByProviderUrl = (providerId: string,
+    params?: SearchModelsByProviderParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/assistant/providers/${providerId}/models?${stringifiedParams}` : `/api/assistant/providers/${providerId}/models`
+}
+
+/**
+ * @summary Search models offered by a provider
+ */
+export const searchModelsByProvider = async (providerId: string,
+    params?: SearchModelsByProviderParams, options?: Parameters<typeof customFetch>[1]): Promise<AssistantProviderModelCatalog> => {
+
+  return customFetch<AssistantProviderModelCatalog>(getSearchModelsByProviderUrl(providerId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getSearchModelsByProviderQueryKey = (providerId: string,
+    params?: SearchModelsByProviderParams,) => {
+    return [
+    `/api/assistant/providers/${providerId}/models`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSearchModelsByProviderQueryOptions = <TData = Awaited<ReturnType<typeof searchModelsByProvider>>, TError = ErrorType<ErrorResponse>>(providerId: string,
+    params?: SearchModelsByProviderParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchModelsByProvider>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchModelsByProviderQueryKey(providerId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchModelsByProvider>>> = ({ signal }) => searchModelsByProvider(providerId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: providerId !== null && providerId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchModelsByProvider>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchModelsByProviderQueryResult = NonNullable<Awaited<ReturnType<typeof searchModelsByProvider>>>
+export type SearchModelsByProviderQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Search models offered by a provider
+ */
+
+export function useSearchModelsByProvider<TData = Awaited<ReturnType<typeof searchModelsByProvider>>, TError = ErrorType<ErrorResponse>>(
+ providerId: string,
+    params?: SearchModelsByProviderParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchModelsByProvider>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchModelsByProviderQueryOptions(providerId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAssistantProviderConfigurationUrl = () => {
+
+
+
+
+  return `/api/assistant/provider-config`
+}
+
+/**
+ * @summary Read safe status for the signed-in team's AI provider
+ */
+export const getAssistantProviderConfiguration = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantProviderConfigurationStatus> => {
+
+  return customFetch<AssistantProviderConfigurationStatus>(getGetAssistantProviderConfigurationUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantProviderConfigurationQueryKey = () => {
+    return [
+    `/api/assistant/provider-config`
+    ] as const;
+    }
+
+
+export const getGetAssistantProviderConfigurationQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantProviderConfiguration>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantProviderConfiguration>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantProviderConfigurationQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantProviderConfiguration>>> = ({ signal }) => getAssistantProviderConfiguration({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantProviderConfiguration>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantProviderConfigurationQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantProviderConfiguration>>>
+export type GetAssistantProviderConfigurationQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Read safe status for the signed-in team's AI provider
+ */
+
+export function useGetAssistantProviderConfiguration<TData = Awaited<ReturnType<typeof getAssistantProviderConfiguration>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantProviderConfiguration>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantProviderConfigurationQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveAssistantProviderConfigurationUrl = () => {
+
+
+
+
+  return `/api/assistant/provider-config`
+}
+
+/**
+ * Coordinator-only. Credentials are encrypted at rest and are never returned.
+ * @summary Save a team AI provider and credential
+ */
+export const saveAssistantProviderConfiguration = async (assistantProviderConfigurationInput: AssistantProviderConfigurationInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantProviderConfigurationStatus> => {
+
+  return customFetch<AssistantProviderConfigurationStatus>(getSaveAssistantProviderConfigurationUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantProviderConfigurationInput)
+  }
+);}
+
+
+
+
+
+export const getSaveAssistantProviderConfigurationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAssistantProviderConfiguration>>, TError,{data: BodyType<AssistantProviderConfigurationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveAssistantProviderConfiguration>>, TError,{data: BodyType<AssistantProviderConfigurationInput>}, TContext> => {
+
+const mutationKey = ['saveAssistantProviderConfiguration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveAssistantProviderConfiguration>>, {data: BodyType<AssistantProviderConfigurationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveAssistantProviderConfiguration(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveAssistantProviderConfigurationMutationResult = NonNullable<Awaited<ReturnType<typeof saveAssistantProviderConfiguration>>>
+    export type SaveAssistantProviderConfigurationMutationBody = BodyType<AssistantProviderConfigurationInput>
+    export type SaveAssistantProviderConfigurationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Save a team AI provider and credential
+ */
+export const useSaveAssistantProviderConfiguration = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveAssistantProviderConfiguration>>, TError,{data: BodyType<AssistantProviderConfigurationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveAssistantProviderConfiguration>>,
+        TError,
+        {data: BodyType<AssistantProviderConfigurationInput>},
+        TContext
+      > => {
+      return useMutation(getSaveAssistantProviderConfigurationMutationOptions(options));
+    }
+
+export const getRemoveAssistantProviderConfigurationUrl = () => {
+
+
+
+
+  return `/api/assistant/provider-config`
+}
+
+/**
+ * Coordinator-only. The current server-configured provider becomes active again.
+ * @summary Remove the signed-in team's AI provider credential
+ */
+export const removeAssistantProviderConfiguration = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRemoveAssistantProviderConfigurationUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveAssistantProviderConfigurationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeAssistantProviderConfiguration>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeAssistantProviderConfiguration>>, TError,void, TContext> => {
+
+const mutationKey = ['removeAssistantProviderConfiguration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeAssistantProviderConfiguration>>, void> = () => {
+
+
+          return  removeAssistantProviderConfiguration(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveAssistantProviderConfigurationMutationResult = NonNullable<Awaited<ReturnType<typeof removeAssistantProviderConfiguration>>>
+
+    export type RemoveAssistantProviderConfigurationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove the signed-in team's AI provider credential
+ */
+export const useRemoveAssistantProviderConfiguration = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeAssistantProviderConfiguration>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeAssistantProviderConfiguration>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getRemoveAssistantProviderConfigurationMutationOptions(options));
+    }
+
+export const getValidateAssistantProviderConfigurationUrl = () => {
+
+
+
+
+  return `/api/assistant/provider-config/validate`
+}
+
+/**
+ * Coordinator-only. The credential is used only for the provider test and is never returned or logged.
+ * @summary Test a provider credential without saving it
+ */
+export const validateAssistantProviderConfiguration = async (assistantProviderConfigurationInput: AssistantProviderConfigurationInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantProviderValidation> => {
+
+  return customFetch<AssistantProviderValidation>(getValidateAssistantProviderConfigurationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantProviderConfigurationInput)
+  }
+);}
+
+
+
+
+
+export const getValidateAssistantProviderConfigurationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateAssistantProviderConfiguration>>, TError,{data: BodyType<AssistantProviderConfigurationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof validateAssistantProviderConfiguration>>, TError,{data: BodyType<AssistantProviderConfigurationInput>}, TContext> => {
+
+const mutationKey = ['validateAssistantProviderConfiguration'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof validateAssistantProviderConfiguration>>, {data: BodyType<AssistantProviderConfigurationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  validateAssistantProviderConfiguration(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ValidateAssistantProviderConfigurationMutationResult = NonNullable<Awaited<ReturnType<typeof validateAssistantProviderConfiguration>>>
+    export type ValidateAssistantProviderConfigurationMutationBody = BodyType<AssistantProviderConfigurationInput>
+    export type ValidateAssistantProviderConfigurationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Test a provider credential without saving it
+ */
+export const useValidateAssistantProviderConfiguration = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateAssistantProviderConfiguration>>, TError,{data: BodyType<AssistantProviderConfigurationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof validateAssistantProviderConfiguration>>,
+        TError,
+        {data: BodyType<AssistantProviderConfigurationInput>},
+        TContext
+      > => {
+      return useMutation(getValidateAssistantProviderConfigurationMutationOptions(options));
+    }
 
 export const getGetAssistantModelPolicyUrl = () => {
 

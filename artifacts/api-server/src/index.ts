@@ -107,6 +107,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "assistant_skills",
     "assistant_model_policies",
     "assistant_model_policy_history",
+    "team_assistant_providers",
     "audit_logs",
     "broadcast_acks",
     "broadcasts",
@@ -380,6 +381,17 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
        "created_at" timestamptz not null default now()
      )`,
     `create index if not exists "assistant_model_policy_history_team_created_idx" on "assistant_model_policy_history" ("team_id", "created_at" desc)`,
+    `create table if not exists "team_assistant_providers" (
+       "team_id" text primary key,
+       "provider_id" text not null,
+       "provider_name" text not null,
+       "model_id" text not null,
+       "protocol" text not null check ("protocol" in ('anthropic-messages', 'gemini-generate-content', 'openai-chat-completions', 'openai-responses', 'openai-compatible')),
+       "endpoint_url" text,
+       "model_metadata" jsonb not null default '{}'::jsonb,
+       "encrypted_credential" text not null,
+       "updated_at" timestamptz not null default now()
+     )`,
     // Invite-only chat channels. Admins (coordinators) create, rename, and
     // manage them; membership gates every read and write. Messages reuse
     // interview_chat_messages with conversation_scope='channel'.

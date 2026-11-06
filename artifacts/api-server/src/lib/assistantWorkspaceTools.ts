@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { teamAssistantAI } from "./teamAssistantAi";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
 import { applyCodeFileContent } from "./codeCollaboration";
 import {
@@ -1377,7 +1378,7 @@ export async function runAssistantWorkspaceTool(
       files: (sourceFiles.rows.length ? sourceFiles.rows : [{ path: "index.html", content: draft.rows[0].html }])
         .map((file) => ({ path: file.path, content: file.content.slice(0, 30_000) })),
     }).slice(0, 100_000);
-    const completion = await openai.chat.completions.create({
+    const completion = await teamAssistantAI(context.teamId).chat.completions.create({
       model: await getAssistantModel(context.teamId),
       temperature: 0.2,
       response_format: { type: "json_object" },
@@ -1475,7 +1476,7 @@ export async function runAssistantWorkspaceTool(
     }).slice(0, 100_000);
     let checks: { rank: number; fixed: boolean; reason: string }[] = [];
     if (required.length) {
-      const completion = await openai.chat.completions.create({
+      const completion = await teamAssistantAI(context.teamId).chat.completions.create({
         model: await getAssistantModel(context.teamId),
         temperature: 0,
         response_format: { type: "json_object" },
@@ -1569,7 +1570,7 @@ export async function runAssistantWorkspaceTool(
     const edits: string[] = [];
     const subagentToolNames = new Set(subagentTools.map((candidate) => candidate.function.name));
     for (let turn = 0; turn < 12; turn += 1) {
-      const completion = await openai.chat.completions.create({
+      const completion = await teamAssistantAI(context.teamId).chat.completions.create({
         model: await getAssistantModel(context.teamId),
         temperature: 0.2,
         messages,

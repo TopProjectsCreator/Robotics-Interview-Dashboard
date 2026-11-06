@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
 import { UpdateCustomWorkspaceTabsBody, UpdateCustomWorkspaceTabsResponse } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { teamAssistantAI } from "../lib/teamAssistantAi";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
 import type { NextFunction } from "express";
 import {
@@ -276,7 +277,7 @@ async function inspectWorkspaceScreenshot(
   teamId = DEFAULT_TEAM_ID,
 ): Promise<{ passed: boolean; issues: string[]; repair: string }> {
   const model = await getAssistantModel(teamId);
-  const completion = await retryAiCall(() => openai.chat.completions.create({
+  const completion = await retryAiCall(() => teamAssistantAI(teamId).chat.completions.create({
     model,
     max_completion_tokens: 8192,
     response_format: { type: "json_object" },
@@ -311,7 +312,7 @@ async function repairWorkspaceHtml(
   teamId = DEFAULT_TEAM_ID,
 ): Promise<{ title: string; description: string; html: string; sourceFiles: WorkspaceSourceFile[] }> {
   const model = await getAssistantModel(teamId);
-  const completion = await retryAiCall(() => openai.chat.completions.create({
+  const completion = await retryAiCall(() => teamAssistantAI(teamId).chat.completions.create({
     model,
     max_completion_tokens: 8192,
     response_format: { type: "json_object" },
@@ -417,7 +418,7 @@ async function createAutomaticWorkspaceIcon(workspaceId: string, teamId: string)
   if (!workspace) return;
 
   const model = await getAssistantModel(teamId);
-  const completion = await retryAiCall(() => openai.chat.completions.create({
+  const completion = await retryAiCall(() => teamAssistantAI(teamId).chat.completions.create({
     model,
     temperature: 0.65,
     max_completion_tokens: 4096,
@@ -860,9 +861,10 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
     res.status(429).json({ error: "Workspace generation is temporarily rate limited." });
     return;
   }
+  const teamId = await requestTeamId(req);
   try {
-    const completion = await openai.chat.completions.create({
-      model: await getAssistantModel(await requestTeamId(req)),
+    const completion = await teamAssistantAI(teamId).chat.completions.create({
+      model: await getAssistantModel(teamId),
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -889,7 +891,6 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
       return;
     }
     const id = randomUUID();
-    const teamId = await requestTeamId(req);
     const accountId = authenticatedInterviewerId(req) ?? "";
     const saved = await pool.query(
       `insert into "custom_workspaces"
@@ -1306,7 +1307,7 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
     return;
   }
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await teamAssistantAI(teamId).chat.completions.create({
       model: await getAssistantModel(teamId),
       temperature: 0.2,
       response_format: { type: "json_object" },
@@ -1962,7 +1963,7 @@ router.post("/custom-workspaces/:id/llm", requireAdmin, async (req, res): Promis
     return;
   }
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await teamAssistantAI(await requestTeamId(req)).chat.completions.create({
       model: await getAssistantModel(await requestTeamId(req)),
       max_tokens: 800,
       messages: [{ role: "user", content: question }],

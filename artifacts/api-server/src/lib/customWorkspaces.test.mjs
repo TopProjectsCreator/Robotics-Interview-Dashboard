@@ -806,6 +806,20 @@ async function createHarness(t) {
       },
     },
   });
+  mock.module("../lib/teamAssistantAi", {
+    namedExports: {
+      teamAssistantAI: () => ({
+        chat: {
+          completions: {
+            create: async (...args) => {
+              const { openai } = await import("@workspace/integrations-openai-ai-server");
+              return openai.chat.completions.create(...args);
+            },
+          },
+        },
+      }),
+    },
+  });
   mock.module("../lib/teams", { namedExports: { teamSqlCondition: TEAM_SQL } });
   mock.module("../middlewares/adminAuth", {
     namedExports: {

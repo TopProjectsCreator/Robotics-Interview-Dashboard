@@ -109,6 +109,18 @@ export const assistantModelPolicyHistoryTable = pgTable("assistant_model_policy_
   index("assistant_model_policy_history_team_created_idx").on(table.teamId, table.createdAt),
 ]);
 
+export const teamAssistantProvidersTable = pgTable("team_assistant_providers", {
+  teamId: text("team_id").primaryKey(),
+  providerId: text("provider_id").notNull(),
+  providerName: text("provider_name").notNull(),
+  modelId: text("model_id").notNull(),
+  protocol: text("protocol").notNull(),
+  endpointUrl: text("endpoint_url"),
+  modelMetadata: jsonb("model_metadata").$type<Record<string, unknown>>().notNull().default({}),
+  encryptedCredential: text("encrypted_credential").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const assistantScheduledTasksTable = pgTable("assistant_scheduled_tasks", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull(),

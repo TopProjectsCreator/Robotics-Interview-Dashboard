@@ -2589,6 +2589,172 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /assistant/providers:
+    get:
+      operationId: listAssistantProviderCatalog
+      tags: [assistant]
+      summary: Search supported AI providers
+      parameters:
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+        - name: refresh
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Supported providers from the models.dev catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantProviderCatalog"
+        "503":
+          description: The provider catalog is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /assistant/providers/{providerId}/models:
+    get:
+      operationId: searchModelsByProvider
+      tags: [assistant]
+      summary: Search models offered by a provider
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+            maxLength: 120
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+      responses:
+        "200":
+          description: Search results for the selected provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantProviderModelCatalog"
+        "404":
+          description: Provider not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The provider catalog is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /assistant/provider-config:
+    get:
+      operationId: getAssistantProviderConfiguration
+      tags: [assistant]
+      summary: Read safe status for the signed-in team's AI provider
+      responses:
+        "200":
+          description: Configuration status without credential material
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantProviderConfigurationStatus"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: saveAssistantProviderConfiguration
+      tags: [assistant]
+      summary: Save a team AI provider and credential
+      description: Coordinator-only. Credentials are encrypted at rest and are never returned.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantProviderConfigurationInput"
+      responses:
+        "200":
+          description: Saved safe configuration status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantProviderConfigurationStatus"
+        "400":
+          description: Invalid configuration or unsuccessful provider validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Configuration could not be securely saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: removeAssistantProviderConfiguration
+      tags: [assistant]
+      summary: Remove the signed-in team's AI provider credential
+      description: Coordinator-only. The current server-configured provider becomes active again.
+      responses:
+        "204":
+          description: Team configuration removed
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /assistant/provider-config/validate:
+    post:
+      operationId: validateAssistantProviderConfiguration
+      tags: [assistant]
+      summary: Test a provider credential without saving it
+      description: Coordinator-only. The credential is used only for the provider test and is never returned or logged.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantProviderConfigurationInput"
+      responses:
+        "200":
+          description: Provider connection result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantProviderValidation"
+        "400":
+          description: Invalid configuration or rejected credential
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /assistant/model-policy:
     get:
       operationId: getAssistantModelPolicy
@@ -8609,6 +8775,114 @@ components:
         policyError:
           type: string
           description: Present when the saved policy needs an admin correction; items is empty until it is fixed.
+    AssistantProviderCatalogItem:
+      type: object
+      required: [id, name, protocol, modelCount]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        protocol:
+          type: string
+          enum: [anthropic-messages, gemini-generate-content, openai-chat-completions, openai-responses, openai-compatible]
+        description:
+          type: string
+        website:
+          type: string
+        modelCount:
+          type: integer
+          minimum: 0
+    AssistantProviderCatalog:
+      type: object
+      required: [items, refreshedAt]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantProviderCatalogItem"
+        refreshedAt:
+          type: ["string", "null"]
+          format: date-time
+    AssistantProviderModelCatalogItem:
+      type: object
+      required: [id, name, inputModalities, outputModalities, toolCalling, reasoning]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        contextLength:
+          type: ["integer", "null"]
+        inputModalities:
+          type: array
+          items:
+            type: string
+        outputModalities:
+          type: array
+          items:
+            type: string
+        toolCalling:
+          type: boolean
+        reasoning:
+          type: boolean
+    AssistantProviderModelCatalog:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantProviderModelCatalogItem"
+    AssistantProviderConfigurationInput:
+      type: object
+      required: [providerId, modelId, apiKey]
+      properties:
+        providerId:
+          type: string
+          minLength: 1
+          maxLength: 120
+        modelId:
+          type: string
+          minLength: 1
+          maxLength: 255
+        apiKey:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        endpointUrl:
+          type: string
+          maxLength: 2000
+    AssistantProviderConfigurationStatus:
+      type: object
+      required: [configured, providerId, providerName, modelId, protocol, endpointUrl, updatedAt]
+      properties:
+        configured:
+          type: boolean
+        providerId:
+          type: ["string", "null"]
+        providerName:
+          type: ["string", "null"]
+        modelId:
+          type: ["string", "null"]
+        protocol:
+          type: ["string", "null"]
+          enum: [anthropic-messages, gemini-generate-content, openai-chat-completions, openai-responses, openai-compatible, null]
+        endpointUrl:
+          type: ["string", "null"]
+        updatedAt:
+          type: ["string", "null"]
+          format: date-time
+    AssistantProviderValidation:
+      type: object
+      required: [valid, message]
+      properties:
+        valid:
+          type: boolean
+        message:
+          type: string
     AssistantModelPolicy:
       type: object
       required: [defaultModel, locked, listMode, modelIds, availableModelIds, unavailableModelIds]

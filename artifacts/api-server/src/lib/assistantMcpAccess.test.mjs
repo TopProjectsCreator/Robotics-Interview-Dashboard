@@ -108,7 +108,7 @@ test("MCP routes and MCP-enabled assistant paths use signed-in access, not coord
   assert.ok(routes.includes("listCustomMcpTools(account.id, teamId)"));
   assert.ok(routes.includes("listOnshapeMcpTools(accountId, teamId)"));
   assert.ok(routes.includes("listCustomMcpTools(accountId, teamId)"));
-  assert.ok(routes.includes("const activeTools = mcpOnly"));
+  assert.ok(routes.includes("let activeTools = mcpOnly"));
   assert.match(routes, /mcpOnly && !onshapeBindings\.has\(name \?\? ""\) && !customMcpBindings\.has\(name \?\? ""\)/);
 });
 

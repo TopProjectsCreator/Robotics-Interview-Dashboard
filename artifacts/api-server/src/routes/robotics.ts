@@ -145,6 +145,9 @@ import {
   UpdateSpreadsheetResponse,
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { getConfiguredTeamProviderModel, teamAssistantAI } from "../lib/teamAssistantAi";
+import { getTeamAssistantProvider } from "../lib/assistantProviderConfiguration";
+import { AssistantProviderRequestError } from "../lib/assistantProviderAdapters";
 import { logger } from "../lib/logger";
 import { decodeChatNotificationCursor, encodeChatNotificationCursor } from "../lib/chatNotificationCursor";
 import { pushRealtimeHint } from "../lib/realtime";
@@ -1243,6 +1246,73 @@ async function fetchGeneratedImage(url: string): Promise<string | null> {
     }
   }
   return null;
+}
+
+function isTeamImageGenerationSupported(provider: Awaited<ReturnType<typeof getTeamAssistantProvider>>): boolean {
+  return Boolean(provider &&
+    provider.model.outputModalities.includes("image") &&
+    ["openai-chat-completions", "openai-compatible", "gemini-generate-content"].includes(provider.protocol));
+}
+
+function imageDataUrlFromProviderMessage(message: Record<string, unknown>): string | undefined {
+  const candidates: unknown[] = [];
+  if (Array.isArray(message.images)) candidates.push(...message.images);
+  if (Array.isArray(message.content)) candidates.push(...message.content);
+  if (message.image && typeof message.image === "object") candidates.push(message.image);
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const item = candidate as Record<string, unknown>;
+    const imageUrl = item.image_url && typeof item.image_url === "object"
+      ? (item.image_url as Record<string, unknown>).url
+      : item.url;
+    if (typeof imageUrl === "string" && /^data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=_-]+$/i.test(imageUrl)) {
+      return imageUrl;
+    }
+    if (typeof item.b64_json === "string" && /^[A-Za-z0-9+/=_-]+$/.test(item.b64_json)) {
+      return `data:image/png;base64,${item.b64_json}`;
+    }
+  }
+  return undefined;
+}
+
+async function generateTeamImage(
+  teamId: string,
+  prompt: string,
+  size: "512x512" | "1024x1024",
+): Promise<string | undefined> {
+  const provider = await getTeamAssistantProvider(teamId);
+  if (!provider) return undefined;
+  if (!isTeamImageGenerationSupported(provider)) {
+    throw new Error(`${provider.model.name} does not support image generation through this provider. Choose an image-generating model in AI provider settings.`);
+  }
+  const completion = await teamAssistantAI(teamId).chat.completions.create({
+    model: provider.modelId,
+    temperature: 0.4,
+    modalities: ["text", "image"],
+    messages: [{
+      role: "user",
+      content: `Generate a ${size === "512x512" ? "512 by 512" : "1024 by 1024"} image for this request: ${prompt}`,
+    }],
+  } as never);
+  const message = completion.choices[0]?.message as unknown as Record<string, unknown> | undefined;
+  const dataUrl = message ? imageDataUrlFromProviderMessage(message) : undefined;
+  if (!dataUrl) {
+    throw new Error(`${provider.providerName} did not return an image. Try a different image-capable model or revise the prompt.`);
+  }
+  const base64 = dataUrl.slice(dataUrl.indexOf(",") + 1);
+  if (Buffer.byteLength(base64, "base64") > VISION_MAX_IMAGE_BYTES * 8) {
+    throw new Error("The generated image is too large to save. Try a smaller image size.");
+  }
+  return dataUrl;
+}
+
+async function storeGeneratedImage(dataUrl: string): Promise<string> {
+  const mime = dataUrl.slice(5, dataUrl.indexOf(";")) || "image/png";
+  const objectPath = await objectStorageService.uploadGeneratedImage(
+    Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64"),
+    mime,
+  );
+  return `/api/storage/objects/${objectPath.replace(/^\/objects\//, "")}`;
 }
 
 const ASSISTANT_IMAGE_TOOL = {
@@ -2401,22 +2471,26 @@ async function runAssistantTools(
       const imagePrompt = String(args.prompt ?? "").trim().slice(0, 500);
       if (!imagePrompt) continue;
       const size = args.size === "512x512" ? "512x512" : "1024x1024";
-      const { url } = pollinationsImage(imagePrompt, size);
-      const dataUrl = await fetchGeneratedImage(url);
-      // Persist to Supabase so the image is permanent and private; the
-      // browser loads it through our authed storage endpoint. Falls back
-      // to the direct URL if persistence fails.
-      let serveUrl = url;
-      if (dataUrl) {
-        try {
-          const mime = dataUrl.slice(5, dataUrl.indexOf(";")) || "image/jpeg";
-          const objectPath = await objectStorageService.uploadGeneratedImage(
-            Buffer.from(dataUrl.split(",")[1], "base64"),
-            mime,
-          );
-          serveUrl = `/api/storage/objects/${objectPath.replace(/^\/objects\//, "")}`;
-        } catch {
-          // Fall through to the direct URL.
+      const configuredProvider = await getTeamAssistantProvider(team);
+      let dataUrl: string | null;
+      let serveUrl: string;
+      if (configuredProvider) {
+        const generated = await generateTeamImage(team, imagePrompt, size);
+        if (!generated) throw new Error("The configured team provider did not generate an image.");
+        dataUrl = generated;
+        // BYOK images must remain private in team storage. Never expose a
+        // provider URL or fall back to the shared image service on storage errors.
+        serveUrl = await storeGeneratedImage(generated);
+      } else {
+        const generated = pollinationsImage(imagePrompt, size);
+        dataUrl = await fetchGeneratedImage(generated.url);
+        serveUrl = generated.url;
+        if (dataUrl) {
+          try {
+            serveUrl = await storeGeneratedImage(dataUrl);
+          } catch {
+            // Preserve the existing shared-image behavior for teams without BYOK.
+          }
         }
       }
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
@@ -3526,7 +3600,7 @@ router.post("/applicants/search/ai", requireCoordinator, async (req, res): Promi
   }
 
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await teamAssistantAI(await requestTeamId(req)).chat.completions.create({
       model: await getAssistantModel(await requestTeamId(req)),
       temperature: 0,
       max_tokens: 240,
@@ -3749,13 +3823,13 @@ router.post("/applicants/:id/regenerate", requireCoordinator, async (req, res): 
   try {
     let raw: string;
     try {
-      const first = await openai.chat.completions.create({ model, temperature: 0.2, messages: evaluationMessages });
+      const first = await teamAssistantAI(teamId).chat.completions.create({ model, temperature: 0.2, messages: evaluationMessages });
       raw = first.choices[0]?.message.content ?? "";
     } catch (error) {
       if (!isRateLimit(error)) throw error;
       req.log.warn("Regenerate hit free-tier rate limit, waiting 8s before retry");
       await new Promise((resolve) => setTimeout(resolve, 8000));
-      const retry = await openai.chat.completions.create({ model, temperature: 0.2, messages: evaluationMessages });
+      const retry = await teamAssistantAI(teamId).chat.completions.create({ model, temperature: 0.2, messages: evaluationMessages });
       raw = retry.choices[0]?.message.content ?? "";
     }
     const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").trim();
@@ -6298,7 +6372,7 @@ router.post("/queue/chat/scheduled/interpret", requireAdmin, async (req, res): P
     return;
   }
   try {
-    const completion = await openai.chat.completions.create({
+    const completion = await teamAssistantAI(teamId).chat.completions.create({
       model: await getAssistantModel(teamId),
       temperature: 0,
       messages: [
@@ -6713,6 +6787,63 @@ router.get("/display/state", async (req, res): Promise<void> => {
 });
 
 let announcementCache: { key: string; audio: Buffer } | null = null;
+
+function pcmAudioToWav(pcm: Buffer, sampleRate: number): Buffer {
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(1, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(sampleRate * 2, 28);
+  header.writeUInt16LE(2, 32);
+  header.writeUInt16LE(16, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]);
+}
+
+async function teamAnnouncementAudio(teamId: string, text: string): Promise<Buffer> {
+  const provider = await getTeamAssistantProvider(teamId);
+  if (!provider) return textToSpeech(text, "nova", "wav");
+  if (!provider.model.outputModalities.includes("audio")) {
+    throw new Error(`${provider.model.name} does not support audio output. Choose an audio-capable model in AI provider settings.`);
+  }
+  if (!["openai-chat-completions", "openai-compatible", "gemini-generate-content"].includes(provider.protocol)) {
+    throw new Error(`${provider.providerName} does not support dashboard announcement audio through the selected API protocol.`);
+  }
+  const completion = await teamAssistantAI(teamId).chat.completions.create({
+    model: provider.modelId,
+    modalities: ["text", "audio"],
+    audio: {
+      voice: provider.protocol === "gemini-generate-content" ? "Kore" : "nova",
+      format: "wav",
+    },
+    messages: [
+      { role: "system", content: "You are a text-to-speech engine. Speak the supplied announcement naturally and exactly." },
+      { role: "user", content: text },
+    ],
+  });
+  const message = completion.choices[0]?.message as unknown as Record<string, unknown> | undefined;
+  const audio = message?.audio && typeof message.audio === "object"
+    ? message.audio as Record<string, unknown>
+    : {};
+  if (typeof audio.data !== "string" || !/^[A-Za-z0-9+/=_-]+$/.test(audio.data)) {
+    throw new Error(`${provider.providerName} did not return announcement audio. Try another audio-capable model.`);
+  }
+  const bytes = Buffer.from(audio.data, "base64");
+  if (bytes.subarray(0, 4).toString("ascii") === "RIFF") return bytes;
+  const mimeType = typeof audio.mime_type === "string" ? audio.mime_type.toLowerCase() : "";
+  if (provider.protocol === "gemini-generate-content" && /audio\/(?:l16|pcm)/.test(mimeType)) {
+    const sampleRate = Number(mimeType.match(/rate=(\d+)/)?.[1] ?? 24000);
+    return pcmAudioToWav(bytes, Number.isFinite(sampleRate) ? sampleRate : 24000);
+  }
+  throw new Error(`${provider.providerName} returned an unsupported announcement audio format. Choose a WAV-capable audio model.`);
+}
+
 router.get("/display/announcement", async (req, res): Promise<void> => {
   const team = await resolveDisplayTeam(req, res);
   if (!team) return;
@@ -6726,7 +6857,7 @@ router.get("/display/announcement", async (req, res): Promise<void> => {
   const key = `${teamId}:${view.updatedAt}:${text}`;
   try {
     if (!announcementCache || announcementCache.key !== key) {
-      announcementCache = { key, audio: await textToSpeech(text, "nova", "wav") };
+      announcementCache = { key, audio: await teamAnnouncementAudio(teamId, text) };
     }
     res.type("audio/wav").set("Cache-Control", "private, max-age=30").send(announcementCache.audio);
   } catch (error) {
@@ -6986,6 +7117,10 @@ async function generateAssistantAnswer(options: {
       ? [buildGitHubRepositoryTool(githubRepositoryBindings)].filter((tool) => tool !== null)
       : []),
     ];
+  const activeTeamProvider = await getTeamAssistantProvider(teamId);
+  if (activeTeamProvider && !isTeamImageGenerationSupported(activeTeamProvider)) {
+    activeTools = activeTools.filter((tool) => tool.function.name !== "generate_image");
+  }
   if (options.scheduledAllowedToolNames) {
     const allowlist = new Set(options.scheduledAllowedToolNames);
     activeTools = activeTools.filter((tool) => allowlist.has(tool.function.name));
@@ -7082,14 +7217,14 @@ async function generateAssistantAnswer(options: {
   let completion;
   const withTools = () => {
     if (activeTools.length === 0) {
-      return openai.chat.completions.create({
+      return teamAssistantAI(teamId).chat.completions.create({
         model,
         temperature: 0.2,
         ...(thinkingRequest() as {}),
         messages: baseMessages,
       });
     }
-    return openai.chat.completions.create({
+    return teamAssistantAI(teamId).chat.completions.create({
       model,
       temperature: 0.2,
       ...(thinkingRequest() as {}),
@@ -7100,7 +7235,7 @@ async function generateAssistantAnswer(options: {
         : "auto",
     });
   };
-  const plainChat = () => openai.chat.completions.create({
+  const plainChat = () => teamAssistantAI(teamId).chat.completions.create({
     model,
     temperature: 0.2,
     ...(thinkingRequest() as {}),
@@ -7117,6 +7252,8 @@ async function generateAssistantAnswer(options: {
         log.warn("Assistant hit free-tier rate limit, waiting 8s before retry");
         await new Promise((resolve) => setTimeout(resolve, 8000));
         completion = await withTools();
+      } else if (activeTeamProvider) {
+        throw toolError;
       } else {
         log.warn({ err: toolError }, "Assistant tool call failed, retrying without tools");
         completion = await plainChat();
@@ -7125,7 +7262,13 @@ async function generateAssistantAnswer(options: {
   } catch (error) {
     const limited = isRateLimit(error);
     log.error({ err: error }, "Assistant chat completion failed");
-    throw new AssistantAnswerError(limited ? 429 : 503, limited ? "The assistant is busy right now. Try again in a moment." : "The assistant is unavailable right now. Try again shortly.");
+    const providerFailure = error instanceof AssistantProviderRequestError;
+    throw new AssistantAnswerError(
+      providerFailure ? error.status : limited ? 429 : 503,
+      providerFailure
+        ? error.message
+        : limited ? "The assistant is busy right now. Try again in a moment." : "The assistant is unavailable right now. Try again shortly.",
+    );
   }
   let answer = completion.choices[0]?.message.content ?? "";
   const firstText = assistantText(completion.choices[0]?.message ?? {});
@@ -7195,11 +7338,17 @@ async function generateAssistantAnswer(options: {
     thread.push(...executed.toolMessages);
     const seenImages = executed.images.filter((image) => image.dataUrl);
     if (seenImages.length > 0) {
+      const selectedProvider = await getTeamAssistantProvider(teamId);
+      if (selectedProvider && !selectedProvider.model.inputModalities.includes("image")) {
+        answer = `${answer.trim()}\n\nThe configured model generated the image but cannot analyze image input. Choose a vision-capable model to enable image review.`;
+        pendingCalls = [];
+        continue;
+      }
       // The vision model looks at what was just generated, so the answer
       // describes the real image instead of the prompt. Never route image
       // understanding through python_exec.
       try {
-        const seen = await openai.chat.completions.create({
+        const seen = await teamAssistantAI(teamId).chat.completions.create({
           model: await resolveTeamAssistantModel(teamId, VISION_MODEL, "image"),
           temperature: 0.2,
           max_tokens: 1500,
@@ -7213,18 +7362,19 @@ async function generateAssistantAnswer(options: {
           continue;
         }
       } catch (visionError) {
+        if (await getTeamAssistantProvider(teamId)) throw visionError;
         log.warn({ err: visionError }, "Vision follow-up failed, falling back to text-only");
       }
     }
     if (executed.imageMarkdown) answer = `${answer.trim()}\n\n${executed.imageMarkdown}`;
     const followup = activeTools.length === 0
-      ? await openai.chat.completions.create({
+      ? await teamAssistantAI(teamId).chat.completions.create({
         model,
         temperature: 0.2,
         ...(thinkingRequest() as {}),
         messages: thread,
       })
-      : await openai.chat.completions.create({
+      : await teamAssistantAI(teamId).chat.completions.create({
         model,
         temperature: 0.2,
         ...(thinkingRequest() as {}),
@@ -7285,7 +7435,7 @@ async function generateAssistantAnswer(options: {
     activities.push(...executed.activities);
     if (executed.outgoingCalls.length > 0) {
       const toolContext = executed.toolMessages.map((message) => message.content).join("\n\n");
-      const repair = await openai.chat.completions.create({
+      const repair = await teamAssistantAI(teamId).chat.completions.create({
         model,
         temperature: 0.2,
         ...(thinkingRequest() as {}),
@@ -7310,7 +7460,7 @@ async function generateAssistantAnswer(options: {
     // budget without prose. Ground a summary in the executed thread instead
     // of failing or re-asking blind.
     try {
-      const summary = await openai.chat.completions.create({
+      const summary = await teamAssistantAI(teamId).chat.completions.create({
         model,
         temperature: 0.2,
         ...(thinkingRequest() as {}),
@@ -7327,7 +7477,7 @@ async function generateAssistantAnswer(options: {
   if (!answer.trim()) {
     try {
       log.warn("Assistant answer empty, retrying without tools");
-      const retry = await openai.chat.completions.create({
+      const retry = await teamAssistantAI(teamId).chat.completions.create({
         model,
         temperature: 0.2,
         ...(thinkingRequest() as {}),
@@ -8422,7 +8572,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       req.log.warn({ err: error }, "Custom workspace assistant tools unavailable");
     }
   }
-  const activeTools = mcpOnly
+  let activeTools = mcpOnly
     ? [
       ...filterDisabledAssistantTools(onshapeTools, disabledTools),
       ...filterDisabledAssistantTools(customMcpTools, disabledTools),
@@ -8443,6 +8593,10 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       ? [buildGitHubRepositoryTool(githubRepositoryBindings)].filter((tool) => tool !== null)
       : []),
     ];
+  const activeTeamProvider = await getTeamAssistantProvider(teamId);
+  if (activeTeamProvider && !isTeamImageGenerationSupported(activeTeamProvider)) {
+    activeTools = activeTools.filter((tool) => tool.function.name !== "generate_image");
+  }
   const forceCustomWorkspace = !mcpOnly && shouldForceCustomWorkspaceTool(parsed.data.question) &&
     !disabledTools.has("create_custom_workspace") &&
     (!skillTools || skillTools.has("create_custom_workspace"));
@@ -8791,7 +8945,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   };
   try {
     const streamPass = async (messages: AssistantThreadMessage[], useAssistantTools: boolean, overrides?: { model?: string; maxTokens?: number; forceCustomWorkspace?: boolean }) => {
-      const stream = await openai.chat.completions.create({
+      const stream = await teamAssistantAI(teamId).chat.completions.create({
         model: overrides?.model ?? model,
         temperature: 0.2,
         ...(thinkingRequest(overrides?.model ?? model) as {}),
@@ -8847,6 +9001,8 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         req.log.warn("Assistant stream hit free-tier rate limit, waiting 8s before retry");
         await new Promise((resolve) => setTimeout(resolve, 8000));
         first = await firstPass();
+      } else if (activeTeamProvider) {
+        throw toolError;
       } else {
         req.log.warn({ err: toolError }, "Assistant stream tool call failed, retrying without tools");
         first = await streamPass(baseMessages, false);
@@ -8963,6 +9119,17 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       thread.push(...executed.toolMessages);
       const seenImages = executed.images.filter((image) => image.dataUrl);
       if (seenImages.length > 0) {
+        const selectedProvider = await getTeamAssistantProvider(teamId);
+        if (selectedProvider && !selectedProvider.model.inputModalities.includes("image")) {
+          const limitation = "The configured model generated the image but cannot analyze image input. Choose a vision-capable model to enable image review.";
+          answer = appendAnswer(answer, limitation);
+          if (executed.imageMarkdown) {
+            answer = `${answer.trim()}\n\n${executed.imageMarkdown}`;
+            send({ delta: `\n\n${executed.imageMarkdown}` });
+          }
+          send({ delta: `\n\n${limitation}` });
+          break;
+        }
         // The vision model looks at what was just generated, so the answer
         // describes the real image instead of the prompt. That ends the turn.
         try {
@@ -8978,6 +9145,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
             send({ delta: `\n\n${executed.imageMarkdown}` });
           }
         } catch (visionError) {
+          if (await getTeamAssistantProvider(teamId)) throw visionError;
           req.log.warn({ err: visionError }, "Vision stream follow-up failed, falling back to text-only");
           const followup = await streamPass([...thread], true);
           answer = appendAnswer(answer, followup.text);
@@ -9176,6 +9344,11 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     res.end();
   } catch (error) {
     const limited = isRateLimit(error);
+    const providerFailure = error instanceof AssistantProviderRequestError;
+    const failureStatus = providerFailure ? error.status : limited ? 429 : 503;
+    const failureMessage = providerFailure
+      ? error.message
+      : limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.";
     const cancelled = promptAbort.signal.aborted;
     if (cancelled) {
       await db.update(assistantPromptRunsTable).set({
@@ -9190,7 +9363,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     } else {
       await db.update(assistantPromptRunsTable).set({
         status: "failed",
-        error: limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.",
+        error: failureMessage,
         updatedAt: new Date(),
       }).where(and(
         eq(assistantPromptRunsTable.id, promptRunId),
@@ -9202,7 +9375,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     if (builderRunId && !builderRunCompleted) {
       await db.update(assistantBuilderRunsTable).set({
         status: "failed",
-        error: limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.",
+        error: failureMessage,
         updatedAt: new Date(),
       }).where(and(
         eq(assistantBuilderRunsTable.id, builderRunId),
@@ -9212,7 +9385,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       )).catch((saveError) => req.log.warn({ err: saveError }, "Builder failure status could not be saved"));
     }
     if (cancelled) send({ cancelled: true });
-    else send({ error: limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.", status: limited ? 429 : 503 });
+    else send({ error: failureMessage, status: failureStatus });
     res.end();
   } finally {
     clearInterval(promptHeartbeat);
@@ -9230,6 +9403,24 @@ router.post("/assistant/images", requireCoordinator, async (req, res): Promise<v
   const prompt = parsed.data.prompt.trim().slice(0, 500);
   if (!prompt) {
     res.status(400).json({ error: "Prompt is required" });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const provider = await getTeamAssistantProvider(teamId);
+  if (provider) {
+    try {
+      const dataUrl = await generateTeamImage(teamId, prompt, parsed.data.size === "512x512" ? "512x512" : "1024x1024");
+      if (!dataUrl) throw new Error("The configured team provider did not generate an image.");
+      const imageUrl = await storeGeneratedImage(dataUrl);
+      res.status(201).json(GenerateAssistantImageResponse.parse({
+        imageUrl,
+        prompt,
+        seed: 0,
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The configured provider could not generate this image.";
+      res.status(503).json({ error: message.slice(0, 300) });
+    }
     return;
   }
   const { url, seed } = pollinationsImage(prompt, parsed.data.size);
@@ -9458,6 +9649,14 @@ function assistantThinkingRequest(
 }
 
 async function listFreeAssistantModels(teamId = DEFAULT_TEAM_ID): Promise<AssistantProviderModel[]> {
+  const teamModel = await getConfiguredTeamProviderModel(teamId);
+  if (teamModel) {
+    return [{
+      id: teamModel.id,
+      name: teamModel.name,
+      thinkingLevels: [],
+    }];
+  }
   const { effectiveModels } = await getAssistantModelPolicyWithCatalog(teamId);
   return effectiveModels
     .filter((model) => typeof model.id === "string" && model.id.trim().length > 0)
@@ -9488,6 +9687,17 @@ function assistantModelSelectionInstructions(modelIds: string[], locked = false)
 router.get("/assistant/models", requireAdmin, async (req, res): Promise<void> => {
   try {
     const teamId = await requestTeamId(req);
+    const teamModel = await getConfiguredTeamProviderModel(teamId);
+    if (teamModel) {
+      const item = {
+        id: teamModel.id,
+        name: teamModel.name,
+        thinkingLevels: [],
+        inputModalities: teamModel.inputModalities,
+      };
+      res.json(ListAssistantModelsResponse.parse({ items: [item], catalogItems: [item] }));
+      return;
+    }
     const { catalog, effectiveModels, policyError } = await getAssistantModelPolicyWithCatalog(teamId, true);
     const toResponse = (models: typeof catalog) => models.map((model) => {
       const thinkingParameter = assistantThinkingParameter(model.supported_parameters ?? model.supportedParameters);

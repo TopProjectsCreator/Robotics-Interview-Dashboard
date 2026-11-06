@@ -286,6 +286,25 @@ describe("AssistantModelPicker", () => {
     expect(screen.getByRole("checkbox", { name: "Show SVG tool" })).toBeChecked();
   });
 
+  it("keeps provider discovery and credential entry out of the assistant settings popover", async () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        canManageAssistantPolicy
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByText("Assistant settings")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Search providers")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/API key/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Choose a model")).not.toBeInTheDocument();
+  });
+
   it("shows only private MCP connection controls to non-coordinators", async () => {
     renderWithQuery(
       <AssistantModelPicker

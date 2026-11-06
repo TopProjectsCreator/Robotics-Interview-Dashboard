@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { supportsAssistantModelImageInput } from "./partsVisionRouting";
+import { getTeamAssistantProvider } from "./assistantProviderConfiguration";
 
 export const DEFAULT_ASSISTANT_MODEL = "minimax/minimax-m3.1-flash:free";
 
@@ -173,6 +174,15 @@ export function effectiveAssistantModels(
 
 export async function getAssistantModelPolicy(teamId?: string): Promise<AssistantModelPolicy> {
   const activeTeamId = teamId ?? await defaultTeamId();
+  const teamProvider = await getTeamAssistantProvider(activeTeamId);
+  if (teamProvider) {
+    return {
+      defaultModel: teamProvider.modelId,
+      locked: true,
+      listMode: null,
+      modelIds: [],
+    };
+  }
   const stored = await storedPolicy(activeTeamId);
   if (stored) return stored;
   try {
@@ -343,6 +353,22 @@ export async function resolveTeamAssistantModel(
   requestedModel?: string,
   modality: "text" | "image" = "text",
 ): Promise<string> {
+  const teamProvider = await getTeamAssistantProvider(teamId ?? await defaultTeamId());
+  if (teamProvider) {
+    if (modality === "text" && requestedModel && requestedModel !== teamProvider.modelId) {
+      throw new AssistantModelPolicyError(
+        "The coordinator-selected team provider model is active. Change it in AI provider settings.",
+        400,
+      );
+    }
+    if (modality === "image" && !teamProvider.model.inputModalities.includes("image")) {
+      throw new AssistantModelPolicyError(
+        `${teamProvider.model.name} does not support image input. Choose a vision-capable model in AI provider settings.`,
+        400,
+      );
+    }
+    return teamProvider.modelId;
+  }
   const { policy, catalog, effectiveModels } = await getAssistantModelPolicyWithCatalog(teamId);
   const compatibleModels = modality === "image"
     ? effectiveModels.filter(supportsAssistantModelImageInput)

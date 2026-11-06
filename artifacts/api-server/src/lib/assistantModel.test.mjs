@@ -27,6 +27,7 @@ const accounts = new Map([
   ["coordinator", { id: "coordinator", role: "coordinator", passwordHash: "configured" }],
 ]);
 const assistantModelPoliciesTable = { teamId: "teamId" };
+const teamAssistantProvidersTable = { teamId: "teamId" };
 const interviewerAccountsTable = { id: "id", role: "role", passwordHash: "passwordHash", teamId: "teamId" };
 const revokedSessionsTable = { tokenHash: "tokenHash", expiresAt: "expiresAt" };
 const queryResult = (rows) => {
@@ -91,6 +92,7 @@ mock.module("@workspace/db", {
   namedExports: {
     DEFAULT_TEAM_ID: "default",
     assistantModelPoliciesTable,
+    teamAssistantProvidersTable,
     assistantModelPolicyHistoryTable,
     interviewerAccountsTable,
     revokedSessionsTable,

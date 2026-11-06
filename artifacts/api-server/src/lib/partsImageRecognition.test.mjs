@@ -168,6 +168,23 @@ before(async () => {
       },
     },
   });
+  mock.module("../lib/teamAssistantAi", {
+    namedExports: {
+      teamAssistantAI: () => ({
+        chat: {
+          completions: {
+            create: async (...args) => {
+              const { openai } = await import("@workspace/integrations-openai-ai-server");
+              return openai.chat.completions.create(...args);
+            },
+          },
+        },
+      }),
+    },
+  });
+  mock.module("../lib/assistantProviderConfiguration", {
+    namedExports: { getTeamAssistantProvider: async () => undefined },
+  });
   mock.module("../lib/assistantModel", {
     namedExports: {
       AssistantModelPolicyError: class AssistantModelPolicyError extends Error {

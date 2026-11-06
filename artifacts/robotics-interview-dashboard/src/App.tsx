@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
-   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey, getGetAssistantModelPolicyHistoryQueryKey,
+   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey, getGetAssistantModelPolicyHistoryQueryKey, getGetAssistantProviderConfigurationQueryKey,
   getListAssistantConversationsQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
@@ -30,6 +30,7 @@ import {
   useGetMyBroadcasts, useAckBroadcast, getGetMyBroadcastsQueryKey,
   useKickPresence,
   useGetPresenceStats, getGetPresenceStatsQueryKey,
+  useGetAssistantProviderConfiguration,
   useListSnapshots, useCreateSnapshot, useRestoreSnapshot, getListSnapshotsQueryKey,
   useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
   useCreateScheduledChat, useDeleteScheduledChat, useListScheduledChats, getListScheduledChatsQueryKey,
@@ -55,6 +56,7 @@ import { PersonalNotepad } from "./components/PersonalNotepad";
 import { TeamNameRulesSettings } from "./components/TeamNameRulesSettings";
 import { accountSetupErrorMessage } from "./lib/auth-error-messages";
 import { AssistantModelPicker, type AssistantModelPolicyView, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
+import { AssistantProviderSetup } from "./components/AssistantProviderSetup";
 import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
 import { loadDisabledTools, saveDisabledTools, type AssistantToolItem } from "./components/assistantTools";
@@ -8015,10 +8017,17 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   useEffect(() => () => streamAbort.current?.abort(), []);
   const ask = useAskAssistant();
   const [assistantSettingsOpen, setAssistantSettingsOpen] = useState(false);
+  const [assistantProviderSetupOpen, setAssistantProviderSetupOpen] = useState(false);
   const assistantTeamScope = assistantSession.data?.teamId ?? "pending";
   const assistantSessionReady = assistantSession.data?.authenticated === true && assistantTeamScope !== "pending";
   const assistantConfig = useGetAssistantConfig({
     query: { queryKey: [...getGetAssistantConfigQueryKey(), assistantTeamScope], enabled: assistantSessionReady },
+  });
+  const assistantProviderConfiguration = useGetAssistantProviderConfiguration({
+    query: {
+      queryKey: [...getGetAssistantProviderConfigurationQueryKey(), assistantTeamScope],
+      enabled: assistantSessionReady && canManageAssistantTools,
+    },
   });
   const assistantModels = useListAssistantModels({
     query: {
@@ -8064,8 +8073,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       // Storage can be unavailable in private browsing.
     }
   };
-  const modelLocked = assistantModelPolicy.data?.locked ?? assistantConfig.data?.locked ?? false;
-  const availableModel = modelLocked
+  const providerConfigured = assistantProviderConfiguration.data?.configured === true;
+  const modelLocked = providerConfigured || (assistantModelPolicy.data?.locked ?? assistantConfig.data?.locked ?? false);
+  const availableModel = providerConfigured
+    ? assistantProviderConfiguration.data?.modelId ?? assistantConfig.data?.textModel ?? selectedModel
+    : modelLocked
     ? assistantModelPolicy.data?.defaultModel ?? assistantConfig.data?.textModel ?? selectedModel
     : resolveAssistantModelSelection(selectedModel, assistantConfig.data?.textModel, modelOptions);
   const thinkingLevel = thinkingByModel[availableModel] ?? "auto";
@@ -9092,8 +9104,44 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             onConnectCustomMcp={() => void connectCustomMcp()}
             onDisconnectCustomMcp={disconnectCustomMcp}
           />
+          {canManageAssistantTools && <button
+            type="button"
+            onClick={() => setAssistantProviderSetupOpen(true)}
+            disabled={!assistantSessionReady}
+            aria-haspopup="dialog"
+            aria-label={providerConfigured ? "Manage the team's AI provider" : "Configure the team's AI provider"}
+            title={providerConfigured ? "Manage team AI provider" : "Configure team AI provider"}
+            data-testid="assistant-provider-entry-point"
+            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground shadow-sm transition hover:border-primary/50 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
+          >
+            <Settings size={14} aria-hidden="true" />
+            <span>AI provider</span>
+            {providerConfigured && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-label="Configured" />}
+          </button>}
         </div>
       }
+    />
+    <AssistantProviderSetup
+      open={assistantProviderSetupOpen && canManageAssistantTools && assistantSessionReady}
+      onOpenChange={setAssistantProviderSetupOpen}
+      teamId={assistantTeamScope}
+      onConfigurationChanged={() => {
+        void queryClient.invalidateQueries({
+          queryKey: [...getGetAssistantProviderConfigurationQueryKey(), assistantTeamScope],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: [...getListAssistantModelsQueryKey(), assistantTeamScope],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: [...getGetAssistantConfigQueryKey(), assistantTeamScope],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: [...getGetAssistantModelPolicyQueryKey(), assistantTeamScope],
+        });
+        void queryClient.invalidateQueries({
+          queryKey: [...getGetAssistantModelPolicyHistoryQueryKey(), assistantTeamScope],
+        });
+      }}
     />
     <div
       className={assistantWorkspaceGridClass(partsMode && canManageAssistantTools)}
