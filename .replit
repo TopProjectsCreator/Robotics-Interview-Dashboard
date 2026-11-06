@@ -30,3 +30,15 @@ defaultBucketID = "replit-objstore-8be2f692-0196-4838-bf87-c7f56c292fcb"
 
 [userenv.shared]
 SECONDARY_DATABASE_POOLER_HOST = "aws-1-ca-central-1.pooler.supabase.com"
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 20136
+externalPort = 80
+
+[[ports]]
+localPort = 20798
+externalPort = 3000
