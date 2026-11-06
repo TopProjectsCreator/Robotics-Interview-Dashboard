@@ -161,7 +161,7 @@ export default function PublicDashboard() {
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#153642] px-4 py-3 text-xs font-bold text-white transition hover:bg-[#214b57] dark:bg-[#efc34f] dark:text-[#153642] dark:hover:bg-[#f4d477]"
               data-testid="link-public-sign-in"
             >
-              Create or join a team <ArrowRight size={14} />
+              Join or create <ArrowRight size={14} />
             </Link>
           </nav>
 
@@ -472,7 +472,7 @@ export default function PublicDashboard() {
               className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-lg bg-[#efc34f] px-5 text-xs font-bold text-[#153642] transition hover:bg-[#f4d477]"
               data-testid="link-team-access"
             >
-              Create or join a team <ArrowRight size={15} />
+              Join or create <ArrowRight size={15} />
             </Link>
           </div>
         </section>
