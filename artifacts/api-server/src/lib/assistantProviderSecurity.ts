@@ -4,37 +4,53 @@ import { lookup } from "node:dns/promises";
 
 const ENCRYPTION_VERSION = "v1";
 
-function encryptionKey(): Buffer {
+function encryptionKey(context: string): Buffer {
   const secret = process.env.AI_BYOK_ENCRYPTION_KEY || process.env.SESSION_SECRET;
   if (!secret?.trim()) {
-    throw new Error("Team provider encryption is not configured.");
+    throw new Error("Team credential encryption is not configured.");
   }
-  return createHash("sha256").update(`team-ai-provider:${secret}`).digest();
+  return createHash("sha256").update(`${context}:${secret}`).digest();
 }
 
-export function encryptAssistantProviderCredential(credential: string): string {
+function encryptCredential(credential: string, context: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey(context), iv);
   const ciphertext = Buffer.concat([cipher.update(credential, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return [ENCRYPTION_VERSION, iv.toString("base64url"), tag.toString("base64url"), ciphertext.toString("base64url")].join(".");
 }
 
-export function decryptAssistantProviderCredential(value: string): string {
+function decryptCredential(value: string, context: string, errorMessage: string): string {
   const [version, ivText, tagText, ciphertextText, extra] = value.split(".");
   if (version !== ENCRYPTION_VERSION || !ivText || !tagText || !ciphertextText || extra) {
-    throw new Error("The saved team provider credential cannot be decrypted.");
+    throw new Error(errorMessage);
   }
   try {
-    const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(ivText, "base64url"));
+    const decipher = createDecipheriv("aes-256-gcm", encryptionKey(context), Buffer.from(ivText, "base64url"));
     decipher.setAuthTag(Buffer.from(tagText, "base64url"));
     return Buffer.concat([
       decipher.update(Buffer.from(ciphertextText, "base64url")),
       decipher.final(),
     ]).toString("utf8");
   } catch {
-    throw new Error("The saved team provider credential cannot be decrypted.");
+    throw new Error(errorMessage);
   }
+}
+
+export function encryptAssistantProviderCredential(credential: string): string {
+  return encryptCredential(credential, "team-ai-provider");
+}
+
+export function decryptAssistantProviderCredential(value: string): string {
+  return decryptCredential(value, "team-ai-provider", "The saved team provider credential cannot be decrypted.");
+}
+
+export function encryptMaildropApiKey(apiKey: string): string {
+  return encryptCredential(apiKey, "team-maildrop-api-key");
+}
+
+export function decryptMaildropApiKey(value: string): string {
+  return decryptCredential(value, "team-maildrop-api-key", "The saved team Maildrop API key cannot be decrypted.");
 }
 
 function isPrivateIpv4(address: string): boolean {

@@ -14,6 +14,8 @@ export interface TeamMailboxSettings {
   forwardingAddress: string | null;
   enabled: boolean;
   configured: boolean;
+  /** Whether a Maildrop API key is saved. The key itself is never returned. */
+  apiKeyConfigured: boolean;
   /** @maxItems 50 */
   allowedSenders: string[];
   legacy: boolean;

@@ -19,11 +19,12 @@ registerHooks({
   },
 });
 
+process.env.AI_BYOK_ENCRYPTION_KEY = "maildrop-test-encryption-secret";
 process.env.MAILDROP_MAILBOX = "team-inbox";
 process.env.MAILDROP_ALLOWED_SENDERS = "coach@wolverines.org";
 
 const tables = {
-  inboxes: { teamId: "team_id", mailbox: "mailbox", enabled: "enabled", allowedSenders: "allowed_senders" },
+  inboxes: { teamId: "team_id", mailbox: "mailbox", enabled: "enabled", allowedSenders: "allowed_senders", encryptedApiKey: "encrypted_api_key" },
   emails: { id: "id", mailbox: "mailbox", messageId: "message_id" },
   messages: { id: "id" },
 };
@@ -186,7 +187,7 @@ test("the mailbox listing uses the Maildrop GraphQL API", async () => {
     });
   };
   try {
-    const messages = await listMailboxMessages("team-inbox");
+    const messages = await listMailboxMessages("team-inbox", "test-api-key");
     assert.equal(messages.length, 2);
     assert.equal(messages[0].id, "m1");
     assert.equal(messages[0].from, "Coach <coach@wolverines.org>");
@@ -195,6 +196,7 @@ test("the mailbox listing uses the Maildrop GraphQL API", async () => {
     assert.equal(call.url, "https://api.maildrop.cc/graphql");
     assert.equal(call.init.method, "POST");
     assert.equal(call.init.headers["Content-Type"], "application/json");
+    assert.equal(call.init.headers.Authorization, "Bearer test-api-key");
     const body = JSON.parse(call.init.body);
     assert.match(body.query, /inbox\(mailbox: \$mailbox\)/);
     assert.equal(body.variables.mailbox, "team-inbox");
@@ -213,7 +215,7 @@ test("a message body is read from the plain text part", async () => {
     } },
   });
   try {
-    const message = await fetchMailboxMessage("team-inbox", "m1");
+    const message = await fetchMailboxMessage("team-inbox", "m1", "test-api-key");
     assert.equal(message.body, "Bring the robot charged.");
     assert.equal(message.subject, "Practice moved");
   } finally {
@@ -230,7 +232,7 @@ test("an html-only email is reduced to readable text", async () => {
     } },
   });
   try {
-    const message = await fetchMailboxMessage("team-inbox", "m2");
+    const message = await fetchMailboxMessage("team-inbox", "m2", "test-api-key");
     assert.match(message.body, /Hello & welcome/);
     assert.doesNotMatch(message.body, /color:red/);
   } finally {
@@ -242,7 +244,7 @@ test("a GraphQL error is reported instead of silently ignored", async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async () => graphqlResponse({ errors: [{ message: "mailbox not found" }] });
   try {
-    await assert.rejects(() => listMailboxMessages("team-inbox"), /mailbox not found/);
+    await assert.rejects(() => listMailboxMessages("team-inbox", "test-api-key"), /could not process the inbox request/i);
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -263,7 +265,7 @@ test("approved senders must match the exact email address", () => {
 test("each team gets a durable independent mailbox configuration", async () => {
   clearDatabase(databases.primary);
   clearDatabase(databases.secondary);
-  const first = await saveTeamMailboxSettings("team-a", true, ["coach@wolverines.org"]);
+  const first = await saveTeamMailboxSettings("team-a", true, ["coach@wolverines.org"], "team-a-key");
   const second = await saveTeamMailboxSettings("team-b", false, ["mentor@example.com"]);
   assert.notEqual(first.mailbox, second.mailbox);
   assert.equal(forwardingAddress(first.mailbox), `${first.mailbox}@maildrop.cc`);
@@ -292,7 +294,8 @@ test("the default-team environment inbox migrates without losing its mailbox or 
     const saved = await getTeamMailboxSettings("default");
     assert.equal(saved.mailbox, "legacy-team-inbox");
     assert.deepEqual(saved.allowedSenders, ["coach@wolverines.org", "wolverines.org"]);
-    assert.equal(saved.enabled, true);
+    assert.equal(saved.enabled, false);
+    assert.equal(saved.apiKeyConfigured, false);
     assert.equal(saved.legacy, false);
     await saveTeamMailboxSettings("default", false, ["coach@wolverines.org", "wolverines.org"]);
     await migrateLegacyDefaultMailbox();
@@ -316,7 +319,9 @@ test("manual ingestion and polling post allowed mail only to its team's own chat
       { id: "same-message-id", headerfrom: "Mentor <mentor@team-b.example>", subject: "B approved", date: null },
     ],
   };
+  const authHeaders = [];
   globalThis.fetch = async (_url, init) => {
+    authHeaders.push(init.headers.Authorization);
     const request = JSON.parse(init.body);
     const mailbox = request.variables.mailbox;
     if (request.query.includes("inbox(")) {
@@ -328,12 +333,12 @@ test("manual ingestion and polling post allowed mail only to its team's own chat
     } : null } });
   };
   try {
-    await saveTeamMailboxSettings("team-a", true, ["coach@team-a.example"]);
-    await saveTeamMailboxSettings("team-b", true, ["mentor@team-b.example"]);
+    await saveTeamMailboxSettings("team-a", true, ["coach@team-a.example"], "team-a-api-key");
+    activeDatabase = databases.secondary;
+    await saveTeamMailboxSettings("team-b", true, ["mentor@team-b.example"], "team-b-api-key");
+    activeDatabase = databases.primary;
     databases.primary.rows.inboxes.find(row => row.teamId === "team-a").mailbox = "team-a-mailbox";
-    databases.secondary.rows.inboxes.push({
-      teamId: "team-b", mailbox: "team-b-mailbox", enabled: true, allowedSenders: ["mentor@team-b.example"],
-    });
+    databases.secondary.rows.inboxes.find(row => row.teamId === "team-b").mailbox = "team-b-mailbox";
     activeDatabase = databases.primary;
     const manual = await ingestMailboxIntoChat("team-a");
     assert.deepEqual(manual, { posted: 1, skipped: 1 });
@@ -341,6 +346,7 @@ test("manual ingestion and polling post allowed mail only to its team's own chat
     assert.equal(databases.primary.rows.messages[0].teamId, "team-a");
     assert.equal(databases.primary.rows.messages[0].conversationScope, "shared");
     assert.equal(databases.primary.rows.emails.find(row => row.messageId === "blocked-message").postedMessageId, null);
+    assert.ok(authHeaders.every(header => header === "Bearer team-a-api-key"));
 
     // A second manual check cannot duplicate accepted chat messages.
     const duplicate = await ingestMailboxIntoChat("team-a");
@@ -352,8 +358,55 @@ test("manual ingestion and polling post allowed mail only to its team's own chat
     assert.equal(databases.secondary.rows.messages[0].teamId, "team-b");
     assert.equal(databases.primary.rows.messages.length, 1);
     assert.equal(databases.secondary.rows.emails[0].mailbox, "team-b-mailbox");
+    assert.ok(authHeaders.slice(6).every(header => header === "Bearer team-b-api-key"));
   } finally {
     globalThis.fetch = previousFetch;
     activeDatabase = databases.primary;
+  }
+});
+
+test("Maildrop keys are encrypted, replaceable, removable, and never returned", async () => {
+  clearDatabase(databases.primary);
+  const firstKey = "team-secret-one";
+  const first = await saveTeamMailboxSettings("team-a", false, ["coach@example.org"], firstKey);
+  const row = databases.primary.rows.inboxes[0];
+  assert.equal(row.encryptedApiKey.includes(firstKey), false);
+  assert.equal(first.apiKeyConfigured, true);
+  assert.equal(JSON.stringify(first).includes(firstKey), false);
+  assert.equal(JSON.stringify(await getTeamMailboxSettings("team-a")).includes(firstKey), false);
+  const firstCiphertext = row.encryptedApiKey;
+
+  await saveTeamMailboxSettings("team-a", false, ["coach@example.org"], "team-secret-two");
+  assert.notEqual(row.encryptedApiKey, firstCiphertext);
+  assert.equal(row.encryptedApiKey.includes("team-secret-two"), false);
+
+  const removed = await saveTeamMailboxSettings("team-a", false, ["coach@example.org"], undefined, true);
+  assert.equal(removed.apiKeyConfigured, false);
+  assert.equal(row.encryptedApiKey, null);
+  await assert.rejects(
+    () => saveTeamMailboxSettings("team-a", true, ["coach@example.org"]),
+    /save this team's Maildrop API key/i,
+  );
+});
+
+test("missing and rejected Maildrop keys produce safe, recoverable check messages", async () => {
+  clearDatabase(databases.primary);
+  const previousFetch = globalThis.fetch;
+  await saveTeamMailboxSettings("team-a", false, ["coach@team-a.example"]);
+  const missing = await ingestMailboxIntoChat("team-a");
+  assert.match(missing.reason, /add this team's Maildrop API key/i);
+
+  await saveTeamMailboxSettings("team-a", true, ["coach@team-a.example"], "sensitive-invalid-key");
+  databases.primary.rows.inboxes[0].mailbox = "team-a-mailbox";
+  globalThis.fetch = async (_url, init) => {
+    assert.equal(init.headers.Authorization, "Bearer sensitive-invalid-key");
+    return new Response("{}", { status: 401 });
+  };
+  try {
+    const rejected = await ingestMailboxIntoChat("team-a");
+    assert.match(rejected.reason, /rejected this team's API key/i);
+    assert.equal(JSON.stringify(rejected).includes("sensitive-invalid-key"), false);
+  } finally {
+    globalThis.fetch = previousFetch;
   }
 });

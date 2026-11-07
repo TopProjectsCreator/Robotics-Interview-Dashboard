@@ -57,6 +57,7 @@
 - [Pool transaction client](pool-transaction-client.md) — BEGIN and COMMIT must run on one checked-out client; pool.query sends each statement to a different connection.
 - [Broadcast acknowledgement uniqueness](broadcast-ack-unique-index.md) — broadcast acks need a unique index on (broadcast, session) or every poll adds a row and duplicates the broadcast.
 - [Shared query keys and retry options](react-query-shared-key-retry.md) — observers that share a query key but disagree on retry make the query retry forever and never surface isError.
+- [Maildrop bearer-key limitation](maildrop-bearer-key-limitation.md) — official Maildrop docs currently say its API requires no auth, so saved team Bearer keys cannot yet be verified upstream.
 - [Applicant drawer close rule](applicant-detail-drawer-roster.md) — the applicant drawer closes on a server 400/404 or a miss in the unfiltered roster, but never because a filter narrowed the list.
 - [Streaming large object downloads](streaming-large-object-download.md) — large CAD objects must be streamed to disk, never buffered in memory, because the instance has a 512 MB ceiling.
 - [Persisted CAD previews](persisted-cad-previews.md) — a finished CAD preview is stored under a path-derived id so it can be found again after the instance restarts.

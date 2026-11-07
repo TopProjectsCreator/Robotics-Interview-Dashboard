@@ -743,6 +743,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `create table if not exists "ingested_emails" ("id" text primary key, "team_id" text, "mailbox" text not null, "message_id" text not null, "sender" text not null default '', "subject" text not null default '', "posted_message_id" text, "received_at" timestamptz, "ingested_at" timestamptz not null default now())`,
     `create unique index if not exists "ingested_emails_mailbox_message_unique" on "ingested_emails" ("mailbox", "message_id")`,
     `create table if not exists "maildrop_inboxes" ("team_id" text primary key, "mailbox" text not null unique, "enabled" boolean not null default false, "allowed_senders" jsonb not null default '[]'::jsonb check (jsonb_typeof("allowed_senders") = 'array'), "updated_at" timestamptz not null default now())`,
+    `alter table "maildrop_inboxes" add column if not exists "encrypted_api_key" text`,
     `create unique index if not exists "maildrop_inboxes_mailbox_unique" on "maildrop_inboxes" ("mailbox")`,
     `create table if not exists "feature_requests" ("id" text primary key, "team_id" text, "author_id" text, "author_name" text not null, "message" text not null, "status" text not null default 'open', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,

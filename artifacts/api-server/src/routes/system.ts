@@ -93,7 +93,7 @@ function mailboxSettingsResponse(settings: Awaited<ReturnType<typeof getTeamMail
   return GetTeamMailboxSettingsResponse.parse({
     ...settings,
     forwardingAddress: settings.mailbox ? forwardingAddress(settings.mailbox) : null,
-    configured: settings.enabled && settings.allowedSenders.length > 0,
+    configured: settings.enabled && settings.apiKeyConfigured && settings.allowedSenders.length > 0,
   });
 }
 
@@ -111,7 +111,7 @@ router.get("/system/mailbox", requireInboxAdmin, async (req, res): Promise<void>
 router.put("/system/mailbox", requireInboxAdmin, async (req, res): Promise<void> => {
   const parsed = UpdateTeamMailboxSettingsBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Enter valid approved sender email addresses." });
+    res.status(400).json({ error: "Enter valid inbox settings and approved sender email addresses." });
     return;
   }
   try {
@@ -119,6 +119,8 @@ router.put("/system/mailbox", requireInboxAdmin, async (req, res): Promise<void>
       await requestTeamId(req),
       parsed.data.enabled,
       parsed.data.allowedSenders,
+      parsed.data.apiKey,
+      parsed.data.removeApiKey,
     );
     res.json(mailboxSettingsResponse(settings));
   } catch (error) {

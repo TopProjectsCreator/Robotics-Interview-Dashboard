@@ -45,23 +45,28 @@ export const GetTeamMailboxSettingsResponse = zod.object({
   "forwardingAddress": zod.string().nullable(),
   "enabled": zod.boolean(),
   "configured": zod.boolean(),
+  "apiKeyConfigured": zod.boolean().describe('Whether a Maildrop API key is saved. The key itself is never returned.'),
   "allowedSenders": zod.array(zod.union([zod.string().email(),zod.string().regex(getTeamMailboxSettingsResponseAllowedSendersItemTwoRegExp)])).max(getTeamMailboxSettingsResponseAllowedSendersMax),
   "legacy": zod.boolean()
 })
 
 
 /**
- * Admin-only. Each team manages an independent Maildrop mailbox and approved-sender list.
+ * Admin-only. Each team manages an independent Maildrop mailbox, API key, and approved-sender list.
  * @summary Update the signed-in team's inbox settings
  */
 export const updateTeamMailboxSettingsBodyAllowedSendersItemTwoRegExp = new RegExp('^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$');
 export const updateTeamMailboxSettingsBodyAllowedSendersMax = 50;
 
+export const updateTeamMailboxSettingsBodyApiKeyMax = 2048;
+
 
 
 export const UpdateTeamMailboxSettingsBody = zod.object({
   "enabled": zod.boolean(),
-  "allowedSenders": zod.array(zod.union([zod.string().email(),zod.string().regex(updateTeamMailboxSettingsBodyAllowedSendersItemTwoRegExp)])).max(updateTeamMailboxSettingsBodyAllowedSendersMax)
+  "allowedSenders": zod.array(zod.union([zod.string().email(),zod.string().regex(updateTeamMailboxSettingsBodyAllowedSendersItemTwoRegExp)])).max(updateTeamMailboxSettingsBodyAllowedSendersMax),
+  "apiKey": zod.string().max(updateTeamMailboxSettingsBodyApiKeyMax).optional().describe('New team Maildrop API key. Omit to keep the saved key.'),
+  "removeApiKey": zod.boolean().optional().describe('Remove the saved team key. The inbox must be disabled.')
 })
 
 export const updateTeamMailboxSettingsResponseAllowedSendersItemTwoRegExp = new RegExp('^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$');
@@ -75,6 +80,7 @@ export const UpdateTeamMailboxSettingsResponse = zod.object({
   "forwardingAddress": zod.string().nullable(),
   "enabled": zod.boolean(),
   "configured": zod.boolean(),
+  "apiKeyConfigured": zod.boolean().describe('Whether a Maildrop API key is saved. The key itself is never returned.'),
   "allowedSenders": zod.array(zod.union([zod.string().email(),zod.string().regex(updateTeamMailboxSettingsResponseAllowedSendersItemTwoRegExp)])).max(updateTeamMailboxSettingsResponseAllowedSendersMax),
   "legacy": zod.boolean()
 })

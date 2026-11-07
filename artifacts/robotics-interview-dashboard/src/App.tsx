@@ -368,10 +368,10 @@ function SignalChips({ signals }: { signals: ApplicantSignals }) {
   const visible = chips.filter((c): c is { label: string; className: string; title: string } => c !== null);
   return <span className="flex flex-wrap items-center gap-1">{visible.map(c => <span key={c.label} title={c.title} className={`mono rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${c.className}`}>{c.label}</span>)}</span>;
 }
-function Toggle({ on, onChange, testId, label }: { on: boolean; onChange: (v: boolean) => void; testId: string; label: string }) {
+function Toggle({ on, onChange, testId, label, disabled = false }: { on: boolean; onChange: (v: boolean) => void; testId: string; label: string; disabled?: boolean }) {
   // The visible pill stays 24px tall, but the button keeps a 44px hit area so
   // the switch is reachable with a thumb.
-  return <button role="switch" aria-checked={on} aria-label={label} data-testid={testId} onClick={() => onChange(!on)} className="relative h-11 w-12 shrink-0 transition"><span className={`absolute left-0 top-1/2 h-6 w-11 -translate-y-1/2 rounded-full transition ${on ? "bg-[#16869a]" : "bg-[#cbd9da]"}`} /><span className={`absolute left-0 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-all ${on ? "translate-x-[22px]" : "translate-x-0.5"}`} /></button>;
+  return <button role="switch" aria-checked={on} aria-label={label} disabled={disabled} data-testid={testId} onClick={() => onChange(!on)} className={`relative h-11 w-12 shrink-0 transition ${disabled ? "cursor-not-allowed opacity-50" : ""}`}><span className={`absolute left-0 top-1/2 h-6 w-11 -translate-y-1/2 rounded-full transition ${on ? "bg-[#16869a]" : "bg-[#cbd9da]"}`} /><span className={`absolute left-0 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-all ${on ? "translate-x-[22px]" : "translate-x-0.5"}`} /></button>;
 }
 function Segmented<T extends string | number>({ options, value, onChange, testId }: { options: { value: T; label: string }[]; value: T; onChange: (v: T) => void; testId: string }) {
   return <div className="flex rounded-lg border border-[#dce5e5] bg-[#f3f6f5] p-1" data-testid={testId}>{options.map(o => <button key={String(o.value)} onClick={() => onChange(o.value)} className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition ${o.value === value ? "bg-white text-[#183a4b] shadow-sm" : "text-[#7c8c91] hover:text-[#385762]"}`}>{o.label}</button>)}</div>;
@@ -629,6 +629,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [mailboxEnabled, setMailboxEnabled] = useState(false);
   const [mailboxSenders, setMailboxSenders] = useState<string[]>([]);
   const [mailboxSenderDraft, setMailboxSenderDraft] = useState("");
+  const [mailboxKeyDraft, setMailboxKeyDraft] = useState("");
   const [mailboxResult, setMailboxResult] = useState<string | null>(null);
   useEffect(() => {
     if (!mailboxQuery.data) return;
@@ -655,16 +656,40 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   };
   const saveMailbox = () => {
     setMailboxResult(null);
-    updateMailbox.mutate({ data: { enabled: mailboxEnabled, allowedSenders: mailboxSenders } }, {
+    const apiKey = mailboxKeyDraft.trim();
+    updateMailbox.mutate({ data: {
+      enabled: mailboxEnabled,
+      allowedSenders: mailboxSenders,
+      ...(apiKey ? { apiKey } : {}),
+    } }, {
       onSuccess: (saved) => {
         setMailboxEnabled(saved.enabled);
         setMailboxSenders(saved.allowedSenders);
+        setMailboxKeyDraft("");
         void qc.invalidateQueries({ queryKey: getGetTeamMailboxSettingsQueryKey() });
         setMailboxResult(saved.enabled
           ? "Inbox settings saved and enabled."
-          : "Inbox settings saved. Forwarded mail will not be posted while it is disabled.");
+          : saved.apiKeyConfigured
+            ? "Inbox settings and Maildrop key saved. Forwarded mail will not be posted while disabled."
+            : "Inbox settings saved. Add a Maildrop API key before enabling the inbox.");
       },
       onError: (error) => setMailboxResult(error instanceof Error ? error.message : "Could not save inbox settings."),
+    });
+  };
+  const removeMailboxKey = () => {
+    setMailboxResult(null);
+    updateMailbox.mutate({ data: {
+      enabled: false,
+      allowedSenders: mailboxSenders,
+      removeApiKey: true,
+    } }, {
+      onSuccess: (saved) => {
+        setMailboxEnabled(false);
+        setMailboxKeyDraft("");
+        void qc.invalidateQueries({ queryKey: getGetTeamMailboxSettingsQueryKey() });
+        setMailboxResult("Maildrop API key removed. The inbox is disabled.");
+      },
+      onError: (error) => setMailboxResult(error instanceof Error ? error.message : "Could not remove the Maildrop API key."),
     });
   };
   const syncMailbox = () => {
@@ -953,11 +978,23 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       {isAdmin && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>
+        <div className="mt-3 rounded-xl border border-[#dce5e5] bg-[#f8faf9] p-3 dark:border-[#31495a] dark:bg-[#0f1e27]">
+          <label htmlFor="team-maildrop-api-key" className="text-xs font-semibold">Team Maildrop API key</label>
+          <p className="mt-1 text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Each team supplies its own key. It is encrypted when saved and is never shown again.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input id="team-maildrop-api-key" type="password" autoComplete="new-password" value={mailboxKeyDraft} onChange={event => setMailboxKeyDraft(event.target.value)} data-testid="input-team-maildrop-api-key" placeholder={mailboxQuery.data?.apiKeyConfigured ? "Enter a new key to replace" : "Paste your Maildrop API key"} className={`${field} min-w-0 flex-1`} />
+            <span data-testid="team-maildrop-api-key-status" className={`text-xs font-medium ${mailboxQuery.data?.apiKeyConfigured ? "text-[#12737d] dark:text-[#6fc3cf]" : "text-[#7c8c91] dark:text-[#93a8b2]"}`}>
+              {mailboxQuery.data?.apiKeyConfigured ? "Key configured" : "No key saved"}
+            </span>
+            {mailboxQuery.data?.apiKeyConfigured && <button type="button" disabled={updateMailbox.isPending} onClick={removeMailboxKey} data-testid="button-remove-team-maildrop-api-key" className={dangerButton}>Remove key</button>}
+          </div>
+          {!mailboxQuery.data?.apiKeyConfigured && <p className="mt-2 text-[11px] text-[#a34d46] dark:text-[#e89087]">Save the team’s key before enabling or checking the inbox.</p>}
+        </div>
         {mailboxQuery.isLoading && <p className="mt-3 text-xs text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-inbox-loading">Loading inbox settings…</p>}
         {mailboxQuery.isError && <p className="mt-3 text-xs text-[#a34d46] dark:text-[#e89087]" data-testid="team-inbox-load-error">Could not load this team’s inbox settings.</p>}
         {mailboxQuery.data && <>
           <SettingRow title="Enable inbox" detail="Only approved senders are posted to your team chat">
-            <Toggle on={mailboxEnabled} onChange={setMailboxEnabled} testId="toggle-team-inbox-enabled" label="Enable team inbox" />
+            <Toggle on={mailboxEnabled} onChange={setMailboxEnabled} testId="toggle-team-inbox-enabled" label="Enable team inbox" disabled={!mailboxQuery.data.apiKeyConfigured} />
           </SettingRow>
           <div className="mt-2 rounded-xl border border-[#dce5e5] bg-[#f8faf9] p-3 dark:border-[#31495a] dark:bg-[#0f1e27]">
             <p className="text-xs font-semibold">Approved senders</p>
@@ -980,11 +1017,11 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               <code data-testid="team-inbox-forwarding-address" className="mono min-w-0 flex-1 break-all rounded-lg bg-[#f1f6f5] px-2.5 py-2 text-xs text-[#183a4b] dark:bg-[#182935] dark:text-[#c3d3db]">{mailboxQuery.data.forwardingAddress}</code>
               <CopyButton text={mailboxQuery.data.forwardingAddress} label="Copy team forwarding address" testId="button-copy-team-inbox-address" className={ghostButton} />
             </div>
-            <p className="mt-2 text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]">In your email provider, create a forwarding rule to send the messages you want to share to this address. Provider setup must be completed by your team. You do not need server access or provider credentials here.</p>
+            <p className="mt-2 text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]">In your email provider, create a forwarding rule to send the messages you want to share to this address. Each team must provide its own Maildrop API key above.</p>
           </div>}
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" disabled={updateMailbox.isPending} onClick={saveMailbox} data-testid="button-save-team-inbox" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50">{updateMailbox.isPending ? "Saving…" : "Save inbox settings"}</button>
-            <button type="button" disabled={!mailboxEnabled || mailboxSenders.length === 0 || checkMailbox.isPending} onClick={syncMailbox} data-testid="button-team-inbox-check" className={ghostButton}>{checkMailbox.isPending ? "Checking…" : "Check now"}</button>
+            <button type="button" disabled={!mailboxEnabled || !mailboxQuery.data.apiKeyConfigured || mailboxSenders.length === 0 || checkMailbox.isPending} onClick={syncMailbox} data-testid="button-team-inbox-check" className={ghostButton}>{checkMailbox.isPending ? "Checking…" : "Check now"}</button>
           </div>
         </>}
         {mailboxResult && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-inbox-result">{mailboxResult}</p>}

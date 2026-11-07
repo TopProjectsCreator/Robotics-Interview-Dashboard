@@ -14,6 +14,7 @@ import {
 } from "@workspace/db";
 import { logger } from "./logger";
 import { pushRealtimeHint } from "./realtime";
+import { decryptMaildropApiKey, encryptMaildropApiKey } from "./assistantProviderSecurity";
 
 /**
  * Each team's unique Maildrop mailbox forwards into that team's shared chat.
@@ -38,28 +39,56 @@ export type TeamMailboxSettings = {
   teamId: string;
   mailbox: string | null;
   enabled: boolean;
+  apiKeyConfigured: boolean;
   allowedSenders: string[];
   legacy: boolean;
 };
 
+type StoredMailboxSettings = {
+  settings: TeamMailboxSettings;
+  encryptedApiKey: string | null;
+};
+
 type GraphQLResponse<T> = { data?: T; errors?: { message?: string }[] };
 
-async function maildropQuery<T>(query: string, variables: Record<string, string>): Promise<T> {
+export class MaildropAuthenticationError extends Error {
+  constructor() {
+    super("Maildrop rejected this team's API key. Replace the key in inbox settings and try again.");
+    this.name = "MaildropAuthenticationError";
+  }
+}
+
+function maildropErrorMessage(payload: GraphQLResponse<unknown>): string {
+  const messages = payload.errors?.map((error) => error.message ?? "").join(" ").toLowerCase() ?? "";
+  if (/auth|unauthori[sz]ed|forbidden|api.?key|bearer|token/.test(messages)) {
+    throw new MaildropAuthenticationError();
+  }
+  return "Maildrop could not process the inbox request.";
+}
+
+async function maildropQuery<T>(
+  query: string,
+  variables: Record<string, string>,
+  apiKey: string,
+): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), MAILDROP_TIMEOUT_MS);
   try {
     const response = await fetch(MAILDROP_ENDPOINT, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
       body: JSON.stringify({ query, variables }),
       signal: controller.signal,
     });
-    if (!response.ok) throw new Error(`Maildrop responded ${response.status}`);
+    if (response.status === 401 || response.status === 403) throw new MaildropAuthenticationError();
+    if (response.status === 429) throw new Error("Maildrop is temporarily rate limiting inbox checks.");
+    if (!response.ok) throw new Error("Maildrop is temporarily unavailable.");
     const payload = (await response.json()) as GraphQLResponse<T>;
-    if (payload.errors?.length) {
-      throw new Error(payload.errors.map((error) => error.message ?? "unknown").join("; "));
-    }
-    if (!payload.data) throw new Error("Maildrop returned no data");
+    if (payload.errors?.length) throw new Error(maildropErrorMessage(payload));
+    if (!payload.data) throw new Error("Maildrop returned no inbox data.");
     return payload.data;
   } finally {
     clearTimeout(timer);
@@ -108,31 +137,37 @@ function legacyDefaultSettings(): TeamMailboxSettings {
   return {
     teamId: DEFAULT_TEAM_ID,
     mailbox,
-    enabled: Boolean(mailbox && allowedSenders.length),
+    enabled: false,
+    apiKeyConfigured: false,
     allowedSenders,
     legacy: true,
   };
 }
 
-async function storedSettings(teamId: string): Promise<TeamMailboxSettings | null> {
+async function storedSettings(teamId: string): Promise<StoredMailboxSettings | null> {
   const [row] = await db.select().from(maildropInboxesTable)
     .where(eq(maildropInboxesTable.teamId, teamId))
     .limit(1);
   return row ? {
-    teamId: row.teamId,
-    mailbox: row.mailbox,
-    enabled: row.enabled,
-    allowedSenders: normalizeAllowedSenders(row.allowedSenders),
-    legacy: false,
+    settings: {
+      teamId: row.teamId,
+      mailbox: row.mailbox,
+      enabled: row.enabled && Boolean(row.encryptedApiKey),
+      apiKeyConfigured: Boolean(row.encryptedApiKey),
+      allowedSenders: normalizeAllowedSenders(row.allowedSenders),
+      legacy: false,
+    },
+    encryptedApiKey: row.encryptedApiKey ?? null,
   } : null;
 }
 
 export async function getTeamMailboxSettings(teamId: string): Promise<TeamMailboxSettings> {
-  return await storedSettings(teamId) ??
+  return (await storedSettings(teamId))?.settings ??
     (teamId === DEFAULT_TEAM_ID ? legacyDefaultSettings() : {
       teamId,
       mailbox: null,
       enabled: false,
+      apiKeyConfigured: false,
       allowedSenders: [],
       legacy: false,
     });
@@ -148,8 +183,9 @@ export async function migrateLegacyDefaultMailbox(): Promise<void> {
   await primaryDb.insert(maildropInboxesTable).values({
     teamId: DEFAULT_TEAM_ID,
     mailbox,
-    enabled: maildropAllowedSenders().length > 0,
+    enabled: false,
     allowedSenders: maildropAllowedSenders(),
+    encryptedApiKey: null,
   }).onConflictDoNothing();
 }
 
@@ -157,6 +193,8 @@ export async function saveTeamMailboxSettings(
   teamId: string,
   enabled: boolean,
   allowedSenders: string[],
+  apiKey?: string,
+  removeApiKey = false,
 ): Promise<TeamMailboxSettings> {
   const senders = normalizeAllowedSenders(allowedSenders);
   if (senders.some((sender) => !isValidApprovedSender(sender))) {
@@ -165,23 +203,44 @@ export async function saveTeamMailboxSettings(
   if (enabled && senders.length === 0) {
     throw new TypeError("Add at least one approved sender before enabling the inbox.");
   }
+  if (removeApiKey && apiKey !== undefined) {
+    throw new TypeError("Choose whether to replace or remove the Maildrop API key.");
+  }
+  if (removeApiKey && enabled) {
+    throw new TypeError("Disable the inbox before removing its Maildrop API key.");
+  }
   const existing = await storedSettings(teamId);
   const inherited = !existing && teamId === DEFAULT_TEAM_ID ? legacyDefaultSettings() : null;
-  const mailbox = existing?.mailbox ?? inherited?.mailbox ??
+  const mailbox = existing?.settings.mailbox ?? inherited?.mailbox ??
     `robotics-${randomUUID().replaceAll("-", "").slice(0, 20)}`;
+  let encryptedApiKey = existing?.encryptedApiKey ?? null;
+  if (removeApiKey) {
+    encryptedApiKey = null;
+  } else if (apiKey !== undefined) {
+    const normalizedKey = apiKey.trim();
+    if (!normalizedKey || normalizedKey.length > 2048 || /[\u0000-\u001f\u007f]/.test(normalizedKey)) {
+      throw new TypeError("Enter a valid Maildrop API key.");
+    }
+    encryptedApiKey = encryptMaildropApiKey(normalizedKey);
+  }
+  if (enabled && !encryptedApiKey) {
+    throw new TypeError("Save this team's Maildrop API key before enabling the inbox.");
+  }
   await db.insert(maildropInboxesTable).values({
     teamId,
     mailbox,
     enabled,
     allowedSenders: senders,
+    encryptedApiKey,
   }).onConflictDoUpdate({
     target: maildropInboxesTable.teamId,
-    set: { mailbox, enabled, allowedSenders: senders, updatedAt: new Date() },
+    set: { mailbox, enabled, allowedSenders: senders, encryptedApiKey, updatedAt: new Date() },
   });
   return {
     teamId,
     mailbox,
     enabled,
+    apiKeyConfigured: Boolean(encryptedApiKey),
     allowedSenders: senders,
     legacy: false,
   };
@@ -204,10 +263,11 @@ export function senderAllowed(from: string, approvedSenders = maildropAllowedSen
 }
 
 /** Lists the messages currently sitting in the mailbox (newest last). */
-export async function listMailboxMessages(mailbox: string): Promise<MaildropMessage[]> {
+export async function listMailboxMessages(mailbox: string, apiKey: string): Promise<MaildropMessage[]> {
   const data = await maildropQuery<{ inbox: { id: string; headerfrom?: string | null; subject?: string | null; date?: string | null }[] }>(
     `query Inbox($mailbox: String!) { inbox(mailbox: $mailbox) { id headerfrom subject date } }`,
     { mailbox },
+    apiKey,
   );
   return (data.inbox ?? []).map((message) => ({
     id: String(message.id),
@@ -219,10 +279,11 @@ export async function listMailboxMessages(mailbox: string): Promise<MaildropMess
 }
 
 /** Fetches one message with its body text. */
-export async function fetchMailboxMessage(mailbox: string, id: string): Promise<MaildropMessage | null> {
+export async function fetchMailboxMessage(mailbox: string, id: string, apiKey: string): Promise<MaildropMessage | null> {
   const data = await maildropQuery<{ message: { id: string; headerfrom?: string | null; subject?: string | null; date?: string | null; data?: string | null; html?: string | null } | null }>(
     `query Message($mailbox: String!, $id: String!) { message(mailbox: $mailbox, id: $id) { id headerfrom subject date data html } }`,
     { mailbox, id },
+    apiKey,
   );
   const message = data.message;
   if (!message) return null;
@@ -264,12 +325,30 @@ const CHAT_MESSAGE_MAX_CHARS = 2000;
  */
 export async function ingestMailboxIntoChat(
   teamId: string,
-  providedSettings?: TeamMailboxSettings,
+  providedSettings?: StoredMailboxSettings,
 ): Promise<{ posted: number; skipped: number; reason?: string }> {
-  const settings = providedSettings ?? await getTeamMailboxSettings(teamId);
-  const mailbox = settings.mailbox;
-  const allowedSenders = settings.allowedSenders;
-  if (!settings.enabled || !mailbox) {
+  let stored: StoredMailboxSettings | null;
+  try {
+    stored = providedSettings ?? await storedSettings(teamId);
+  } catch {
+    return { posted: 0, skipped: 0, reason: "The saved Maildrop API key could not be read. Replace it in team inbox settings." };
+  }
+  const settings = stored?.settings;
+  const mailbox = settings?.mailbox;
+  if (settings?.enabled && !stored?.encryptedApiKey) {
+    return { posted: 0, skipped: 0, reason: "Add this team's Maildrop API key in inbox settings before checking." };
+  }
+  let apiKey: string;
+  try {
+    if (!stored?.encryptedApiKey) {
+      return { posted: 0, skipped: 0, reason: "Add this team's Maildrop API key in inbox settings before checking." };
+    }
+    apiKey = decryptMaildropApiKey(stored.encryptedApiKey);
+  } catch {
+    return { posted: 0, skipped: 0, reason: "The saved Maildrop API key could not be read. Replace it in team inbox settings." };
+  }
+  const allowedSenders = settings?.allowedSenders ?? [];
+  if (!settings?.enabled || !mailbox) {
     return { posted: 0, skipped: 0, reason: "Inbox is not enabled" };
   }
   if (!allowedSenders.length) {
@@ -277,10 +356,17 @@ export async function ingestMailboxIntoChat(
   }
   let listed: MaildropMessage[];
   try {
-    listed = await listMailboxMessages(mailbox);
+    listed = await listMailboxMessages(mailbox, apiKey);
   } catch (error) {
-    logger.warn({ err: error, teamId }, "Could not read the team mailbox");
-    return { posted: 0, skipped: 0, reason: "Mailbox unreachable" };
+    const authenticationFailed = error instanceof MaildropAuthenticationError;
+    logger.warn({ teamId, failure: authenticationFailed ? "authentication" : "maildrop-request" }, "Could not read the team mailbox");
+    return {
+      posted: 0,
+      skipped: 0,
+      reason: authenticationFailed
+        ? error.message
+        : "Maildrop could not read this team's mailbox. Check the key and try again.",
+    };
   }
 
   let posted = 0;
@@ -288,7 +374,7 @@ export async function ingestMailboxIntoChat(
   for (const summary of listed) {
     try {
       const approved = senderAllowed(summary.from, allowedSenders);
-      const full = approved ? await fetchMailboxMessage(mailbox, summary.id).catch(() => null) : null;
+      const full = approved ? await fetchMailboxMessage(mailbox, summary.id, apiKey) : null;
       const from = (full?.from || summary.from).trim();
       const subject = (full?.subject || summary.subject || "(no subject)").trim();
       const receivedAt = summary.date ? new Date(summary.date) : null;
@@ -337,7 +423,11 @@ export async function ingestMailboxIntoChat(
       pushRealtimeHint("interview_chat_messages", "INSERT");
       posted += 1;
     } catch (error) {
-      logger.warn({ err: error, teamId, messageId: summary.id }, "Could not ingest a team email");
+      if (error instanceof MaildropAuthenticationError) {
+        logger.warn({ teamId, failure: "authentication" }, "Maildrop rejected the team's API key");
+        return { posted, skipped: skipped + 1, reason: error.message };
+      }
+      logger.warn({ teamId, messageId: summary.id }, "Could not ingest a team email");
       skipped += 1;
     }
   }
@@ -345,17 +435,21 @@ export async function ingestMailboxIntoChat(
   return { posted, skipped };
 }
 
-async function enabledMailboxes(instance: DbInstance): Promise<TeamMailboxSettings[]> {
+async function enabledMailboxes(instance: DbInstance): Promise<StoredMailboxSettings[]> {
   const handle = instance === "secondary" ? secondaryDb() : primaryDb;
   if (!handle) return [];
   const rows = await handle.select().from(maildropInboxesTable)
     .where(eq(maildropInboxesTable.enabled, true));
-  return rows.map((row) => ({
-    teamId: row.teamId,
-    mailbox: row.mailbox,
-    enabled: row.enabled,
-    allowedSenders: normalizeAllowedSenders(row.allowedSenders),
-    legacy: false,
+  return rows.filter((row) => Boolean(row.encryptedApiKey)).map((row) => ({
+    settings: {
+      teamId: row.teamId,
+      mailbox: row.mailbox,
+      enabled: row.enabled,
+      apiKeyConfigured: true,
+      allowedSenders: normalizeAllowedSenders(row.allowedSenders),
+      legacy: false,
+    },
+    encryptedApiKey: row.encryptedApiKey,
   }));
 }
 
@@ -367,7 +461,7 @@ export async function pollTeamMailboxesOnce(): Promise<void> {
   }
   const instances: DbInstance[] = ["primary", ...(hasSecondary() ? ["secondary" as const] : [])];
   for (const instance of instances) {
-    let mailboxes: TeamMailboxSettings[];
+    let mailboxes: StoredMailboxSettings[];
     try {
       mailboxes = await enabledMailboxes(instance);
     } catch (error) {
@@ -375,8 +469,8 @@ export async function pollTeamMailboxesOnce(): Promise<void> {
       continue;
     }
     for (const settings of mailboxes) {
-      await runWithInstance(instance, () => ingestMailboxIntoChat(settings.teamId, settings))
-        .catch((error) => logger.warn({ err: error, teamId: settings.teamId }, "Mailbox poll failed"));
+      await runWithInstance(instance, () => ingestMailboxIntoChat(settings.settings.teamId, settings))
+        .catch(() => logger.warn({ teamId: settings.settings.teamId }, "Mailbox poll failed"));
     }
   }
 }

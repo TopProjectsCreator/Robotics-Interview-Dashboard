@@ -11,6 +11,7 @@ export const maildropInboxesTable = pgTable("maildrop_inboxes", {
   mailbox: text("mailbox").notNull().unique(),
   enabled: boolean("enabled").notNull().default(false),
   allowedSenders: jsonb("allowed_senders").$type<string[]>().notNull().default([]),
+  encryptedApiKey: text("encrypted_api_key"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

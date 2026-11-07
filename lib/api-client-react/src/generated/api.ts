@@ -551,7 +551,7 @@ export const getUpdateTeamMailboxSettingsUrl = () => {
 }
 
 /**
- * Admin-only. Each team manages an independent Maildrop mailbox and approved-sender list.
+ * Admin-only. Each team manages an independent Maildrop mailbox, API key, and approved-sender list.
  * @summary Update the signed-in team's inbox settings
  */
 export const updateTeamMailboxSettings = async (teamMailboxSettingsInput: TeamMailboxSettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamMailboxSettings> => {

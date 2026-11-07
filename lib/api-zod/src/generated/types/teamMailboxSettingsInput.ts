@@ -10,4 +10,11 @@ export interface TeamMailboxSettingsInput {
   enabled: boolean;
   /** @maxItems 50 */
   allowedSenders: string[];
+  /**
+     * New team Maildrop API key. Omit to keep the saved key.
+     * @maxLength 2048
+     */
+  apiKey?: string;
+  /** Remove the saved team key. The inbox must be disabled. */
+  removeApiKey?: boolean;
 }

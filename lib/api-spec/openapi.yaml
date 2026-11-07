@@ -74,7 +74,7 @@ paths:
       operationId: updateTeamMailboxSettings
       tags: [system]
       summary: Update the signed-in team's inbox settings
-      description: Admin-only. Each team manages an independent Maildrop mailbox and approved-sender list.
+      description: Admin-only. Each team manages an independent Maildrop mailbox, API key, and approved-sender list.
       requestBody:
         required: true
         content:
@@ -5911,7 +5911,7 @@ components:
     TeamMailboxSettings:
       type: object
       additionalProperties: false
-      required: [teamId, mailbox, forwardingAddress, enabled, configured, allowedSenders, legacy]
+      required: [teamId, mailbox, forwardingAddress, enabled, configured, apiKeyConfigured, allowedSenders, legacy]
       properties:
         teamId:
           type: string
@@ -5923,6 +5923,9 @@ components:
           type: boolean
         configured:
           type: boolean
+        apiKeyConfigured:
+          type: boolean
+          description: Whether a Maildrop API key is saved. The key itself is never returned.
         allowedSenders:
           type: array
           maxItems: 50
@@ -5950,6 +5953,13 @@ components:
                 format: email
               - type: string
                 pattern: '^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$'
+        apiKey:
+          type: string
+          maxLength: 2048
+          description: New team Maildrop API key. Omit to keep the saved key.
+        removeApiKey:
+          type: boolean
+          description: Remove the saved team key. The inbox must be disabled.
     TeamMailboxSyncResult:
       type: object
       additionalProperties: false
