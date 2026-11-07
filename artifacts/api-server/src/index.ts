@@ -892,7 +892,6 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     primaryReady = true;
   } catch (err) {
     primaryError = err;
-    logger.error({ err }, "Primary schema migration failed");
   }
 
   // Second instance (new teams): same schema, so fresh teams boot with every
@@ -924,6 +923,28 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
         secondaryReady = true;
         logger.info("Secondary schema check passed");
       }
+    }
+  }
+
+  if (!primaryReady) {
+    const primaryErrorMessage =
+      primaryError instanceof Error ? primaryError.message : String(primaryError);
+    const primaryErrorCode =
+      typeof primaryError === "object" &&
+      primaryError !== null &&
+      "code" in primaryError &&
+      typeof primaryError.code === "string"
+        ? primaryError.code
+        : "";
+    const primaryUnavailable =
+      /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|57P01|57P03/i.test(
+        `${primaryErrorCode} ${primaryErrorMessage}`,
+      );
+
+    if (secondaryReady && primaryUnavailable) {
+      logger.warn({ err: primaryError }, "Primary database unavailable; continuing with secondary");
+    } else {
+      logger.error({ err: primaryError }, "Primary schema migration failed");
     }
   }
 
