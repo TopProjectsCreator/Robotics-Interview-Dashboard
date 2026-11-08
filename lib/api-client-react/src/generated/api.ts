@@ -80,6 +80,9 @@ import type {
   CadModelUpdateInput,
   CadModelUpload,
   CadStorageStatus,
+  Calendar,
+  CalendarCreateInput,
+  CalendarOperationInput,
   ChatChannel,
   ChatChannelInput,
   ChatChannelList,
@@ -7696,6 +7699,226 @@ export const useUpdateSpreadsheet = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getUpdateSpreadsheetMutationOptions(options));
+    }
+
+export const getCreateCalendarUrl = () => {
+
+
+
+
+  return `/api/calendars`
+}
+
+/**
+ * @summary Create a shared live team calendar
+ */
+export const createCalendar = async (calendarCreateInput: CalendarCreateInput, options?: Parameters<typeof customFetch>[1]): Promise<Calendar> => {
+
+  return customFetch<Calendar>(getCreateCalendarUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(calendarCreateInput)
+  }
+);}
+
+
+
+
+
+export const getCreateCalendarMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCalendar>>, TError,{data: BodyType<CalendarCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createCalendar>>, TError,{data: BodyType<CalendarCreateInput>}, TContext> => {
+
+const mutationKey = ['createCalendar'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createCalendar>>, {data: BodyType<CalendarCreateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createCalendar(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateCalendarMutationResult = NonNullable<Awaited<ReturnType<typeof createCalendar>>>
+    export type CreateCalendarMutationBody = BodyType<CalendarCreateInput>
+    export type CreateCalendarMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a shared live team calendar
+ */
+export const useCreateCalendar = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createCalendar>>, TError,{data: BodyType<CalendarCreateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createCalendar>>,
+        TError,
+        {data: BodyType<CalendarCreateInput>},
+        TContext
+      > => {
+      return useMutation(getCreateCalendarMutationOptions(options));
+    }
+
+export const getGetCalendarUrl = (calendarId: string,) => {
+
+
+
+
+  return `/api/calendars/${calendarId}`
+}
+
+/**
+ * @summary Get a shared calendar in the current conversation
+ */
+export const getCalendar = async (calendarId: string, options?: Parameters<typeof customFetch>[1]): Promise<Calendar> => {
+
+  return customFetch<Calendar>(getGetCalendarUrl(calendarId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCalendarQueryKey = (calendarId: string,) => {
+    return [
+    `/api/calendars/${calendarId}`
+    ] as const;
+    }
+
+
+export const getGetCalendarQueryOptions = <TData = Awaited<ReturnType<typeof getCalendar>>, TError = ErrorType<ErrorResponse>>(calendarId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCalendar>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCalendarQueryKey(calendarId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCalendar>>> = ({ signal }) => getCalendar(calendarId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: calendarId !== null && calendarId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCalendar>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCalendarQueryResult = NonNullable<Awaited<ReturnType<typeof getCalendar>>>
+export type GetCalendarQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get a shared calendar in the current conversation
+ */
+
+export function useGetCalendar<TData = Awaited<ReturnType<typeof getCalendar>>, TError = ErrorType<ErrorResponse>>(
+ calendarId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCalendar>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCalendarQueryOptions(calendarId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateCalendarUrl = (calendarId: string,) => {
+
+
+
+
+  return `/api/calendars/${calendarId}`
+}
+
+/**
+ * @summary Apply one atomic calendar operation (events, renames, iCal feeds)
+ */
+export const updateCalendar = async (calendarId: string,
+    calendarOperationInput: CalendarOperationInput, options?: Parameters<typeof customFetch>[1]): Promise<Calendar> => {
+
+  return customFetch<Calendar>(getUpdateCalendarUrl(calendarId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(calendarOperationInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateCalendarMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCalendar>>, TError,{calendarId: string;data: BodyType<CalendarOperationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCalendar>>, TError,{calendarId: string;data: BodyType<CalendarOperationInput>}, TContext> => {
+
+const mutationKey = ['updateCalendar'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCalendar>>, {calendarId: string;data: BodyType<CalendarOperationInput>}> = (props) => {
+          const {calendarId,data} = props ?? {};
+
+          return  updateCalendar(calendarId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCalendarMutationResult = NonNullable<Awaited<ReturnType<typeof updateCalendar>>>
+    export type UpdateCalendarMutationBody = BodyType<CalendarOperationInput>
+    export type UpdateCalendarMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Apply one atomic calendar operation (events, renames, iCal feeds)
+ */
+export const useUpdateCalendar = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCalendar>>, TError,{calendarId: string;data: BodyType<CalendarOperationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCalendar>>,
+        TError,
+        {calendarId: string;data: BodyType<CalendarOperationInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateCalendarMutationOptions(options));
     }
 
 export const getReorderQueueUrl = () => {

@@ -1059,51 +1059,79 @@ setupDocumentCollaboration(server);
 setupWhiteboardCollaboration(server);
 setupCodeCollaboration(server);
 
+function startBackgroundWork(): void {
+  void syncPartsCatalogsIfDue().catch((err) => {
+    logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
+  });
+  const catalogRefreshCheck = setInterval(() => {
+    void syncPartsCatalogsIfDue().catch((err) => {
+      logger.error({ err }, "Unable to check scheduled public supplier catalog sync");
+    });
+  }, 60 * 60 * 1000);
+  catalogRefreshCheck.unref();
+  // Chunked uploads that nothing points at any more (a tab closed
+  // mid-upload, an attachment that was removed) keep their parts in
+  // storage forever otherwise, and a single abandoned CAD model can be
+  // hundreds of megabytes.
+  void sweepOrphanChunkUploads().catch((err) => {
+    logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+  });
+  const chunkSweepCheck = setInterval(() => {
+    void sweepOrphanChunkUploads().catch((err) => {
+      logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+    });
+  }, 60 * 60 * 1000);
+  chunkSweepCheck.unref();
+  // Server-side scheduled chat delivery: posts due messages even when no
+  // browser is open.
+  startScheduledChatDispatcher();
+  startAssistantScheduledTaskDispatcher();
+  // Persisted assistant prompts continue independently of the browser tab.
+  startAssistantPromptDispatcher();
+  // Team inbox settings are team-scoped and polled from both database
+  // instances. Migrate the default team's legacy environment settings first.
+  void startMailboxPoller();
+  // Pick up CAD preview conversions that a restart interrupted.
+  void resumeStalePreviewJobs();
+  // Sitemap-backed suppliers (goBILDA) crawl themselves incrementally here.
+  // The scheduled sync above only runs once a day, which is far too slow to
+  // seed a 2,387-product catalog, so this loop owns the long first pass and
+  // then settles into a cheap "anything new?" check.
+  startSitemapCatalogCrawler();
+}
+
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
-  ensureSchema()
-    .then(({ primaryReady, secondaryReady }) => {
+  let backgroundWorkStarted = false;
+  let schemaRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleSchemaRetry = (error?: unknown) => {
+    if (error) logger.warn({ err: error }, "Schema migration failed; retrying in background, HTTP server stays up");
+    if (schemaRetryTimer) return;
+    schemaRetryTimer = setTimeout(() => {
+      schemaRetryTimer = undefined;
+      attemptSchema();
+    }, 60_000);
+    schemaRetryTimer.unref();
+  };
+  const attemptSchema = (): void => {
+    ensureSchema()
+      .then(({ primaryReady, secondaryReady }) => {
       const backgroundInstance = activeTeamDatabaseInstance();
       const backgroundDatabaseReady = backgroundInstance === "secondary" ? secondaryReady : primaryReady;
       if (!backgroundDatabaseReady) {
-        logger.warn({ instance: backgroundInstance }, "Active team database is unavailable; background jobs remain paused");
+          logger.warn({ instance: backgroundInstance }, "Active team database is unavailable; background jobs remain paused");
+          scheduleSchemaRetry();
         return;
       }
-      void runWithInstance(backgroundInstance, () => {
-        void syncPartsCatalogsIfDue().catch((err) => {
-          logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
-        });
-        const catalogRefreshCheck = setInterval(() => {
-          void syncPartsCatalogsIfDue().catch((err) => {
-            logger.error({ err }, "Unable to check scheduled public supplier catalog sync");
-          });
-        }, 60 * 60 * 1000);
-        catalogRefreshCheck.unref();
-        // Chunked uploads that nothing points at any more (a tab closed
-        // mid-upload, an attachment that was removed) keep their parts in
-        // storage forever otherwise, and a single abandoned CAD model can be
-        // hundreds of megabytes.
-        void sweepOrphanChunkUploads().catch((err) => {
-          logger.error({ err }, "Unable to sweep orphaned chunked uploads");
-        });
-        const chunkSweepCheck = setInterval(() => {
-          void sweepOrphanChunkUploads().catch((err) => {
-            logger.error({ err }, "Unable to sweep orphaned chunked uploads");
-          });
-        }, 60 * 60 * 1000);
-        chunkSweepCheck.unref();
-        // Server-side scheduled delivery and recovery jobs use the active team
-        // database context established above.
-        startScheduledChatDispatcher();
-        startAssistantScheduledTaskDispatcher();
-        startAssistantPromptDispatcher();
-        void startMailboxPoller();
-        void resumeStalePreviewJobs();
-        startSitemapCatalogCrawler();
-      });
-    })
-    .catch((err) => {
-      logger.error({ err }, "Schema migration failed; exiting");
-      process.exit(1);
-    });
+        if (schemaRetryTimer) {
+          clearTimeout(schemaRetryTimer);
+          schemaRetryTimer = undefined;
+        }
+        if (backgroundWorkStarted) return;
+        backgroundWorkStarted = true;
+        void runWithInstance(backgroundInstance, startBackgroundWork);
+      })
+      .catch((err) => scheduleSchemaRetry(err));
+  };
+  attemptSchema();
 });

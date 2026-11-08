@@ -393,3 +393,45 @@ test("a malformed stored policy reports an error and fails closed", async () => 
     (error) => error instanceof AssistantModelPolicyError,
   );
 });
+
+test("the picker only exposes free models even with no policy restriction", async () => {
+  const PAID_MODEL = "provider/paid-model";
+  const catalogWithPaid = [...catalog, { id: PAID_MODEL, name: "Paid", isFree: false }];
+  const effective = effectiveAssistantModels(policy({ defaultModel: TEXT_MODEL }), catalogWithPaid);
+  assert.ok(effective.every((model) => model.isFree === true));
+  assert.equal(effective.some((model) => model.id === PAID_MODEL), false);
+
+  providerCatalog = catalogWithPaid;
+  try {
+    await getAssistantModelPolicyWithCatalog("paid-catalog-team", true, true);
+    const result = await getAssistantModelPolicyWithCatalog("paid-catalog-team");
+    assert.equal(result.effectiveModels.some((model) => model.id === PAID_MODEL), false);
+    assert.ok(result.effectiveModels.every((model) => model.isFree === true));
+    await assert.rejects(
+      resolveTeamAssistantModel("paid-catalog-team", PAID_MODEL),
+      (error) => error instanceof AssistantModelPolicyError && /not a free model/.test(error.message),
+    );
+  } finally {
+    providerCatalog = catalog;
+    await getAssistantModelPolicyWithCatalog("paid-catalog-team", true, true);
+  }
+});
+
+test("policy saves reject paid models", async () => {
+  const PAID_MODEL = "provider/paid-save-model";
+  providerCatalog = [...catalog, { id: PAID_MODEL, name: "Paid", isFree: false }];
+  try {
+    await getAssistantModelPolicyWithCatalog("paid-save-team", true, true);
+    await assert.rejects(
+      savePolicy("paid-save-team", policy({ defaultModel: PAID_MODEL })),
+      (error) => error instanceof AssistantModelPolicyError && /not a free model/.test(error.message),
+    );
+    await assert.rejects(
+      savePolicy("paid-save-team", policy({ defaultModel: TEXT_MODEL, listMode: "allow", modelIds: [TEXT_MODEL, PAID_MODEL] })),
+      (error) => error instanceof AssistantModelPolicyError && /not free/.test(error.message),
+    );
+  } finally {
+    providerCatalog = catalog;
+    await getAssistantModelPolicyWithCatalog("paid-save-team", true, true);
+  }
+});

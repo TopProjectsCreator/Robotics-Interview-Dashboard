@@ -2813,6 +2813,297 @@ export const UpdateSpreadsheetResponse = zod.object({
 
 
 /**
+ * @summary Create a shared live team calendar
+ */
+export const createCalendarBodyTitleMax = 120;
+
+export const createCalendarBodyScopeDefault = `shared`;
+
+export const CreateCalendarBody = zod.object({
+  "title": zod.string().min(1).max(createCalendarBodyTitleMax),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(createCalendarBodyScopeDefault),
+  "recipient": zod.string().nullish(),
+  "channelId": zod.string().nullish().describe('Invite-only channel id for a channel-scope calendar.')
+})
+
+export const createCalendarResponseDataDescriptionMax = 500;
+
+export const createCalendarResponseDataEventsItemTitleMax = 200;
+
+export const createCalendarResponseDataEventsItemDescriptionMax = 12000;
+
+export const createCalendarResponseDataEventsItemLocationMax = 500;
+
+export const createCalendarResponseDataEventsItemAssigneesItemMax = 80;
+
+export const createCalendarResponseDataEventsItemAssigneesMax = 32;
+
+export const createCalendarResponseDataEventsItemColorMax = 16;
+
+export const createCalendarResponseDataEventsMax = 2000;
+
+export const createCalendarResponseDataFeedsItemNameMax = 80;
+
+export const createCalendarResponseDataFeedsItemUrlMax = 2048;
+
+export const createCalendarResponseDataFeedsItemColorMax = 16;
+
+export const createCalendarResponseDataFeedsMax = 50;
+
+
+
+export const CreateCalendarResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['calendar']),
+  "version": zod.literal(1),
+  "description": zod.string().max(createCalendarResponseDataDescriptionMax),
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(createCalendarResponseDataEventsItemTitleMax),
+  "description": zod.string().max(createCalendarResponseDataEventsItemDescriptionMax),
+  "startAt": zod.coerce.date(),
+  "endAt": zod.coerce.date(),
+  "allDay": zod.boolean(),
+  "location": zod.string().max(createCalendarResponseDataEventsItemLocationMax),
+  "assignees": zod.array(zod.string().max(createCalendarResponseDataEventsItemAssigneesItemMax)).max(createCalendarResponseDataEventsItemAssigneesMax),
+  "color": zod.string().max(createCalendarResponseDataEventsItemColorMax),
+  "feedId": zod.string().nullable().describe('Set when this event was imported from a subscribed iCal feed.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "updatedBy": zod.string()
+})).max(createCalendarResponseDataEventsMax),
+  "feeds": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().min(1).max(createCalendarResponseDataFeedsItemNameMax),
+  "url": zod.string().max(createCalendarResponseDataFeedsItemUrlMax),
+  "color": zod.string().max(createCalendarResponseDataFeedsItemColorMax),
+  "lastFetchedAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable()
+})).max(createCalendarResponseDataFeedsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Get a shared calendar in the current conversation
+ */
+export const GetCalendarParams = zod.object({
+  "calendarId": zod.coerce.string()
+})
+
+export const getCalendarResponseDataDescriptionMax = 500;
+
+export const getCalendarResponseDataEventsItemTitleMax = 200;
+
+export const getCalendarResponseDataEventsItemDescriptionMax = 12000;
+
+export const getCalendarResponseDataEventsItemLocationMax = 500;
+
+export const getCalendarResponseDataEventsItemAssigneesItemMax = 80;
+
+export const getCalendarResponseDataEventsItemAssigneesMax = 32;
+
+export const getCalendarResponseDataEventsItemColorMax = 16;
+
+export const getCalendarResponseDataEventsMax = 2000;
+
+export const getCalendarResponseDataFeedsItemNameMax = 80;
+
+export const getCalendarResponseDataFeedsItemUrlMax = 2048;
+
+export const getCalendarResponseDataFeedsItemColorMax = 16;
+
+export const getCalendarResponseDataFeedsMax = 50;
+
+
+
+export const GetCalendarResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['calendar']),
+  "version": zod.literal(1),
+  "description": zod.string().max(getCalendarResponseDataDescriptionMax),
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(getCalendarResponseDataEventsItemTitleMax),
+  "description": zod.string().max(getCalendarResponseDataEventsItemDescriptionMax),
+  "startAt": zod.coerce.date(),
+  "endAt": zod.coerce.date(),
+  "allDay": zod.boolean(),
+  "location": zod.string().max(getCalendarResponseDataEventsItemLocationMax),
+  "assignees": zod.array(zod.string().max(getCalendarResponseDataEventsItemAssigneesItemMax)).max(getCalendarResponseDataEventsItemAssigneesMax),
+  "color": zod.string().max(getCalendarResponseDataEventsItemColorMax),
+  "feedId": zod.string().nullable().describe('Set when this event was imported from a subscribed iCal feed.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "updatedBy": zod.string()
+})).max(getCalendarResponseDataEventsMax),
+  "feeds": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().min(1).max(getCalendarResponseDataFeedsItemNameMax),
+  "url": zod.string().max(getCalendarResponseDataFeedsItemUrlMax),
+  "color": zod.string().max(getCalendarResponseDataFeedsItemColorMax),
+  "lastFetchedAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable()
+})).max(getCalendarResponseDataFeedsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Apply one atomic calendar operation (events, renames, iCal feeds)
+ */
+export const UpdateCalendarParams = zod.object({
+  "calendarId": zod.coerce.string()
+})
+
+export const updateCalendarBodyTitleMax = 120;
+
+export const updateCalendarBodyDescriptionMax = 500;
+
+export const updateCalendarBodyEventTitleMax = 200;
+
+export const updateCalendarBodyEventDescriptionMax = 12000;
+
+export const updateCalendarBodyEventAllDayDefault = false;
+export const updateCalendarBodyEventLocationMax = 500;
+
+export const updateCalendarBodyEventAssigneesItemMax = 80;
+
+export const updateCalendarBodyEventAssigneesMax = 32;
+
+export const updateCalendarBodyEventColorMax = 16;
+
+export const updateCalendarBodyEventPatchTitleMax = 200;
+
+export const updateCalendarBodyEventPatchDescriptionMax = 12000;
+
+export const updateCalendarBodyEventPatchLocationMax = 500;
+
+export const updateCalendarBodyEventPatchAssigneesItemMax = 80;
+
+export const updateCalendarBodyEventPatchAssigneesMax = 32;
+
+export const updateCalendarBodyEventPatchColorMax = 16;
+
+export const updateCalendarBodyFeedUrlMax = 2048;
+
+export const updateCalendarBodyFeedNameMax = 80;
+
+export const updateCalendarBodyFeedColorMax = 16;
+
+
+
+export const UpdateCalendarBody = zod.object({
+  "operation": zod.enum(['rename_calendar', 'create_event', 'update_event', 'delete_event', 'add_ical_feed', 'remove_ical_feed', 'refresh_ical_feed']),
+  "title": zod.string().min(1).max(updateCalendarBodyTitleMax).optional(),
+  "description": zod.string().max(updateCalendarBodyDescriptionMax).optional(),
+  "event": zod.object({
+  "title": zod.string().min(1).max(updateCalendarBodyEventTitleMax),
+  "description": zod.string().max(updateCalendarBodyEventDescriptionMax).optional(),
+  "startAt": zod.coerce.date(),
+  "endAt": zod.coerce.date().optional(),
+  "allDay": zod.boolean().default(updateCalendarBodyEventAllDayDefault),
+  "location": zod.string().max(updateCalendarBodyEventLocationMax).optional(),
+  "assignees": zod.array(zod.string().max(updateCalendarBodyEventAssigneesItemMax)).max(updateCalendarBodyEventAssigneesMax).optional(),
+  "color": zod.string().max(updateCalendarBodyEventColorMax).optional()
+}).optional(),
+  "eventPatch": zod.object({
+  "title": zod.string().min(1).max(updateCalendarBodyEventPatchTitleMax).optional(),
+  "description": zod.string().max(updateCalendarBodyEventPatchDescriptionMax).optional(),
+  "startAt": zod.coerce.date().optional(),
+  "endAt": zod.coerce.date().optional(),
+  "allDay": zod.boolean().optional(),
+  "location": zod.string().max(updateCalendarBodyEventPatchLocationMax).optional(),
+  "assignees": zod.array(zod.string().max(updateCalendarBodyEventPatchAssigneesItemMax)).max(updateCalendarBodyEventPatchAssigneesMax).optional(),
+  "color": zod.string().max(updateCalendarBodyEventPatchColorMax).optional()
+}).optional(),
+  "eventId": zod.string().optional(),
+  "feedUrl": zod.string().max(updateCalendarBodyFeedUrlMax).optional(),
+  "feedName": zod.string().max(updateCalendarBodyFeedNameMax).optional(),
+  "feedId": zod.string().optional(),
+  "feedColor": zod.string().max(updateCalendarBodyFeedColorMax).optional()
+})
+
+export const updateCalendarResponseDataDescriptionMax = 500;
+
+export const updateCalendarResponseDataEventsItemTitleMax = 200;
+
+export const updateCalendarResponseDataEventsItemDescriptionMax = 12000;
+
+export const updateCalendarResponseDataEventsItemLocationMax = 500;
+
+export const updateCalendarResponseDataEventsItemAssigneesItemMax = 80;
+
+export const updateCalendarResponseDataEventsItemAssigneesMax = 32;
+
+export const updateCalendarResponseDataEventsItemColorMax = 16;
+
+export const updateCalendarResponseDataEventsMax = 2000;
+
+export const updateCalendarResponseDataFeedsItemNameMax = 80;
+
+export const updateCalendarResponseDataFeedsItemUrlMax = 2048;
+
+export const updateCalendarResponseDataFeedsItemColorMax = 16;
+
+export const updateCalendarResponseDataFeedsMax = 50;
+
+
+
+export const UpdateCalendarResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "data": zod.object({
+  "kind": zod.enum(['calendar']),
+  "version": zod.literal(1),
+  "description": zod.string().max(updateCalendarResponseDataDescriptionMax),
+  "events": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string().min(1).max(updateCalendarResponseDataEventsItemTitleMax),
+  "description": zod.string().max(updateCalendarResponseDataEventsItemDescriptionMax),
+  "startAt": zod.coerce.date(),
+  "endAt": zod.coerce.date(),
+  "allDay": zod.boolean(),
+  "location": zod.string().max(updateCalendarResponseDataEventsItemLocationMax),
+  "assignees": zod.array(zod.string().max(updateCalendarResponseDataEventsItemAssigneesItemMax)).max(updateCalendarResponseDataEventsItemAssigneesMax),
+  "color": zod.string().max(updateCalendarResponseDataEventsItemColorMax),
+  "feedId": zod.string().nullable().describe('Set when this event was imported from a subscribed iCal feed.'),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date(),
+  "updatedBy": zod.string()
+})).max(updateCalendarResponseDataEventsMax),
+  "feeds": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string().min(1).max(updateCalendarResponseDataFeedsItemNameMax),
+  "url": zod.string().max(updateCalendarResponseDataFeedsItemUrlMax),
+  "color": zod.string().max(updateCalendarResponseDataFeedsItemColorMax),
+  "lastFetchedAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable()
+})).max(updateCalendarResponseDataFeedsMax)
+}),
+  "createdBy": zod.string(),
+  "scope": zod.enum(['shared', 'direct', 'channel']),
+  "peer": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Save the interview order
  */
 export const ReorderQueueBody = zod.object({

@@ -6956,18 +6956,13 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
        .filter(member => !known.has(member.id));
    }, [channelAccounts, channels, channelDialogId]);
     return <section className={`chat-panel relative rounded-3xl border border-[#dce5e5] bg-white p-3 sm:p-4 ${tall ? "chat-panel-tall" : ""}`}>
-       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-         <div className="min-w-0">
-           <h2 className="font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : conversationChannelId ? (activeChannel?.name ?? "Channel") : "Team channel"}</h2>
-           <p className="mt-1 text-xs text-[#7c8c91]">{conversationChannelId && activeChannel ? `Invite-only · ${activeChannel.members.length} invited` : <>Type <strong>@ai</strong> for an applicant-aware response.</>}</p>
+       {/* One slim header row: title, conversation picker, and identity share a
+           single line so the message history keeps its space at desktop zoom. */}
+       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+         <div className="flex min-w-0 items-baseline gap-x-2">
+           <h2 className="shrink-0 font-semibold">{conversationPeer ? `Direct message · ${conversationPeer}` : conversationChannelId ? (activeChannel?.name ?? "Channel") : "Team channel"}</h2>
+           <p className="min-w-0 truncate text-xs text-[#7c8c91]">{conversationChannelId && activeChannel ? `Invite-only · ${activeChannel.members.length} invited` : <>Type <strong>@ai</strong> for an applicant-aware response.</>}</p>
          </div>
-         <div className="ml-auto flex shrink-0 items-center gap-2">
-           <span data-testid="chat-signed-in" className="whitespace-nowrap rounded-full border border-[#b9dddd] bg-[#f2fbfa] px-2.5 py-1.5 text-[11px] font-semibold text-[#12737d] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#8fd7e0]">
-             Signed in as <span className="font-bold">{activeInterviewer}</span>
-           </span>
-           <Bot size={18} aria-hidden="true" className="text-[#16869a]" />
-         </div>
-       </div>
       {mentionAttention && <button
         type="button"
         onClick={() => {
@@ -6985,7 +6980,6 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         <span className="min-w-0 flex-1"><span className="block text-xs font-bold">{mentionAttention.author} mentioned you</span><span className="block truncate text-[11px]">{mentionAttention.message.replace(/\s+/g, " ").trim()}</span></span>
         <ArrowRight size={15} className="shrink-0" />
       </button>}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
         <label className="sr-only" htmlFor="chat-conversation-picker">Conversation</label>
         <select
           id="chat-conversation-picker"
@@ -7029,6 +7023,12 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         </select>
         {canManageChannels && conversationChannelId && <button type="button" onClick={() => openManageChannelDialog(conversationChannelId)} data-testid="button-manage-channel" aria-label="Manage this channel" title="Rename, invite, or delete this channel" className="flex items-center gap-1.5 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-2 text-xs font-semibold text-[#12737d] transition hover:border-[#16869a] dark:bg-[#172b38] dark:text-[#8fd7e0]"><Settings size={12} /><span>Manage</span></button>}
         {canManageChannels && <button type="button" onClick={openCreateChannelDialog} data-testid="button-create-channel" aria-label="New invite-only channel" title="New invite-only channel" className="flex items-center gap-1 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-2 text-xs font-semibold text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a] dark:bg-[#172b38] dark:text-[#b9c9d1] dark:hover:text-[#6fc3cf]"><Plus size={12} /><span>Channel</span></button>}
+         <div className="ml-auto flex shrink-0 items-center gap-2">
+           <span data-testid="chat-signed-in" className="whitespace-nowrap rounded-full border border-[#b9dddd] bg-[#f2fbfa] px-2.5 py-1.5 text-[11px] font-semibold text-[#12737d] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#8fd7e0]">
+             Signed in as <span className="font-bold">{activeInterviewer}</span>
+           </span>
+           <Bot size={18} aria-hidden="true" className="text-[#16869a]" />
+         </div>
      </div>
         <div ref={chatScrollRef} onScroll={event => { const el = event.currentTarget; chatStickRef.current = isNearBottom(el); if (el.scrollTop < 80) void loadOlderChat(); }} className={`chat-message-feed mt-3 space-y-3 overflow-y-auto rounded-xl bg-[#f5f8f7] p-3 ${tall ? "h-[calc(100dvh-340px)] min-h-[420px]" : "h-[330px]"}`}>{activePinnedMessage && <div data-testid="chat-pinned-bar" className="sticky top-0 z-20 -mx-3 -mt-3 rounded-t-xl border-b border-[#e8d9a0] bg-[#fff8e1]/95 px-3 py-2 shadow-[0_2px_10px_rgba(138,101,8,0.12)] backdrop-blur"><div className="flex items-center gap-2"><span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff3cf] text-[#8a6508]"><Pin size={13} className="fill-current" /></span><button type="button" onClick={() => jumpToPinnedMessage(activePinnedMessage.id)} data-testid="button-pinned-jump" title="Jump to pinned message" className="min-w-0 flex-1 text-left"><span className="block text-[10px] font-bold uppercase tracking-[.1em] text-[#8a6508]">Pinned{pinnedChatMessages.length > 1 ? ` · ${Math.min(pinnedPreviewIndex, pinnedChatMessages.length - 1) + 1} of ${pinnedChatMessages.length}` : ""} · {activePinnedMessage.author}</span><span data-testid="chat-pinned-preview" className="block truncate text-xs font-medium text-[#5c4a08]">{activePinnedMessage.message.replace(/\s+/g, " ").trim().slice(0, 140) || "(attachment)"}</span></button>{pinnedChatMessages.length > 1 && <span className="flex shrink-0 items-center gap-0.5"><button type="button" onClick={() => setPinnedPreviewIndex(index => (index - 1 + pinnedChatMessages.length) % pinnedChatMessages.length)} aria-label="Show previous pinned message" data-testid="button-pinned-prev" className="flex h-11 w-11 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronUp size={15} /></button><button type="button" onClick={() => setPinnedPreviewIndex(index => (index + 1) % pinnedChatMessages.length)} aria-label="Show next pinned message" data-testid="button-pinned-next" className="flex h-11 w-11 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf]"><ChevronDown size={15} /></button></span>}<button type="button" onClick={() => togglePin.mutate({ messageId: activePinnedMessage.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); } })} disabled={togglePin.isPending} aria-label="Unpin message" data-testid="button-pinned-unpin" title="Unpin message" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-[#8a6508] transition hover:bg-[#fff3cf] disabled:opacity-50"><X size={14} /></button></div></div>}{chatHasMore && chatItems.length > 0 && <button onClick={() => void loadOlderChat()} disabled={chatLoadingMore} data-testid="button-load-older-chat" className="mx-auto block rounded-full border border-[#dce9e8] bg-white px-4 py-1.5 text-xs font-semibold text-[#527079] transition hover:border-[#16869a] hover:text-[#16869a] disabled:opacity-50">{chatLoadingMore ? "Loading older messages..." : "Load older messages"}</button>}{!chatHasMore && chatItems.length > 0 && <p className="text-center text-[11px] text-[#8a999d]">Start of conversation</p>}{chatItems.length ? chatItems.map(renderChatMessage) : <p className="py-24 text-center text-sm text-[#7c8c91]">No messages yet. Leave a note for the other interviewer.</p>}</div>
       <form

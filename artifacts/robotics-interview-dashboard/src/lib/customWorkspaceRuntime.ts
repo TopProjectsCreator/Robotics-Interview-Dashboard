@@ -39,6 +39,7 @@ const BRIDGE = `<script>
   window.workspaceAPI = Object.freeze({
     data: Object.freeze({
       list: () => call("data.list"),
+      query: (query) => call("data.query", query || {}),
       create: (record) => call("data.create", { record }),
       update: (id, record) => call("data.update", { id, record }),
       delete: (id) => call("data.delete", { id }),

@@ -33,6 +33,10 @@ import {
   customWorkspaceBuilderRunTargetsWorkspace,
   waitForAssistantBuilderWorkToSettle,
 } from "../lib/assistantBuilderJobs";
+import {
+  buildRecordQuerySql,
+  parseRecordQuery,
+} from "../lib/assistantCustomWorkspaceTools";
 
 /** Builder-management guard that also supports legacy admin accounts. */
 function requireCustomWorkspaceAdmin(req: Request, res: Response, next: NextFunction): void {
@@ -63,7 +67,6 @@ const MAX_HTML_BYTES = 120_000;
 const MAX_RECORD_BYTES = 16_000;
 const requestWindows = new Map<string, { startedAt: number; count: number }>();
 const execFileAsync = promisify(execFile);
-const VISUAL_REPAIR_LIMIT = 2;
 
 async function retryAiCall<T>(operation: () => Promise<T>): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
@@ -870,7 +873,7 @@ router.post("/custom-workspaces/generate", requireCoordinator, async (req, res):
       messages: [
         {
           role: "system",
-          content: `Build a complete, responsive internal web application from the user's requirements that looks native inside the Robotics team workspace. The preview automatically injects the complete compiled Robotics dashboard stylesheet, including its Tailwind utilities, shared typography, palette, and light/dark styles. Use that stylesheet as the app's stylesheet: prefer its existing classes and the injected --background, --foreground, --card, --border, --primary, --muted, --accent, --workspace-navy, --workspace-teal, and --workspace-yellow tokens. Do not introduce custom color literals, unrelated hues, gradients, or competing theme variables; use semantic surfaces and theme tokens so every color stays within the dashboard palette in both modes. Use navy headings, teal primary actions, restrained yellow accents, cool-gray surfaces, white cards, subtle borders, 10–16px corners, and compact mono metadata. Add only layout or app-specific structural CSS where the stylesheet has no suitable rule. Do not duplicate the host sidebar/header/navigation or use oversized marketing hero styling. Before considering the build finished, complete exactly five sequential critique rounds (1 through 5); all five are mandatory, even when a round has no eligible fixes. Each critique must produce exactly 10 ranked actionable flaws scored 1–10. Implement every score above 6 and every score below 6 for rounds 1–4, then re-critique the updated source; on round 5 implement only scores above 6. Do not stop early, skip a round, or omit a finding because its fix is large. Return JSON only: {"title":string,"description":string,"html":string}. The html must be a complete standalone document with inline CSS and JavaScript, no external dependencies, URLs, scripts, or network requests. Use semantic accessible HTML, mobile-first layout, and real interactive behavior. The only permitted integrations are capabilities selected by the user: ${capabilities.join(", ") || "none"}. For data use window.workspaceAPI.data.list(), .create(record), .update(id, record), .delete(id). For LLM use window.workspaceAPI.llm.ask(prompt). Do not access localStorage, cookies, parent DOM, or browser APIs for network access. Do not invent credentials. Do not include applicant or private team data unless the user explicitly asks. Produce actual app behavior, not a mockup.`,
+          content: `Build a complete, responsive internal web application from the user's requirements that looks native inside the Robotics team workspace. The preview automatically injects the complete compiled Robotics dashboard stylesheet, including its Tailwind utilities, shared typography, palette, and light/dark styles. Use that stylesheet as the app's stylesheet: prefer its existing classes and the injected --background, --foreground, --card, --border, --primary, --muted, --accent, --workspace-navy, --workspace-teal, and --workspace-yellow tokens. Do not introduce custom color literals, unrelated hues, gradients, or competing theme variables; use semantic surfaces and theme tokens so every color stays within the dashboard palette in both modes. Use navy headings, teal primary actions, restrained yellow accents, cool-gray surfaces, white cards, subtle borders, 10–16px corners, and compact mono metadata. Add only layout or app-specific structural CSS where the stylesheet has no suitable rule. Do not duplicate the host sidebar/header/navigation or use oversized marketing hero styling. Before considering the build finished, complete exactly five sequential critique rounds (1 through 5); all five are mandatory, even when a round has no eligible fixes. Each critique must produce exactly 10 ranked actionable flaws scored 1–10. Implement every score above 6 and every score below 6 for rounds 1–4, then re-critique the updated source; on round 5 implement only scores above 6. Do not stop early, skip a round, or omit a finding because its fix is large. Return JSON only: {"title":string,"description":string,"html":string}. The html must be a complete standalone document with inline CSS and JavaScript, no external dependencies, URLs, scripts, or network requests. Use semantic accessible HTML, mobile-first layout, and real interactive behavior. The only permitted integrations are capabilities selected by the user: ${capabilities.join(", ") || "none"}. For data use window.workspaceAPI.data.list(), .create(record), .update(id, record), .delete(id). For LLM use window.workspaceAPI.llm.ask(prompt). Do not access localStorage, cookies, parent DOM, or browser APIs for network access. Do not invent credentials. Do not include applicant or private team data unless the user explicitly asks. Produce actual app behavior, not a mockup. This is a real tool, not a visual demo: NEVER seed, invent, or display mock, fake, sample, or demo records. Do not hard-code stand-in data, lorem ipsum, default test names, or placeholder screens. If records do not exist yet, render a clear empty state with a real action to create the first record; only ever display records the user entered, uploaded, or saved through this app. Treat any such invented content as a critical defect.`,
         },
         { role: "user", content: prompt },
       ],
@@ -1312,7 +1315,7 @@ router.post("/custom-workspaces/:id/revise", requireCoordinator, async (req, res
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "Revise the supplied standalone internal web application to meet the requested changes while preserving the Robotics dashboard design system. The preview automatically injects the complete compiled Robotics dashboard stylesheet, including its Tailwind utilities, shared typography, palette, and light/dark styles. Treat it as the app's stylesheet: prefer its existing classes and the injected --background, --foreground, --card, --border, --primary, --muted, --accent, --workspace-navy, --workspace-teal, and --workspace-yellow tokens. Do not introduce custom color literals, unrelated hues, gradients, or competing theme variables; use the same semantic palette in both modes. Add only layout or app-specific structural CSS if the shared stylesheet has no suitable rule. Preserve navy/teal hierarchy, restrained yellow accents, cool surfaces, subtle borders, rounded corners, and compact practical layouts. Do not duplicate the host navigation. Before reporting the revision finished, complete exactly five sequential critique rounds (1 through 5); all five are mandatory, even when a round has no eligible fixes. Each critique must produce exactly 10 ranked actionable flaws scored 1–10. Implement every score above 6 and every score below 6 for rounds 1–4, re-critique the updated source, and on round 5 implement only scores above 6. Do not stop early, skip a round, or omit a finding because its fix is large. Keep it responsive and accessible, use inline CSS/JavaScript only, and do not add external URLs, scripts, or direct network access. Preserve working behavior not affected by the request. Return JSON only: {\"title\":string,\"description\":string,\"html\":string}." },
+        { role: "system", content: "Revise the supplied standalone internal web application to meet the requested changes while preserving the Robotics dashboard design system. The preview automatically injects the complete compiled Robotics dashboard stylesheet, including its Tailwind utilities, shared typography, palette, and light/dark styles. Treat it as the app's stylesheet: prefer its existing classes and the injected --background, --foreground, --card, --border, --primary, --muted, --accent, --workspace-navy, --workspace-teal, and --workspace-yellow tokens. Do not introduce custom color literals, unrelated hues, gradients, or competing theme variables; use the same semantic palette in both modes. Add only layout or app-specific structural CSS if the shared stylesheet has no suitable rule. Preserve navy/teal hierarchy, restrained yellow accents, cool surfaces, subtle borders, rounded corners, and compact practical layouts. Do not duplicate the host navigation. Before reporting the revision finished, complete exactly five sequential critique rounds (1 through 5); all five are mandatory, even when a round has no eligible fixes. Each critique must produce exactly 10 ranked actionable flaws scored 1–10. Implement every score above 6 and every score below 6 for rounds 1–4, re-critique the updated source, and on round 5 implement only scores above 6. Do not stop early, skip a round, or omit a finding because its fix is large. Keep it responsive and accessible, use inline CSS/JavaScript only, and do not add external URLs, scripts, or direct network access. This is a real tool, not a visual demo: NEVER seed, invent, or display mock, fake, sample, or demo records, stand-in data, lorem ipsum, default test names, or placeholder screens. If records do not exist yet, keep a clear empty state with a real action to create the first record; only ever display records the user entered, uploaded, or saved through this app. Treat any such invented content as a critical defect. Preserve working behavior not affected by the request. Return JSON only: {\"title\":string,\"description\":string,\"html\":string}." },
         { role: "user", content: JSON.stringify({ requirements: instruction, existing: { title: current.title, description: current.description, html: current.html, capabilities: current.capabilities } }) },
       ],
     });
@@ -1869,6 +1872,68 @@ router.get("/custom-workspaces/:id/data", requireAdmin, async (req, res): Promis
     [workspace.id, teamId],
   );
   res.json({ records: result.rows });
+});
+
+/**
+ * Paged, filterable record query for the app runtime bridge
+ * (`window.workspaceAPI.data.query`). Reuses the assistant query
+ * validation so apps and the assistant share one contract.
+ */
+router.get("/custom-workspaces/:id/data/query", requireAdmin, async (req, res): Promise<void> => {
+  const workspace = await accessibleWorkspace(req, res, String(req.params.id ?? ""));
+  if (!workspace) return;
+  if (!workspace.capabilities.includes("data")) {
+    res.status(403).json({ error: "This workspace has not been granted data access." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const limit = req.query.limit === undefined ? undefined : Number(req.query.limit);
+  const offset = req.query.offset === undefined ? undefined : Number(req.query.offset);
+  const search = typeof req.query.search === "string" ? req.query.search : undefined;
+  const sortBy = typeof req.query.sortBy === "string" ? req.query.sortBy : undefined;
+  const sortDir = req.query.sortDir === "asc" || req.query.sortDir === "desc" ? req.query.sortDir : undefined;
+  let filters: Record<string, unknown> | undefined;
+  if (typeof req.query.filters === "string" && req.query.filters) {
+    try {
+      filters = JSON.parse(req.query.filters) as Record<string, unknown>;
+    } catch {
+      res.status(400).json({ error: "Query \"filters\" must be a JSON object." });
+      return;
+    }
+  }
+  const parsed = parseRecordQuery({
+    ...(limit !== undefined ? { limit } : {}),
+    ...(offset !== undefined ? { offset } : {}),
+    ...(search !== undefined ? { search } : {}),
+    ...(filters !== undefined ? { filters } : {}),
+    ...(sortBy !== undefined ? { sortBy } : {}),
+    ...(sortDir !== undefined ? { sortDir } : {}),
+  });
+  if ("error" in parsed) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+  const { clauses, values, orderBy } = buildRecordQuerySql(parsed, { workspaceId: workspace.id, teamId });
+  const where = clauses.join(" and ");
+  const [totalResult, pageResult] = await Promise.all([
+    pool.query<{ count: number | string }>(
+      `select count(*)::int as "count" from "custom_workspace_data" where ${where}`,
+      values,
+    ),
+    pool.query(
+      `select "id", "value", "created_at" as "createdAt", "updated_at" as "updatedAt"
+         from "custom_workspace_data"
+        where ${where}
+        order by ${orderBy} limit $${values.length + 1} offset $${values.length + 2}`,
+      [...values, parsed.limit, parsed.offset],
+    ),
+  ]);
+  res.json({
+    records: pageResult.rows,
+    total: Number(totalResult.rows[0]?.count ?? 0),
+    limit: parsed.limit,
+    offset: parsed.offset,
+  });
 });
 
 router.post("/custom-workspaces/:id/data", requireAdmin, async (req, res): Promise<void> => {

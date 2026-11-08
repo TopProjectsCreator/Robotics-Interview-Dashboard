@@ -517,6 +517,8 @@ button { cursor: pointer; }
 }
 .chat-workspace-shell > header {
   flex: 0 0 auto;
+  /* A slim bar on the chat route so the history keeps its space. */
+  height: 56px;
 }
 .chat-workspace-main {
   display: flex;
@@ -525,12 +527,23 @@ button { cursor: pointer; }
   flex: 1 1 auto;
   flex-direction: column;
   overflow-y: auto;
+  /* Chat should give its vertical space to the message history, not to
+     page padding: the workspace is a full-height app screen, so only a
+     thin gutter remains above and below the panel. */
+  padding-top: .75rem;
+  padding-bottom: .75rem;
 }
 .chat-page-layout {
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
+}
+.chat-page-layout > .mb-8 {
+  flex: 0 0 auto;
+  /* A slim gap: the chat heading is one compact row, and the rest of the
+     viewport height belongs to the message feed. */
+  margin-bottom: .75rem;
 }
 .chat-panel-tall {
   display: flex;
@@ -552,7 +565,9 @@ button { cursor: pointer; }
 }
 .chat-page-layout .chat-message-feed {
   height: auto;
-  min-height: 6rem;
+  /* Never let the history collapse to a single line on short screens: the
+     panel scrolls instead, while the composer stays reachable. */
+  min-height: 15rem;
   max-height: none;
   flex: 1 1 0;
 }

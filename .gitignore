@@ -63,6 +63,13 @@ artifacts/robotics-interview-dashboard/scripts/
 __pycache__/
 *.pyc
 
+# Local-only one-off DB migration scripts (primary→secondary transfer, never commit)
+scripts/merge_primary_to_secondary.py
+scripts/copy_storage_primary_to_secondary.mjs
+scripts/fix_wolverines_secondary.py
+scripts/resume_merge.py
+scripts/resume.log
+
 # Environment and secrets — never commit (Supabase, DATABASE_URL, session, etc.)
 .env
 .env.*
