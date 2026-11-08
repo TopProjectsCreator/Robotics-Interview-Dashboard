@@ -115,4 +115,43 @@ describe("AccountMenu notepad overlay", () => {
     fireEvent.pointerDown(document.body);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
+
+  it.each(["coordinator", "admin"] as const)("opens Settings from the avatar for %s accounts", (role) => {
+    const onOpenSettings = vi.fn();
+    apiMocks.useGetSession.mockReturnValue({
+      data: { interviewerId: "coordinator-1", label: "Coordinator", role },
+    });
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <AccountMenu onOpenSettings={onOpenSettings} />
+        </Router>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Account menu" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Settings" }));
+    expect(onOpenSettings).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("does not expose Settings to interviewer accounts", () => {
+    apiMocks.useGetSession.mockReturnValue({
+      data: { interviewerId: "interviewer-1", label: "Interviewer", role: "interviewer" },
+    });
+    const queryClient = new QueryClient();
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <Router>
+          <AccountMenu onOpenSettings={vi.fn()} />
+        </Router>
+      </QueryClientProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Account menu" }));
+    expect(screen.queryByRole("menuitem", { name: "Settings" })).not.toBeInTheDocument();
+  });
 });

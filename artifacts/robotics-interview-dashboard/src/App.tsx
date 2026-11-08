@@ -602,7 +602,37 @@ function AdminOnlyRoute({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function SettingsModal({ onClose }: { onClose: () => void }) {
+export function AIProviderSettingsCategory({
+  canManageProvider,
+  onOpenProviderSetup,
+}: {
+  canManageProvider: boolean;
+  onOpenProviderSetup: () => void;
+}) {
+  if (!canManageProvider) return null;
+  return <div className="border-t border-[#e5ecec] pt-4 dark:border-[#2a3f4c]" data-testid="settings-ai-provider">
+    <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#63747c] dark:text-[#a9bcc6]">AI</p>
+    <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Configure the AI provider shared by your team.</p>
+    <button
+      type="button"
+      onClick={onOpenProviderSetup}
+      aria-haspopup="dialog"
+      data-testid="button-settings-custom-provider"
+      className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition hover:border-primary/50 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Sparkles size={15} aria-hidden="true" />
+      Custom Provider
+    </button>
+  </div>;
+}
+
+function SettingsModal({
+  onClose,
+  onOpenProviderSetup,
+}: {
+  onClose: () => void;
+  onOpenProviderSetup: () => void;
+}) {
   const { overlayProps, panelProps } = useModalOverlay({ label: "Workspace settings", onClose });
   const { settings, update, reset } = useWorkspaceSettings();
   const { theme, setTheme } = useTheme();
@@ -977,6 +1007,7 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>
+      <AIProviderSettingsCategory canManageProvider={isAdmin && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
       {isAdmin && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>
@@ -3265,6 +3296,7 @@ function Shell({
   const [mobileNav, setMobileNav] = useState(false);
   const mobileMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [assistantProviderSetupOpen, setAssistantProviderSetupOpen] = useState(false);
   const { settings } = useWorkspaceSettings();
   const [displayPromoVisible, setDisplayPromoVisible] = useState(() => {
     try {
@@ -3624,9 +3656,35 @@ function Shell({
         </header>
         <main className={`mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9${isCadWorkspaceRoute ? " cad-workspace-main" : ""}${isChatWorkspaceRoute ? " chat-workspace-main" : ""}`}
           style={{ paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
-          {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+          {settingsOpen && <SettingsModal
+            onClose={() => setSettingsOpen(false)}
+            onOpenProviderSetup={() => {
+              setSettingsOpen(false);
+              setAssistantProviderSetupOpen(true);
+            }}
+          />}
           {children}
         </main>
+        <AssistantProviderSetup
+          open={
+            assistantProviderSetupOpen &&
+            !demoMode &&
+            session.data?.authenticated === true &&
+            (session.data.role === "coordinator" || session.data.role === "admin") &&
+            Boolean(session.data.teamId)
+          }
+          onOpenChange={setAssistantProviderSetupOpen}
+          teamId={session.data?.teamId ?? "pending"}
+          onConfigurationChanged={() => {
+            const teamId = session.data?.teamId;
+            if (!teamId) return;
+            void qc.invalidateQueries({ queryKey: [...getGetAssistantProviderConfigurationQueryKey(), teamId] });
+            void qc.invalidateQueries({ queryKey: [...getListAssistantModelsQueryKey(), teamId] });
+            void qc.invalidateQueries({ queryKey: [...getGetAssistantConfigQueryKey(), teamId] });
+            void qc.invalidateQueries({ queryKey: [...getGetAssistantModelPolicyQueryKey(), teamId] });
+            void qc.invalidateQueries({ queryKey: [...getGetAssistantModelPolicyHistoryQueryKey(), teamId] });
+          }}
+        />
         {pendingBroadcast && <ModalOverlay onClose={() => dismissBroadcast(pendingBroadcast.id)} label="Admin message" testId="broadcast-popup" className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 text-center shadow-2xl"><span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-[#e3f4f2] text-[#16869a]"><Mail size={20} /></span><p className="mt-4 text-lg font-semibold leading-7 text-[#182232]">{pendingBroadcast.message}</p><button onClick={() => dismissBroadcast(pendingBroadcast.id)} disabled={ackBroadcast.isPending} data-testid="button-broadcast-ack" className="mt-5 h-11 w-full rounded-xl bg-[#16869a] text-sm font-semibold text-white disabled:opacity-50">Got it</button></ModalOverlay>}
       </div>
     </div>
@@ -8240,7 +8298,6 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   useEffect(() => () => streamAbort.current?.abort(), []);
   const ask = useAskAssistant();
   const [assistantSettingsOpen, setAssistantSettingsOpen] = useState(false);
-  const [assistantProviderSetupOpen, setAssistantProviderSetupOpen] = useState(false);
   const assistantTeamScope = assistantSession.data?.teamId ?? "pending";
   const assistantSessionReady = assistantSession.data?.authenticated === true && assistantTeamScope !== "pending";
   const assistantConfig = useGetAssistantConfig({
@@ -9327,44 +9384,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             onConnectCustomMcp={() => void connectCustomMcp()}
             onDisconnectCustomMcp={disconnectCustomMcp}
           />
-          {canManageAssistantTools && <button
-            type="button"
-            onClick={() => setAssistantProviderSetupOpen(true)}
-            disabled={!assistantSessionReady}
-            aria-haspopup="dialog"
-            aria-label={providerConfigured ? "Manage the team's AI provider" : "Configure the team's AI provider"}
-            title={providerConfigured ? "Manage team AI provider" : "Configure team AI provider"}
-            data-testid="assistant-provider-entry-point"
-            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl border border-border bg-card px-3 text-xs font-semibold text-foreground shadow-sm transition hover:border-primary/50 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-wait disabled:opacity-60"
-          >
-            <Settings size={14} aria-hidden="true" />
-            <span>AI provider</span>
-            {providerConfigured && <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-label="Configured" />}
-          </button>}
         </div>
       }
-    />
-    <AssistantProviderSetup
-      open={assistantProviderSetupOpen && canManageAssistantTools && assistantSessionReady}
-      onOpenChange={setAssistantProviderSetupOpen}
-      teamId={assistantTeamScope}
-      onConfigurationChanged={() => {
-        void queryClient.invalidateQueries({
-          queryKey: [...getGetAssistantProviderConfigurationQueryKey(), assistantTeamScope],
-        });
-        void queryClient.invalidateQueries({
-          queryKey: [...getListAssistantModelsQueryKey(), assistantTeamScope],
-        });
-        void queryClient.invalidateQueries({
-          queryKey: [...getGetAssistantConfigQueryKey(), assistantTeamScope],
-        });
-        void queryClient.invalidateQueries({
-          queryKey: [...getGetAssistantModelPolicyQueryKey(), assistantTeamScope],
-        });
-        void queryClient.invalidateQueries({
-          queryKey: [...getGetAssistantModelPolicyHistoryQueryKey(), assistantTeamScope],
-        });
-      }}
     />
     <div
       className={assistantWorkspaceGridClass(partsMode && canManageAssistantTools)}

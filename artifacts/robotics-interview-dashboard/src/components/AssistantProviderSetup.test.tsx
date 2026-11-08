@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => {
@@ -93,7 +93,8 @@ const api = vi.hoisted(() => {
   };
 });
 
-vi.mock("@workspace/api-client-react", () => ({
+vi.mock("@workspace/api-client-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@workspace/api-client-react")>()),
   getGetAssistantProviderConfigurationQueryKey: () => ["/api/assistant/provider-config"],
   getListAssistantProviderCatalogQueryKey: (params?: unknown) => ["/api/assistant/providers", params],
   getSearchModelsByProviderQueryKey: (providerId: string, params?: unknown) => [`/api/assistant/providers/${providerId}/models`, params],
@@ -105,7 +106,16 @@ vi.mock("@workspace/api-client-react", () => ({
   useRemoveAssistantProviderConfiguration: () => ({ mutate: api.remove, isPending: false, reset: vi.fn() }),
 }));
 
+import { AIProviderSettingsCategory } from "../App";
 import { AssistantProviderSetup } from "./AssistantProviderSetup";
+
+function ProviderSettingsFlow({ canManageProvider }: { canManageProvider: boolean }) {
+  const [open, setOpen] = useState(false);
+  return <>
+    <AIProviderSettingsCategory canManageProvider={canManageProvider} onOpenProviderSetup={() => setOpen(true)} />
+    <AssistantProviderSetup open={open} onOpenChange={setOpen} teamId="team-a" />
+  </>;
+}
 
 function renderSetup(open = true, onOpenChange = vi.fn()) {
   const queryClient = new QueryClient({
@@ -226,6 +236,44 @@ describe("AssistantProviderSetup", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("API key")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Search providers")).not.toBeInTheDocument();
+  });
+
+  it.each(["light", "dark"] as const)("opens and closes the team-scoped provider setup from AI settings in %s mode", async (theme) => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 320 });
+    document.documentElement.classList.toggle("dark", theme === "dark");
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ProviderSettingsFlow canManageProvider />
+      </QueryClientProvider>,
+    );
+
+    const category = screen.getByTestId("settings-ai-provider");
+    const action = screen.getByRole("button", { name: "Custom Provider" });
+    expect(category).toHaveTextContent("AI");
+    expect(action).toHaveClass("min-h-11", "w-full", "bg-card", "text-foreground");
+
+    fireEvent.click(action);
+    const dialog = await screen.findByRole("dialog", { name: "Connect an AI provider" });
+    expect(dialog).toHaveAttribute("data-team-id", "team-a");
+    fireEvent.click(screen.getByRole("button", { name: "Close provider setup" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Connect an AI provider" })).not.toBeInTheDocument());
+  });
+
+  it("does not render the AI provider action for accounts without management access", () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ProviderSettingsFlow canManageProvider={false} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByTestId("settings-ai-provider")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
 
