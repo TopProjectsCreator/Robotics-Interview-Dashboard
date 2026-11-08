@@ -100,6 +100,7 @@ import {
   parseDemoView,
   type DemoView,
 } from "@/pages/demo";
+import { DEMO_ASSISTANT_RUNS } from "@/pages/demo-assistant-data";
 import { DemoDataProvider } from "@/pages/demo-data";
 import ChatLanding from "@/pages/chat-landing";
 import PartsLanding from "@/pages/parts-landing";
@@ -3472,9 +3473,9 @@ function Shell({
   if (workspaceVisibilityLoading && !isDashboardPath) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (blockedFromCurrent) return null;
   const workspaceArea = demoMode
-    ? demoView === "chat" ? "chat" : demoView === "parts" ? "parts" : demoView === "cad" ? "cad" : demoView === "code" ? "code" : "overview"
+    ? demoView === "chat" || demoView === "assistant" ? "chat" : demoView === "parts" ? "parts" : demoView === "cad" ? "cad" : demoView === "code" ? "code" : "overview"
     : workspaceAreaForPath(location);
-  const isChatWorkspaceRoute = demoMode ? demoView === "chat" : location.split(/[?#]/, 1)[0] === "/chat";
+  const isChatWorkspaceRoute = demoMode ? demoView === "chat" || demoView === "assistant" : location.split(/[?#]/, 1)[0] === "/chat";
   const isCadWorkspaceRoute = demoMode ? demoView === "cad" : location.split(/[?#]/, 1)[0] === "/cad";
   const navIcons: Record<WorkspaceNavIcon, LucideIcon> = {
     interview: ClipboardList,
@@ -3497,6 +3498,7 @@ function Shell({
   const demoNav = [
     { href: "/demo?view=overview", label: "Overview", icon: LayoutDashboard, kind: "section" as const, workspace: "chat" as WorkspaceKey, demoView: "overview" as DemoView },
     { href: "/demo?view=chat", label: "Chat", icon: MessageSquare, kind: "workspace" as const, workspace: "chat" as WorkspaceKey, demoView: "chat" as DemoView },
+    { href: "/demo?view=assistant", label: "AI Assistant", icon: Bot, kind: "workspace" as const, workspace: "chat" as WorkspaceKey, demoView: "assistant" as DemoView },
     { href: "/demo?view=parts", label: "Parts", icon: Box, kind: "workspace" as const, workspace: "parts" as WorkspaceKey, demoView: "parts" as DemoView },
     { href: "/demo?view=cad", label: "CAD", icon: Boxes, kind: "workspace" as const, workspace: "cad" as WorkspaceKey, demoView: "cad" as DemoView },
     { href: "/demo?view=code", label: "Code", icon: SquareTerminal, kind: "workspace" as const, workspace: "code" as WorkspaceKey, demoView: "code" as DemoView },
@@ -4124,6 +4126,10 @@ function DemoPage() {
           ) : demoView === "chat" ? (
             <DemoReadOnlyFrame label="Chat">
               <InterviewChatPanel applicantIds={[]} tall demoMode />
+            </DemoReadOnlyFrame>
+          ) : demoView === "assistant" ? (
+            <DemoReadOnlyFrame label="AI assistant">
+              <DemoAssistantShowcase />
             </DemoReadOnlyFrame>
           ) : demoView === "parts" ? (
             <DemoReadOnlyFrame label="Parts">
@@ -7926,40 +7932,134 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "edit_board") return { label: "Edited task board", Icon: ClipboardList };
   if (tool === "edit_document") return { label: "Edited document", Icon: Pencil };
   if (tool === "edit_spreadsheet") return { label: "Edited spreadsheet", Icon: ClipboardList };
+  const operation = tool
+    .replace(/^(onshape|parts|cad)_/, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  if (tool.startsWith("onshape_")) return { label: `Onshape · ${operation}`, Icon: Boxes };
+  if (tool.startsWith("parts_")) return { label: `Parts library · ${operation}`, Icon: Box };
+  if (tool.startsWith("cad_")) return { label: `CAD · ${operation}`, Icon: Boxes };
   return { label: tool, Icon: Sparkles };
 }
 
 function ActivityPills({ activities }: { activities: AssistantActivity[] }) {
   if (!activities.length) return null;
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-[#dce9e8] bg-[#f8faf9]" data-testid="assistant-activities">
-      <div className="flex items-center gap-1.5 bg-[#edf4f3] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#3d6b72]">
+    <div className="mt-3 overflow-hidden rounded-xl border border-[#dce9e8] bg-[#f8faf9] dark:border-slate-700 dark:bg-slate-900/40" data-testid="assistant-activities">
+      <div className="flex items-center gap-1.5 bg-[#edf4f3] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#3d6b72] dark:bg-slate-800 dark:text-teal-200">
         <Sparkles size={12} className="text-[#16869a]" />
         {activities.length} tool call{activities.length > 1 ? "s" : ""}
       </div>
-      <div className="divide-y divide-[#edf1f1]">
+      <div className="divide-y divide-[#edf1f1] dark:divide-slate-700">
         {activities.map((activity, index) => {
           const { label, Icon } = activityMeta(activity.tool);
           return (
-            <div key={`${activity.tool}-${index}`} className="flex items-start gap-2.5 px-3 py-2">
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#dce9e8] bg-white text-[#16869a]">
+            <div key={`${activity.tool}-${index}`} className="flex items-start gap-2.5 px-3 py-2" data-testid="assistant-activity-row" data-tool={activity.tool}>
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-[#dce9e8] bg-white text-[#16869a] dark:border-slate-600 dark:bg-slate-800 dark:text-teal-300">
                 <Icon size={12} />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold leading-none text-[#38555e]">{label}</p>
-                <p className="mt-1 truncate text-xs leading-none text-[#7c8c91]" title={activity.detail}>
+                <p className="text-xs font-semibold leading-none text-[#38555e] dark:text-slate-100">{label}</p>
+                <p className="mt-1 truncate text-xs leading-none text-[#7c8c91] dark:text-slate-300" title={activity.detail}>
                   {activity.detail || "—"}
                 </p>
                 {(activity.input || activity.output) && <details className="mt-1.5">
-                  <summary className="cursor-pointer text-[11px] font-medium text-[#16869a]">Tool call details</summary>
-                  {activity.input && <><span className="mt-1 block text-[10px] font-semibold uppercase">Input</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-[11px] leading-4">{activity.input}</pre></>}
-                  {activity.output && <><span className="mt-1 block text-[10px] font-semibold uppercase">Result</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-[11px] leading-4">{activity.output}</pre></>}
+                  <summary className="cursor-pointer text-[11px] font-medium text-[#16869a] dark:text-teal-300">Tool call details</summary>
+                  {activity.input && <><span className="mt-1 block text-[10px] font-semibold uppercase text-[#52666e] dark:text-slate-300">Input</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-[11px] leading-4 text-[#33464d] dark:bg-slate-950 dark:text-slate-200">{activity.input}</pre></>}
+                  {activity.output && <><span className="mt-1 block text-[10px] font-semibold uppercase text-[#52666e] dark:text-slate-300">Result</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-[11px] leading-4 text-[#33464d] dark:bg-slate-950 dark:text-slate-200">{activity.output}</pre></>}
                 </details>}
               </div>
               <Check size={12} className="mt-1 shrink-0 text-[#3aa582]" />
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function DemoAssistantShowcase() {
+  const [activeRunId, setActiveRunId] = useState(DEMO_ASSISTANT_RUNS[0]?.id ?? "");
+  const activeRun = DEMO_ASSISTANT_RUNS.find((run) => run.id === activeRunId) ?? DEMO_ASSISTANT_RUNS[0];
+  if (!activeRun) return null;
+
+  return (
+    <div className="fade-up" data-testid="demo-assistant">
+      <PageHeading
+        eyebrow="Robotics workspace / AI assistant"
+        title="Ask the room."
+        detail="Explore completed sample conversations with research, CAD, parts, and team-workspace tool traces."
+        stacked
+        action={<span className="inline-flex items-center gap-1.5 rounded-full border border-[#b9dcd5] bg-[#e9f7f3] px-3 py-2 text-xs font-semibold text-[#176d67] dark:border-teal-800 dark:bg-teal-950/60 dark:text-teal-200"><Sparkles size={13} /> Fictional replay</span>}
+      />
+
+      <div className="mb-4 flex items-start gap-2 rounded-xl border border-[#d7e8e3] bg-[#f1f8f5] px-3 py-2.5 text-xs leading-5 text-[#47666a] dark:border-slate-700 dark:bg-slate-900/60 dark:text-slate-200" role="note" data-testid="demo-assistant-notice">
+        <ShieldCheck size={15} className="mt-0.5 shrink-0 text-[#16869a] dark:text-teal-300" />
+        <span>These are fictional sample replays. Tool calls and results are illustrative; no live AI, Onshape, supplier, database, or write actions are used.</span>
+      </div>
+
+      <div className={assistantWorkspaceGridClass(false)} data-testid="demo-assistant-workspace-grid">
+        <aside className="order-2 min-h-0 rounded-2xl border border-[#dce5e5] bg-white p-4 shadow-[0_3px_12px_rgba(26,49,60,.035)] dark:border-slate-700 dark:bg-slate-900 xl:order-1" aria-label="Sample assistant conversations">
+          <p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-teal-300">Sample chats</p>
+          <div className="mt-2 max-h-[52vh] space-y-1 overflow-y-auto xl:max-h-[62vh]">
+            {DEMO_ASSISTANT_RUNS.map((run) => (
+              <button
+                key={run.id}
+                type="button"
+                onClick={() => setActiveRunId(run.id)}
+                aria-pressed={run.id === activeRun.id}
+                aria-label={`Open sample conversation ${run.title}`}
+                data-testid={`demo-assistant-run-button-${run.id}`}
+                className={`w-full rounded-xl border p-2.5 text-left transition ${run.id === activeRun.id ? "border-[#a9d3ce] bg-[#eff8f6] dark:border-teal-800 dark:bg-teal-950/40" : "border-transparent hover:border-[#dce5e5] hover:bg-[#f7faf9] dark:hover:border-slate-700 dark:hover:bg-slate-800"}`}
+              >
+                <p className="truncate text-xs font-semibold text-[#38555e] dark:text-slate-100">{run.title}</p>
+                <p className="mt-1 truncate text-[10px] text-[#819197] dark:text-slate-400">{run.summary}</p>
+                <p className="mt-1 text-[10px] font-medium text-[#16869a] dark:text-teal-300">{run.activities.length} tool calls</p>
+              </button>
+            ))}
+          </div>
+        </aside>
+
+        <section className="relative order-1 min-h-[560px] min-w-0 rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] dark:border-slate-700 dark:bg-slate-900 xl:order-2" data-testid={`demo-assistant-active-run-${activeRun.id}`}>
+          <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4 dark:border-slate-700">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a] dark:bg-teal-950 dark:text-teal-300"><Bot size={21} /></div>
+            <div className="min-w-0">
+              <h2 className="truncate font-semibold text-[#233c46] dark:text-slate-100">{activeRun.title}</h2>
+              <p className="text-xs text-[#7c8c91] dark:text-slate-400">{activeRun.summary}</p>
+            </div>
+            <span className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300" data-testid="demo-assistant-completion-status"><Check size={12} /> Completed</span>
+          </div>
+
+          <div className="space-y-5 py-6">
+            <div className="ml-auto max-w-[90%] rounded-2xl rounded-br-sm bg-[#edf4f3] px-4 py-3 text-sm text-[#38555e] dark:bg-slate-800 dark:text-slate-100" data-testid="demo-assistant-question">{activeRun.prompt}</div>
+            <div className="flex max-w-[95%] gap-3 rounded-2xl rounded-bl-sm border border-[#e3ebeb] px-4 py-4 text-sm leading-6 text-[#52666e] dark:border-slate-700 dark:text-slate-200" data-testid="demo-assistant-answer">
+              <Bot size={17} className="mt-1 shrink-0 text-[#16869a] dark:text-teal-300" />
+              <div className="min-w-0 flex-1">
+                <MarkdownContent source={activeRun.answer} className="text-[#52666e] dark:text-slate-200" />
+                <p className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"><Check size={12} /> Successful sample completion</p>
+                <div className="mt-2 max-h-[48vh] overflow-y-auto pr-1">
+                  <ActivityPills activities={activeRun.activities} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-[#edf1f1] pt-4 dark:border-slate-700">
+            <div className="flex items-end gap-2">
+              <textarea
+                aria-label="Sample assistant prompt"
+                data-testid="demo-assistant-composer"
+                disabled
+                placeholder="Sample conversations are read-only"
+                className="min-h-11 min-w-0 flex-1 resize-none rounded-xl border border-[#dce5e5] bg-[#f8faf9] px-3 py-2 text-sm text-[#52666e] placeholder:text-[#8a9a9e] disabled:cursor-not-allowed dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:placeholder:text-slate-500"
+              />
+              <button type="button" aria-label="Send sample prompt" disabled className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#183a4b] text-white opacity-50" data-testid="demo-assistant-send">
+                <Send size={16} />
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] text-[#819197] dark:text-slate-400">Read-only replay · sending prompts is disabled</p>
+          </div>
+        </section>
       </div>
     </div>
   );

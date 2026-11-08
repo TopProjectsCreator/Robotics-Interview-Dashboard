@@ -2,6 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import App from "@/App";
+import { DEMO_ASSISTANT_RUNS } from "@/pages/demo-assistant-data";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -165,5 +166,46 @@ describe("public robotics workspace demo", () => {
     expect(await screen.findByTestId("text-custom-app-title-field-test-log")).toHaveTextContent("Field Test Log");
     expect(screen.queryByRole("button", { name: /edit|delete|send/i })).not.toBeInTheDocument();
     expect(unexpectedRequests).toEqual([]);
+  });
+
+  it("replays five completed assistant conversations without live service calls", () => {
+    window.history.replaceState({}, "", "/demo?view=assistant");
+    const fetchSpy = vi.fn();
+    const eventSourceConstructor = vi.fn();
+    const webSocketConstructor = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    vi.stubGlobal("EventSource", eventSourceConstructor);
+    vi.stubGlobal("WebSocket", webSocketConstructor);
+    vi.stubGlobal("scrollTo", vi.fn());
+
+    render(<App />);
+
+    expect(screen.getByTestId("demo-assistant")).toBeInTheDocument();
+    expect(screen.getByTestId("demo-assistant-notice")).toHaveTextContent(/fictional sample replays/i);
+    expect(screen.getByTestId("demo-assistant-composer")).toBeDisabled();
+    expect(screen.getByTestId("demo-assistant-send")).toBeDisabled();
+    expect(DEMO_ASSISTANT_RUNS).toHaveLength(5);
+
+    for (const run of DEMO_ASSISTANT_RUNS) {
+      expect(run.activities.length).toBeGreaterThanOrEqual(20);
+      fireEvent.click(screen.getByTestId(`demo-assistant-run-button-${run.id}`));
+
+      const activeRun = screen.getByTestId(`demo-assistant-active-run-${run.id}`);
+      expect(within(activeRun).getByTestId("demo-assistant-question")).toHaveTextContent(run.prompt);
+      expect(within(activeRun).getByTestId("demo-assistant-completion-status")).toHaveTextContent("Completed");
+      expect(within(activeRun).getByText("Successful sample completion")).toBeInTheDocument();
+
+      const activityList = within(activeRun).getByTestId("assistant-activities");
+      expect(activityList).toHaveTextContent(`${run.activities.length} tool calls`);
+      expect(within(activityList).getAllByTestId("assistant-activity-row")).toHaveLength(run.activities.length);
+
+      const firstDetails = within(activityList).getAllByText("Tool call details")[0];
+      fireEvent.click(firstDetails);
+      expect(within(activityList).getAllByText(/sampleReplay/).length).toBeGreaterThanOrEqual(2);
+    }
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(eventSourceConstructor).not.toHaveBeenCalled();
+    expect(webSocketConstructor).not.toHaveBeenCalled();
   });
 });

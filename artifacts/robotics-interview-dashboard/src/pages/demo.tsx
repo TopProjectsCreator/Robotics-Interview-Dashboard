@@ -10,6 +10,7 @@ import type { CustomWorkspace } from "@workspace/api-client-react";
 export type DemoView =
   | "overview"
   | "chat"
+  | "assistant"
   | "parts"
   | "code"
   | "cad"
@@ -358,6 +359,7 @@ export function parseDemoView(search: string): DemoView {
   const view = params.get("view");
   if (
     view === "chat" ||
+    view === "assistant" ||
     view === "parts" ||
     view === "code" ||
     view === "cad" ||
