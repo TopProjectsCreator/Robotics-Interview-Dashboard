@@ -298,17 +298,6 @@ export function AssistantModelPicker({
             ))}
           </SelectContent>
         </Select>
-        {showRecurringTasks && (
-          <Link
-            href="/assistant/scheduled-tasks"
-            aria-label="Recurring tasks"
-            title="Recurring tasks"
-            data-testid="assistant-scheduled-tasks-link"
-            className="assistant-scheduled-tasks-link"
-          >
-            <AlarmClock size={17} aria-hidden="true" />
-          </Link>
-        )}
         <Popover open={toolsOpen} onOpenChange={(open) => {
           setToolsOpen(open);
           onSettingsOpenChange?.(open);
@@ -360,6 +349,26 @@ export function AssistantModelPicker({
             </div>
             {!canManageAssistantTools && (
               <p className="assistant-tools-subtitle">Only you can use these connections. Provider credentials are not shared with your team.</p>
+            )}
+            {showRecurringTasks && (
+              <section
+                className="assistant-recurring-tasks"
+                aria-labelledby="assistant-recurring-tasks-title"
+                data-testid="assistant-recurring-tasks"
+              >
+                <h3 id="assistant-recurring-tasks-title" className="assistant-recurring-tasks-title">
+                  Recurring Tasks
+                </h3>
+                <Link
+                  href="/assistant/scheduled-tasks"
+                  aria-label="Manage recurring tasks"
+                  data-testid="assistant-scheduled-tasks-link"
+                  className="assistant-recurring-tasks-link"
+                >
+                  <AlarmClock size={16} aria-hidden="true" />
+                  <span>Manage recurring tasks</span>
+                </Link>
+              </section>
             )}
             {canManageAssistantPolicy && <section className="assistant-model-policy" aria-label="Team model policy" data-testid="assistant-model-policy">
               <div className="assistant-model-policy-heading">

@@ -20,7 +20,7 @@ function renderWithQuery(ui: ReactNode) {
 }
 
 describe("AssistantModelPicker", () => {
-  it("shows the recurring task alarm shortcut when requested", () => {
+  it("moves recurring tasks into settings when requested", async () => {
     renderWithQuery(
       <AssistantModelPicker
         model="openrouter/free"
@@ -32,8 +32,36 @@ describe("AssistantModelPicker", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "Recurring tasks" }))
-      .toHaveAttribute("href", "/assistant/scheduled-tasks");
+    expect(screen.queryByTestId("assistant-scheduled-tasks-link")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Assistant settings" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    const section = await screen.findByRole("region", { name: "Recurring Tasks" });
+    const link = screen.getByRole("link", { name: "Manage recurring tasks" });
+    expect(section).toContainElement(link);
+    expect(link).toHaveAttribute("href", "/assistant/scheduled-tasks");
+    expect(link).toHaveClass("assistant-recurring-tasks-link");
+
+    fireEvent.click(link);
+    expect(window.location.pathname).toBe("/assistant/scheduled-tasks");
+  });
+
+  it("does not show recurring tasks in settings when disabled", async () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("assistant-scheduled-tasks-link")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByText("Assistant settings")).toBeInTheDocument();
+    expect(screen.queryByTestId("assistant-recurring-tasks")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Manage recurring tasks" })).not.toBeInTheDocument();
   });
 
   it("lets coordinators edit and save the team model policy", async () => {
