@@ -97,7 +97,6 @@ import AboutPage from "@/pages/about";
 import {
   DEMO_CUSTOM_WORKSPACES,
   DemoMetadata,
-  DemoWorkspaceContent,
   parseDemoView,
   type DemoView,
 } from "@/pages/demo";
@@ -4081,10 +4080,6 @@ function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
   );
 }
 
-function isDemoWorkspaceContentView(view: DemoView): view is "code" {
-  return view === "code";
-}
-
 function DemoReadOnlyFrame({
   children,
   label,
@@ -4099,9 +4094,8 @@ function DemoReadOnlyFrame({
         Fictional sample data · {label} is read-only in this demo.
       </div>
       <div
-        ref={(node) => node?.setAttribute("inert", "")}
         aria-label={`${label} read-only demo`}
-        className="pointer-events-none select-none"
+        className="min-w-0"
         data-testid={`demo-real-${label.toLowerCase()}`}
       >
         {children}
@@ -4141,8 +4135,12 @@ function DemoPage() {
                 <CadWorkspacePage demoMode />
               </Suspense>
             </DemoReadOnlyFrame>
-          ) : isDemoWorkspaceContentView(demoView) ? (
-            <DemoWorkspaceContent view={demoView} />
+          ) : demoView === "code" ? (
+            <DemoReadOnlyFrame label="Code">
+              <Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}>
+                <CodeWorkspacePage demoMode />
+              </Suspense>
+            </DemoReadOnlyFrame>
           ) : null}
         </Shell>
       </DemoDataProvider>
@@ -5433,6 +5431,10 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   }, [channelEmojiPickerOpen, getChannelEmojiPickerPosition]);
   const submitChannelDialog = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (demoMode) {
+      setChannelDialogError("Channel changes are disabled in this read-only demo.");
+      return;
+    }
     const name = channelNameDraft.trim().replace(/\s+/g, " ");
     if (!name) { setChannelDialogError("Give the channel a name."); return; }
     setChannelDialogError("");
@@ -5453,6 +5455,10 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     }
   };
   const deleteActiveChannel = async () => {
+    if (demoMode) {
+      setChannelDialogError("Channel changes are disabled in this read-only demo.");
+      return;
+    }
     const channelId = channelDialogId;
     if (!channelId) return;
     if (!(await confirmAction({
@@ -5617,7 +5623,14 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const chatAttachmentUpload = useRequestUploadUrl();
   const ask = useAskAssistant();
   const toggleReaction = useToggleChatReaction();
-  const togglePin = useToggleChatMessagePin();
+  const togglePinMutation = useToggleChatMessagePin();
+  const togglePin = {
+    ...togglePinMutation,
+    mutate: (...args: Parameters<typeof togglePinMutation.mutate>) => {
+      if (demoMode) return;
+      togglePinMutation.mutate(...args);
+    },
+  };
   const updateChatMessage = useUpdateChatMessage();
   const deleteChatMessage = useDeleteChatMessage();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
@@ -5638,6 +5651,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const submitPoll = async (event?: React.SyntheticEvent) => {
     event?.preventDefault();
     event?.stopPropagation();
+    if (demoMode) { setPollError("Polls are read-only in this demo."); return; }
     const question = pollQuestion.trim();
     const options = pollOptions.map((option) => option.trim()).filter(Boolean);
     if (!question) { setPollError("Ask a question."); return; }
@@ -5654,6 +5668,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     }
   };
   const voteOnPoll = (messageId: string, optionIndex: number) => {
+    if (demoMode) return;
     votePollMutation.mutate({ messageId, data: { optionIndex } }, {
       onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
     });
@@ -5785,6 +5800,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setPollOpen(false);
   };
   const interpretScheduleTime = async () => {
+    if (demoMode) { setScheduleError("Scheduling and AI actions are disabled in this demo."); return; }
     const text = scheduleText.trim();
     if (!text) {
       setScheduleError("Describe when the message should be sent.");
@@ -5934,6 +5950,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     return { embeds, uploadedIds };
   };
   const cancelScheduledMessage = (id: string) => {
+    if (demoMode) return;
     deleteScheduledChat.mutate({ scheduledId: id }, {
       onSuccess: () => {
         setScheduleNotice("Scheduled message cancelled.");
@@ -5948,6 +5965,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   // poll draft, and reply reference — for server-side delivery. Nothing needs
   // to stay open: the server posts it even with every browser closed.
   const confirmScheduleMessage = async () => {
+    if (demoMode) { setScheduleError("Scheduling is disabled in this read-only demo."); return; }
     const draft = message.trim();
     const question = pollQuestion.trim();
     const options = pollOptions.map((option) => option.trim()).filter(Boolean);
@@ -6097,6 +6115,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setLocation(`/spreadsheets/${id}?returnTo=${encodeURIComponent(returnTo)}`);
   };
   const createSharedDocument = async () => {
+    if (demoMode) { setChatError("Creating shared files is disabled in this read-only demo."); return; }
     setWhiteboardError("");
     setChatError("");
     setComposerMenuOpen(false);
@@ -6127,6 +6146,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     }
   };
   const createSharedBoard = async () => {
+    if (demoMode) { setChatError("Creating shared files is disabled in this read-only demo."); return; }
     setChatError("");
     setComposerMenuOpen(false);
     setCreateMenuOpen(false);
@@ -6153,6 +6173,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     }
   };
   const createSharedSpreadsheet = async () => {
+    if (demoMode) { setChatError("Creating shared files is disabled in this read-only demo."); return; }
     setChatError("");
     setComposerMenuOpen(false);
     setCreateMenuOpen(false);
@@ -6178,6 +6199,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     }
   };
   const saveWhiteboard = async (title: string, data: string, share: boolean) => {
+    if (demoMode) { setWhiteboardError("Saving shared files is disabled in this read-only demo."); return; }
     setWhiteboardError("");
     try {
       const saved = activeWhiteboardId
@@ -6400,6 +6422,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     });
   };
   const startVoiceRecording = async () => {
+    if (demoMode) { setChatError("Microphone access is disabled in this demo."); return; }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setChatError("Voice messages are not supported in this browser.");
       return;
@@ -6432,6 +6455,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     voiceRecorderRef.current?.stop();
   };
   const startDictation = () => {
+    if (demoMode) { setChatError("Dictation is disabled in this demo."); return; }
     const speechWindow = window as typeof window & {
       SpeechRecognition?: BrowserSpeechRecognitionConstructor;
       webkitSpeechRecognition?: BrowserSpeechRecognitionConstructor;
@@ -6527,6 +6551,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     if (chatScrollRef.current) chatScrollRef.current.scrollTop = 0;
   }, [conversationId]);
   const loadOlderChat = useCallback(async () => {
+    if (demoMode) { setChatHasMore(false); return; }
     if (chatLoadGuardRef.current) return;
     const items = chatItemsRef.current;
     if (!items.length) return;
@@ -6547,7 +6572,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       chatLoadGuardRef.current = false;
       setChatLoadingMore(false);
     }
-  }, [chatParams]);
+  }, [chatParams, demoMode]);
   useLayoutEffect(() => {
     const anchor = chatAnchorRef.current;
     const el = chatScrollRef.current;
@@ -6631,10 +6656,18 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     if (scopedChatItems.length < CHAT_PAGE_SIZE && olderChat.length === 0) setChatHasMore(false);
   }, [olderChat.length, scopedChatItems.length]);
   const react = (messageId: string, emoji: string) => {
+    if (demoMode) return;
     const author = activeInterviewer;
     setPickerFor(null);
     toggleReaction.mutate({ messageId, data: { emoji, author } }, {
       onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
+    });
+  };
+  const toggleMessagePin = (messageId: string) => {
+    if (demoMode) return;
+    togglePin.mutate({ messageId }, {
+      onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
+      onError: error => setChatError(error instanceof Error ? error.message : "Couldn't pin that message."),
     });
   };
   const beginEdit = (item: InterviewChatMessage) => {
@@ -6648,6 +6681,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setEditDraft("");
   };
   const saveEdit = (item: InterviewChatMessage) => {
+    if (demoMode) { setChatError("Editing messages is disabled in this read-only demo."); return; }
     const nextMessage = editDraft.trim();
     if (!nextMessage) {
       setChatError("A message cannot be empty.");
@@ -6670,6 +6704,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     );
   };
   const removeChatMessage = async (item: InterviewChatMessage) => {
+    if (demoMode) { setChatError("Deleting messages is disabled in this read-only demo."); return; }
     if (deleteChatMessage.isPending || !(await confirmAction({ title: "Delete this message?", detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return;
     setChatError("");
     deleteChatMessage.mutate(
@@ -6689,6 +6724,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     );
   };
   const retryFailedAiReply = async () => {
+    if (demoMode) { setChatError("AI actions are disabled in this demo."); return; }
     const pendingReply = failedAiReply;
     if (!pendingReply || aiReplyRetrying) return;
     setAiReplyRetrying(true);
@@ -6730,6 +6766,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   };
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (demoMode) { setChatError("Messaging is disabled in this read-only demo."); return; }
     if (!message.trim() && !chatFiles.length) return;
     if (message.trim().length > CHAT_MESSAGE_MAX_CHARS) { setChatError("Message is too long — shorten the text."); return; }
     const draft = message.trim();

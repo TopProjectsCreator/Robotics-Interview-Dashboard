@@ -44,6 +44,7 @@ import { useRealtimeHealthy } from "@/realtimeHealth";
 
 /** Marks an internal drag so a drop can tell a model from an OS file. */
 const MODEL_DRAG_TYPE = "application/x-cad-model-id";
+const DEMO_CAD_ASSET_URL = `${String(import.meta.env.BASE_URL ?? "/").replace(/\/+$/, "")}/demo/drivebase-side-plate.stl`;
 
 type Location =
   | { kind: "unfiled" }
@@ -247,6 +248,10 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
 
   const runAction = useCallback(
     async (action: () => Promise<unknown>, successMessage?: string) => {
+      if (demoMode) {
+        setNotice("CAD changes are disabled in this read-only demo.");
+        return;
+      }
       setBusy(true);
       try {
         await action();
@@ -268,18 +273,22 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
         setBusy(false);
       }
     },
-    [refresh],
+    [demoMode, refresh],
   );
 
   /** Uploads dropped files into whatever location the drop targeted. */
   const handleFiles = useCallback(
     (fileList: FileList | null, target: CadDropTarget) => {
+      if (demoMode) {
+        setNotice("CAD uploads are disabled in this read-only demo.");
+        return;
+      }
       const files = Array.from(fileList ?? []);
       if (files.length === 0) return;
       reset();
       void uploadFiles(files, target);
     },
-    [uploadFiles, reset],
+    [demoMode, uploadFiles, reset],
   );
 
   // A drop carries either an OS file or an internal model id, and never both,
@@ -317,6 +326,10 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
       setDropTarget(null);
       const dropped = readDrop(event);
       if (!dropped) return;
+      if (demoMode) {
+        setNotice("CAD changes are disabled in this read-only demo.");
+        return;
+      }
       if (dropped.kind === "files") void uploadFiles(dropped.files, target);
       else moveModel(dropped.modelId, target);
     },
@@ -812,6 +825,7 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                       <button
                         type="button"
                         onClick={() => setSelectedModel(model)}
+                        onDoubleClick={() => setSelectedModel(model)}
                         className="flex flex-1 flex-col gap-2 text-left"
                         aria-label={`Preview ${model.name}`}
                       >
@@ -834,7 +848,7 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                         </span>
                         <span className="flex items-center gap-1">
                           <a
-                            href={`${import.meta.env.BASE_URL}api/storage${model.objectPath}`}
+                            href={demoMode ? DEMO_CAD_ASSET_URL : `${import.meta.env.BASE_URL}api/storage${model.objectPath}`}
                             download={model.fileName}
                             onClick={(event) => event.stopPropagation()}
                             title="Download original file"
@@ -846,6 +860,10 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                           <button
                             type="button"
                             onClick={async () => {
+                              if (demoMode) {
+                                setNotice("CAD changes are disabled in this read-only demo.");
+                                return;
+                              }
                               if (!(await confirmAction({ title: `Delete "${model.name}" and its file?`, danger: true, confirmLabel: "Delete" }))) return;
                               void runAction(
                                 () => deleteCadModel(model.id),
@@ -854,6 +872,7 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                             }}
                             title="Delete model"
                             aria-label={`Delete ${model.name}`}
+                            disabled={demoMode}
                             className="rounded p-1 text-destructive transition hover:bg-destructive/10"
                           >
                             <Trash2 size={13} aria-hidden="true" />
@@ -876,6 +895,8 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
           bots={bots}
           folders={folders}
           onClose={() => setSelectedModel(null)}
+          demoMode={demoMode}
+          previewSrc={demoMode ? DEMO_CAD_ASSET_URL : undefined}
           onChanged={() => {
             refresh();
             const latest = queryClient

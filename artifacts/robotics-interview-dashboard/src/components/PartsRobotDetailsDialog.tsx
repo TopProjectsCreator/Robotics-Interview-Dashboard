@@ -42,6 +42,7 @@ type PartsRobotDetailsDialogProps = {
   robot: PartsRobot | null;
   onClose: () => void;
   onPreviewReplaced: () => Promise<void>;
+  demoMode?: boolean;
 };
 
 type CostFormValue = {
@@ -450,7 +451,7 @@ function BuildPartRow({
   );
 }
 
-export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: PartsRobotDetailsDialogProps) {
+export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced, demoMode = false }: PartsRobotDetailsDialogProps) {
   const queryClient = useQueryClient();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -460,8 +461,9 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
   const [previewStatus, setPreviewStatus] = useState("");
   const detailsQuery = useGetPartsRobotDetails(robot?.id ?? "", {
     query: {
-      enabled: Boolean(robot),
+      enabled: Boolean(robot) && !demoMode,
       queryKey: getGetPartsRobotDetailsQueryKey(robot?.id ?? ""),
+      staleTime: demoMode ? Infinity : 0,
     },
   });
   const uploadMutation = useUploadPartsRobotPreviewFile();
@@ -509,6 +511,10 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
   if (!robot) return null;
 
   const replacePreview = async ({ file }: { file: File | null }) => {
+    if (demoMode) {
+      setPreviewError("Robot previews cannot be changed in this read-only demo.");
+      return;
+    }
     if (!file) return;
     const contentType = previewContentType(file);
     if (!contentType) {
@@ -545,6 +551,10 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
   };
 
   const removePreview = async () => {
+    if (demoMode) {
+      setPreviewError("Robot previews cannot be changed in this read-only demo.");
+      return;
+    }
     if (!(await confirmAction({
       title: `Remove the preview from "${robot.name}"?`,
       detail: "The robot and its part allocations will remain.",
@@ -570,6 +580,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
   };
 
   const saveCost = async (partId: string, unitCost: number | null, costCurrency: string | null) => {
+    if (demoMode) throw new Error("Saved costs cannot be changed in this read-only demo.");
     try {
       await updateCostMutation.mutateAsync({ partId, data: { unitCost, costCurrency } });
       await Promise.all([
@@ -582,6 +593,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced }: P
   };
 
   const saveSnapshot = async (partId: string, value: QuoteFormValue) => {
+    if (demoMode) throw new Error("Supplier quotes cannot be added in this read-only demo.");
     try {
       await snapshotMutation.mutateAsync({
         partId,

@@ -25,6 +25,8 @@ type CadModelPreviewDialogProps = {
   folders: CadFolder[];
   onClose: () => void;
   onChanged: () => void;
+  demoMode?: boolean;
+  previewSrc?: string;
 };
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -80,17 +82,23 @@ export function CadModelPreviewDialog({
   folders,
   onClose,
   onChanged,
+  demoMode = false,
+  previewSrc,
 }: CadModelPreviewDialogProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState(model.name);
   const [notes, setNotes] = useState(model.notes ?? "");
 
-  const src = storageUrl(model.objectPath);
+  const src = previewSrc ?? storageUrl(model.objectPath);
   const { format, hint } = describeCadModel(model.fileName, model.contentType);
   const options = folderOptions(folders);
 
   const run = async (action: () => Promise<unknown>) => {
+    if (demoMode) {
+      setError("CAD changes are disabled in this read-only demo.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -147,7 +155,7 @@ export function CadModelPreviewDialog({
               value={name}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) => setName(event.target.value)}
               className="mt-1"
-              disabled={busy}
+                disabled={demoMode || busy}
               data-testid="cad-preview-name"
             />
           </label>
@@ -156,6 +164,7 @@ export function CadModelPreviewDialog({
             <select
               value={model.folderId ?? ""}
               onChange={(event) => {
+                if (demoMode) return;
                 const folderId = event.target.value || null;
                 const folder = folders.find((candidate) => candidate.id === folderId);
                 void run(() =>
@@ -167,7 +176,7 @@ export function CadModelPreviewDialog({
                   }),
                 );
               }}
-              disabled={busy}
+              disabled={demoMode || busy}
               className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-base md:text-sm"
               data-testid="cad-preview-location"
             >
@@ -192,7 +201,7 @@ export function CadModelPreviewDialog({
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               rows={2}
-              disabled={busy}
+              disabled={demoMode || busy}
               className="mt-1 w-full rounded-md border border-input bg-background p-2 text-base md:text-sm"
               data-testid="cad-preview-notes"
             />
@@ -209,10 +218,11 @@ export function CadModelPreviewDialog({
           <button
             type="button"
             onClick={async () => {
+              if (demoMode) return;
               if (!(await confirmAction({ title: `Delete "${model.name}" and its file?`, danger: true, confirmLabel: "Delete" }))) return;
               void run(() => deleteCadModel(model.id)).then(onChanged);
             }}
-            disabled={busy}
+            disabled={demoMode || busy}
             className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold text-destructive transition hover:bg-destructive/10"
             data-testid="cad-preview-delete"
           >
@@ -220,6 +230,7 @@ export function CadModelPreviewDialog({
             Delete
           </button>
           <div className="flex items-center gap-2">
+            {demoMode && <span className="text-xs text-muted-foreground">Read-only preview</span>}
             <a
               href={src}
               download={model.fileName}
@@ -238,7 +249,7 @@ export function CadModelPreviewDialog({
                   }),
                 )
               }
-              disabled={busy}
+              disabled={demoMode || busy}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
               data-testid="cad-preview-save"
             >

@@ -453,8 +453,11 @@ export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } =
 
   useEffect(() => {
     if (!demoMode || activeId || fileList.length === 0) return;
-    setOpenIds([fileList[0].id]);
-    setActiveId(fileList[0].id);
+    const initialFile = fileList.find((file) => file.path.endsWith("/BioBuzzTeleOp.java"))
+      ?? fileList.find((file) => file.path.endsWith(".java"))
+      ?? fileList[0];
+    setOpenIds([initialFile.id]);
+    setActiveId(initialFile.id);
   }, [activeId, demoMode, fileList]);
 
   const flushActiveFile = useCallback(async () => {
@@ -999,8 +1002,9 @@ export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } =
           <p className="mono mb-2 text-[10px] font-medium uppercase tracking-[.22em] text-primary">Code workspace</p>
           <h1 className="text-3xl font-semibold tracking-[-.045em] md:text-4xl">Robot code</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            FTC Java for BIOBUZZ (SDK {BIOBUZZ_SDK_VERSION}) — JDK 21 toolchain, Java 8 source level. Edit together live,
-            commit to any git endpoint, and deploy over USB.
+            {demoMode
+              ? "Fictional FTC Java sample. Browse the project and source files; editing, Git, AI, and hardware actions are unavailable in this demo."
+              : `FTC Java for BIOBUZZ (SDK ${BIOBUZZ_SDK_VERSION}) — JDK 21 toolchain, Java 8 source level. Edit together live, commit to any git endpoint, and deploy over USB.`}
           </p>
         </div>
         <div className="code-project-actions flex flex-wrap items-center gap-2">
@@ -1074,12 +1078,14 @@ export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } =
             <span className="code-toolbar-status ml-auto flex shrink-0 items-center gap-2 text-[11px] text-[#9d9d9d]">
               <span
                 className={`code-collab-status inline-flex items-center gap-1 rounded-full px-2 py-0.5 ${
-                  collabStatus === "connected" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"
+                  demoMode
+                    ? "bg-sky-500/15 text-sky-300"
+                    : collabStatus === "connected" ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"
                 }`}
                 data-testid="code-collab-status"
               >
                 <Users size={11} aria-hidden="true" />
-                {collabStatus === "connected" ? `Live${peers.length ? ` · ${peers.length}` : ""}` : collabStatus}
+                {demoMode ? "Sample" : collabStatus === "connected" ? `Live${peers.length ? ` · ${peers.length}` : ""}` : collabStatus}
               </span>
               <span data-testid="code-save-status" className="code-save-status inline-flex items-center gap-1">
                 {saveStatus === "saving" ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} />}
@@ -1205,7 +1211,7 @@ export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } =
                     </label>
                     <label className="flex-1">
                       <span className="mb-1 block text-[#9d9d9d]">Token</span>
-                      <Input type="password" value={gitToken} onChange={(event) => setGitToken(event.target.value)} placeholder="PAT (browser only)" data-testid="code-git-token" className="h-8 border-white/10 bg-[#1e1e1e] text-white placeholder:text-[#6a6a6a]" />
+                      <Input type="password" value={gitToken} onChange={(event) => setGitToken(event.target.value)} placeholder="PAT (browser only)" data-testid="code-git-token" disabled={demoMode} className="h-8 border-white/10 bg-[#1e1e1e] text-white placeholder:text-[#6a6a6a]" />
                     </label>
                   </div>
                   <label className="block">
@@ -1326,7 +1332,7 @@ export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } =
                   </div>
                   <label className="block">
                     <span className="mb-1 block text-[#9d9d9d]">Hub address (just an address — nothing opens)</span>
-                    <Input value={hubUrl} onChange={(event) => setHubUrl(event.target.value)} placeholder="http://192.168.43.1:8080" data-testid="code-hub-url" className="h-8 border-white/10 bg-[#1e1e1e] text-white placeholder:text-[#6a6a6a]" />
+                    <Input value={hubUrl} onChange={(event) => setHubUrl(event.target.value)} placeholder="http://192.168.43.1:8080" data-testid="code-hub-url" disabled={demoMode} className="h-8 border-white/10 bg-[#1e1e1e] text-white placeholder:text-[#6a6a6a]" />
                   </label>
                   <Button type="button" size="sm" disabled={deployBusy || fileList.length === 0} onClick={uploadAndBuild} data-testid="code-deploy-upload" className="justify-start bg-[#0e639c] text-white hover:bg-[#1177bb]">
                     {deployBusy ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />} Upload + Build on Hub
@@ -1400,7 +1406,7 @@ export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } =
                 <Button
                   type="button"
                   size="sm"
-                  disabled={!collab || !activeFile}
+                  disabled={demoMode || !collab || !activeFile}
                   onClick={() => {
                     void flushActiveFile().then(() => setNotice("Saved."));
                   }}
@@ -1423,6 +1429,7 @@ export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } =
                   key={activeFile.id}
                   session={collab}
                   filePath={activeFile.path}
+                  readOnly={demoMode}
                   onDirty={() => {
                     dirtyRef.current = true;
                   }}

@@ -73,18 +73,20 @@ export function PartsInventoryDetailsDialog({
   item,
   onClose,
   onSaved,
+  demoMode = false,
 }: {
   item: PartsCatalogItem | null;
   onClose: () => void;
   onSaved: () => Promise<void>;
+  demoMode?: boolean;
 }) {
   const queryClient = useQueryClient();
   const open = item !== null;
   const detailsQuery = useGetPartsCatalogDetails(item?.id ?? "", {
     query: {
       queryKey: getGetPartsCatalogDetailsQueryKey(item?.id ?? ""),
-      enabled: open,
-      staleTime: 0,
+      enabled: open && !demoMode,
+      staleTime: demoMode ? Infinity : 0,
     },
   });
   const updateMutation = useUpdatePartsCatalogDetails();
@@ -112,6 +114,10 @@ export function PartsInventoryDetailsDialog({
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    if (demoMode) {
+      setFeedback({ kind: "error", text: "Part details are read-only in this demo." });
+      return;
+    }
     if (!item) return;
     const amount = unitCost.trim() ? Number(unitCost) : null;
     const currency = costCurrency.trim().toUpperCase() || null;
@@ -274,6 +280,7 @@ export function PartsInventoryDetailsDialog({
                         onChange={(event) => setUnitCost(event.target.value)}
                         className="mt-1 bg-background"
                         aria-label="Saved unit cost"
+                        disabled={demoMode}
                       />
                     </label>
                     <label className="text-sm font-medium">
@@ -285,6 +292,7 @@ export function PartsInventoryDetailsDialog({
                         placeholder="USD"
                         className="mt-1 bg-background"
                         aria-label="Saved cost currency"
+                        disabled={demoMode}
                       />
                     </label>
                     <p className="text-xs text-muted-foreground sm:col-span-2">
@@ -299,6 +307,7 @@ export function PartsInventoryDetailsDialog({
                         placeholder="https://…"
                         className="mt-1 bg-background"
                         aria-label="Product image URL"
+                        disabled={demoMode}
                       />
                     </label>
                     <label className="text-sm font-medium sm:col-span-2">
@@ -311,6 +320,7 @@ export function PartsInventoryDetailsDialog({
                         placeholder="Choose or enter a location"
                         className="mt-1 bg-background"
                         aria-label="Storage location"
+                        disabled={demoMode}
                       />
                       <datalist id={`parts-storage-locations-${details.item.id}`}>
                         {details.locations.map((location) => <option key={location} value={location} />)}
@@ -326,6 +336,7 @@ export function PartsInventoryDetailsDialog({
                         placeholder="Team-specific notes about this part…"
                         className="mt-1 bg-background"
                         aria-label="Inventory notes"
+                        disabled={demoMode}
                       />
                       <span className="mt-1 block text-xs font-normal text-muted-foreground">
                         Separate from the supplier’s product description.
@@ -339,9 +350,9 @@ export function PartsInventoryDetailsDialog({
                   )}
                   <div className="flex justify-end gap-2">
                     <Button type="button" variant="outline" onClick={onClose}>Close</Button>
-                    <Button type="submit" disabled={updateMutation.isPending}>
+                    <Button type="submit" disabled={demoMode || updateMutation.isPending}>
                       {updateMutation.isPending && <Loader2 className="animate-spin" size={16} aria-hidden="true" />}
-                      Save details
+                      {demoMode ? "Read-only preview" : "Save details"}
                     </Button>
                   </div>
                 </form>
