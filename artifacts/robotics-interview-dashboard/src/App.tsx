@@ -3506,7 +3506,7 @@ function Shell({
     <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
       {mobileNav && <button type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-25 bg-black/45 backdrop-blur-[1px] xl:hidden" data-testid="button-close-mobile-navigation" />}
       <aside id="workspace-sidebar" aria-label="Workspace navigation" className={`fixed inset-y-0 left-0 z-30 flex w-[min(248px,88vw)] flex-col overflow-y-auto bg-[#172a3a] px-4 py-5 pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-[#d4e0e2] transition-transform xl:translate-x-0 ${mobileNav ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}>
-        <div className="px-3"><Logo dark teamName={activeTeamName} /></div>
+        <div className="px-3"><Logo dark teamName={demoMode ? "Acme Robotics" : activeTeamName} /></div>
         <div className="mono mb-3 mt-12 px-3 text-[9px] uppercase tracking-[.24em] text-[#78949d]">Workspaces</div>
         <nav className="space-y-1" aria-label="Workspace links">
           {nav.map((item) => {

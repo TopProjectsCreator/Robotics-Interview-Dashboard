@@ -23,7 +23,8 @@ describe("public robotics workspace demo", () => {
 
     expect(screen.getByRole("heading", { name: "Choose a workspace" })).toBeInTheDocument();
     expect(screen.getByTestId("workspace-header")).not.toHaveTextContent("Fictional demo · read-only");
-    expect(screen.getAllByText("Demo Robotics")).toHaveLength(2);
+    expect(within(screen.getByTestId("brand-robotics")).getByText("Acme Robotics")).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-header")).toHaveTextContent("Demo Robotics");
     expect(screen.getByTestId("demo-sample-notice")).toHaveTextContent(/fictional/i);
     expect(screen.getByTestId("text-custom-workspace-title-build-tracker")).toHaveTextContent("Build Tracker");
     expect(screen.getByTestId("text-custom-workspace-title-field-test-log")).toHaveTextContent("Field Test Log");
