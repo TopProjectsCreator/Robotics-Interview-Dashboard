@@ -103,7 +103,7 @@ router.get("/system/mailbox", requireInboxAdmin, async (req, res): Promise<void>
   try {
     res.json(mailboxSettingsResponse(await getTeamMailboxSettings(await requestTeamId(req))));
   } catch (error) {
-    req.log.error({ err: error }, "Team inbox settings read failed");
+    req.log.error("Team inbox settings read failed");
     res.status(500).json({ error: "Unable to read team inbox settings." });
   }
 });
@@ -128,7 +128,7 @@ router.put("/system/mailbox", requireInboxAdmin, async (req, res): Promise<void>
       res.status(400).json({ error: error.message });
       return;
     }
-    req.log.error({ err: error }, "Team inbox settings update failed");
+    req.log.error("Team inbox settings update failed");
     res.status(500).json({ error: "Unable to update team inbox settings." });
   }
 });
@@ -139,7 +139,7 @@ router.post("/system/mailbox/sync", requireInboxAdmin, async (req, res): Promise
     const teamId = await requestTeamId(req);
     res.json(await ingestMailboxIntoChat(teamId));
   } catch (error) {
-    req.log.error({ err: error }, "Manual team inbox check failed");
+    req.log.error("Manual team inbox check failed");
     res.status(500).json({ error: "Unable to check the team inbox." });
   }
 });
