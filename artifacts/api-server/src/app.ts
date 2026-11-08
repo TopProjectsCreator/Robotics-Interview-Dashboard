@@ -1,4 +1,4 @@
-import express, { type Express, type RequestHandler } from "express";
+import express, { type ErrorRequestHandler, type Express, type RequestHandler } from "express";
 import compression from "compression";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -10,6 +10,7 @@ import { logger } from "./lib/logger";
 import { getRedirectConfig, getRedirectLocation } from "./lib/primaryRedirect";
 import { sitemapHandler } from "./routes/sitemap";
 import { attachAdminSession } from "./middlewares/adminAuth";
+import { isDatabaseConnectionError } from "./lib/databaseErrors";
 
 const app: Express = express();
 
@@ -196,5 +197,20 @@ if (publicDir) {
 } else {
   logger.warn("Frontend build not found; serving API only");
 }
+
+const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+  if (isDatabaseConnectionError(error)) {
+    req.log.warn({ err: error }, "Database connection unavailable; request can be retried");
+    res.status(503).json({ error: "The database is temporarily unavailable. Please try again." });
+    return;
+  }
+  req.log.error({ err: error }, "Unhandled request error");
+  res.status(500).json({ error: "Internal server error" });
+};
+app.use(errorHandler);
 
 export default app;

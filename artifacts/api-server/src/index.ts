@@ -12,6 +12,7 @@ import { startAssistantPromptDispatcher, startAssistantScheduledTaskDispatcher, 
 import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
 import { startMailboxPoller } from "./lib/maildrop";
 import { resumeStalePreviewJobs } from "./routes/storage";
+import { isDatabaseConnectionError } from "./lib/databaseErrors";
 
 initRealtime();
 
@@ -927,21 +928,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
   }
 
   if (!primaryReady) {
-    const primaryErrorMessage =
-      primaryError instanceof Error ? primaryError.message : String(primaryError);
-    const primaryErrorCode =
-      typeof primaryError === "object" &&
-      primaryError !== null &&
-      "code" in primaryError &&
-      typeof primaryError.code === "string"
-        ? primaryError.code
-        : "";
-    const primaryUnavailable =
-      /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|57P01|57P03/i.test(
-        `${primaryErrorCode} ${primaryErrorMessage}`,
-      );
-
-    if (secondaryReady && primaryUnavailable) {
+    if (secondaryReady && isDatabaseConnectionError(primaryError)) {
       logger.warn({ err: primaryError }, "Primary database unavailable; continuing with secondary");
     } else {
       logger.error({ err: primaryError }, "Primary schema migration failed");
