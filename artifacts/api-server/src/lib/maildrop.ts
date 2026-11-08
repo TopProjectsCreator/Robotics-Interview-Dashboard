@@ -26,6 +26,8 @@ import { decryptMaildropApiKey, encryptMaildropApiKey } from "./assistantProvide
 const MAILDROP_ENDPOINT = "https://api.maildrop.cc/graphql";
 const MAILDROP_TIMEOUT_MS = 15_000;
 const MAILDROP_DOMAIN = "maildrop.cc";
+const MAILDROP_KEY_VALIDATION_NOTICE =
+  "Maildrop responded, but its published API docs say authentication is not required, so this check cannot verify the saved key.";
 
 export type MaildropMessage = {
   id: string;
@@ -53,7 +55,7 @@ type GraphQLResponse<T> = { data?: T; errors?: { message?: string }[] };
 
 export class MaildropAuthenticationError extends Error {
   constructor() {
-    super("Maildrop rejected this team's API key. Replace the key in inbox settings and try again.");
+    super("Maildrop explicitly rejected this team's API key. Replace the key in inbox settings and try again.");
     this.name = "MaildropAuthenticationError";
   }
 }
@@ -432,7 +434,7 @@ export async function ingestMailboxIntoChat(
     }
   }
   if (posted) logger.info({ posted, skipped, teamId }, "Posted team email into the chat");
-  return { posted, skipped };
+  return { posted, skipped, reason: MAILDROP_KEY_VALIDATION_NOTICE };
 }
 
 async function enabledMailboxes(instance: DbInstance): Promise<StoredMailboxSettings[]> {

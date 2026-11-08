@@ -696,7 +696,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     setMailboxResult(null);
     checkMailbox.mutate(undefined, {
       onSuccess: (result) => setMailboxResult(
-        result.posted ? `${result.posted} new email(s) posted into the chat.` : result.reason ?? "No new mail.",
+        result.posted
+          ? `${result.posted} new email(s) posted into the chat. ${result.reason ?? ""}`.trim()
+          : result.reason ?? "No new mail.",
       ),
       onError: () => setMailboxResult("Could not check the inbox right now."),
     });
@@ -981,6 +983,9 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="mt-3 rounded-xl border border-[#dce5e5] bg-[#f8faf9] p-3 dark:border-[#31495a] dark:bg-[#0f1e27]">
           <label htmlFor="team-maildrop-api-key" className="text-xs font-semibold">Team Maildrop API key</label>
           <p className="mt-1 text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Each team supplies its own key. It is encrypted when saved and is never shown again.</p>
+          <p className="mt-1 text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-maildrop-key-validation-limit">
+            Maildrop’s <a href="https://docs.maildrop.cc/api-reference/overview" target="_blank" rel="noreferrer" className="underline decoration-dotted underline-offset-2">published API docs</a> currently say authentication is not required. We send the saved key, but Maildrop may ignore it; a successful check cannot verify it. Explicit authentication rejections are reported without showing the key.
+          </p>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <input id="team-maildrop-api-key" type="password" autoComplete="new-password" value={mailboxKeyDraft} onChange={event => setMailboxKeyDraft(event.target.value)} data-testid="input-team-maildrop-api-key" placeholder={mailboxQuery.data?.apiKeyConfigured ? "Enter a new key to replace" : "Paste your Maildrop API key"} className={`${field} min-w-0 flex-1`} />
             <span data-testid="team-maildrop-api-key-status" className={`text-xs font-medium ${mailboxQuery.data?.apiKeyConfigured ? "text-[#12737d] dark:text-[#6fc3cf]" : "text-[#7c8c91] dark:text-[#93a8b2]"}`}>

@@ -341,7 +341,9 @@ test("manual ingestion and polling post allowed mail only to its team's own chat
     databases.secondary.rows.inboxes.find(row => row.teamId === "team-b").mailbox = "team-b-mailbox";
     activeDatabase = databases.primary;
     const manual = await ingestMailboxIntoChat("team-a");
-    assert.deepEqual(manual, { posted: 1, skipped: 1 });
+    assert.equal(manual.posted, 1);
+    assert.equal(manual.skipped, 1);
+    assert.match(manual.reason, /cannot verify the saved key/i);
     assert.equal(databases.primary.rows.messages.length, 1);
     assert.equal(databases.primary.rows.messages[0].teamId, "team-a");
     assert.equal(databases.primary.rows.messages[0].conversationScope, "shared");
@@ -350,7 +352,9 @@ test("manual ingestion and polling post allowed mail only to its team's own chat
 
     // A second manual check cannot duplicate accepted chat messages.
     const duplicate = await ingestMailboxIntoChat("team-a");
-    assert.deepEqual(duplicate, { posted: 0, skipped: 2 });
+    assert.equal(duplicate.posted, 0);
+    assert.equal(duplicate.skipped, 2);
+    assert.match(duplicate.reason, /cannot verify the saved key/i);
     assert.equal(databases.primary.rows.messages.length, 1);
 
     await pollTeamMailboxesOnce();
@@ -406,6 +410,26 @@ test("missing and rejected Maildrop keys produce safe, recoverable check message
     const rejected = await ingestMailboxIntoChat("team-a");
     assert.match(rejected.reason, /rejected this team's API key/i);
     assert.equal(JSON.stringify(rejected).includes("sensitive-invalid-key"), false);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("a successful inbox check does not claim Maildrop verified the saved key", async () => {
+  clearDatabase(databases.primary);
+  const previousFetch = globalThis.fetch;
+  await saveTeamMailboxSettings("team-a", true, ["coach@team-a.example"], "sensitive-team-key");
+  databases.primary.rows.inboxes[0].mailbox = "team-a-mailbox";
+  globalThis.fetch = async (_url, init) => {
+    assert.equal(init.headers.Authorization, "Bearer sensitive-team-key");
+    return graphqlResponse({ data: { inbox: [] } });
+  };
+  try {
+    const result = await ingestMailboxIntoChat("team-a");
+    assert.equal(result.posted, 0);
+    assert.match(result.reason, /authentication is not required/i);
+    assert.match(result.reason, /cannot verify the saved key/i);
+    assert.equal(JSON.stringify(result).includes("sensitive-team-key"), false);
   } finally {
     globalThis.fetch = previousFetch;
   }
