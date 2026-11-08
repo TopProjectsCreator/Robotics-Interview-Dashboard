@@ -22,6 +22,7 @@ describe("public robotics workspace demo", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { name: "Choose a workspace" })).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-header")).not.toHaveTextContent("Fictional demo · read-only");
     expect(screen.getAllByText("Demo Robotics")).toHaveLength(2);
     expect(screen.getByTestId("demo-sample-notice")).toHaveTextContent(/fictional/i);
     expect(screen.getByTestId("text-custom-workspace-title-build-tracker")).toHaveTextContent("Build Tracker");

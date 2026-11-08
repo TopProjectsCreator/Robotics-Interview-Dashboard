@@ -96,7 +96,6 @@ import ComparePage from "@/pages/compare";
 import AboutPage from "@/pages/about";
 import {
   DEMO_CUSTOM_WORKSPACES,
-  DemoBadge,
   DemoMetadata,
   DemoWorkspaceContent,
   parseDemoView,
@@ -3617,7 +3616,6 @@ function Shell({
              {!demoMode && <div className="hidden items-center sm:flex"><SyncStatus /></div>}
              {demoMode ? (
                <>
-                 <div className="hidden items-center md:flex"><DemoBadge /></div>
                  <Link href="/auth?createTeam=1" data-testid="link-demo-header-create-team" className="inline-flex min-h-9 items-center rounded-lg bg-[#f8c84a] px-2.5 text-[10px] font-semibold text-[#1d2c36] transition hover:bg-[#f6d46d] sm:px-3 sm:text-xs">Create a team</Link>
                </>
              ) : <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />}
