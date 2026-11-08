@@ -33,17 +33,37 @@ describe("public robotics workspace demo", () => {
     expect(webSocketConstructor).not.toHaveBeenCalled();
   });
 
-  it("browses real workspace navigation and opens local custom apps", async () => {
+  it("shows the real Chat, Parts, and CAD screens with isolated fictional fixtures", async () => {
     window.history.replaceState({}, "", "/demo");
     const fetchSpy = vi.fn();
+    const eventSourceConstructor = vi.fn();
+    const webSocketConstructor = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
+    vi.stubGlobal("EventSource", eventSourceConstructor);
+    vi.stubGlobal("WebSocket", webSocketConstructor);
     vi.stubGlobal("scrollTo", vi.fn());
     render(<App />);
 
     fireEvent.click(screen.getByTestId("link-demo-view-chat"));
-    expect(screen.getByTestId("text-demo-view-title")).toHaveTextContent("Shop floor");
-    fireEvent.click(screen.getByTestId("button-chat-channel"));
-    expect(screen.getByTestId("section-demo-chat")).toHaveTextContent("Pit checklist is updated");
+    expect(screen.getByTestId("demo-real-chat")).toHaveAttribute("inert");
+    expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Sample identity");
+    expect(screen.getByText("The new intake bracket clears the front crossbar.")).toBeInTheDocument();
+    expect(screen.getByText("Great. I added the updated side plate to the CAD library.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("link-demo-view-parts"));
+    expect(screen.getByTestId("demo-real-parts")).toHaveAttribute("inert");
+    expect(screen.getByRole("heading", { name: "Parts" })).toBeInTheDocument();
+    expect(screen.getByText("Strafer Chassis 96mm Wheel")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("link-demo-view-cad"));
+    expect(screen.getByTestId("demo-real-cad")).toHaveAttribute("inert");
+    expect(await screen.findByRole("heading", { name: "Models" })).toBeInTheDocument();
+    expect(await screen.findByText("Drivebase side plate")).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(eventSourceConstructor).not.toHaveBeenCalled();
+    expect(webSocketConstructor).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("link-demo-view-overview"));
 
     fireEvent.click(screen.getByTestId("link-demo-custom-app-build-tracker"));
     expect(await screen.findByTestId("text-custom-app-title-build-tracker")).toHaveTextContent("Build Tracker");

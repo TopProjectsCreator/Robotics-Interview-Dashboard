@@ -674,10 +674,10 @@ function DraftOrderTray({
   );
 }
 
-export default function PartsPage() {
+export default function PartsPage({ demoMode = false }: { demoMode?: boolean } = {}) {
   const queryClient = useQueryClient();
   const sessionQuery = useGetSession({
-    query: { queryKey: getGetSessionQueryKey() },
+    query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode },
   });
   const activeTeamId = sessionQuery.data?.teamId ?? "default";
   const pricingPreferenceQueryKey = [
@@ -690,12 +690,13 @@ export default function PartsPage() {
       refetchInterval: PARTS_REFRESH_INTERVAL_MS,
       refetchIntervalInBackground: false,
       refetchOnWindowFocus: true,
+      enabled: !demoMode,
     },
   });
   const pricingPreferenceQuery = useGetPartsPricingPreference({
     query: {
       queryKey: pricingPreferenceQueryKey,
-      enabled: Boolean(sessionQuery.data?.teamId),
+      enabled: !demoMode && Boolean(sessionQuery.data?.teamId),
       refetchOnMount: "always",
       refetchOnWindowFocus: true,
     },
@@ -716,7 +717,7 @@ export default function PartsPage() {
     message: string;
   }>>({});
   const searchRunId = useRef(0);
-  const [orderDraft, setOrderDraft] = useState<PartsOrderLine[]>(readPartsOrderDraft);
+  const [orderDraft, setOrderDraft] = useState<PartsOrderLine[]>(() => demoMode ? [] : readPartsOrderDraft());
   const [notice, setNotice] = useState<Notice | null>(null);
   const [robotName, setRobotName] = useState("");
   const [customName, setCustomName] = useState("");
@@ -758,6 +759,7 @@ export default function PartsPage() {
       refetchInterval: PARTS_REFRESH_INTERVAL_MS,
       refetchIntervalInBackground: false,
       refetchOnWindowFocus: true,
+      enabled: !demoMode,
     },
   });
   const savedSearchParams = {
@@ -768,7 +770,7 @@ export default function PartsPage() {
   const savedCatalogSearchQuery = useListPartsCatalog(savedSearchParams, {
     query: {
       queryKey: getListPartsCatalogQueryKey(savedSearchParams),
-      enabled: lastSearch.trim().length >= 2,
+      enabled: !demoMode && lastSearch.trim().length >= 2,
     },
   });
   const createItemMutation = useCreatePartsCatalogItem();
@@ -808,6 +810,7 @@ export default function PartsPage() {
   }, {});
 
   useEffect(() => {
+    if (demoMode) return;
     try {
       window.localStorage.setItem(PARTS_ORDER_DRAFT_KEY, JSON.stringify(orderDraft));
     } catch {
@@ -816,7 +819,7 @@ export default function PartsPage() {
         text: "This browser blocked local storage. The order draft may not persist after you leave this page.",
       });
     }
-  }, [orderDraft]);
+  }, [demoMode, orderDraft]);
 
   const refreshParts = async () => {
     await Promise.all([

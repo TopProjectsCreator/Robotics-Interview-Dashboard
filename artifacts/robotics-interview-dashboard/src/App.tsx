@@ -102,6 +102,7 @@ import {
   parseDemoView,
   type DemoView,
 } from "@/pages/demo";
+import { DemoDataProvider } from "@/pages/demo-data";
 import ChatLanding from "@/pages/chat-landing";
 import PartsLanding from "@/pages/parts-landing";
 import CodeLanding from "@/pages/code-landing";
@@ -4082,8 +4083,33 @@ function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
   );
 }
 
-function isDemoWorkspaceContentView(view: DemoView): view is "chat" | "parts" | "code" | "cad" {
-  return view === "chat" || view === "parts" || view === "code" || view === "cad";
+function isDemoWorkspaceContentView(view: DemoView): view is "code" {
+  return view === "code";
+}
+
+function DemoReadOnlyFrame({
+  children,
+  label,
+}: {
+  children: ReactNode;
+  label: string;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm text-muted-foreground" role="note">
+        <ShieldCheck className="h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+        Fictional sample data · {label} is read-only in this demo.
+      </div>
+      <div
+        ref={(node) => node?.setAttribute("inert", "")}
+        aria-label={`${label} read-only demo`}
+        className="pointer-events-none select-none"
+        data-testid={`demo-real-${label.toLowerCase()}`}
+      >
+        {children}
+      </div>
+    </div>
+  );
 }
 
 function DemoPage() {
@@ -4092,20 +4118,36 @@ function DemoPage() {
   return (
     <>
       <DemoMetadata />
-      <Shell demoMode demoView={demoView}>
-        {demoView === "overview" ? (
-          <WorkspaceOverview demoMode />
-        ) : customWorkspace ? (
-          <Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}>
-            <CustomWorkspaceAppPage
-              workspaceId={customWorkspace.id}
-              demoWorkspace={customWorkspace}
-            />
-          </Suspense>
-        ) : isDemoWorkspaceContentView(demoView) ? (
-          <DemoWorkspaceContent view={demoView} />
-        ) : null}
-      </Shell>
+      <DemoDataProvider>
+        <Shell demoMode demoView={demoView}>
+          {demoView === "overview" ? (
+            <WorkspaceOverview demoMode />
+          ) : customWorkspace ? (
+            <Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}>
+              <CustomWorkspaceAppPage
+                workspaceId={customWorkspace.id}
+                demoWorkspace={customWorkspace}
+              />
+            </Suspense>
+          ) : demoView === "chat" ? (
+            <DemoReadOnlyFrame label="Chat">
+              <InterviewChatPanel applicantIds={[]} tall demoMode />
+            </DemoReadOnlyFrame>
+          ) : demoView === "parts" ? (
+            <DemoReadOnlyFrame label="Parts">
+              <PartsPage demoMode />
+            </DemoReadOnlyFrame>
+          ) : demoView === "cad" ? (
+            <DemoReadOnlyFrame label="CAD">
+              <Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}>
+                <CadWorkspacePage demoMode />
+              </Suspense>
+            </DemoReadOnlyFrame>
+          ) : isDemoWorkspaceContentView(demoView) ? (
+            <DemoWorkspaceContent view={demoView} />
+          ) : null}
+        </Shell>
+      </DemoDataProvider>
     </>
   );
 }
@@ -5240,19 +5282,20 @@ function formatChatDateTime(value: string): string {
   }).format(date);
 }
 
-function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: string[]; tall?: boolean }) { const streamHealthy = useRealtimeHealthy();
+function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { applicantIds: string[]; tall?: boolean; demoMode?: boolean }) { const streamHealthy = useRealtimeHealthy();
   const { theme } = useTheme();
   const { settings } = useWorkspaceSettings();
   const [location, setLocation] = useLocation();
   const qc = useQueryClient();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
-  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey() } });
-  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), enabled: !demoMode } });
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode } });
   const customEmojisQuery = useListChatCustomEmojis({
     query: {
       queryKey: getListChatCustomEmojisQueryKey(),
       staleTime: 15_000,
       refetchInterval: streamHealthy ? false : (30_000),
+      enabled: !demoMode,
     },
   });
   const customEmojiItems = useMemo(() => customEmojisQuery.data?.items ?? [], [customEmojisQuery.data?.items]);
@@ -5260,7 +5303,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     () => new Map(customEmojiItems.map(emoji => [emoji.name, emoji.imagePath])),
     [customEmojiItems],
   );
-  const interviewerLabels = useGetQueueLabels({ query: { queryKey: getGetQueueLabelsQueryKey() } }).data?.interviewerLabels ?? queue.data?.interviewerLabels ?? [];
+  const interviewerLabels = useGetQueueLabels({ query: { queryKey: getGetQueueLabelsQueryKey(), enabled: !demoMode } }).data?.interviewerLabels ?? queue.data?.interviewerLabels ?? [];
   const [conversationPeer, setConversationPeer] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("peer")?.trim() || null;
@@ -5273,7 +5316,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   });
   const activeInterviewer = session.data?.label ?? "Interviewer";
   const conversations = useGetChatConversations({
-    query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )},
+    query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: streamHealthy ? false : (5000 ), enabled: !demoMode },
   });
   const unreadPeers = useMemo(() => {
     const active = conversationPeer?.trim().toLowerCase() ?? "";
@@ -5286,7 +5329,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     return unread;
   }, [conversations.data, conversationPeer]);
   const channelsQuery = useListChatChannels({
-    query: { queryKey: getListChatChannelsQueryKey(), refetchInterval: streamHealthy ? false : 5000 },
+    query: { queryKey: getListChatChannelsQueryKey(), refetchInterval: streamHealthy ? false : 5000, enabled: !demoMode },
   });
   const channels = useMemo(() => channelsQuery.data?.items ?? [], [channelsQuery.data]);
   const activeChannel = useMemo(
@@ -5303,7 +5346,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     }
     return unread;
   }, [conversations.data, conversationChannelId]);
-  const channelAccountsQuery = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
+  const channelAccountsQuery = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey(), enabled: !demoMode } });
   const channelAccounts = useMemo(() => channelAccountsQuery.data?.items ?? [], [channelAccountsQuery.data]);
   const createChannelMutation = useCreateChatChannel();
   const updateChannelMutation = useUpdateChatChannel();
@@ -5459,7 +5502,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       ? { channelId: conversationChannelId }
       : conversationPeer ? { recipient: conversationPeer } : {}),
   }), [conversationScope, conversationPeer, conversationChannelId]);
-  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
+  const chat = useGetInterviewChat(chatParams, { query: { queryKey: getGetInterviewChatQueryKey(chatParams), refetchInterval: streamHealthy ? false : (refreshMs ), enabled: !demoMode } });
   const [olderChat, setOlderChat] = useState<InterviewChatMessage[]>([]);
   const [olderChatConversationId, setOlderChatConversationId] = useState(conversationId);
   const [chatHasMore, setChatHasMore] = useState(true);
@@ -5506,7 +5549,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const markedReadMessagesRef = useRef(new Set<string>());
   useEffect(() => {
     const root = chatScrollRef.current;
-    if (!root || !session.data?.authenticated || document.visibilityState !== "visible" || typeof IntersectionObserver === "undefined") return;
+    if (demoMode || !root || !session.data?.authenticated || document.visibilityState !== "visible" || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver((entries) => {
       const visibleIds = entries
         .filter((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.2)
@@ -5540,7 +5583,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
       if (node) observer.observe(node);
     }
     return () => observer.disconnect();
-  }, [activeInterviewer, chatItems, chatParams, conversationChannelId, conversationId, conversationPeer, conversationScope, markChatRead, qc, session.data?.authenticated]);
+  }, [activeInterviewer, chatItems, chatParams, conversationChannelId, conversationId, conversationPeer, conversationScope, demoMode, markChatRead, qc, session.data?.authenticated]);
   const [pinnedPreviewIndex, setPinnedPreviewIndex] = useState(0);
   const pinnedChatMessages = useMemo(() => chatItems
     .filter(item => Boolean(item.pinnedAt))
@@ -5630,6 +5673,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     query: {
       queryKey: getListInterviewWhiteboardsQueryKey(chatParams),
       refetchInterval: streamHealthy ? false : (refreshMs),
+      enabled: !demoMode,
     },
   });
   const createWhiteboard = useCreateInterviewWhiteboard();
@@ -5641,7 +5685,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     {
       query: {
         queryKey: getGetInterviewWhiteboardByIdQueryKey(activeWhiteboardId ?? "", chatParams),
-        enabled: Boolean(activeWhiteboardId),
+        enabled: !demoMode && Boolean(activeWhiteboardId),
       },
     },
   );
@@ -5665,15 +5709,15 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
   const [message, setMessage] = useState("");
   const [loadedChatDraftKey, setLoadedChatDraftKey] = useState<string | null>(null);
   useEffect(() => {
-    setMessage(loadChatDraft(chatDraftStorageKey));
+    setMessage(demoMode ? "" : loadChatDraft(chatDraftStorageKey));
     setLoadedChatDraftKey(chatDraftStorageKey);
-  }, [chatDraftStorageKey]);
+  }, [chatDraftStorageKey, demoMode]);
   useEffect(() => {
-    if (loadedChatDraftKey !== chatDraftStorageKey) return;
+    if (demoMode || loadedChatDraftKey !== chatDraftStorageKey) return;
     saveChatDraft(chatDraftStorageKey, message);
-  }, [chatDraftStorageKey, loadedChatDraftKey, message]);
+  }, [chatDraftStorageKey, demoMode, loadedChatDraftKey, message]);
   const [chatError, setChatError] = useState("");
-  const slowmodeConfig = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey() } });
+  const slowmodeConfig = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey(), enabled: !demoMode } });
   const [slowDeadline, setSlowDeadline] = useState(0);
   const [clock, setClock] = useState(() => Date.now());
   // 429s can happen without a local send (e.g. a stale tab), so tick whenever
@@ -5696,6 +5740,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     query: {
       queryKey: getListScheduledChatsQueryKey(),
       refetchInterval: streamHealthy ? false : 5000,
+      enabled: !demoMode,
     },
   });
   const scheduledItems = useMemo(() => scheduledListQuery.data?.items ?? [], [scheduledListQuery.data]);
@@ -5986,7 +6031,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
     {
       query: {
         queryKey: getListApplicantsQueryKey({ sort: "rank" }),
-        enabled: mentionOpen,
+        enabled: !demoMode && mentionOpen,
         refetchInterval: streamHealthy ? false : (mentionOpen ? refreshMs : false),
       },
     },
@@ -7025,7 +7070,7 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
         {canManageChannels && <button type="button" onClick={openCreateChannelDialog} data-testid="button-create-channel" aria-label="New invite-only channel" title="New invite-only channel" className="flex items-center gap-1 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-2 text-xs font-semibold text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a] dark:bg-[#172b38] dark:text-[#b9c9d1] dark:hover:text-[#6fc3cf]"><Plus size={12} /><span>Channel</span></button>}
          <div className="ml-auto flex shrink-0 items-center gap-2">
            <span data-testid="chat-signed-in" className="whitespace-nowrap rounded-full border border-[#b9dddd] bg-[#f2fbfa] px-2.5 py-1.5 text-[11px] font-semibold text-[#12737d] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#8fd7e0]">
-             Signed in as <span className="font-bold">{activeInterviewer}</span>
+             {demoMode ? "Sample identity" : "Signed in as"} <span className="font-bold">{activeInterviewer}</span>
            </span>
            <Bot size={18} aria-hidden="true" className="text-[#16869a]" />
          </div>
@@ -7140,8 +7185,9 @@ function InterviewChatPanel({ applicantIds, tall = false }: { applicantIds: stri
                    data-testid="input-interviewer-chat"
                    maxLength={CHAT_MESSAGE_MAX_CHARS}
                    rows={1}
+                   disabled={demoMode}
                    className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-base md:text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
-                   placeholder={replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"}
+                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"}
                  />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-11 w-11 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-11 w-11 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-11 w-11 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown or {'<iframe>'} embeds supported</span></div>}
               </div>

@@ -84,7 +84,7 @@ function formatBytes(bytes: number): string {
   return `${value >= 10 || exponent === 0 ? Math.round(value) : value.toFixed(1)} ${units[exponent]}`;
 }
 
-export function CadWorkspacePage() {
+export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = {}) {
   const queryClient = useQueryClient();
   const streamHealthy = useRealtimeHealthy();
   // The library is shared. Realtime hints refresh it when a teammate changes
@@ -94,6 +94,7 @@ export function CadWorkspacePage() {
     query: {
       queryKey: getListCadLibraryQueryKey(),
       refetchInterval: streamHealthy ? false : 15_000,
+      enabled: !demoMode,
     },
   });
   const cadStorageStatus = useQuery({
@@ -101,6 +102,7 @@ export function CadWorkspacePage() {
     queryFn: getCadStorageStatus,
     refetchInterval: 30_000,
     retry: false,
+    enabled: !demoMode,
   });
   const [location, setLocation] = useState<Location>({ kind: "unfiled" });
   const [selectedModel, setSelectedModel] = useState<CadModel | null>(null);
