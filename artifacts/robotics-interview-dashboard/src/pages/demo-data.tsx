@@ -72,6 +72,35 @@ const DEMO_CHAT_CHANNELS = [
     ],
   },
 ] as const;
+const DEMO_CHAT_DIRECT_MESSAGES = [
+  {
+    peer: "Leo Park",
+    lastMessageAuthor: "Maya Chen",
+    lastMessage: "Perfect—I'll add it to the packing checklist.",
+    messages: [
+      ["Leo Park", "I can bring the spare battery pack to Saturday's scrimmage."],
+      ["Maya Chen", "Perfect—I'll add it to the packing checklist."],
+    ],
+  },
+  {
+    peer: "Avery Kim",
+    lastMessageAuthor: "Avery Kim",
+    lastMessage: "The revised path keeps us clear of the center stage.",
+    messages: [
+      ["Maya Chen", "Could you check the autonomous route around the center stage?"],
+      ["Avery Kim", "The revised path keeps us clear of the center stage."],
+    ],
+  },
+  {
+    peer: "Noah Patel",
+    lastMessageAuthor: "Maya Chen",
+    lastMessage: "I'll check the wheel alignment before the next run.",
+    messages: [
+      ["Noah Patel", "The left drive wheel is drifting a little during turns."],
+      ["Maya Chen", "I'll check the wheel alignment before the next run."],
+    ],
+  },
+] as const;
 
 const demoParts: PartsCatalogItem[] = [
   {
@@ -345,17 +374,23 @@ function createDemoQueryClient() {
   seed(getGetQueueQueryKey(), {
     currentApplicants: [],
     nextApplicants: [],
-    interviewerLabels: ["Maya Chen", "Leo Park"],
+    interviewerLabels: ["Maya Chen", "Leo Park", "Avery Kim", "Noah Patel"],
     completedCount: 0,
     remainingCount: 0,
     updatedAt: DEMO_TIMESTAMP,
   });
   seed(getGetQueueLabelsQueryKey(), {
-    interviewerLabels: ["Maya Chen", "Leo Park"],
+    interviewerLabels: ["Maya Chen", "Leo Park", "Avery Kim", "Noah Patel"],
   });
   seed(getListChatCustomEmojisQueryKey(), { items: [] });
   seed(getGetChatConversationsQueryKey(), {
-    items: [],
+    items: DEMO_CHAT_DIRECT_MESSAGES.map((conversation) => ({
+      peer: conversation.peer,
+      lastMessageAt: DEMO_TIMESTAMP,
+      lastMessageAuthor: conversation.lastMessageAuthor,
+      lastMessage: conversation.lastMessage,
+      isUnread: false,
+    })),
     shared: null,
     channels: DEMO_CHAT_CHANNELS.map((channel) => ({
       channelId: channel.id,
@@ -390,6 +425,8 @@ function createDemoQueryClient() {
     items: [
       { id: "demo-maya", displayName: "Maya Chen", hasPassword: true, role: "interviewer" },
       { id: "demo-leo", displayName: "Leo Park", hasPassword: true, role: "interviewer" },
+      { id: "demo-avery", displayName: "Avery Kim", hasPassword: true, role: "interviewer" },
+      { id: "demo-noah", displayName: "Noah Patel", hasPassword: true, role: "interviewer" },
     ],
   });
   seed(getGetInterviewChatQueryKey(DEMO_CHAT_PARAMS), {
@@ -461,6 +498,36 @@ function createDemoQueryClient() {
       scope: "channel",
       peer: channel.id,
       channel: { id: channel.id, name: channel.name },
+    });
+    seed(getListInterviewWhiteboardsQueryKey(params), { items: [] });
+  }
+  for (const [conversationIndex, conversation] of DEMO_CHAT_DIRECT_MESSAGES.entries()) {
+    const params = {
+      limit: 30,
+      scope: "direct",
+      author: "Maya Chen",
+      peer: conversation.peer,
+    } as const;
+    seed(getGetInterviewChatQueryKey(params), {
+      items: conversation.messages.map(([author, message], messageIndex) => ({
+        id: `demo-direct-${conversationIndex + 1}-message-${messageIndex + 1}`,
+        author,
+        message,
+        scope: "direct",
+        peer: conversation.peer,
+        channelId: null,
+        parentMessageId: null,
+        pinnedAt: null,
+        editedAt: null,
+        deletedAt: null,
+        activities: [],
+        reactions: [],
+        poll: null,
+        readBy: [],
+        createdAt: `2026-11-08T18:${String(15 + conversationIndex * 5 + messageIndex * 2).padStart(2, "0")}:00.000Z`,
+      })),
+      scope: "direct",
+      peer: conversation.peer,
     });
     seed(getListInterviewWhiteboardsQueryKey(params), { items: [] });
   }

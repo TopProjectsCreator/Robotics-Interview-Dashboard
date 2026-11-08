@@ -67,10 +67,46 @@ describe("public robotics workspace demo", () => {
     expect(conversationPicker).toHaveTextContent("pit-crew");
     expect(conversationPicker).toHaveTextContent("build-log");
     expect(conversationPicker).toHaveTextContent("strategy");
-    fireEvent.change(conversationPicker, { target: { value: "channel:demo-channel-build-log" } });
-    expect(await screen.findByText("Drivebase test passed at low speed.")).toBeInTheDocument();
-    fireEvent.change(conversationPicker, { target: { value: "channel:demo-channel-strategy" } });
-    expect(await screen.findByText("Let's compare the two parking paths.")).toBeInTheDocument();
+    const demoChannels = [
+      {
+        id: "demo-channel-pit-crew",
+        message: "The spare wheel set is ready.",
+      },
+      {
+        id: "demo-channel-build-log",
+        message: "Drivebase test passed at low speed.",
+      },
+      {
+        id: "demo-channel-strategy",
+        message: "We have room for one more autonomous test.",
+      },
+    ];
+    for (const channel of demoChannels) {
+      fireEvent.change(conversationPicker, { target: { value: `channel:${channel.id}` } });
+      expect(await screen.findByText(channel.message)).toBeInTheDocument();
+    }
+
+    expect(conversationPicker).toHaveTextContent("To Leo Park");
+    expect(conversationPicker).toHaveTextContent("To Avery Kim");
+    expect(conversationPicker).toHaveTextContent("To Noah Patel");
+    const demoDirectMessages = [
+      {
+        peer: "Leo Park",
+        message: "Perfect—I'll add it to the packing checklist.",
+      },
+      {
+        peer: "Avery Kim",
+        message: "The revised path keeps us clear of the center stage.",
+      },
+      {
+        peer: "Noah Patel",
+        message: "I'll check the wheel alignment before the next run.",
+      },
+    ];
+    for (const conversation of demoDirectMessages) {
+      fireEvent.change(conversationPicker, { target: { value: `direct:${conversation.peer}` } });
+      expect(await screen.findByText(conversation.message)).toBeInTheDocument();
+    }
 
     fireEvent.click(screen.getByTestId("link-demo-view-parts"));
     expect(screen.getByTestId("demo-real-parts")).not.toHaveAttribute("inert");
