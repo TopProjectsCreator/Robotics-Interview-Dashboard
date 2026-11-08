@@ -2,6 +2,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypt
 import type { NextFunction, Request, Response } from "express";
 import { eq, lt } from "drizzle-orm";
 import { db, DEFAULT_TEAM_ID, interviewerAccountsTable, revokedSessionsTable, runWithInstance, type DbInstance } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import { userCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibility";
 import { readWorkspaceVisibility } from "../lib/workspaceAccess";
 import { ADMIN_SESSION_TTL_MS, isAdminSessionExpired } from "../lib/adminSessionPolicy";
@@ -46,7 +47,7 @@ export function createAdminSession(): string {
   return createInterviewerSession("legacy");
 }
 
-export function createInterviewerSession(interviewerId: string, instance: DbInstance = "primary"): string {
+export function createInterviewerSession(interviewerId: string, instance: DbInstance = activeTeamDatabaseInstance()): string {
   // Secondary-instance accounts carry a trailing "s" segment (covered by the
   // digest), so every later request routes to the right database with zero
   // extra lookups. Primary tokens keep the exact legacy 4-segment shape.
@@ -91,11 +92,11 @@ export function isValidAdminSession(value: unknown): boolean {
   );
 }
 
-/** Database instance for a session token. Legacy 4-segment tokens: primary. */
+/** Unmarked legacy tokens use the active team database after migration. */
 export function instanceFromSession(value: unknown): DbInstance {
   const parts = sessionParts(value);
   if (parts?.length === 5 && parts[3] === "s" && isValidAdminSession(value)) return "secondary";
-  return "primary";
+  return activeTeamDatabaseInstance();
 }
 
 export function interviewerIdFromSession(value: unknown): string | undefined {
@@ -167,8 +168,8 @@ export function attachAdminSession(
   };
   enriched.isAuthenticated = () => isValidAdminSession(session);
   enriched.interviewerId = interviewerIdFromSession(session);
-  // Route the whole request to the session's database instance. Primary
-  // sessions (including all legacy tokens) behave exactly as before.
+  // Explicitly marked sessions stay pinned; legacy sessions use the active
+  // team database after the migration.
   runWithInstance(instanceFromSession(session), () => next());
 }
 

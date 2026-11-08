@@ -1,6 +1,8 @@
 import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
 import { eq, isNull, or } from "drizzle-orm";
-import { primaryDb, secondaryDb, hasSecondary, teamsTable, interviewerAccountsTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
+import { primaryDb, secondaryDb, teamsTable, interviewerAccountsTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
+import { isDatabaseConnectionError } from "./databaseErrors";
 
 /**
  * Team isolation helpers. Tenant rows with a nullable `team_id` use NULL for
@@ -40,10 +42,16 @@ function legacyCodeMatches(code: string): boolean {
   }
 }
 
-/** Ensure the default team exists, seeded from ADMIN_PASSWORD when available. Lives on primary, always. */
-export async function ensureDefaultTeam(): Promise<{ id: string; name: string }> {
+function databaseFor(instance: DbInstance) {
+  return instance === "secondary" ? secondaryDb() : primaryDb;
+}
+
+/** Ensure the default team exists on the active request instance. */
+export async function ensureDefaultTeam(instance: DbInstance = activeTeamDatabaseInstance()): Promise<{ id: string; name: string }> {
+  const handle = databaseFor(instance);
+  if (!handle) throw new Error("The secondary database is not configured.");
   try {
-    const [existing] = await primaryDb.select().from(teamsTable).where(eq(teamsTable.id, DEFAULT_TEAM_ID)).limit(1);
+    const [existing] = await handle.select().from(teamsTable).where(eq(teamsTable.id, DEFAULT_TEAM_ID)).limit(1);
     if (existing) return existing;
   } catch {
     // Table may not exist yet before `drizzle-kit push`; callers fall back to legacy checks.
@@ -52,7 +60,7 @@ export async function ensureDefaultTeam(): Promise<{ id: string; name: string }>
   const adminPassword = process.env.ADMIN_PASSWORD?.trim();
   const codeHash = adminPassword ? hashTeamCode(adminPassword) : hashTeamCode(randomBytes(16).toString("hex"));
   try {
-    const [created] = await primaryDb.insert(teamsTable).values({
+    const [created] = await handle.insert(teamsTable).values({
       id: DEFAULT_TEAM_ID,
       name: "Wolverines",
       normalizedName: normalizeTeamName("Wolverines"),
@@ -62,7 +70,7 @@ export async function ensureDefaultTeam(): Promise<{ id: string; name: string }>
   } catch {
     // Raced with another instance; read again.
     try {
-      const [row] = await primaryDb.select().from(teamsTable).where(eq(teamsTable.id, DEFAULT_TEAM_ID)).limit(1);
+      const [row] = await handle.select().from(teamsTable).where(eq(teamsTable.id, DEFAULT_TEAM_ID)).limit(1);
       if (row) return row;
     } catch {
       // ignore, fall through
@@ -73,79 +81,62 @@ export async function ensureDefaultTeam(): Promise<{ id: string; name: string }>
 
 export type ResolvedTeam = { id: string; name: string; instance: DbInstance };
 
-/**
- * Find the team whose access code matches `code`, on either instance.
- * Secondary first (all new teams live there, and it spares the capped
- * primary instance the scan), then primary teams, then the legacy
- * ADMIN_PASSWORD fallback for the default team on primary.
- */
+/** Find a team by access code on the active team database. */
 export async function findTeamByCode(code: string): Promise<ResolvedTeam | null> {
   const trimmed = code.trim();
   if (!trimmed) return null;
+  const instance = activeTeamDatabaseInstance();
+  const handle = databaseFor(instance);
+  if (!handle) return null;
   try {
-    const secondary = secondaryDb();
-    if (secondary) {
-      try {
-        const teams = await secondary.select().from(teamsTable);
-        for (const team of teams) {
-          if (verifyTeamCodeHash(trimmed, team.codeHash)) return { ...team, instance: "secondary" as const };
-        }
-      } catch {
-        // Secondary unreachable/missing table: fall through to primary.
-      }
-    }
-    const teams = await primaryDb.select().from(teamsTable);
+    const teams = await handle.select().from(teamsTable);
     for (const team of teams) {
-      if (verifyTeamCodeHash(trimmed, team.codeHash)) return { ...team, instance: "primary" as const };
+      if (verifyTeamCodeHash(trimmed, team.codeHash)) return { ...team, instance };
     }
-    // Legacy fallback: the current team's ADMIN_PASSWORD still opens the
-    // default team even if its stored hash is stale/missing. This keeps the
-    // existing team safe through the migration.
     if (legacyCodeMatches(trimmed)) {
-      const def = await ensureDefaultTeam();
-      return { ...def, instance: "primary" as const };
+      const def = await ensureDefaultTeam(instance);
+      return { ...def, instance };
     }
     return null;
-  } catch {
-    // Teams table missing (pre-migration): fall back to legacy env check.
-    if (legacyCodeMatches(trimmed)) return { id: DEFAULT_TEAM_ID, name: "Wolverines", instance: "primary" as const };
+  } catch (error) {
+    if (isDatabaseConnectionError(error)) throw error;
+    // A pre-migration database may not have the teams table yet.
+    if (legacyCodeMatches(trimmed)) {
+      return { id: DEFAULT_TEAM_ID, name: "Wolverines", instance };
+    }
     return null;
   }
 }
 
 export async function getTeamById(id: string, instance?: DbInstance | null): Promise<ResolvedTeam | null> {
-  const handles: DbInstance[] = instance ? [instance] : ["primary", ...(hasSecondary() ? ["secondary" as const] : [])];
+  const activeInstance = activeTeamDatabaseInstance();
+  const handles: DbInstance[] = [instance ?? activeInstance];
   for (const handle of handles) {
     try {
-      const handleDb = handle === "secondary" ? secondaryDb() ?? primaryDb : primaryDb;
+      const handleDb = databaseFor(handle);
+      if (!handleDb) continue;
       const [team] = await handleDb.select().from(teamsTable).where(eq(teamsTable.id, id)).limit(1);
       if (team) return { ...team, instance: handle };
-    } catch {
+    } catch (error) {
+      if (isDatabaseConnectionError(error)) throw error;
       // Missing table on a fresh instance: keep looking.
     }
   }
-  return id === DEFAULT_TEAM_ID ? { id: DEFAULT_TEAM_ID, name: "Wolverines", instance: "primary" as const } : null;
+  return id === DEFAULT_TEAM_ID ? { id: DEFAULT_TEAM_ID, name: "Wolverines", instance: activeInstance } : null;
 }
 
-/** Find an account on either instance (primary first). Used by login-adjacent
+/** Find an account on the active team database. Used by login-adjacent
  * and WebSocket upgrade paths that run outside a routed request context. */
 export async function findAccountAnywhere(id: string): Promise<{ account: typeof interviewerAccountsTable.$inferSelect; instance: DbInstance } | null> {
+  const activeInstance = activeTeamDatabaseInstance();
+  const handle = databaseFor(activeInstance);
+  if (!handle) return null;
   try {
-    const [account] = await primaryDb.select().from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, id)).limit(1);
-    if (account) return { account, instance: "primary" };
+    const [account] = await handle.select().from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, id)).limit(1);
+    return account ? { account, instance: activeInstance } : null;
   } catch {
-    // ignore, try secondary
+    return null;
   }
-  try {
-    const secondary = secondaryDb();
-    if (secondary) {
-      const [account] = await secondary.select().from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, id)).limit(1);
-      if (account) return { account, instance: "secondary" };
-    }
-  } catch {
-    // ignore
-  }
-  return null;
 }
 
 /** Normalize an account's team: NULL (legacy) => default team. */

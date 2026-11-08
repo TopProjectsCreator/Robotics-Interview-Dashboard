@@ -14,13 +14,11 @@ if (!process.env.DATABASE_URL) {
 export type DbInstance = "primary" | "secondary";
 
 /**
- * Dual-Supabase routing. The primary instance keeps all current teams; every
- * team created after the second instance was added lives on the secondary
- * instance. Request handling runs inside `runWithInstance(tag)` (the tag
- * comes from the session token, so routing costs zero extra queries), and
- * the `db`/`pool` singletons below resolve to the current instance through a
- * Proxy. All 300+ existing call sites keep working untouched; outside a
- * request (boot, tests, cron) everything resolves to primary.
+ * Dual-Supabase routing. Team data has been moved to the secondary instance,
+ * which is now the active default whenever it is configured. The primary
+ * handles remain available for explicit compatibility and schema operations.
+ * Request handling runs inside `runWithInstance(tag)` (the tag comes from the
+ * session token), and the `db`/`pool` singletons resolve through a Proxy.
  */
 /**
  * The instance a request is pinned to, plus a scope object that owns it.

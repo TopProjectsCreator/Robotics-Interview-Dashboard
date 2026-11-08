@@ -6,6 +6,7 @@ import { setupWhiteboardCollaboration } from "./lib/whiteboardCollaboration";
 import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { setupCodeCollaboration } from "./lib/codeCollaboration";
 import { pool, db, secondaryPool, hasSecondary, interviewQueueTable, runWithInstance } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "./lib/activeTeamDatabase";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
 import { startAssistantPromptDispatcher, startAssistantScheduledTaskDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
@@ -978,19 +979,24 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     await removeTestAccounts();
   }
 
-  const initializationInstance = primaryReady ? "primary" : "secondary";
-  await runWithInstance(initializationInstance, async () => {
-    const [queue] = await db.select().from(interviewQueueTable).limit(1);
-    try {
-      const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
-      if (Array.isArray(labels)) await syncInterviewerAccounts(labels.filter((label): label is string => typeof label === "string"));
-    } catch {
-      await syncInterviewerAccounts(["Interviewer 1", "Interviewer 2"]);
-    }
-  });
+  const initializationInstance = activeTeamDatabaseInstance();
+  const activeDatabaseReady = initializationInstance === "secondary" ? secondaryReady : primaryReady;
+  if (activeDatabaseReady) {
+    await runWithInstance(initializationInstance, async () => {
+      const [queue] = await db.select().from(interviewQueueTable).limit(1);
+      try {
+        const labels = JSON.parse(queue?.interviewerLabels ?? '["Interviewer 1","Interviewer 2"]');
+        if (Array.isArray(labels)) await syncInterviewerAccounts(labels.filter((label): label is string => typeof label === "string"));
+      } catch {
+        await syncInterviewerAccounts(["Interviewer 1", "Interviewer 2"]);
+      }
+    });
+  } else {
+    logger.warn({ instance: initializationInstance }, "Active team database is unavailable; interviewer synchronization is deferred");
+  }
 
-  if (!primaryReady) {
-    logger.warn("Primary-only background jobs are paused until the primary database is reachable");
+  if (!primaryReady && secondaryReady) {
+    logger.info("Team background jobs will run against the active secondary database");
   }
   logger.info("Schema check passed");
   return { primaryReady, secondaryReady };
@@ -1056,46 +1062,45 @@ setupCodeCollaboration(server);
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
   ensureSchema()
-    .then(({ primaryReady }) => {
-      if (!primaryReady) return;
-      void syncPartsCatalogsIfDue().catch((err) => {
-        logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
-      });
-      const catalogRefreshCheck = setInterval(() => {
+    .then(({ primaryReady, secondaryReady }) => {
+      const backgroundInstance = activeTeamDatabaseInstance();
+      const backgroundDatabaseReady = backgroundInstance === "secondary" ? secondaryReady : primaryReady;
+      if (!backgroundDatabaseReady) {
+        logger.warn({ instance: backgroundInstance }, "Active team database is unavailable; background jobs remain paused");
+        return;
+      }
+      void runWithInstance(backgroundInstance, () => {
         void syncPartsCatalogsIfDue().catch((err) => {
-          logger.error({ err }, "Unable to check scheduled public supplier catalog sync");
+          logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
         });
-      }, 60 * 60 * 1000);
-      catalogRefreshCheck.unref();
-      // Chunked uploads that nothing points at any more (a tab closed
-      // mid-upload, an attachment that was removed) keep their parts in
-      // storage forever otherwise, and a single abandoned CAD model can be
-      // hundreds of megabytes.
-      void sweepOrphanChunkUploads().catch((err) => {
-        logger.error({ err }, "Unable to sweep orphaned chunked uploads");
-      });
-      const chunkSweepCheck = setInterval(() => {
+        const catalogRefreshCheck = setInterval(() => {
+          void syncPartsCatalogsIfDue().catch((err) => {
+            logger.error({ err }, "Unable to check scheduled public supplier catalog sync");
+          });
+        }, 60 * 60 * 1000);
+        catalogRefreshCheck.unref();
+        // Chunked uploads that nothing points at any more (a tab closed
+        // mid-upload, an attachment that was removed) keep their parts in
+        // storage forever otherwise, and a single abandoned CAD model can be
+        // hundreds of megabytes.
         void sweepOrphanChunkUploads().catch((err) => {
           logger.error({ err }, "Unable to sweep orphaned chunked uploads");
         });
-      }, 60 * 60 * 1000);
-      chunkSweepCheck.unref();
-      // Server-side scheduled chat delivery: posts due messages even when no
-      // browser is open.
-      startScheduledChatDispatcher();
-      startAssistantScheduledTaskDispatcher();
-      // Persisted assistant prompts continue independently of the browser tab.
-      startAssistantPromptDispatcher();
-      // Team inbox settings are team-scoped and polled from both database
-      // instances. Migrate the default team's legacy environment settings first.
-      void startMailboxPoller();
-      // Pick up CAD preview conversions that a restart interrupted.
-      void resumeStalePreviewJobs();
-      // Sitemap-backed suppliers (goBILDA) crawl themselves incrementally here.
-      // The scheduled sync above only runs once a day, which is far too slow to
-      // seed a 2,387-product catalog, so this loop owns the long first pass and
-      // then settles into a cheap "anything new?" check.
-      startSitemapCatalogCrawler();
+        const chunkSweepCheck = setInterval(() => {
+          void sweepOrphanChunkUploads().catch((err) => {
+            logger.error({ err }, "Unable to sweep orphaned chunked uploads");
+          });
+        }, 60 * 60 * 1000);
+        chunkSweepCheck.unref();
+        // Server-side scheduled delivery and recovery jobs use the active team
+        // database context established above.
+        startScheduledChatDispatcher();
+        startAssistantScheduledTaskDispatcher();
+        startAssistantPromptDispatcher();
+        void startMailboxPoller();
+        void resumeStalePreviewJobs();
+        startSitemapCatalogCrawler();
+      });
     })
     .catch((err) => {
       logger.error({ err }, "Schema migration failed; exiting");

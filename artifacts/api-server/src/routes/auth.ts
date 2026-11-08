@@ -4,6 +4,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
 import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, teamNameRulesTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
 import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
+import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -72,10 +73,7 @@ import { assessPasswordExposure } from "../lib/passwordExposurePolicy";
 import { interviewerRosterAccess } from "../lib/interviewerRosterAccess";
 import { getInterviewSettings } from "../lib/roboticsData";
 import { getPwnedPasswordCount } from "../lib/pwnedPasswords";
-import {
-  canFallbackNewTeamToPrimary,
-  isTransientDatabaseAvailabilityError,
-} from "../lib/databaseAvailability";
+import { isDatabaseConnectionError } from "../lib/databaseErrors";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { requestTeamId } from "../middlewares/adminAuth";
 import {
@@ -411,7 +409,8 @@ async function resolveEventTeam(eventPassword: string): Promise<ResolvedTeam | n
   const team = await findTeamByCode(eventPassword);
   if (team) return team;
   if (eventPasswordMatches(eventPassword)) {
-    return { ...(await ensureDefaultTeam()), instance: "primary" as const };
+    const instance = activeTeamDatabaseInstance();
+    return { ...(await ensureDefaultTeam(instance)), instance };
   }
   return null;
 }
@@ -1285,76 +1284,61 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
     return;
   }
   const normalizedTeam = normalizeTeamName(teamName);
-  let secondaryTeamListWasRead = false;
+  const teamInstance: DbInstance = activeTeamDatabaseInstance();
+  const teamDatabase = teamInstance === "secondary" ? secondaryDb() : primaryDb;
+  if (!teamDatabase) {
+    res.status(503).json({ error: "The team database is temporarily unavailable. Try again shortly." });
+    return;
+  }
+  let existingTeams: Array<typeof teamsTable.$inferSelect>;
   try {
-    const primaryTeams = await primaryDb.select().from(teamsTable);
-    let secondaryTeams: typeof primaryTeams = [];
-    try {
-      const secondary = secondaryDb();
-      if (secondary) {
-        secondaryTeams = await secondary.select().from(teamsTable);
-        secondaryTeamListWasRead = true;
-      } else {
-        secondaryTeamListWasRead = true;
-      }
-    } catch {
-      // Secondary unreachable: creation below will surface the real error.
-    }
-    const existingTeams = [...primaryTeams, ...secondaryTeams];
-    if (existingTeams.some((t) => t.normalizedName === normalizedTeam)) {
-      res.status(409).json({ error: "A team with that name already exists. Pick another name." });
-      return;
-    }
-    // Team codes must be unique across teams so each code opens exactly one team.
-    for (const t of existingTeams) {
-      const { verifyTeamCodeHash } = await import("../lib/teams");
-      if (verifyTeamCodeHash(teamCode, t.codeHash)) {
-        res.status(409).json({ error: "That team access code is already in use. Pick another one." });
-        return;
-      }
-    }
-    if (eventPasswordMatches(teamCode)) {
+    existingTeams = await teamDatabase.select().from(teamsTable);
+  } catch (error) {
+    if (!isDatabaseConnectionError(error)) throw error;
+    res.status(503).json({ error: "The team database is temporarily unavailable. Try again shortly." });
+    return;
+  }
+  if (existingTeams.some((t) => t.normalizedName === normalizedTeam)) {
+    res.status(409).json({ error: "A team with that name already exists. Pick another name." });
+    return;
+  }
+  // Team codes must be unique across teams so each code opens exactly one team.
+  for (const t of existingTeams) {
+    const { verifyTeamCodeHash } = await import("../lib/teams");
+    if (verifyTeamCodeHash(teamCode, t.codeHash)) {
       res.status(409).json({ error: "That team access code is already in use. Pick another one." });
       return;
     }
-  } catch {
-    // Teams table missing (pre-migration): allow creation; push will create it.
+  }
+  if (eventPasswordMatches(teamCode)) {
+    res.status(409).json({ error: "That team access code is already in use. Pick another one." });
+    return;
   }
   if (await rejectUnsafePassword(req, res, password, confirmLowExposure)) return;
   const teamId = randomBytes(16).toString("hex");
-  let teamInstance: DbInstance = "primary";
-  try {
-    // Only choose secondary after proving it is reachable, before any team
-    // writes begin. If it is temporarily unavailable, a new team can safely
-    // start on primary and its session will be pinned there. Existing teams
-    // remain on their owning database; their data is never silently redirected.
+  if (teamInstance === "secondary") {
+    // Secondary is authoritative after the completed team migration. Never
+    // place a new team on an empty primary during a secondary outage.
     const secondary = secondaryPool();
-    if (secondary) {
-      try {
-        await secondary.query("select 1");
-        if (!secondaryTeamListWasRead) {
-          res.status(503).json({
-            error: "Could not verify existing teams on the secondary database. Try again shortly.",
-          });
-          return;
-        }
-        teamInstance = "secondary";
-      } catch (error) {
-        if (!isTransientDatabaseAvailabilityError(error)) throw error;
-        if (!canFallbackNewTeamToPrimary(error, secondaryTeamListWasRead)) {
-          res.status(503).json({
-            error: "The secondary database is unavailable, so this team cannot be safely placed yet. Try again shortly.",
-          });
-          return;
-        }
-        req.log.warn(
-          { placement: "primary" },
-          "Secondary unavailable; creating new team on primary",
-        );
-      }
+    if (!secondary) {
+      res.status(503).json({
+        error: "The secondary database is temporarily unavailable. Try again shortly.",
+      });
+      return;
     }
-    enterInstance(teamInstance);
-    await ensureDefaultTeam();
+    try {
+      await secondary.query("select 1");
+    } catch (error) {
+      if (!isDatabaseConnectionError(error)) throw error;
+      res.status(503).json({
+        error: "The secondary database is temporarily unavailable. Try again shortly.",
+      });
+      return;
+    }
+  }
+  try {
+  enterInstance(teamInstance);
+  await ensureDefaultTeam(teamInstance);
     const [team] = await db.insert(teamsTable).values({
       id: teamId,
       name: teamName,
@@ -1417,6 +1401,11 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
   } catch (error) {
     if (isUniqueViolation(error)) {
       res.status(409).json({ error: "A team with that name already exists. Pick another name." });
+      return;
+    }
+    if (isDatabaseConnectionError(error)) {
+      req.log.warn({ err: error }, "Active team database unavailable during team creation");
+      res.status(503).json({ error: "The team database is temporarily unavailable. Try again shortly." });
       return;
     }
     req.log.error({ err: error }, "Team creation failed");

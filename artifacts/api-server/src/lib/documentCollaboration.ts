@@ -18,6 +18,7 @@ import {
   interviewWhiteboardsTable,
   type DbInstance,
 } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import {
   applyDocumentAssistantContent,
   documentDocFromEnvelope,
@@ -528,7 +529,7 @@ export function setupDocumentCollaboration(server: Server): void {
     if (!match) return;
     const documentId = decodeURIComponent(match[1]);
     void authenticateUpgrade(request, url)
-      .then((identity) => runWithInstance(identity?.instance ?? "primary", () => {
+      .then((identity) => runWithInstance(identity?.instance ?? activeTeamDatabaseInstance(), () => {
         if (!identity) {
           socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
           socket.destroy();

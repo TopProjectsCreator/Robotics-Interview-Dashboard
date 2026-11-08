@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
-import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, hasSecondary, runWithInstance, type DbInstance } from "@workspace/db";
+import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -486,7 +487,7 @@ async function claimQueuedAssistantPrompt(): Promise<{
   payload: Record<string, unknown>;
   instance: DbInstance;
 } | undefined> {
-  const instances: DbInstance[] = hasSecondary() ? ["primary", "secondary"] : ["primary"];
+  const instances: DbInstance[] = [activeTeamDatabaseInstance()];
   for (const instance of instances) {
     if ((assistantPromptInstanceRetryAfter.get(instance) ?? 0) > Date.now()) continue;
     try {
@@ -1061,7 +1062,7 @@ export function startAssistantPromptDispatcher(): void {
     if (dispatching) return;
     dispatching = true;
     try {
-      const instances: DbInstance[] = hasSecondary() ? ["primary", "secondary"] : ["primary"];
+      const instances: DbInstance[] = [activeTeamDatabaseInstance()];
       for (const instance of instances) {
         await recoverStaleAssistantPromptRuns(instance);
       }
@@ -7713,7 +7714,7 @@ async function dispatchAssistantScheduledTasks(): Promise<void> {
   if (assistantScheduledTaskDispatching) return;
   assistantScheduledTaskDispatching = true;
   try {
-    const instances: DbInstance[] = hasSecondary() ? ["primary", "secondary"] : ["primary"];
+    const instances: DbInstance[] = [activeTeamDatabaseInstance()];
     for (const instance of instances) {
       const task = await claimDueAssistantTask(instance);
       if (task) await executeScheduledAssistantTask(task, instance);

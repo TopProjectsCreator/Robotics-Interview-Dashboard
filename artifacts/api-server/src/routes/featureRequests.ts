@@ -10,6 +10,7 @@ import {
   teamsTable,
   DEFAULT_TEAM_ID,
 } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import {
   CreateFeatureRequestBody,
   EditOwnFeatureRequestBody,
@@ -45,35 +46,23 @@ function requestResponse(
   };
 }
 
+function activeDatabase() {
+  return activeTeamDatabaseInstance() === "secondary" ? secondaryDb() : primaryDb;
+}
+
 async function teamNamesById(): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  const collect = async (handle: typeof primaryDb) => {
-    try {
-      const teams = await handle.select({ id: teamsTable.id, name: teamsTable.name }).from(teamsTable);
-      for (const team of teams) map.set(team.id, team.name);
-    } catch {
-      // Teams table missing pre-migration; fall through with an empty map.
-    }
-  };
-  await collect(primaryDb);
-  const secondary = secondaryDb();
-  if (secondary) await collect(secondary);
+  const handle = activeDatabase();
+  if (!handle) return map;
+  const teams = await handle.select({ id: teamsTable.id, name: teamsTable.name }).from(teamsTable);
+  for (const team of teams) map.set(team.id, team.name);
   return map;
 }
 
-// Owner reads span both instances (primary teams + all new teams). Each
-// half is best-effort so one unreachable instance never blanks the inbox.
 async function ownerFeatureRequests() {
-  const primary = await primaryDb.select().from(featureRequestsTable).orderBy(desc(featureRequestsTable.createdAt));
-  const secondary = secondaryDb();
-  if (!secondary) return primary;
-  try {
-    const more = await secondary.select().from(featureRequestsTable).orderBy(desc(featureRequestsTable.createdAt));
-    return [...primary, ...more].sort((a, b) =>
-      (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
-  } catch {
-    return primary;
-  }
+  const handle = activeDatabase();
+  if (!handle) throw new Error("The active team database is not configured.");
+  return handle.select().from(featureRequestsTable).orderBy(desc(featureRequestsTable.createdAt));
 }
 
 // Every signed-in account can file a request for its team. All requests land
@@ -225,17 +214,12 @@ router.patch("/feature-requests/:requestId", requireSiteOwner, async (req, res):
       .set({ status: parsed.data.status, updatedAt: new Date() })
       .where(eq(featureRequestsTable.id, requestId))
       .returning())[0];
-    let updated = await resolveOn(primaryDb);
-    if (!updated) {
-      const secondary = secondaryDb();
-      if (secondary) {
-        try {
-          updated = await resolveOn(secondary);
-        } catch {
-          // fall through to the 404 below
-        }
-      }
+    const handle = activeDatabase();
+    if (!handle) {
+      res.status(503).json({ error: "The team database is temporarily unavailable." });
+      return;
     }
+    const updated = await resolveOn(handle);
     if (!updated) {
       res.status(404).json({ error: "Feature request not found." });
       return;
@@ -261,21 +245,13 @@ router.get("/site/stats", requireSiteOwner, async (_req, res): Promise<void> => 
         status: featureRequestsTable.status,
       }).from(featureRequestsTable),
     ]);
-    const [primaryStats, secondaryStats] = await Promise.all([
-      readStats(primaryDb),
-      (async () => {
-        const secondary = secondaryDb();
-        if (!secondary) return [[], [], []] as unknown as Awaited<ReturnType<typeof readStats>>;
-        try {
-          return await readStats(secondary);
-        } catch {
-          return [[], [], []] as unknown as Awaited<ReturnType<typeof readStats>>;
-        }
-      })(),
-    ]);
-    const teams = [...primaryStats[0], ...secondaryStats[0]];
-    const rosterCounts = activeRosterCountsByTeam(primaryStats[1], secondaryStats[1]);
-    const requests = [...primaryStats[2], ...secondaryStats[2]];
+    const handle = activeDatabase();
+    if (!handle) {
+      res.status(503).json({ error: "The team database is temporarily unavailable." });
+      return;
+    }
+    const [teams, rosters, requests] = await readStats(handle);
+    const rosterCounts = activeRosterCountsByTeam(rosters);
     const teamNameOf = (id: string) =>
       teams.find((team) => team.id === id)?.name ?? (id === DEFAULT_TEAM_ID ? "Wolverines" : id);
     const teamIds = new Set<string>([DEFAULT_TEAM_ID]);

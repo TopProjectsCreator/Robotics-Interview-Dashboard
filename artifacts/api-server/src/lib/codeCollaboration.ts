@@ -17,6 +17,7 @@ import {
   DEFAULT_TEAM_ID,
   type DbInstance,
 } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import { findAccountAnywhere } from "./teams";
 import {
   interviewerIdFromSession,
@@ -288,7 +289,7 @@ export function setupCodeCollaboration(server: Server): void {
     wss.handleUpgrade(request, socket, head, (client) => {
       const match = CODE_PATH.exec(url.pathname);
       const fileId = decodeURIComponent(match?.[1] ?? "");
-      identity(session).then((who) => runWithInstance(who?.instance ?? "primary", () => {
+      identity(session).then((who) => runWithInstance(who?.instance ?? activeTeamDatabaseInstance(), () => {
         if (!who) {
           client.close(4401, "unauthorized");
           return;

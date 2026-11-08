@@ -4,7 +4,6 @@ import {
   db,
   primaryDb,
   secondaryDb,
-  hasSecondary,
   runWithInstance,
   DEFAULT_TEAM_ID,
   maildropInboxesTable,
@@ -12,6 +11,7 @@ import {
   interviewChatMessagesTable,
   type DbInstance,
 } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import { logger } from "./logger";
 import { pushRealtimeHint } from "./realtime";
 import { decryptMaildropApiKey, encryptMaildropApiKey } from "./assistantProviderSecurity";
@@ -176,19 +176,21 @@ export async function getTeamMailboxSettings(teamId: string): Promise<TeamMailbo
 }
 
 /**
- * Move the previous environment-only default inbox into the primary database.
+ * Move the previous environment-only default inbox into the active team database.
  * It is safe to run on every boot: a coordinator's saved settings always win.
  */
 export async function migrateLegacyDefaultMailbox(): Promise<void> {
   const mailbox = maildropMailbox();
   if (!mailbox) return;
-  await primaryDb.insert(maildropInboxesTable).values({
-    teamId: DEFAULT_TEAM_ID,
-    mailbox,
-    enabled: false,
-    allowedSenders: maildropAllowedSenders(),
-    encryptedApiKey: null,
-  }).onConflictDoNothing();
+  await runWithInstance(activeTeamDatabaseInstance(), async () => {
+    await db.insert(maildropInboxesTable).values({
+      teamId: DEFAULT_TEAM_ID,
+      mailbox,
+      enabled: false,
+      allowedSenders: maildropAllowedSenders(),
+      encryptedApiKey: null,
+    }).onConflictDoNothing();
+  });
 }
 
 export async function saveTeamMailboxSettings(
@@ -461,7 +463,7 @@ export async function pollTeamMailboxesOnce(): Promise<void> {
   } catch (error) {
     logger.warn({ err: error }, "Could not migrate the legacy default-team mailbox settings");
   }
-  const instances: DbInstance[] = ["primary", ...(hasSecondary() ? ["secondary" as const] : [])];
+  const instances: DbInstance[] = [activeTeamDatabaseInstance()];
   for (const instance of instances) {
     let mailboxes: StoredMailboxSettings[];
     try {

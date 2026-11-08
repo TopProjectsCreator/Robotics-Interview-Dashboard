@@ -283,7 +283,9 @@ test("each team gets a durable independent mailbox configuration", async () => {
 });
 
 test("the default-team environment inbox migrates without losing its mailbox or allow-list", async () => {
-  clearDatabase(databases.primary);
+  const previousDatabase = activeDatabase;
+  activeDatabase = databases.secondary;
+  clearDatabase(databases.secondary);
   const previousMailbox = process.env.MAILDROP_MAILBOX;
   const previousSenders = process.env.MAILDROP_ALLOWED_SENDERS;
   process.env.MAILDROP_MAILBOX = "legacy-team-inbox";
@@ -301,6 +303,7 @@ test("the default-team environment inbox migrates without losing its mailbox or 
     await migrateLegacyDefaultMailbox();
     assert.equal((await getTeamMailboxSettings("default")).enabled, false);
   } finally {
+    activeDatabase = previousDatabase;
     process.env.MAILDROP_MAILBOX = previousMailbox;
     process.env.MAILDROP_ALLOWED_SENDERS = previousSenders;
   }
