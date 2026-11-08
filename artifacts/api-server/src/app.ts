@@ -196,6 +196,12 @@ if (publicDir) {
   });
 } else {
   logger.warn("Frontend build not found; serving API only");
+  // The API artifact's development workflow may probe the service root even
+  // though application routes live under /api. Keep that probe healthy without
+  // shadowing the production frontend route when a frontend build is present.
+  app.get("/", (_req, res) => {
+    res.json({ status: "ok" });
+  });
 }
 
 const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
