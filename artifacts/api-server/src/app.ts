@@ -54,7 +54,12 @@ app.use(
         return {
           id: req.id,
           method: req.method,
-          url: req.url?.split("?")[0],
+          // Public assistant share tokens are bearer capabilities. Keep both
+          // API reads and direct SPA navigations out of request logs.
+          url: req.url?.split("?")[0].replace(
+            /(\/assistant\/(?:public-shares|share)\/)[A-Za-z0-9_-]{43}(?=\/|$)/g,
+            "$1[redacted]",
+          ),
         };
       },
       res(res) {

@@ -44,6 +44,7 @@ function createContinuationFixture(mode: ConnectionMode) {
   const askBodies: Array<Record<string, unknown>> = [];
   const connectionBodies: Array<Record<string, unknown>> = [];
   let connected = false;
+  let activeShareToken: string | null = null;
   let connectionAttempts = 0;
   let continuationAttempts = 0;
   let messageResponses = 0;
@@ -74,6 +75,17 @@ function createContinuationFixture(mode: ConnectionMode) {
           messageCount: 0,
         }],
       });
+    }
+    if (/^\/api\/assistant\/conversations\/[^/]+\/share$/.test(url.pathname)) {
+      if (init?.method === "POST") {
+        activeShareToken = "A".repeat(43);
+        return jsonResponse({ active: true, token: activeShareToken }, 201);
+      }
+      if (init?.method === "DELETE") {
+        activeShareToken = null;
+        return new Response(null, { status: 204 });
+      }
+      return jsonResponse({ active: Boolean(activeShareToken), token: activeShareToken });
     }
     if (url.pathname === "/api/assistant/conversations/conv-1/messages" ||
         url.pathname === "/api/assistant/conversations/conv-2/messages") {
@@ -239,6 +251,9 @@ describe("assistant MCP connection prompt", () => {
           }],
         });
       }
+      if (/^\/api\/assistant\/conversations\/[^/]+\/share$/.test(url.pathname)) {
+        return jsonResponse({ active: false, token: null });
+      }
       if (url.pathname === "/api/assistant/conversations/conv-1/messages") {
         // A real round trip takes longer than the frame in which the stream
         // ends, so the transcript is reconciled against the stale copy first.
@@ -320,6 +335,37 @@ describe("assistant MCP connection prompt", () => {
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 50)); });
     expect(screen.getByTestId("assistant-mcp-connection-prompt")).toBeInTheDocument();
     expect(screen.getByTestId("assistant-mcp-connection-endpoint")).toHaveTextContent(ENDPOINT);
+  });
+
+  it("creates, displays, and revokes a public link only on explicit action", async () => {
+    const fixture = createContinuationFixture("direct");
+    vi.stubGlobal("fetch", fixture.fetchMock);
+    const clipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, "clipboard");
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    renderAssistant();
+    await screen.findByTestId("button-assistant-conversation-conv-1");
+
+    expect(screen.queryByTestId("assistant-share-url")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId("button-share-assistant-conversation"));
+    const shareUrl = await screen.findByTestId("assistant-share-url");
+    expect(shareUrl).toHaveValue(`${window.location.origin}/assistant/share/${"A".repeat(43)}`);
+    expect(shareUrl).toHaveAttribute("readonly");
+    fireEvent.click(screen.getByTestId("button-copy-assistant-share-url"));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(
+      `${window.location.origin}/assistant/share/${"A".repeat(43)}`,
+    ));
+
+    fireEvent.click(screen.getByTestId("button-stop-assistant-sharing"));
+    await waitFor(() => expect(screen.queryByTestId("assistant-share-url")).not.toBeInTheDocument());
+    if (clipboardDescriptor) {
+      Object.defineProperty(navigator, "clipboard", clipboardDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, "clipboard");
+    }
   });
 
   it("resumes once after an API-key connection and updates the original transcript turn", async () => {

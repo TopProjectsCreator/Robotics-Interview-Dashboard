@@ -11,12 +11,13 @@ import {
 import { useTheme } from "next-themes";
 import {
    getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey, getGetAssistantModelPolicyHistoryQueryKey, getGetAssistantProviderConfigurationQueryKey,
-  getListAssistantConversationsQueryKey,
+   getListAssistantConversationsQueryKey, getGetAssistantConversationShareQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
    useAskAssistant, useQueueAssistantPrompt, useStopAssistantPrompt, useGetAssistantPromptQueue, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
    useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation, useGetAssistantModelPolicy, useGetAssistantModelPolicyHistory, useUpdateAssistantModelPolicy,
+   useGetAssistantConversationShare, useCreateAssistantConversationShare, useRevokeAssistantConversationShare, useGetPublicAssistantConversation,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
@@ -8412,6 +8413,15 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const createConversation = useCreateAssistantConversation();
   const renameConversation = useRenameAssistantConversation();
   const deleteConversation = useDeleteAssistantConversation();
+  const conversationShare = useGetAssistantConversationShare(activeConversationId, {
+    query: {
+      queryKey: [...getGetAssistantConversationShareQueryKey(activeConversationId), assistantIdentity],
+      enabled: Boolean(activeConversationId && assistantSessionReady),
+      staleTime: 0,
+    },
+  });
+  const createConversationShare = useCreateAssistantConversationShare();
+  const revokeConversationShare = useRevokeAssistantConversationShare();
   const queuePrompt = useQueueAssistantPrompt();
   const stopPrompt = useStopAssistantPrompt();
   const prompts = !canManageAssistantTools
@@ -9280,6 +9290,33 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     });
   };
   const activeConversation = scopedConversations.find(item => item.id === activeConversationId);
+  const activeConversationShareUrl = !conversationShare.isFetching && conversationShare.data?.active && conversationShare.data.token
+    ? new URL(`${import.meta.env.BASE_URL}assistant/share/${conversationShare.data.token}`, window.location.origin).toString()
+    : "";
+  const startConversationSharing = () => {
+    if (!activeConversationId) return;
+    const conversationId = activeConversationId;
+    createConversationShare.mutate({ conversationId }, {
+      onSuccess: (share) => {
+        queryClient.setQueryData(
+          [...getGetAssistantConversationShareQueryKey(conversationId), assistantIdentity],
+          share,
+        );
+      },
+    });
+  };
+  const stopConversationSharing = () => {
+    if (!activeConversationId) return;
+    const conversationId = activeConversationId;
+    revokeConversationShare.mutate({ conversationId }, {
+      onSuccess: () => {
+        queryClient.setQueryData(
+          [...getGetAssistantConversationShareQueryKey(conversationId), assistantIdentity],
+          { active: false, token: null },
+        );
+      },
+    });
+  };
   const promptRuns = assistantPromptQueue.data?.items ?? [];
   const assistantIsWorking = isStreaming || promptRuns.some(item =>
     item.status === "queued" || item.status === "running",
@@ -9402,6 +9439,22 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       </aside>
       <section className="relative order-1 min-h-[560px] min-w-0 rounded-2xl border border-[#dce5e5] bg-white p-5 shadow-[0_3px_12px_rgba(26,49,60,.035)] xl:order-2">
         <div className="flex items-center gap-3 border-b border-[#edf1f1] pb-4"><div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#e3f4f2] text-[#16869a]"><Bot size={21} /></div><div className="min-w-0"><h2 className="truncate font-semibold">{activeConversation?.title || "New conversation"}</h2><p className="text-xs text-[#7c8c91]">{canManageAssistantTools ? "Shared with coordinators in this team." : "Only you can access this conversation."}</p></div><div className="ml-auto flex items-center gap-1"><span className="mr-2 hidden text-[10px] font-semibold uppercase tracking-[.14em] text-[#819197] sm:block">Synced</span><button onClick={newConversation} disabled={createConversation.isPending} aria-label="New conversation" title="New conversation" data-testid="button-new-assistant-conversation" className="flex h-11 w-11 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#f1f6f5] hover:text-[#16869a] disabled:opacity-50"><Plus size={17} /></button><button onClick={() => activeConversation && deleteConversationById(activeConversation.id, activeConversation.title)} disabled={!activeConversation || deleteConversation.isPending} aria-label="Delete current conversation" title="Delete current conversation" data-testid="button-delete-current-assistant-conversation" className="rounded-lg p-2 text-[#a34d46] transition hover:bg-[#fff1ef] disabled:cursor-not-allowed disabled:opacity-30"><Trash2 size={17} /></button></div></div>
+        <div className="mt-4 rounded-xl border border-border bg-muted/30 p-3" data-testid="assistant-conversation-sharing">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">Public read-only link</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">Anyone with the link can read this conversation’s prompts and answers.</p>
+            </div>
+            {activeConversationShareUrl
+              ? <button type="button" onClick={stopConversationSharing} disabled={revokeConversationShare.isPending} data-testid="button-stop-assistant-sharing" className="rounded-lg border border-destructive/40 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50">{revokeConversationShare.isPending ? "Stopping…" : "Stop sharing"}</button>
+              : <button type="button" onClick={startConversationSharing} disabled={!activeConversationId || conversationShare.isFetching || createConversationShare.isPending} data-testid="button-share-assistant-conversation" className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50">{createConversationShare.isPending ? "Creating link…" : conversationShare.isFetching ? "Loading…" : "Share conversation"}</button>}
+          </div>
+          {activeConversationShareUrl && <div className="mt-3 flex min-w-0 gap-2">
+            <input readOnly value={activeConversationShareUrl} aria-label="Public share link" data-testid="assistant-share-url" className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-xs text-foreground" />
+            <CopyButton text={activeConversationShareUrl} label="Copy share link" testId="button-copy-assistant-share-url" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground hover:text-foreground" />
+          </div>}
+          {(conversationShare.isError || createConversationShare.isError || revokeConversationShare.isError) && <p className="mt-2 text-xs text-destructive" role="alert" data-testid="assistant-share-error">Sharing could not be updated. Try again.</p>}
+        </div>
         
         <div className="space-y-5 py-6">
           {activeMessages.isLoading && <><Skeleton className="ml-auto h-12 w-3/4" /><Skeleton className="h-20 w-4/5" /></>}
@@ -9517,6 +9570,66 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     </div>
   </div>;
 }
+function PublicAssistantShare({ token }: { token: string }) {
+  const sharedConversation = useGetPublicAssistantConversation(token, {
+    query: {
+      queryKey: ["public-assistant-conversation", token],
+      retry: false,
+      staleTime: 0,
+      refetchOnWindowFocus: false,
+    },
+    request: { credentials: "omit" },
+  });
+  useEffect(() => {
+    const previousTitle = document.title;
+    document.title = "Shared assistant conversation";
+    const robots = document.createElement("meta");
+    robots.name = "robots";
+    robots.content = "noindex, nofollow, noarchive";
+    const referrer = document.createElement("meta");
+    referrer.name = "referrer";
+    referrer.content = "no-referrer";
+    document.head.append(robots, referrer);
+    return () => {
+      document.title = previousTitle;
+      robots.remove();
+      referrer.remove();
+    };
+  }, []);
+
+  const data = sharedConversation.data;
+  return <main className="min-h-screen bg-background px-4 py-10 text-foreground sm:px-8">
+    <div className="mx-auto max-w-3xl">
+      <header className="mb-8 border-b border-border pb-5">
+        <p className="text-xs font-semibold uppercase tracking-[.16em] text-muted-foreground">Read-only transcript</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">Shared assistant conversation</h1>
+        <p className="mt-2 text-sm text-muted-foreground">This page contains only the conversation’s prompts and answers.</p>
+      </header>
+      {sharedConversation.isLoading
+        ? <p className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground" role="status">Loading conversation…</p>
+        : sharedConversation.isError || !data
+          ? <section className="rounded-xl border border-border bg-card p-6" role="status" data-testid="public-assistant-share-unavailable">
+            <h2 className="font-semibold">This link is unavailable</h2>
+            <p className="mt-2 text-sm text-muted-foreground">It may have been revoked or the conversation may have been deleted.</p>
+          </section>
+          : <section className="space-y-5" aria-label="Shared conversation transcript" data-testid="public-assistant-share-transcript">
+            {data.messages.length
+              ? data.messages.map((message, index) => <article key={`${index}-${message.question}`} className="space-y-3 rounded-xl border border-border bg-card p-5">
+                <div>
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Prompt</h2>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{message.question}</p>
+                </div>
+                <div className="border-t border-border pt-4">
+                  <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Answer</h2>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{message.answer}</p>
+                </div>
+              </article>)
+              : <p className="rounded-xl border border-border bg-card p-5 text-sm text-muted-foreground">This conversation has no saved exchanges.</p>}
+          </section>}
+    </div>
+  </main>;
+}
+
 function seatLabel(row: number | null | undefined, col: number | null | undefined): string {
   return row == null || col == null ? "" : `R${row + 1}·C${col + 1}`;
 }
@@ -9825,6 +9938,7 @@ function Router() {
         <Route path="/privacy" component={PrivacyPolicy} />
         <Route path="/terms" component={TermsOfUse} />
         <Route path="/auth" component={Login} />
+        <Route path="/assistant/share/:token">{({ token }) => <PublicAssistantShare token={token} />}</Route>
         <Route path="/dashboard"><Shell><WorkspaceOverview /></Shell></Route>
         <Route path="/interview/assistant"><Shell><ConversationAssistant /></Shell></Route>
         <Route path="/interview"><Shell><InterviewOverview /></Shell></Route>

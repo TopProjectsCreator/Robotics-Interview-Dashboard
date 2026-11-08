@@ -1,6 +1,6 @@
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
-import { assistantBuilderRunsTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
+import { assistantBuilderRunsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import {
   AskAssistantBody,
@@ -100,6 +100,13 @@ import {
   RenameAssistantConversationParams,
   RenameAssistantConversationResponse,
   DeleteAssistantConversationParams,
+  GetAssistantConversationShareParams,
+  GetAssistantConversationShareResponse,
+  CreateAssistantConversationShareParams,
+  CreateAssistantConversationShareResponse,
+  RevokeAssistantConversationShareParams,
+  GetPublicAssistantConversationParams,
+  GetPublicAssistantConversationResponse,
   ListApplicantsQueryParams,
   ListApplicantsResponse,
   ListImportHistoryResponse,
@@ -10165,6 +10172,139 @@ router.delete("/assistant/skills/:skillId", requireCoordinator, async (req, res)
     return;
   }
   res.status(204).send();
+});
+
+router.get("/assistant/conversations/:conversationId/share", requireAdmin, async (req, res): Promise<void> => {
+  const params = GetAssistantConversationShareParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const account = await assistantAccountForRequest(req, res);
+  if (!account) return;
+  const teamId = await requestTeamId(req);
+  const [conversation] = await db.select({ id: assistantConversationsTable.id })
+    .from(assistantConversationsTable)
+    .where(and(
+      eq(assistantConversationsTable.id, params.data.conversationId),
+      teamFilter(assistantConversationsTable.teamId, teamId),
+      assistantConversationOwnerFilter(account),
+    )).limit(1);
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  const [share] = await db.select({ token: assistantConversationSharesTable.token })
+    .from(assistantConversationSharesTable)
+    .where(eq(assistantConversationSharesTable.conversationId, conversation.id))
+    .limit(1);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(GetAssistantConversationShareResponse.parse({
+    active: Boolean(share),
+    token: share?.token ?? null,
+  }));
+});
+
+router.post("/assistant/conversations/:conversationId/share", requireAdmin, async (req, res): Promise<void> => {
+  const params = CreateAssistantConversationShareParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const account = await assistantAccountForRequest(req, res);
+  if (!account) return;
+  const teamId = await requestTeamId(req);
+  const [conversation] = await db.select({ id: assistantConversationsTable.id })
+    .from(assistantConversationsTable)
+    .where(and(
+      eq(assistantConversationsTable.id, params.data.conversationId),
+      teamFilter(assistantConversationsTable.teamId, teamId),
+      assistantConversationOwnerFilter(account),
+    )).limit(1);
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  const token = randomBytes(32).toString("base64url");
+  await db.insert(assistantConversationSharesTable).values({
+    conversationId: conversation.id,
+    token,
+    createdByAccountId: account.id,
+  }).onConflictDoUpdate({
+    target: assistantConversationSharesTable.conversationId,
+    set: {
+      token,
+      createdByAccountId: account.id,
+      createdAt: new Date(),
+    },
+  });
+  res.setHeader("Cache-Control", "no-store");
+  res.status(201).json(CreateAssistantConversationShareResponse.parse({ active: true, token }));
+});
+
+router.delete("/assistant/conversations/:conversationId/share", requireAdmin, async (req, res): Promise<void> => {
+  const params = RevokeAssistantConversationShareParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const account = await assistantAccountForRequest(req, res);
+  if (!account) return;
+  const teamId = await requestTeamId(req);
+  const [conversation] = await db.select({ id: assistantConversationsTable.id })
+    .from(assistantConversationsTable)
+    .where(and(
+      eq(assistantConversationsTable.id, params.data.conversationId),
+      teamFilter(assistantConversationsTable.teamId, teamId),
+      assistantConversationOwnerFilter(account),
+    )).limit(1);
+  if (!conversation) {
+    res.status(404).json({ error: "Assistant conversation not found" });
+    return;
+  }
+  await db.delete(assistantConversationSharesTable)
+    .where(eq(assistantConversationSharesTable.conversationId, conversation.id));
+  res.status(204).send();
+});
+
+router.get("/assistant/public-shares/:token", async (req, res): Promise<void> => {
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+  const params = GetPublicAssistantConversationParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(404).json({ error: "This share link is unavailable." });
+    return;
+  }
+  const [share] = await db.select({
+    conversationId: assistantConversationsTable.id,
+    teamId: assistantConversationsTable.teamId,
+  })
+    .from(assistantConversationSharesTable)
+    .innerJoin(
+      assistantConversationsTable,
+      eq(assistantConversationSharesTable.conversationId, assistantConversationsTable.id),
+    )
+    .where(eq(assistantConversationSharesTable.token, params.data.token))
+    .limit(1);
+  if (!share) {
+    res.status(404).json({ error: "This share link is unavailable." });
+    return;
+  }
+  const messages = await db.select({
+    question: assistantMessagesTable.question,
+    answer: assistantMessagesTable.answer,
+  })
+    .from(assistantMessagesTable)
+    .where(and(
+      eq(assistantMessagesTable.conversationId, share.conversationId),
+      teamFilter(assistantMessagesTable.teamId, share.teamId ?? DEFAULT_TEAM_ID),
+    ))
+    .orderBy(asc(assistantMessagesTable.createdAt));
+  res.json(GetPublicAssistantConversationResponse.parse({
+    heading: "Shared assistant conversation",
+    messages,
+  }));
 });
 
 router.get("/assistant/conversations", requireAdmin, async (req, res): Promise<void> => {

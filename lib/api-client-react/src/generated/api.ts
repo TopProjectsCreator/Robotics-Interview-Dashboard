@@ -34,6 +34,7 @@ import type {
   AssistantConversation,
   AssistantConversationInput,
   AssistantConversationList,
+  AssistantConversationShare,
   AssistantConversationUpdate,
   AssistantHistory,
   AssistantInput,
@@ -254,6 +255,7 @@ import type {
   SeatingSettings,
   SeatingSettingsInput,
   SetupInterviewerPasswordInput,
+  SharedAssistantConversation,
   SiteStats,
   Snapshot,
   SnapshotInput,
@@ -11641,6 +11643,302 @@ export function useGetAssistantConversationMessages<TData = Awaited<ReturnType<t
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetAssistantConversationMessagesQueryOptions(conversationId,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAssistantConversationShareUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/assistant/conversations/${conversationId}/share`
+}
+
+/**
+ * @summary Inspect the active public share link for a conversation
+ */
+export const getAssistantConversationShare = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AssistantConversationShare> => {
+
+  return customFetch<AssistantConversationShare>(getGetAssistantConversationShareUrl(conversationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantConversationShareQueryKey = (conversationId: string,) => {
+    return [
+    `/api/assistant/conversations/${conversationId}/share`
+    ] as const;
+    }
+
+
+export const getGetAssistantConversationShareQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantConversationShare>>, TError = ErrorType<void>>(conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantConversationShare>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantConversationShareQueryKey(conversationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantConversationShare>>> = ({ signal }) => getAssistantConversationShare(conversationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: conversationId !== null && conversationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantConversationShare>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantConversationShareQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantConversationShare>>>
+export type GetAssistantConversationShareQueryError = ErrorType<void>
+
+
+/**
+ * @summary Inspect the active public share link for a conversation
+ */
+
+export function useGetAssistantConversationShare<TData = Awaited<ReturnType<typeof getAssistantConversationShare>>, TError = ErrorType<void>>(
+ conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantConversationShare>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantConversationShareQueryOptions(conversationId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAssistantConversationShareUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/assistant/conversations/${conversationId}/share`
+}
+
+/**
+ * @summary Create or replace a public share link for a conversation
+ */
+export const createAssistantConversationShare = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<AssistantConversationShare> => {
+
+  return customFetch<AssistantConversationShare>(getCreateAssistantConversationShareUrl(conversationId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateAssistantConversationShareMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssistantConversationShare>>, TError,{conversationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAssistantConversationShare>>, TError,{conversationId: string}, TContext> => {
+
+const mutationKey = ['createAssistantConversationShare'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAssistantConversationShare>>, {conversationId: string}> = (props) => {
+          const {conversationId} = props ?? {};
+
+          return  createAssistantConversationShare(conversationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAssistantConversationShareMutationResult = NonNullable<Awaited<ReturnType<typeof createAssistantConversationShare>>>
+
+    export type CreateAssistantConversationShareMutationError = ErrorType<void>
+
+    /**
+ * @summary Create or replace a public share link for a conversation
+ */
+export const useCreateAssistantConversationShare = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAssistantConversationShare>>, TError,{conversationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAssistantConversationShare>>,
+        TError,
+        {conversationId: string},
+        TContext
+      > => {
+      return useMutation(getCreateAssistantConversationShareMutationOptions(options));
+    }
+
+export const getRevokeAssistantConversationShareUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/assistant/conversations/${conversationId}/share`
+}
+
+/**
+ * @summary Revoke the public share link for a conversation
+ */
+export const revokeAssistantConversationShare = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRevokeAssistantConversationShareUrl(conversationId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRevokeAssistantConversationShareMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeAssistantConversationShare>>, TError,{conversationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof revokeAssistantConversationShare>>, TError,{conversationId: string}, TContext> => {
+
+const mutationKey = ['revokeAssistantConversationShare'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof revokeAssistantConversationShare>>, {conversationId: string}> = (props) => {
+          const {conversationId} = props ?? {};
+
+          return  revokeAssistantConversationShare(conversationId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RevokeAssistantConversationShareMutationResult = NonNullable<Awaited<ReturnType<typeof revokeAssistantConversationShare>>>
+
+    export type RevokeAssistantConversationShareMutationError = ErrorType<void>
+
+    /**
+ * @summary Revoke the public share link for a conversation
+ */
+export const useRevokeAssistantConversationShare = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof revokeAssistantConversationShare>>, TError,{conversationId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof revokeAssistantConversationShare>>,
+        TError,
+        {conversationId: string},
+        TContext
+      > => {
+      return useMutation(getRevokeAssistantConversationShareMutationOptions(options));
+    }
+
+export const getGetPublicAssistantConversationUrl = (token: string,) => {
+
+
+
+
+  return `/api/assistant/public-shares/${token}`
+}
+
+/**
+ * @summary Read an assistant conversation through its public share link
+ */
+export const getPublicAssistantConversation = async (token: string, options?: Parameters<typeof customFetch>[1]): Promise<SharedAssistantConversation> => {
+
+  return customFetch<SharedAssistantConversation>(getGetPublicAssistantConversationUrl(token),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPublicAssistantConversationQueryKey = (token: string,) => {
+    return [
+    `/api/assistant/public-shares/${token}`
+    ] as const;
+    }
+
+
+export const getGetPublicAssistantConversationQueryOptions = <TData = Awaited<ReturnType<typeof getPublicAssistantConversation>>, TError = ErrorType<void>>(token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicAssistantConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPublicAssistantConversationQueryKey(token);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPublicAssistantConversation>>> = ({ signal }) => getPublicAssistantConversation(token, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: token !== null && token !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPublicAssistantConversation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPublicAssistantConversationQueryResult = NonNullable<Awaited<ReturnType<typeof getPublicAssistantConversation>>>
+export type GetPublicAssistantConversationQueryError = ErrorType<void>
+
+
+/**
+ * @summary Read an assistant conversation through its public share link
+ */
+
+export function useGetPublicAssistantConversation<TData = Awaited<ReturnType<typeof getPublicAssistantConversation>>, TError = ErrorType<void>>(
+ token: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPublicAssistantConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPublicAssistantConversationQueryOptions(token,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

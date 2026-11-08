@@ -12,6 +12,13 @@ export const assistantConversationsTable = pgTable("assistant_conversations", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const assistantConversationSharesTable = pgTable("assistant_conversation_shares", {
+  conversationId: text("conversation_id").primaryKey().references(() => assistantConversationsTable.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  createdByAccountId: text("created_by_account_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const assistantMessagesTable = pgTable("assistant_messages", {
   id: text("id").primaryKey(),
   teamId: text("team_id"),

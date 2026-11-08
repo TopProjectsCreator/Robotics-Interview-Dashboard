@@ -66,3 +66,4 @@
 - [Chat notification cursor precision](chat-notification-cursor-precision.md) — preserve timestamp microseconds with message IDs for reliable keyset pagination.
 - [Multi-team platform positioning](multi-team-platform-positioning.md) — public copy should credit Team 23442 as the builder and clearly invite robotics teams broadly.
 - [Workflow orphaned processes](workflow-orphaned-processes.md) — inspect exact artifact process groups and ports before resolving managed Vite port collisions.
+- [Public capability links](public-capability-links.md) — redact bearer capabilities from request logs and disable caching/referrer sharing on public reads.

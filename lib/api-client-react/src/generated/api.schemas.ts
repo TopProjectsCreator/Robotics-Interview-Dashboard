@@ -3294,6 +3294,32 @@ export interface AssistantConversationList {
   items: AssistantConversation[];
 }
 
+export interface AssistantConversationShare {
+  active: boolean;
+  /**
+     * @nullable
+     * @pattern ^[A-Za-z0-9_-]{43}$
+     */
+  token: string | null;
+}
+
+export interface SharedAssistantMessage {
+  question: string;
+  answer: string;
+}
+
+export type SharedAssistantConversationHeading = typeof SharedAssistantConversationHeading[keyof typeof SharedAssistantConversationHeading];
+
+
+export const SharedAssistantConversationHeading = {
+  Shared_assistant_conversation: 'Shared assistant conversation',
+} as const;
+
+export interface SharedAssistantConversation {
+  heading: SharedAssistantConversationHeading;
+  messages: SharedAssistantMessage[];
+}
+
 export interface AssistantConversationInput {
   title?: string;
 }

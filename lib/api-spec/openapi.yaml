@@ -3145,6 +3145,74 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantHistory"
+  /assistant/conversations/{conversationId}/share:
+    parameters:
+      - $ref: "#/components/parameters/AssistantConversationId"
+    get:
+      operationId: getAssistantConversationShare
+      tags: [assistant]
+      summary: Inspect the active public share link for a conversation
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current share state; inactive shares contain no token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConversationShare"
+        "404":
+          description: Conversation not found or not accessible
+    post:
+      operationId: createAssistantConversationShare
+      tags: [assistant]
+      summary: Create or replace a public share link for a conversation
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Active share capability
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantConversationShare"
+        "404":
+          description: Conversation not found or not accessible
+    delete:
+      operationId: revokeAssistantConversationShare
+      tags: [assistant]
+      summary: Revoke the public share link for a conversation
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Share link revoked
+        "404":
+          description: Conversation not found or not accessible
+  /assistant/public-shares/{token}:
+    get:
+      operationId: getPublicAssistantConversation
+      tags: [assistant]
+      summary: Read an assistant conversation through its public share link
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: "^[A-Za-z0-9_-]{43}$"
+      responses:
+        "200":
+          description: Shared prompt-and-answer transcript with no account or team metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SharedAssistantConversation"
+        "404":
+          description: Share link is unavailable
   /assistant/conversations/{conversationId}/queue:
     parameters:
       - $ref: "#/components/parameters/AssistantConversationId"
@@ -9032,6 +9100,36 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AssistantConversation"
+    AssistantConversationShare:
+      type: object
+      required: [active, token]
+      properties:
+        active:
+          type: boolean
+        token:
+          type: ["string", "null"]
+          pattern: "^[A-Za-z0-9_-]{43}$"
+    SharedAssistantMessage:
+      type: object
+      additionalProperties: false
+      required: [question, answer]
+      properties:
+        question:
+          type: string
+        answer:
+          type: string
+    SharedAssistantConversation:
+      type: object
+      additionalProperties: false
+      required: [heading, messages]
+      properties:
+        heading:
+          type: string
+          enum: ["Shared assistant conversation"]
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/SharedAssistantMessage"
     AssistantConversationInput:
       type: object
       properties:

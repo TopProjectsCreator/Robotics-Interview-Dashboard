@@ -4312,6 +4312,67 @@ export const GetAssistantConversationMessagesResponse = zod.object({
 
 
 /**
+ * @summary Inspect the active public share link for a conversation
+ */
+export const GetAssistantConversationShareParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const getAssistantConversationShareResponseTokenRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+export const GetAssistantConversationShareResponse = zod.object({
+  "active": zod.boolean(),
+  "token": zod.string().regex(getAssistantConversationShareResponseTokenRegExp).nullable()
+})
+
+
+/**
+ * @summary Create or replace a public share link for a conversation
+ */
+export const CreateAssistantConversationShareParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const createAssistantConversationShareResponseTokenRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+export const CreateAssistantConversationShareResponse = zod.object({
+  "active": zod.boolean(),
+  "token": zod.string().regex(createAssistantConversationShareResponseTokenRegExp).nullable()
+})
+
+
+/**
+ * @summary Revoke the public share link for a conversation
+ */
+export const RevokeAssistantConversationShareParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const RevokeAssistantConversationShareResponse = zod.void()
+
+
+/**
+ * @summary Read an assistant conversation through its public share link
+ */
+export const getPublicAssistantConversationPathTokenRegExp = new RegExp('^[A-Za-z0-9_-]{43}$');
+
+
+export const GetPublicAssistantConversationParams = zod.object({
+  "token": zod.coerce.string().regex(getPublicAssistantConversationPathTokenRegExp)
+})
+
+export const GetPublicAssistantConversationResponse = zod.object({
+  "heading": zod.enum(['Shared assistant conversation']),
+  "messages": zod.array(zod.object({
+  "question": zod.string(),
+  "answer": zod.string()
+}))
+})
+
+
+/**
  * @summary Get persisted prompt run and queue statuses
  */
 export const GetAssistantPromptQueueParams = zod.object({
