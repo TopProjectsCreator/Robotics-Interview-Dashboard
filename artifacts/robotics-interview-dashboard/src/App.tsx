@@ -627,6 +627,10 @@ export function AIProviderSettingsCategory({
   </div>;
 }
 
+function isAdminAccountRole(role: string): boolean {
+  return role === "coordinator" || role === "admin";
+}
+
 function SettingsModal({
   onClose,
   onOpenProviderSetup,
@@ -746,6 +750,13 @@ function SettingsModal({
     () => [...(interviewerAccounts.data?.items ?? [])].sort((a, b) => a.displayName.localeCompare(b.displayName)),
     [interviewerAccounts.data],
   );
+  const workspaceAccessAccounts = useMemo(
+    () => [...teamAccounts].sort((a, b) => {
+      const rolePriority = (role: string) => isAdminAccountRole(role) ? 0 : role === "treasurer" ? 1 : 2;
+      return rolePriority(a.role) - rolePriority(b.role) || a.displayName.localeCompare(b.displayName);
+    }),
+    [teamAccounts],
+  );
   const accountRoleById = useMemo(
     () => new Map(teamAccounts.map((account) => [account.id, account.role])),
     [teamAccounts],
@@ -759,7 +770,7 @@ function SettingsModal({
       const list = (server[key] ?? []) as string[];
       const ids = new Set<string>();
       for (const account of teamAccounts) {
-        if (account.role === "coordinator") {
+        if (isAdminAccountRole(account.role)) {
           ids.add(account.id);
           continue;
         }
@@ -770,7 +781,7 @@ function SettingsModal({
       // Keep server entries for accounts not in the list response (e.g. just
       // created) so a save never silently drops them.
       for (const entry of list) {
-        if (entry === "coordinator" || entry === "treasurer" || entry === "interviewer") continue;
+        if (entry === "coordinator" || entry === "admin" || entry === "treasurer" || entry === "interviewer") continue;
         ids.add(entry);
       }
       draft[key] = [...ids].sort();
@@ -785,7 +796,7 @@ function SettingsModal({
   const workspaceVisibilityBusy = workspaceVisibility.isSaving;
   const toggleVisibility = (key: WorkspaceKey, accountId: string) => {
     // Admins always keep every workspace, so their dots stay locked on.
-    if (accountRoleById.get(accountId) === "coordinator") return;
+    if (isAdminAccountRole(accountRoleById.get(accountId) ?? "")) return;
     setVisibilityDraft((current) => {
       const existing = (current[key] ?? []) as string[];
       return {
@@ -1148,10 +1159,10 @@ function SettingsModal({
             <thead className="bg-[#f8fbfa] text-[#63747c] dark:bg-[#10202a] dark:text-[#a9bcc6]">
               <tr>
                 <th scope="col" className="px-3 py-2 font-semibold">Workspace</th>
-                {teamAccounts.map(account => (
-                  <th key={account.id} scope="col" className="px-2 py-2 text-center font-semibold">
+                {workspaceAccessAccounts.map(account => (
+                  <th key={account.id} scope="col" data-testid={`workspace-access-account-${account.id}`} className="px-2 py-2 text-center font-semibold">
                     <span className="block max-w-[90px] truncate" title={`${account.displayName} (${account.role})`}>{account.displayName}</span>
-                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal opacity-70">{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team"}</span>
+                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal opacity-70">{isAdminAccountRole(account.role) ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team"}</span>
                   </th>
                 ))}
               </tr>
@@ -1162,8 +1173,8 @@ function SettingsModal({
                   <th scope="row" className="px-3 py-2 font-semibold text-[#183a4b] dark:text-[#e6eef2]">
                     {WORKSPACE_LABELS[key]}
                   </th>
-                  {teamAccounts.map(account => {
-                    const isAdmin = accountRoleById.get(account.id) === "coordinator";
+                  {workspaceAccessAccounts.map(account => {
+                    const isAdmin = isAdminAccountRole(accountRoleById.get(account.id) ?? "");
                     const hasAccess = isAdmin || ((visibilityDraft[key] ?? []) as string[]).includes(account.id);
                     return (
                     <td key={account.id} className="px-2 py-2 text-center">

@@ -13,6 +13,14 @@ const users = [
   { id: "matrix-treasurer", role: "treasurer", label: "Treasurer" },
   { id: "matrix-interviewer", role: "interviewer", label: "Interviewer" },
 ];
+const interviewerAccounts = [
+  { id: "member-zara", displayName: "Zara Team", hasPassword: true, role: "interviewer" },
+  { id: "admin-sam", displayName: "Sam Admin", hasPassword: true, role: "coordinator" },
+  { id: "treasurer-zoe", displayName: "Zoe Treasurer", hasPassword: true, role: "treasurer" },
+  { id: "member-alex", displayName: "Alex Team", hasPassword: true, role: "interviewer" },
+  { id: "admin-avery", displayName: "Avery Admin", hasPassword: true, role: "admin" },
+  { id: "treasurer-megan", displayName: "Megan Treasurer", hasPassword: true, role: "treasurer" },
+];
 const visibility = {
   interview: ["coordinator"],
   chat: users.map(({ id }) => id),
@@ -25,6 +33,45 @@ function canOpen(user, workspace) {
   return user.role === "coordinator"
     || visibility[workspace].includes(user.id)
     || visibility[workspace].includes(user.role);
+}
+
+async function verifyWorkspaceAccessOrdering(page) {
+  const accountsLoaded = page.waitForResponse(response =>
+    response.url().includes("/api/auth/interviewers") && response.request().method() === "GET",
+  );
+  await page.getByTestId("button-account-menu").click();
+  await page.getByTestId("button-open-settings").click();
+  await page.getByTestId("settings-modal").waitFor({ state: "visible" });
+  const accountResponse = await accountsLoaded;
+  assert.equal(accountResponse.status(), 200, "settings should load the mock interviewer account list");
+  const accessMatrix = page.locator('[data-testid^="visibility-row-"]').first().locator("xpath=ancestor::table");
+  await accessMatrix.locator('[data-testid="workspace-access-account-member-alex"]').waitFor({ state: "visible" });
+  assert.deepEqual(
+    await accessMatrix.evaluate(table =>
+      Array.from(table.querySelectorAll("thead th"))
+        .filter(node => (node.getAttribute("data-testid") ?? "").startsWith("workspace-access-account-"))
+        .map(node => ({
+          id: node.getAttribute("data-testid")?.replace("workspace-access-account-", ""),
+          name: node.querySelector("span")?.textContent?.trim(),
+          role: node.querySelectorAll("span")[1]?.textContent?.trim(),
+        })),
+    ),
+    [
+      { id: "admin-avery", name: "Avery Admin", role: "Admin" },
+      { id: "admin-sam", name: "Sam Admin", role: "Admin" },
+      { id: "treasurer-megan", name: "Megan Treasurer", role: "Treasurer" },
+      { id: "treasurer-zoe", name: "Zoe Treasurer", role: "Treasurer" },
+      { id: "member-alex", name: "Alex Team", role: "Team" },
+      { id: "member-zara", name: "Zara Team", role: "Team" },
+    ],
+    "workspace access columns should sort by role, then display name",
+  );
+  for (const adminId of ["admin-avery", "admin-sam"]) {
+    const adminToggle = accessMatrix.getByTestId(`toggle-visibility-interview-${adminId}`);
+    assert.equal(await adminToggle.isChecked(), true, `${adminId} must always have workspace access`);
+    assert.equal(await adminToggle.isDisabled(), true, `${adminId} workspace access must stay locked`);
+  }
+  await page.getByTestId("button-close-settings").click();
 }
 
 const port = await new Promise((resolve, reject) => {
@@ -91,6 +138,31 @@ try {
         await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(visibility) });
         return;
       }
+      if (pathname === "/api/auth/interviewers") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ items: interviewerAccounts }),
+        });
+        return;
+      }
+      if (pathname === "/api/system/mailbox") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            teamId: "matrix-team",
+            mailbox: null,
+            forwardingAddress: null,
+            enabled: false,
+            configured: false,
+            apiKeyConfigured: false,
+            allowedSenders: [],
+            legacy: false,
+          }),
+        });
+        return;
+      }
       if (pathname === "/api/cad/library" || pathname === "/api/code/projects") {
         const workspace = pathname.includes("/cad/") ? "cad" : "code";
         const allowed = canOpen(user, workspace);
@@ -149,6 +221,10 @@ try {
     assert.deepEqual(pageErrors, [], `${user.role} session should not raise browser errors`);
   }
 
+  // The Settings access matrix groups by role first, then alphabetically.
+  const coordinator = sessions.find(({ user }) => user.role === "coordinator");
+  await verifyWorkspaceAccessOrdering(coordinator.page);
+
   // Model an admin saving new settings server-side. The treasurer's separate
   // browser session must refetch them on reload and gain Code in both UI and API.
   visibility.code.push("matrix-treasurer");
@@ -173,7 +249,7 @@ try {
   assert.equal(new URL(treasurer.page.url()).pathname, "/code");
 
   await Promise.all(sessions.map(({ context }) => context.close()));
-  console.log("Coordinator, treasurer, and interviewer isolated browser sessions verified CAD/Code navigation, direct routes, API status, and settings refresh after reload.");
+  console.log("Workspace access role ordering and locked admin toggles verified alongside the existing CAD/Code access checks.");
 } finally {
   await browser?.close();
   server.kill("SIGTERM");
