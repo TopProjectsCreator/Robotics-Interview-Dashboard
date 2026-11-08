@@ -35,7 +35,9 @@ export function createCodeCollab(
   fileId: string,
   initialContent: string,
   collaborator: CodeCollaborator,
+  options: { localOnly?: boolean } = {},
 ): CodeCollabSession {
+  const { localOnly = false } = options;
   const doc = new Y.Doc();
   const text = doc.getText("content");
   if (initialContent) text.insert(0, initialContent);
@@ -46,7 +48,7 @@ export function createCodeCollab(
   const statusListeners = new Set<(status: CodeCollabStatus) => void>();
   const saveListeners = new Set<(status: "saving" | "saved" | "error") => void>();
   const peerListeners = new Set<(peers: { name: string; color: string }[]) => void>();
-  let status: CodeCollabStatus = "connecting";
+  let status: CodeCollabStatus = localOnly ? "connected" : "connecting";
   let socket: WebSocket | null = null;
   let stopped = false;
   let retryDelay = 500;
@@ -150,7 +152,7 @@ export function createCodeCollab(
     emitPeers();
   });
 
-  connect();
+  if (!localOnly) connect();
 
   return {
     doc,

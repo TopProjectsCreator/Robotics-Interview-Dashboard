@@ -146,10 +146,12 @@ function JavaEditor({
   session,
   filePath,
   onDirty,
+  readOnly = false,
 }: {
   session: CodeCollabSession;
   filePath: string;
   onDirty: () => void;
+  readOnly?: boolean;
 }) {
   const [value, setValue] = useState(() => session.text.toString());
   const [cursor, setCursor] = useState({ line: 1, col: 1 });
@@ -273,6 +275,7 @@ function JavaEditor({
             setCursor({ line: upto.length, col: (upto[upto.length - 1] ?? "").length + 1 });
           }}
           spellCheck={false}
+          readOnly={readOnly}
           autoCapitalize="off"
           autoCorrect="off"
           aria-label={`Edit ${filePath}. Line ${cursor.line}, column ${cursor.col}.`}
@@ -286,9 +289,9 @@ function JavaEditor({
   );
 }
 
-export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy();
+export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } = {}) { const streamHealthy = useRealtimeHealthy();
   const queryClient = useQueryClient();
-  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode } });
   const displayName = session.data?.label?.trim() || "Teammate";
   const myColor = useMemo(() => colorForName(displayName), [displayName]);
 
@@ -343,7 +346,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   const [deployResult, setDeployResult] = useState<string | null>(null);
   const [deployProblems, setDeployProblems] = useState<JavaProblem[]>([]);
 
-  const projectsQuery = { queryKey: getListCodeProjectsQueryKey() };
+  const projectsQuery = { queryKey: getListCodeProjectsQueryKey(), enabled: !demoMode };
   const projects = useListCodeProjects({ query: projectsQuery } as never) as unknown as {
     data?: { projects: CodeProject[] };
     isLoading: boolean;
@@ -351,7 +354,10 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   const projectList = projects.data?.projects ?? [];
   const project = projectList.find((item) => item.id === projectId) ?? null;
 
-  const filesQuery = { queryKey: projectId ? getListCodeFilesQueryKey(projectId) : ["code-files"], enabled: Boolean(projectId) };
+  const filesQuery = {
+    queryKey: projectId ? getListCodeFilesQueryKey(projectId) : ["code-files"],
+    enabled: !demoMode && Boolean(projectId),
+  };
   const files = useListCodeFiles(projectId ?? "", { query: filesQuery } as never) as unknown as {
     data?: { files: CodeFile[] };
     isLoading: boolean;
@@ -374,6 +380,12 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   // Load saved git endpoint config.
   useEffect(() => {
     if (!project) return;
+    if (demoMode) {
+      setGitToken("");
+      setOpenIds([]);
+      setActiveId(null);
+      return;
+    }
     const git = (project.gitConfig ?? {}) as Record<string, unknown>;
     if (typeof git.remoteUrl === "string") setRemoteUrl(git.remoteUrl);
     if (typeof git.branch === "string" && git.branch) setBranch(git.branch);
@@ -395,7 +407,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
     }
     setOpenIds([]);
     setActiveId(null);
-  }, [project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [demoMode, project?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Collab session lifecycle for the active file.
   useEffect(() => {
@@ -404,7 +416,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
       return null;
     });
     if (!activeFile) return;
-    const created = createCodeCollab(activeFile.id, activeFile.content, { name: displayName, color: myColor });
+    const created = createCodeCollab(activeFile.id, activeFile.content, { name: displayName, color: myColor }, { localOnly: demoMode });
     setCollab(created);
     const offStatus = created.subscribeStatus(setCollabStatus);
     const offSave = created.subscribeSaveStatus(setSaveStatus);
@@ -416,12 +428,12 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
       offPeers();
       created.destroy();
     };
-  }, [activeFile?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeFile?.id, demoMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Presence heartbeat + roster.
   const [roster, setRoster] = useState<{ displayName: string; fileId: string | null; color: string }[]>([]);
   useEffect(() => {
-    if (!projectId) return;
+    if (demoMode || !projectId) return;
     let alive = true;
     const beat = () => {
       void updateCodePresence(projectId, { fileId: activeId ?? null, color: myColor }).catch(() => undefined);
@@ -437,15 +449,21 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
       alive = false;
       clearInterval(timer);
     };
-  }, [projectId, activeId, myColor]);
+  }, [demoMode, projectId, activeId, myColor]);
+
+  useEffect(() => {
+    if (!demoMode || activeId || fileList.length === 0) return;
+    setOpenIds([fileList[0].id]);
+    setActiveId(fileList[0].id);
+  }, [activeId, demoMode, fileList]);
 
   const flushActiveFile = useCallback(async () => {
-    if (!collab || !activeFile) return;
+    if (demoMode || !collab || !activeFile) return;
     const content = collab.text.toString();
     if (content === activeFile.content) return;
     await updateCodeFile(activeFile.id, { content });
     refreshFiles();
-  }, [collab, activeFile, refreshFiles]);
+  }, [demoMode, collab, activeFile, refreshFiles]);
 
   const openFile = (id: string) => {
     setOpenIds((current) => (current.includes(id) ? current : [...current, id]));
@@ -462,6 +480,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const createProject = async () => {
+    if (demoMode) { setNotice("This sample project is read-only."); return; }
     const name = await askValue({ title: "New FTC project", label: "Project name", placeholder: "BioBuzz Bot" });
     if (!name) return;
     setError(null);
@@ -476,6 +495,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const seedProject = async () => {
+    if (demoMode) { setNotice("Starter files are disabled in this read-only demo."); return; }
     if (!project) return;
     setError(null);
     try {
@@ -490,6 +510,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const createFile = async () => {
+    if (demoMode) { setNotice("File creation is disabled in this read-only demo."); return; }
     if (!project) return;
     const path = await askValue({
       title: "New file",
@@ -513,6 +534,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const deleteProject = async () => {
+    if (demoMode) { setNotice("Project deletion is disabled in this read-only demo."); return; }
     if (!project) return;
     if (!(await confirmAction({ title: `Delete "${project.name}" and all of its files?`, danger: true, confirmLabel: "Delete" }))) return;
     try {
@@ -525,6 +547,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const deleteFile = async (file: CodeFile) => {
+    if (demoMode) { setNotice("File deletion is disabled in this read-only demo."); return; }
     if (!(await confirmAction({ title: `Delete "${file.path}"?`, danger: true, confirmLabel: "Delete" }))) return;
     try {
       await deleteCodeFile(file.id);
@@ -546,6 +569,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
 
   // --- AI assistant ---------------------------------------------------------
   const runAi = () => {
+    if (demoMode) { setNotice("AI requests are disabled in this read-only demo."); return; }
     if (!aiPrompt.trim() || !project) return;
     setError(null);
     const context = [
@@ -564,6 +588,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const applyAiBlock = (code: string, mode: "replace" | "insert" | "lines") => {
+    if (demoMode) { setNotice("Code edits are disabled in this read-only demo."); return; }
     if (!collab || !activeFile) {
       setError("Open a file before applying an AI edit.");
       return;
@@ -596,6 +621,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   // --- Git ------------------------------------------------------------------
   const gitScope = project ? `code-${project.id}` : "code";
   const persistGitConfig = async () => {
+    if (demoMode) { setNotice("Git settings are disabled in this read-only demo."); return; }
     if (!project) return;
     try {
       window.localStorage.setItem(`code-git-token:${project.id}`, gitToken);
@@ -607,6 +633,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const withGit = async (label: string, action: () => Promise<void>) => {
+    if (demoMode) { setNotice("Git actions are disabled in this read-only demo."); return; }
     setGitBusy(true);
     setGitProgress(label);
     setError(null);
@@ -646,6 +673,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
     });
 
   const gitRefresh = async () => {
+    if (demoMode) return;
     setGitFiles(await gitStatus(gitScope).catch(() => []));
     setGitLogEntries(await gitLog(gitScope).catch(() => []));
   };
@@ -747,6 +775,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const uploadAndBuild = async () => {
+    if (demoMode) { setNotice("Robot-hub deployment is disabled in this read-only demo."); return; }
     if (!project || deployBusy) return;
     if (!/^https?:\/\//i.test(hubUrl.trim())) {
       setError("Enter the hub address, e.g. http://192.168.43.1:8080. It stays an address — nothing opens.");
@@ -797,6 +826,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const uploadFromBrowser = async () => {
+    if (demoMode) { setNotice("Robot-hub deployment is disabled in this read-only demo."); return; }
     if (!project || deployBusy) return;
     if (!/^https?:\/\//i.test(hubUrl.trim())) {
       setError("Enter the hub address first, e.g. http://192.168.43.1:8080.");
@@ -821,6 +851,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const toggleSerial = async () => {
+    if (demoMode) { setNotice("Serial connections are disabled in this read-only demo."); return; }
     if (serialRef.current) {
       await serialRef.current.close();
       serialRef.current = null;
@@ -848,6 +879,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const sendSerial = async () => {
+    if (demoMode) { setNotice("Serial connections are disabled in this read-only demo."); return; }
     if (!serialRef.current || !serialInput.trim()) return;
     try {
       await serialRef.current.send(serialInput.trim());
@@ -859,6 +891,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const connectUsbAdb = async () => {
+    if (demoMode) { setNotice("USB connections are disabled in this read-only demo."); return; }
     if (usbAdbRef.current) {
       await usbAdbRef.current.close().catch(() => undefined);
       setUsbAdb(null);
@@ -882,6 +915,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
   };
 
   const uploadViaUsb = async () => {
+    if (demoMode) { setNotice("Robot-hub deployment is disabled in this read-only demo."); return; }
     if (!project || deployBusy) return;
     if (!usbAdbRef.current) {
       setError("Connect the hub over USB first, then upload.");
@@ -948,7 +982,7 @@ export function CodeWorkspacePage() { const streamHealthy = useRealtimeHealthy()
 
   const revisions = useListCodeRevisions(projectId ?? "", {
     query: projectId
-      ? { queryKey: getListCodeRevisionsQueryKey(projectId), refetchInterval: streamHealthy ? false : (10000 )}
+      ? { queryKey: getListCodeRevisionsQueryKey(projectId), refetchInterval: streamHealthy ? false : (10000 ), enabled: !demoMode }
       : { queryKey: ["code-revisions"], enabled: false },
   } as never) as unknown as { data?: { revisions: { id: string; message: string; author: string | null; createdAt: string }[] } };
   const activeSideLabel = {

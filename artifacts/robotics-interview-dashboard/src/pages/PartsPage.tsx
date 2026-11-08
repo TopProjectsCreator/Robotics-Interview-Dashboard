@@ -57,6 +57,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { PartsRobotDetailsDialog } from "@/components/PartsRobotDetailsDialog";
 import { PartsInventoryDetailsDialog } from "@/components/PartsInventoryDetailsDialog";
+import { DEMO_PARTS_SEARCH_RESULTS } from "./demo-data";
 import {
   PartsImageIdentifyDialog,
   type PartsImageReviewedPart,
@@ -830,6 +831,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   };
 
   const toggleVendorBlock = async (vendor: PartsVendor) => {
+    if (demoMode) {
+      setNotice({ kind: "success", text: "Supplier settings are read-only in this demo." });
+      return;
+    }
     const blocked = !vendor.blocked;
     setNotice(null);
     setVendorBlockBusyKey(vendor.key);
@@ -860,6 +865,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   };
 
   const updateFtcPricing = async (enabled: boolean) => {
+    if (demoMode) {
+      setNotice({ kind: "success", text: "Pricing preferences are read-only in this demo." });
+      return;
+    }
     setNotice(null);
     try {
       const saved = await pricingPreferenceMutation.mutateAsync({
@@ -879,6 +888,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   };
 
   const syncPublicCatalogs = async () => {
+    if (demoMode) {
+      setNotice({ kind: "success", text: "Supplier sync is disabled in this demo." });
+      return;
+    }
     setNotice(null);
     try {
       const result = await syncMutation.mutateAsync();
@@ -927,6 +940,21 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
       return;
     }
     const query = searchText.trim();
+    if (demoMode) {
+      const normalizedQuery = query.toLocaleLowerCase();
+      const matches = DEMO_PARTS_SEARCH_RESULTS.filter((product) =>
+        `${product.title} ${product.vendorName} ${product.sku ?? ""} ${product.description}`
+          .toLocaleLowerCase()
+          .includes(normalizedQuery),
+      );
+      setSearchBusy(false);
+      setSearchStatus("available");
+      setSearchError(matches.length ? "" : "No sample supplier products match that search.");
+      setSearchResults(matches);
+      setSavedSearchOffset(0);
+      setLastSearch(query);
+      return;
+    }
     const runId = ++searchRunId.current;
     setSearchBusy(true);
     setSearchStatus(null);
@@ -1015,6 +1043,13 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
 
   const saveSearchResultToInventory = async (product: PartsCatalogSearchResult) => {
     const url = normalizedProductUrl(product.url) ?? product.url;
+    if (demoMode) {
+      setSaveFeedback((previous) => ({
+        ...previous,
+        [url]: { status: "error", message: "Saving to Stockroom is disabled in this read-only demo." },
+      }));
+      return;
+    }
     setSaveFeedback((previous) => ({
       ...previous,
       [url]: { status: "pending", message: "Adding to Stockroom…" },
@@ -1049,6 +1084,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
 
   const createRobot = async (event: FormEvent) => {
     event.preventDefault();
+    if (demoMode) {
+      setNotice({ kind: "success", text: "Adding robots is disabled in this read-only demo." });
+      return;
+    }
     if (!robotName.trim()) return;
     try {
       await createRobotMutation.mutateAsync({ data: { name: robotName.trim() } });
@@ -1062,6 +1101,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
 
   const createCustomPart = async (event: FormEvent) => {
     event.preventDefault();
+    if (demoMode) {
+      setNotice({ kind: "success", text: "Adding parts is disabled in this read-only demo." });
+      return;
+    }
     const name = customName.trim();
     if (!name || !customVendor) {
       setNotice({ kind: "error", text: "Enter a part name and choose a supplier." });
@@ -1102,6 +1145,9 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   };
 
   const savePhotoIdentifiedPart = async (part: PartsImageReviewedPart) => {
+    if (demoMode) {
+      throw new Error("Saving scanned parts is disabled in this read-only demo.");
+    }
     if (!vendors.some((vendor) => vendor.key === part.vendorKey)) {
       throw new Error("Choose a supported supplier before saving.");
     }
@@ -1128,6 +1174,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   };
 
   const saveStock = async (item: PartsCatalogItem, quantityOwned: number) => {
+    if (demoMode) {
+      setNotice({ kind: "success", text: "Stock changes are disabled in this read-only demo." });
+      return;
+    }
     try {
       await stockMutation.mutateAsync({ partId: item.id, data: { quantityOwned } });
       setNotice({ kind: "success", text: `Stock updated for ${item.name}.` });
@@ -1138,6 +1188,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   };
 
   const setAllocation = async (item: PartsCatalogItem, robotId: string, quantity: number) => {
+    if (demoMode) {
+      setNotice({ kind: "success", text: "Robot allocations are disabled in this read-only demo." });
+      return;
+    }
     try {
       await allocationMutation.mutateAsync({
         robotId,
@@ -2011,7 +2065,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
                         <CardDescription>Filter the team’s saved stock, then update quantities or allocate parts to a robot.</CardDescription>
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        <Button type="button" size="sm" onClick={() => setPhotoDialogOpen(true)} data-testid="button-scan-stockroom-part">
+                        <Button type="button" size="sm" onClick={() => {
+                          if (demoMode) setNotice({ kind: "success", text: "Camera scanning is disabled in this demo." });
+                          else setPhotoDialogOpen(true);
+                        }} data-testid="button-scan-stockroom-part">
                           <Camera size={14} aria-hidden="true" /> Scan part
                         </Button>
                         <Button type="button" size="sm" variant="outline" onClick={() => setCustomDialogOpen(true)} data-testid="button-add-stockroom-part">
@@ -2128,11 +2185,13 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
          robot={selectedRobot}
          onClose={closeRobotDetails}
          onPreviewReplaced={refreshRobotDashboard}
+         demoMode={demoMode}
        />
        <PartsInventoryDetailsDialog
          item={selectedPart}
          onClose={() => setSelectedPart(null)}
          onSaved={refreshParts}
+         demoMode={demoMode}
        />
     </main>
   );
