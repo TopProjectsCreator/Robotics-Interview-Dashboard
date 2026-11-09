@@ -21,6 +21,7 @@ process.env.SESSION_SECRET = "onshape-test-session-secret-with-at-least-32-chara
 const state = {
   oauthStates: new Map(),
   connections: new Map(),
+  policies: new Map(),
   requests: [],
   tokenResponse: null,
   databaseQueries: [],
@@ -33,6 +34,7 @@ const state = {
 function resetState() {
   state.oauthStates.clear();
   state.connections.clear();
+  state.policies.clear();
   state.requests.length = 0;
   state.tokenResponse = null;
   state.databaseQueries.length = 0;
@@ -49,6 +51,10 @@ function parseJson(value) {
 const pool = {
   async query(statement, values = []) {
     state.databaseQueries.push({ statement, values });
+    if (statement.includes("from assistant_integration_policies")) {
+      const policy = state.policies.get(values[0]);
+      return { rows: policy ? [{ ...policy }] : [], rowCount: policy ? 1 : 0 };
+    }
     if (statement.includes("delete from onshape_mcp_oauth_states where created_at <")) {
       return { rows: [], rowCount: 0 };
     }
@@ -281,6 +287,59 @@ test("tool discovery and execution use only the requesting interviewer's connect
   await assert.rejects(callOnshapeMcpTool("interviewer-a", "team-b", "alpha_tool", {}), /not connected/);
   assert.equal(state.requests.filter((request) => request.url === "https://fs-mcp.labs.onshape.app/mcp" && request.token === "alpha-access").length, 6);
   assert.equal(state.requests.some((request) => request.token === "beta-access" && request.payload?.params?.name === "alpha_tool"), false);
+  state.policies.set("team-a", {
+    blocked_mcp_servers: ["onshape"],
+    blocked_github_repositories: [],
+    updated_at: new Date(),
+  });
+  const beforeBan = state.requests.length;
+  assert.deepEqual((await listOnshapeMcpTools("interviewer-a", "team-a")).tools, []);
+  await assert.rejects(
+    callOnshapeMcpTool("interviewer-a", "team-a", "alpha_tool", {}),
+    /blocked by your team admin/,
+  );
+  assert.equal(state.requests.length, beforeBan, "a banned built-in server is not contacted");
+  state.policies.delete("team-a");
+  assert.equal((await listOnshapeMcpTools("interviewer-a", "team-a")).tools.length, 1);
+});
+
+test("a new Onshape OAuth flow is rejected before provider access when the team blocks it", async () => {
+  resetState();
+  state.policies.set("team-blocked", {
+    blocked_mcp_servers: ["ONSHAPE"],
+    blocked_github_repositories: [],
+    updated_at: new Date(),
+  });
+  await assert.rejects(
+    beginOnshapeAuthorization({
+      accountId: "interviewer-blocked",
+      teamId: "team-blocked",
+      redirectUri: "https://robotics.test/api/onshape-mcp/callback",
+      returnOrigin: "https://robotics.test",
+    }),
+    /blocked by your team admin/,
+  );
+  assert.deepEqual(state.requests, []);
+});
+
+test("Onshape OAuth completion rejects a server blocked after authorization began", async () => {
+  const { tokenState } = await startAuthorization("interviewer-late-block", "team-late-block", "late");
+  const tokenRequestsBeforeBlock = state.requests.filter((request) => request.url === "https://onshape.test/token").length;
+  state.policies.set("team-late-block", {
+    blocked_mcp_servers: ["onshape"],
+    blocked_github_repositories: [],
+    updated_at: new Date(),
+  });
+  await assert.rejects(
+    finishOnshapeAuthorization({ state: tokenState, code: "late-code" }),
+    /blocked by your team admin/,
+  );
+  assert.equal(
+    state.requests.filter((request) => request.url === "https://onshape.test/token").length,
+    tokenRequestsBeforeBlock,
+    "the callback does not exchange an authorization code after a team ban",
+  );
+  assert.equal(state.connections.has("interviewer-late-block"), false);
 });
 
 test("refresh is team-scoped, replaces encrypted tokens, and drops a connection on provider rejection", async () => {

@@ -109,6 +109,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "assistant_usage_requests",
     "assistant_usage_tools",
     "assistant_tool_policies",
+    "assistant_integration_policies",
     "assistant_builder_runs",
     "assistant_skills",
     "assistant_model_policies",
@@ -842,6 +843,12 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
        "team_id" text primary key,
        "team_disabled_tools" jsonb not null default '[]'::jsonb check (jsonb_typeof("team_disabled_tools") = 'array'),
        "role_disabled_tools" jsonb not null default '{}'::jsonb check (jsonb_typeof("role_disabled_tools") = 'object'),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create table if not exists "assistant_integration_policies" (
+       "team_id" text primary key,
+       "blocked_mcp_servers" jsonb not null default '[]'::jsonb check (jsonb_typeof("blocked_mcp_servers") = 'array'),
+       "blocked_github_repositories" jsonb not null default '[]'::jsonb check (jsonb_typeof("blocked_github_repositories") = 'array'),
        "updated_at" timestamptz not null default now()
      )`,
     `create index if not exists "assistant_prompt_runs_conversation_created_idx" on "assistant_prompt_runs" ("team_id", "conversation_id", "created_at")`,

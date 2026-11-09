@@ -3261,6 +3261,51 @@ paths:
           description: Invalid tool or role selection
         "403":
           description: Admin access required
+  /assistant/integration-policy:
+    get:
+      operationId: getAssistantIntegrationPolicy
+      tags: [assistant]
+      summary: Read team-wide MCP and linked repository blocks
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Team integration blocks and affected resource status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantIntegrationPolicy"
+        "403":
+          description: Admin access required
+    put:
+      operationId: updateAssistantIntegrationPolicy
+      tags: [assistant]
+      summary: Save team-wide MCP and linked repository blocks
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantIntegrationPolicyInput"
+      responses:
+        "200":
+          description: Saved team integration blocks and affected resource status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantIntegrationPolicy"
+        "400":
+          description: Invalid or duplicate integration identifier
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin access required
   /assistant/conversations:
     get:
       operationId: listAssistantConversations
@@ -9537,6 +9582,54 @@ components:
             uniqueItems: true
             items: { type: string, minLength: 1, maxLength: 64 }
           description: "Whether the team admin has locked model selection to the default"
+    AssistantIntegrationPolicy:
+      type: object
+      required: [blockedMcpServers, blockedGithubRepositories, affectedMcpServers, affectedSkills, updatedAt]
+      properties:
+        blockedMcpServers:
+          type: array
+          items: { type: string }
+        blockedGithubRepositories:
+          type: array
+          items: { type: string }
+        affectedMcpServers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantIntegrationMcpImpact"
+        affectedSkills:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantIntegrationSkillImpact"
+        updatedAt: { type: ["string", "null"], format: date-time }
+    AssistantIntegrationMcpImpact:
+      type: object
+      required: [identifier, connectedAccounts]
+      properties:
+        identifier: { type: string }
+        connectedAccounts: { type: integer, minimum: 0 }
+    AssistantIntegrationSkillImpact:
+      type: object
+      required: [repositoryUrl, skillNames]
+      properties:
+        repositoryUrl: { type: string }
+        skillNames:
+          type: array
+          items: { type: string }
+    AssistantIntegrationPolicyInput:
+      type: object
+      required: [blockedMcpServers, blockedGithubRepositories]
+      additionalProperties: false
+      properties:
+        blockedMcpServers:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 2048 }
+        blockedGithubRepositories:
+          type: array
+          maxItems: 100
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 500 }
     AssistantModel:
       type: object
       required: [id]

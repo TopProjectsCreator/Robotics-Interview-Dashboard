@@ -4492,6 +4492,65 @@ export const UpdateAssistantToolPolicyResponse = zod.object({
 
 
 /**
+ * @summary Read team-wide MCP and linked repository blocks
+ */
+export const getAssistantIntegrationPolicyResponseAffectedMcpServersItemConnectedAccountsMin = 0;
+
+
+
+export const GetAssistantIntegrationPolicyResponse = zod.object({
+  "blockedMcpServers": zod.array(zod.string()),
+  "blockedGithubRepositories": zod.array(zod.string()),
+  "affectedMcpServers": zod.array(zod.object({
+  "identifier": zod.string(),
+  "connectedAccounts": zod.number().int().min(getAssistantIntegrationPolicyResponseAffectedMcpServersItemConnectedAccountsMin)
+})),
+  "affectedSkills": zod.array(zod.object({
+  "repositoryUrl": zod.string(),
+  "skillNames": zod.array(zod.string())
+})),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Save team-wide MCP and linked repository blocks
+ */
+export const updateAssistantIntegrationPolicyBodyBlockedMcpServersItemMax = 2048;
+
+export const updateAssistantIntegrationPolicyBodyBlockedMcpServersMax = 100;
+
+export const updateAssistantIntegrationPolicyBodyBlockedGithubRepositoriesItemMax = 500;
+
+export const updateAssistantIntegrationPolicyBodyBlockedGithubRepositoriesMax = 100;
+
+
+
+export const UpdateAssistantIntegrationPolicyBody = zod.object({
+  "blockedMcpServers": zod.array(zod.string().min(1).max(updateAssistantIntegrationPolicyBodyBlockedMcpServersItemMax)).max(updateAssistantIntegrationPolicyBodyBlockedMcpServersMax),
+  "blockedGithubRepositories": zod.array(zod.string().min(1).max(updateAssistantIntegrationPolicyBodyBlockedGithubRepositoriesItemMax)).max(updateAssistantIntegrationPolicyBodyBlockedGithubRepositoriesMax)
+})
+
+export const updateAssistantIntegrationPolicyResponseAffectedMcpServersItemConnectedAccountsMin = 0;
+
+
+
+export const UpdateAssistantIntegrationPolicyResponse = zod.object({
+  "blockedMcpServers": zod.array(zod.string()),
+  "blockedGithubRepositories": zod.array(zod.string()),
+  "affectedMcpServers": zod.array(zod.object({
+  "identifier": zod.string(),
+  "connectedAccounts": zod.number().int().min(updateAssistantIntegrationPolicyResponseAffectedMcpServersItemConnectedAccountsMin)
+})),
+  "affectedSkills": zod.array(zod.object({
+  "repositoryUrl": zod.string(),
+  "skillNames": zod.array(zod.string())
+})),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
  * @summary List saved assistant conversations
  */
 export const ListAssistantConversationsResponse = zod.object({

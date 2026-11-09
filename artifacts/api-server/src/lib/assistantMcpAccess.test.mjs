@@ -49,7 +49,7 @@ mock.module("@workspace/db", {
   },
 });
 
-const { createInterviewerSession, requireAdmin } = await import("../middlewares/adminAuth.ts");
+const { createInterviewerSession, requireAdmin, requireCoordinator } = await import("../middlewares/adminAuth.ts");
 const routes = readFileSync(new URL("../routes/robotics.ts", import.meta.url), "utf8");
 
 test("a signed-in non-coordinator passes the authenticated-member gate", async () => {
@@ -85,9 +85,33 @@ test("signed-out MCP management and assistant requests are rejected by authentic
   assert.equal(responseBody.error, "Authentication required");
 });
 
+test("an ordinary member with assistant permissions cannot change integration blocks", async () => {
+  const token = createInterviewerSession("member-a");
+  const req = {
+    cookies: { robotics_admin_session: token },
+    query: {},
+    originalUrl: "/assistant/integration-policy",
+    get: () => undefined,
+    customRolePermissions: ["assistant.manage"],
+    log: { error() {} },
+  };
+  let responseCode = 0;
+  let nextCalled = false;
+  const res = {
+    status(code) { responseCode = code; return this; },
+    json() { return this; },
+  };
+  requireCoordinator(req, res, () => { nextCalled = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(responseCode, 403);
+  assert.equal(nextCalled, false, "custom assistant permissions cannot override the admin-only policy gate");
+});
+
 test("MCP routes and MCP-enabled assistant paths use signed-in access, not coordinator access", () => {
   for (const route of [
     'router.get("/assistant/tools", requireAdmin',
+    'router.get("/assistant/integration-policy", requireCoordinator',
+    'router.put("/assistant/integration-policy", requireCoordinator',
     'router.get("/onshape-mcp/status", requireAdmin',
     'router.get("/onshape-mcp/connect", requireAdmin',
     'router.delete("/onshape-mcp/connection", requireAdmin',

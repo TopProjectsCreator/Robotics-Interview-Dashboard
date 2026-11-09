@@ -10,13 +10,13 @@ import {
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
-   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey, getGetAssistantModelPolicyHistoryQueryKey, getGetAssistantProviderConfigurationQueryKey,
+   getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey, getGetAssistantModelPolicyHistoryQueryKey, getGetAssistantProviderConfigurationQueryKey, getGetAssistantIntegrationPolicyQueryKey,
    getListAssistantConversationsQueryKey, getGetAssistantConversationShareQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
    useAskAssistant, useQueueAssistantPrompt, useStopAssistantPrompt, useGetAssistantPromptQueue, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
-   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation, useGetAssistantModelPolicy, useGetAssistantModelPolicyHistory, useUpdateAssistantModelPolicy,
+   useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation, useGetAssistantModelPolicy, useGetAssistantModelPolicyHistory, useUpdateAssistantModelPolicy, useGetAssistantIntegrationPolicy, useUpdateAssistantIntegrationPolicy,
    useGetAssistantConversationShare, useCreateAssistantConversationShare, useRevokeAssistantConversationShare, useGetPublicAssistantConversation,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
@@ -57,7 +57,7 @@ import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./c
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { TeamNameRulesSettings } from "./components/TeamNameRulesSettings";
 import { accountSetupErrorMessage } from "./lib/auth-error-messages";
-import { AssistantModelPicker, type AssistantModelPolicyView, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
+import { AssistantModelPicker, type AssistantIntegrationPolicyView, type AssistantModelPolicyView, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
 import { AssistantProviderSetup } from "./components/AssistantProviderSetup";
 import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
@@ -8356,6 +8356,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     query: { queryKey: getGetSessionQueryKey() },
   });
   const canManageAssistantTools = canSessionUsePermission(assistantSession.data, "assistant.manage");
+  const canManageAssistantIntegrationPolicy = assistantSession.data?.role === "coordinator" || assistantSession.data?.role === "admin";
   const assistantIdentity = `${assistantSession.data?.interviewerId ?? ""}:${assistantSession.data?.teamId ?? ""}`;
   const assistantIdentityRef = useRef(assistantIdentity);
   assistantIdentityRef.current = assistantIdentity;
@@ -8557,6 +8558,13 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       enabled: assistantSessionReady && canManageAssistantTools && assistantSettingsOpen,
     },
   });
+  const assistantIntegrationPolicy = useGetAssistantIntegrationPolicy({
+    query: {
+      queryKey: [...getGetAssistantIntegrationPolicyQueryKey(), assistantTeamScope],
+      enabled: assistantSessionReady && canManageAssistantIntegrationPolicy && assistantSettingsOpen,
+      refetchInterval: assistantSettingsOpen ? 5 * 60 * 1000 : false,
+    },
+  });
   const updateAssistantModelPolicy = useUpdateAssistantModelPolicy({
     mutation: {
       onSuccess: (policy) => {
@@ -8568,6 +8576,15 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         });
         setSelectedModel(policy.defaultModel);
         try { window.localStorage.setItem("robotics-assistant-model", policy.defaultModel); } catch {}
+      },
+    },
+  });
+  const updateAssistantIntegrationPolicy = useUpdateAssistantIntegrationPolicy({
+    mutation: {
+      onSuccess: (policy) => {
+        queryClient.setQueryData([...getGetAssistantIntegrationPolicyQueryKey(), assistantTeamScope], policy);
+        void queryClient.invalidateQueries({ queryKey: getGetAssistantIntegrationPolicyQueryKey() });
+        void refreshAssistantToolCatalog();
       },
     },
   });
@@ -9593,6 +9610,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             onChange={rememberModel}
             modelLocked={modelLocked}
             canManageAssistantPolicy={canManageAssistantTools}
+            canManageIntegrationPolicy={canManageAssistantIntegrationPolicy}
             catalogModels={assistantModels.data?.catalogItems ?? []}
             modelPolicy={assistantModelPolicy.data as AssistantModelPolicyView | undefined}
             modelPolicyLoading={assistantModelPolicy.isLoading}
@@ -9609,6 +9627,15 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
               ? serverErrorMessage(assistantModelPolicyHistory.error, "Could not load policy history.")
               : ""}
             onSaveModelPolicy={(policy) => updateAssistantModelPolicy.mutate({ data: policy })}
+            integrationPolicy={assistantIntegrationPolicy.data as AssistantIntegrationPolicyView | undefined}
+            integrationPolicyLoading={assistantIntegrationPolicy.isLoading}
+            integrationPolicyError={assistantIntegrationPolicy.isError
+              ? serverErrorMessage(assistantIntegrationPolicy.error, "Could not load the integration policy.")
+              : updateAssistantIntegrationPolicy.isError
+                ? serverErrorMessage(updateAssistantIntegrationPolicy.error, "Integration blocks could not be saved.")
+                : ""}
+            integrationPolicySaving={updateAssistantIntegrationPolicy.isPending}
+            onSaveIntegrationPolicy={(policy) => updateAssistantIntegrationPolicy.mutate({ data: policy })}
             onSettingsOpenChange={(open) => {
               setAssistantSettingsOpen(open);
               if (open) {

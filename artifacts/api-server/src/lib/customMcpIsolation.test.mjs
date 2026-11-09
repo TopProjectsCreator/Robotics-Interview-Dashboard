@@ -20,6 +20,7 @@ process.env.SESSION_SECRET = "custom-mcp-isolation-test-secret-at-least-32";
 const state = {
   connections: new Map(),
   oauthStates: new Map(),
+  policies: new Map(),
   requests: [],
   tokenUpdates: [],
 };
@@ -30,6 +31,10 @@ function parseJson(value) {
 
 const pool = {
   async query(statement, values = []) {
+    if (statement.includes("from assistant_integration_policies")) {
+      const policy = state.policies.get(values[0]);
+      return { rows: policy ? [{ ...policy }] : [], rowCount: policy ? 1 : 0 };
+    }
     if (statement.includes("insert into custom_mcp_oauth_states")) {
       const [id, connectionId, stateHash, accountId, teamId, endpointUrl, resourceUri, clientId, tokenEndpoint,
         authorizationEndpoint, redirectUri, codeVerifier] = values;
@@ -182,6 +187,7 @@ test.after(() => {
 
 test("API-key connections and tool calls remain private to the signed-in account and active team", async () => {
   state.connections.clear();
+  state.policies.clear();
   state.requests.length = 0;
   const firstConnection = await startCustomMcpConnection({
     accountId: "member-a",
@@ -233,9 +239,57 @@ test("API-key connections and tool calls remain private to the signed-in account
   assert.deepEqual((await customMcpStatus("member-a", "team-a")).connections, []);
 });
 
+test("custom MCP bans hide existing tools, block invocation and connection, and restore use when removed", async () => {
+  state.connections.clear();
+  state.policies.clear();
+  state.requests.length = 0;
+  const connectionResult = await startCustomMcpConnection({
+    accountId: "member-policy",
+    teamId: "team-policy",
+    endpointUrl: "https://example.com/apikey",
+    redirectUri: "https://robotics.test/api/assistant/custom-mcp/callback",
+    apiKey: "private-api-key",
+    apiKeyHeader: "X-API-Key",
+  });
+  const binding = (await listCustomMcpTools("member-policy", "team-policy")).bindings.values().next().value;
+  assert.ok(binding);
+  const requestCount = state.requests.length;
+  state.policies.set("team-policy", {
+    blocked_mcp_servers: ["https://example.com/apikey"],
+    blocked_github_repositories: [],
+    updated_at: new Date(),
+  });
+  assert.deepEqual((await listCustomMcpTools("member-policy", "team-policy")).tools, []);
+  assert.equal(state.requests.length, requestCount, "blocked discovery does not contact the server");
+  await assert.rejects(
+    callCustomMcpTool("member-policy", "team-policy", binding.connectionId, binding.toolName, {}),
+    /blocked by your team admin/,
+  );
+  const beforeBlockedConnect = state.requests.length;
+  await assert.rejects(
+    startCustomMcpConnection({
+      accountId: "member-policy",
+      teamId: "team-policy",
+      endpointUrl: "https://example.com/apikey",
+      redirectUri: "https://robotics.test/api/assistant/custom-mcp/callback",
+      apiKey: "private-api-key",
+      apiKeyHeader: "X-API-Key",
+    }),
+    /blocked by your team admin/,
+  );
+  assert.equal(state.requests.length, beforeBlockedConnect, "a blocked new connection is rejected before probing");
+  state.policies.delete("team-policy");
+  assert.equal((await listCustomMcpTools("member-policy", "team-policy")).tools.length, 1);
+  assert.equal(
+    await callCustomMcpTool("member-policy", "team-policy", connectionResult.connectionId, "shared_tool", {}),
+    "first-server result",
+  );
+});
+
 test("custom MCP OAuth state keeps the initiating account and team as callback owner", async () => {
   state.connections.clear();
   state.oauthStates.clear();
+  state.policies.clear();
   state.tokenUpdates.length = 0;
   const result = await startCustomMcpConnection({
     accountId: "member-oauth",
@@ -272,4 +326,35 @@ test("custom MCP OAuth state keeps the initiating account and team as callback o
   assert.deepEqual(state.tokenUpdates, [expiring.id], "refresh updates only the matching connection row");
   assert.deepEqual(await customMcpStatus("other-member", "team-oauth"), { connections: [] });
   await assert.rejects(finishCustomMcpAuthorization({ state: returnedState, code: "replay" }), /expired or was already used/);
+});
+
+test("custom MCP OAuth completion rejects a server blocked after authorization began", async () => {
+  state.connections.clear();
+  state.oauthStates.clear();
+  state.policies.clear();
+  state.requests.length = 0;
+  const started = await startCustomMcpConnection({
+    accountId: "member-oauth-policy",
+    teamId: "team-oauth-policy",
+    endpointUrl: "https://example.com/oauth",
+    redirectUri: "https://robotics.test/api/assistant/custom-mcp/callback",
+  });
+  const oauthState = new URL(started.authorizationUrl).searchParams.get("state");
+  assert.ok(oauthState);
+  const tokenRequestsBeforeBlock = state.requests.filter((request) => request.url === "https://example.com/token").length;
+  state.policies.set("team-oauth-policy", {
+    blocked_mcp_servers: ["https://example.com/oauth"],
+    blocked_github_repositories: [],
+    updated_at: new Date(),
+  });
+  await assert.rejects(
+    finishCustomMcpAuthorization({ state: oauthState, code: "oauth-code" }),
+    /blocked by your team admin/,
+  );
+  assert.equal(
+    state.requests.filter((request) => request.url === "https://example.com/token").length,
+    tokenRequestsBeforeBlock,
+    "the callback does not exchange credentials after a new ban",
+  );
+  assert.deepEqual(await customMcpStatus("member-oauth-policy", "team-oauth-policy"), { connections: [] });
 });

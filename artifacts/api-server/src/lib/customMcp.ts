@@ -8,6 +8,11 @@ import {
 import { isIP } from "node:net";
 import { lookup } from "node:dns/promises";
 import { pool } from "@workspace/db";
+import {
+  getAssistantIntegrationPolicy,
+  isMcpServerBlocked,
+  normalizeMcpServerIdentifier,
+} from "./assistantIntegrationPolicy";
 
 const FETCH_TIMEOUT_MS = 20_000;
 const MAX_RESULT_CHARS = 18_000;
@@ -411,7 +416,15 @@ export async function startCustomMcpConnection(input: {
   accountId: string; teamId: string; endpointUrl: string; redirectUri: string;
   apiKey?: string; apiKeyHeader?: string; apiKeyPrefix?: string;
 }) {
+  const requestedIdentifier = normalizeMcpServerIdentifier(input.endpointUrl);
+  if (!requestedIdentifier) throw new Error("Enter a valid HTTPS MCP endpoint URL.");
+  if (isMcpServerBlocked(await getAssistantIntegrationPolicy(input.teamId), requestedIdentifier)) {
+    throw new Error("This MCP server is blocked by your team admin. Ask an admin to remove the block before connecting.");
+  }
   const endpointUrl = await validateCustomMcpEndpoint(input.endpointUrl.trim());
+  if (isMcpServerBlocked(await getAssistantIntegrationPolicy(input.teamId), endpointUrl)) {
+    throw new Error("This MCP server is blocked by your team admin. Ask an admin to remove the block before connecting.");
+  }
   const connectionId = randomUUID();
   const apiKeyHeader = input.apiKeyHeader?.trim() || "X-API-Key";
   const apiKeyPrefix = input.apiKeyPrefix?.trim() || "";
@@ -542,6 +555,10 @@ export async function finishCustomMcpAuthorization(input: { state: string; code:
     redirect_uri: string; code_verifier: EncryptedValue | string;
   } | undefined;
   if (!row) throw new Error("The MCP sign-in request expired or was already used.");
+  const integrationPolicy = await getAssistantIntegrationPolicy(row.team_id);
+  if (isMcpServerBlocked(integrationPolicy, row.endpoint_url)) {
+    throw new Error("This MCP server was blocked by your team admin before sign-in completed. Ask an admin to remove the block before reconnecting.");
+  }
   const verifier = decrypt(typeof row.code_verifier === "string" ? JSON.parse(row.code_verifier) as EncryptedValue : row.code_verifier);
   const response = await fetch(row.token_endpoint, {
     method: "POST", redirect: "error",
@@ -582,7 +599,9 @@ export async function listCustomMcpTools(accountId: string, teamId: string): Pro
   let hasErrors = false;
   const discovered: { row: ConnectionRow; tool: McpTool; toolSuffix: string }[] = [];
   const rows = await connections(accountId, teamId);
+  const integrationPolicy = await getAssistantIntegrationPolicy(teamId);
   for (const row of rows) {
+    if (isMcpServerBlocked(integrationPolicy, row.endpoint_url)) continue;
     try {
       const endpoint = await validateCustomMcpEndpoint(row.endpoint_url);
       const accessToken = await tokenFor(accountId, teamId, row);
@@ -632,6 +651,9 @@ export async function callCustomMcpTool(
 ): Promise<string> {
   const row = await connection(accountId, teamId, connectionId);
   if (!row) throw new Error("Custom MCP is not connected.");
+  if (isMcpServerBlocked(await getAssistantIntegrationPolicy(teamId), row.endpoint_url)) {
+    throw new Error("This MCP server is blocked by your team admin and cannot be used.");
+  }
   const endpoint = await validateCustomMcpEndpoint(row.endpoint_url);
   const accessToken = await tokenFor(accountId, teamId, row);
   const apiKey = row.api_key ? decryptValue(row.api_key) : undefined;

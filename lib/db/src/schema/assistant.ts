@@ -178,6 +178,13 @@ export const assistantToolPoliciesTable = pgTable("assistant_tool_policies", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
+export const assistantIntegrationPoliciesTable = pgTable("assistant_integration_policies", {
+  teamId: text("team_id").primaryKey(),
+  blockedMcpServers: jsonb("blocked_mcp_servers").$type<string[]>().notNull().default([]),
+  blockedGithubRepositories: jsonb("blocked_github_repositories").$type<string[]>().notNull().default([]),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const assistantScheduledTasksTable = pgTable("assistant_scheduled_tasks", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull(),

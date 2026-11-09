@@ -3520,6 +3520,41 @@ export interface AssistantToolPolicyInput {
   roleDisabledTools: AssistantToolPolicyInputRoleDisabledTools;
 }
 
+export interface AssistantIntegrationMcpImpact {
+  identifier: string;
+  /** @minimum 0 */
+  connectedAccounts: number;
+}
+
+export interface AssistantIntegrationSkillImpact {
+  repositoryUrl: string;
+  skillNames: string[];
+}
+
+export interface AssistantIntegrationPolicy {
+  blockedMcpServers: string[];
+  blockedGithubRepositories: string[];
+  affectedMcpServers: AssistantIntegrationMcpImpact[];
+  affectedSkills: AssistantIntegrationSkillImpact[];
+  /** @nullable */
+  updatedAt: string | null;
+}
+
+export interface AssistantIntegrationPolicyInput {
+  /**
+     * @maxItems 100
+     * @items.minLength 1
+     * @items.maxLength 2048
+     */
+  blockedMcpServers: string[];
+  /**
+     * @maxItems 100
+     * @items.minLength 1
+     * @items.maxLength 500
+     */
+  blockedGithubRepositories: string[];
+}
+
 export type AssistantModelThinkingLevelsItem = typeof AssistantModelThinkingLevelsItem[keyof typeof AssistantModelThinkingLevelsItem];
 
 

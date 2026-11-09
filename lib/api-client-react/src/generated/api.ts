@@ -38,6 +38,8 @@ import type {
   AssistantConversationUpdate,
   AssistantHistory,
   AssistantInput,
+  AssistantIntegrationPolicy,
+  AssistantIntegrationPolicyInput,
   AssistantModelList,
   AssistantModelPolicy,
   AssistantModelPolicyHistory,
@@ -11877,6 +11879,154 @@ export const useUpdateAssistantToolPolicy = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateAssistantToolPolicyMutationOptions(options));
+    }
+
+export const getGetAssistantIntegrationPolicyUrl = () => {
+
+
+
+
+  return `/api/assistant/integration-policy`
+}
+
+/**
+ * @summary Read team-wide MCP and linked repository blocks
+ */
+export const getAssistantIntegrationPolicy = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantIntegrationPolicy> => {
+
+  return customFetch<AssistantIntegrationPolicy>(getGetAssistantIntegrationPolicyUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantIntegrationPolicyQueryKey = () => {
+    return [
+    `/api/assistant/integration-policy`
+    ] as const;
+    }
+
+
+export const getGetAssistantIntegrationPolicyQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantIntegrationPolicy>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantIntegrationPolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantIntegrationPolicyQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantIntegrationPolicy>>> = ({ signal }) => getAssistantIntegrationPolicy({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantIntegrationPolicy>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantIntegrationPolicyQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantIntegrationPolicy>>>
+export type GetAssistantIntegrationPolicyQueryError = ErrorType<void>
+
+
+/**
+ * @summary Read team-wide MCP and linked repository blocks
+ */
+
+export function useGetAssistantIntegrationPolicy<TData = Awaited<ReturnType<typeof getAssistantIntegrationPolicy>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantIntegrationPolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantIntegrationPolicyQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAssistantIntegrationPolicyUrl = () => {
+
+
+
+
+  return `/api/assistant/integration-policy`
+}
+
+/**
+ * @summary Save team-wide MCP and linked repository blocks
+ */
+export const updateAssistantIntegrationPolicy = async (assistantIntegrationPolicyInput: AssistantIntegrationPolicyInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantIntegrationPolicy> => {
+
+  return customFetch<AssistantIntegrationPolicy>(getUpdateAssistantIntegrationPolicyUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantIntegrationPolicyInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAssistantIntegrationPolicyMutationOptions = <TError = ErrorType<ErrorResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantIntegrationPolicy>>, TError,{data: BodyType<AssistantIntegrationPolicyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAssistantIntegrationPolicy>>, TError,{data: BodyType<AssistantIntegrationPolicyInput>}, TContext> => {
+
+const mutationKey = ['updateAssistantIntegrationPolicy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAssistantIntegrationPolicy>>, {data: BodyType<AssistantIntegrationPolicyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAssistantIntegrationPolicy(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAssistantIntegrationPolicyMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssistantIntegrationPolicy>>>
+    export type UpdateAssistantIntegrationPolicyMutationBody = BodyType<AssistantIntegrationPolicyInput>
+    export type UpdateAssistantIntegrationPolicyMutationError = ErrorType<ErrorResponse | void>
+
+    /**
+ * @summary Save team-wide MCP and linked repository blocks
+ */
+export const useUpdateAssistantIntegrationPolicy = <TError = ErrorType<ErrorResponse | void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantIntegrationPolicy>>, TError,{data: BodyType<AssistantIntegrationPolicyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAssistantIntegrationPolicy>>,
+        TError,
+        {data: BodyType<AssistantIntegrationPolicyInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateAssistantIntegrationPolicyMutationOptions(options));
     }
 
 export const getListAssistantConversationsUrl = () => {

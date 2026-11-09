@@ -44,6 +44,7 @@ function repositoryFetcher(treeEntries = [
 
 test("public GitHub repository URLs are normalized and restricted to the exact supported host", () => {
   assert.equal(normalizePublicGitHubRepositoryUrl("https://github.com/example/guide.git/"), repositoryUrl);
+  assert.equal(normalizePublicGitHubRepositoryUrl("HTTPS://GITHUB.COM/Example/Guide.git/"), repositoryUrl);
   for (const invalid of [
     "http://github.com/example/guide",
     "https://github.com.evil.example/example/guide",

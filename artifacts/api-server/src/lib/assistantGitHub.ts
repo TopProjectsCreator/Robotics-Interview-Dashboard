@@ -30,7 +30,7 @@ export function createGitHubRepositoryAccessState(): GitHubRepositoryAccessState
 
 export function normalizePublicGitHubRepositoryUrl(value: unknown): string | null {
   if (typeof value !== "string" || value.length > 500) return null;
-  if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/.test(value)) return null;
+  if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?\/?$/i.test(value)) return null;
   try {
     const url = new URL(value);
     if (
@@ -48,7 +48,7 @@ export function normalizePublicGitHubRepositoryUrl(value: unknown): string | nul
     let repo = match[2]!;
     if (repo.toLowerCase().endsWith(".git")) repo = repo.slice(0, -4);
     if (!owner || !repo || owner === "." || owner === ".." || repo === "." || repo === "..") return null;
-    return `https://github.com/${owner}/${repo}`;
+    return `https://github.com/${owner.toLowerCase()}/${repo.toLowerCase()}`;
   } catch {
     return null;
   }

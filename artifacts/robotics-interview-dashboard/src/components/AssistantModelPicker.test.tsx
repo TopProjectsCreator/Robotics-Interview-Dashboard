@@ -706,4 +706,55 @@ describe("AssistantModelPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Disconnect Onshape" }));
     expect(onDisconnectOnshape).toHaveBeenCalledOnce();
   });
+
+  it("lets team admins save MCP and linked-repository blocks with impact feedback", async () => {
+    const onSaveIntegrationPolicy = vi.fn();
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        canManageIntegrationPolicy
+        integrationPolicy={{
+          blockedMcpServers: ["onshape"],
+          blockedGithubRepositories: ["https://github.com/team/guide"],
+          affectedMcpServers: [{ identifier: "onshape", connectedAccounts: 2 }],
+          affectedSkills: [{ repositoryUrl: "https://github.com/team/guide", skillNames: ["Interview review"] }],
+          updatedAt: null,
+        }}
+        onSaveIntegrationPolicy={onSaveIntegrationPolicy}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByTestId("assistant-integration-policy")).toHaveTextContent("2 connected accounts affected");
+    expect(screen.getByTestId("assistant-integration-policy")).toHaveTextContent("disables Interview review");
+    fireEvent.change(screen.getByLabelText("MCP server to block"), { target: { value: "https://tools.example/mcp" } });
+    fireEvent.click(screen.getByTestId("assistant-block-mcp-add"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove repository block https://github.com/team/guide" }));
+    fireEvent.click(screen.getByTestId("assistant-integration-policy-save"));
+
+    expect(onSaveIntegrationPolicy).toHaveBeenCalledWith({
+      blockedMcpServers: ["onshape", "https://tools.example/mcp"],
+      blockedGithubRepositories: [],
+    });
+  });
+
+  it("does not expose integration policy editing to non-admin assistant tool managers", async () => {
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        canManageAssistantPolicy
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    expect(await screen.findByTestId("assistant-model-policy")).toBeInTheDocument();
+    expect(screen.queryByTestId("assistant-integration-policy")).not.toBeInTheDocument();
+  });
 });

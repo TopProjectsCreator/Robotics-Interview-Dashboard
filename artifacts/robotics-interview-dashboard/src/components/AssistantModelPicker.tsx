@@ -49,6 +49,13 @@ export type AssistantModelPolicyHistoryEntryView = {
 
 export type AssistantThinkingLevel = "auto" | "low" | "medium" | "high";
 export type CustomMcpConnectionItem = { id: string; endpointUrl: string };
+export type AssistantIntegrationPolicyView = {
+  blockedMcpServers: string[];
+  blockedGithubRepositories: string[];
+  affectedMcpServers: { identifier: string; connectedAccounts: number }[];
+  affectedSkills: { repositoryUrl: string; skillNames: string[] }[];
+  updatedAt: string | null;
+};
 
 type AssistantModelPickerProps = {
   model: string;
@@ -58,6 +65,7 @@ type AssistantModelPickerProps = {
   onChange: (model: string) => void;
   modelLocked?: boolean;
   canManageAssistantPolicy?: boolean;
+  canManageIntegrationPolicy?: boolean;
   catalogModels?: AssistantModelOption[];
   modelPolicy?: AssistantModelPolicyView;
   modelPolicyLoading?: boolean;
@@ -67,6 +75,11 @@ type AssistantModelPickerProps = {
   modelPolicyHistoryLoading?: boolean;
   modelPolicyHistoryError?: string;
   onSaveModelPolicy?: (policy: Omit<AssistantModelPolicyView, "availableModelIds">) => void;
+  integrationPolicy?: AssistantIntegrationPolicyView;
+  integrationPolicyLoading?: boolean;
+  integrationPolicyError?: string;
+  integrationPolicySaving?: boolean;
+  onSaveIntegrationPolicy?: (policy: Pick<AssistantIntegrationPolicyView, "blockedMcpServers" | "blockedGithubRepositories">) => void;
   onSettingsOpenChange?: (open: boolean) => void;
   showRecurringTasks?: boolean;
   canManageAssistantTools?: boolean;
@@ -106,6 +119,7 @@ export function AssistantModelPicker({
   onChange,
   modelLocked = false,
   canManageAssistantPolicy = false,
+  canManageIntegrationPolicy = false,
   catalogModels = [],
   modelPolicy,
   modelPolicyLoading = false,
@@ -115,6 +129,11 @@ export function AssistantModelPicker({
   modelPolicyHistoryLoading = false,
   modelPolicyHistoryError = "",
   onSaveModelPolicy,
+  integrationPolicy,
+  integrationPolicyLoading = false,
+  integrationPolicyError = "",
+  integrationPolicySaving = false,
+  onSaveIntegrationPolicy,
   onSettingsOpenChange,
   showRecurringTasks = false,
   canManageAssistantTools = true,
@@ -150,6 +169,10 @@ export function AssistantModelPicker({
   const [policyLocked, setPolicyLocked] = useState(false);
   const [policyMode, setPolicyMode] = useState<"none" | "allow" | "block">("none");
   const [policyIdsText, setPolicyIdsText] = useState("");
+  const [blockedMcpServers, setBlockedMcpServers] = useState<string[]>([]);
+  const [blockedGithubRepositories, setBlockedGithubRepositories] = useState<string[]>([]);
+  const [mcpBlockDraft, setMcpBlockDraft] = useState("");
+  const [githubBlockDraft, setGithubBlockDraft] = useState("");
   useEffect(() => {
     if (!modelPolicy) return;
     setPolicyDefault(modelPolicy.defaultModel);
@@ -157,6 +180,10 @@ export function AssistantModelPicker({
     setPolicyMode(modelPolicy.listMode ?? "none");
     setPolicyIdsText(Array.isArray(modelPolicy.modelIds) ? modelPolicy.modelIds.join("\n") : "");
   }, [modelPolicy]);
+  useEffect(() => {
+    setBlockedMcpServers(integrationPolicy?.blockedMcpServers ?? []);
+    setBlockedGithubRepositories(integrationPolicy?.blockedGithubRepositories ?? []);
+  }, [integrationPolicy]);
   const policyIds = useMemo(
     () => [...new Set(policyIdsText.split(/[\n,]+/).map((value) => value.trim()).filter(Boolean))],
     [policyIdsText],
@@ -479,6 +506,104 @@ export function AssistantModelPicker({
                         </li>
                       ))}
                     </ol>}
+            </section>}
+            {canManageIntegrationPolicy && <section className="assistant-integration-policy" aria-label="Blocked integrations policy" data-testid="assistant-integration-policy">
+              <div className="assistant-model-policy-heading">
+                <div>
+                  <p className="assistant-onshape-setting-title">Blocked integrations and skills</p>
+                  <p className="assistant-onshape-setting-status">Team-wide safety blocks. These remain active regardless of assistant tool settings.</p>
+                </div>
+              </div>
+              <p className="assistant-model-policy-note">
+                Block Onshape with <code>onshape</code>, or paste the exact HTTPS URL of a custom MCP endpoint. Blocking a public GitHub repository disables every linked team skill, including its guidance and approved actions. Saved connections and skills are kept; removing a block restores use.
+              </p>
+              {integrationPolicyLoading
+                ? <p className="assistant-model-policy-note" role="status">Loading integration policy…</p>
+                : <>
+                  <div className="assistant-integration-policy-entry">
+                    <label className="assistant-model-policy-field">
+                      MCP server identifier
+                      <input
+                        value={mcpBlockDraft}
+                        onChange={(event) => setMcpBlockDraft(event.target.value)}
+                        placeholder="onshape or https://example.com/mcp"
+                        aria-label="MCP server to block"
+                        data-testid="assistant-block-mcp-input"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="assistant-onshape-setting-action"
+                      onClick={() => {
+                        const value = mcpBlockDraft.trim();
+                        if (value && !blockedMcpServers.includes(value)) setBlockedMcpServers([...blockedMcpServers, value]);
+                        setMcpBlockDraft("");
+                      }}
+                      disabled={!mcpBlockDraft.trim()}
+                      data-testid="assistant-block-mcp-add"
+                    >Add MCP block</button>
+                  </div>
+                  <div className="assistant-integration-policy-entry">
+                    <label className="assistant-model-policy-field">
+                      Public GitHub repository
+                      <input
+                        type="url"
+                        value={githubBlockDraft}
+                        onChange={(event) => setGithubBlockDraft(event.target.value)}
+                        placeholder="https://github.com/owner/repository"
+                        aria-label="GitHub repository to block"
+                        data-testid="assistant-block-github-input"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="assistant-onshape-setting-action"
+                      onClick={() => {
+                        const value = githubBlockDraft.trim();
+                        if (value && !blockedGithubRepositories.includes(value)) setBlockedGithubRepositories([...blockedGithubRepositories, value]);
+                        setGithubBlockDraft("");
+                      }}
+                      disabled={!githubBlockDraft.trim()}
+                      data-testid="assistant-block-github-add"
+                    >Add repository block</button>
+                  </div>
+                  <div className="assistant-integration-policy-lists">
+                    <div>
+                      <strong>MCP blocks</strong>
+                      {blockedMcpServers.length === 0
+                        ? <p className="assistant-model-policy-note">No MCP servers are blocked.</p>
+                        : <ul>{blockedMcpServers.map((identifier) => {
+                          const impact = integrationPolicy?.affectedMcpServers.find((item) => item.identifier === identifier);
+                          return <li key={identifier}>
+                            <span><code>{identifier}</code>{impact ? ` · ${impact.connectedAccounts} connected account${impact.connectedAccounts === 1 ? "" : "s"} affected` : ""}</span>
+                            <button type="button" aria-label={`Remove MCP block ${identifier}`} onClick={() => setBlockedMcpServers(blockedMcpServers.filter((item) => item !== identifier))}>Remove</button>
+                          </li>;
+                        })}</ul>}
+                    </div>
+                    <div>
+                      <strong>GitHub repository blocks</strong>
+                      {blockedGithubRepositories.length === 0
+                        ? <p className="assistant-model-policy-note">No linked skill repositories are blocked.</p>
+                        : <ul>{blockedGithubRepositories.map((repositoryUrl) => {
+                          const impact = integrationPolicy?.affectedSkills.find((item) => item.repositoryUrl === repositoryUrl);
+                          return <li key={repositoryUrl}>
+                            <span><code>{repositoryUrl}</code>{impact?.skillNames.length
+                              ? ` · disables ${impact.skillNames.join(", ")}`
+                              : " · no linked skills currently affected"}</span>
+                            <button type="button" aria-label={`Remove repository block ${repositoryUrl}`} onClick={() => setBlockedGithubRepositories(blockedGithubRepositories.filter((item) => item !== repositoryUrl))}>Remove</button>
+                          </li>;
+                        })}</ul>}
+                    </div>
+                  </div>
+                  {integrationPolicyError && <p role="alert" className="assistant-model-policy-error">{integrationPolicyError}</p>}
+                  <button
+                    type="button"
+                    className="assistant-onshape-setting-action"
+                    onClick={() => onSaveIntegrationPolicy?.({ blockedMcpServers, blockedGithubRepositories })}
+                    disabled={integrationPolicySaving}
+                    data-testid="assistant-integration-policy-save"
+                  >{integrationPolicySaving ? "Saving…" : "Save integration blocks"}</button>
+                </>}
             </section>}
             {(onConnectOnshape || onDisconnectOnshape) && (
               <section className="assistant-onshape-setting" aria-label="Onshape connection" data-testid="assistant-onshape-setting">

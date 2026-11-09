@@ -6,6 +6,7 @@ import {
   randomUUID,
 } from "node:crypto";
 import { pool } from "@workspace/db";
+import { getAssistantIntegrationPolicy, isMcpServerBlocked, ON_SHAPE_MCP_SERVER_ID } from "./assistantIntegrationPolicy";
 
 const MCP_URL = "https://fs-mcp.labs.onshape.app/mcp";
 const AUTH_URL = "https://mcp-auth.labs.onshape.app";
@@ -14,6 +15,12 @@ const OAUTH_METADATA_URL = `${AUTH_URL}/.well-known/oauth-authorization-server`;
 const REQUESTED_SCOPES = ["OAuth2Read", "OAuth2Write"];
 const MAX_TOOL_RESULT_CHARS = 18_000;
 const FETCH_TIMEOUT_MS = 30_000;
+
+async function assertOnshapeAllowed(teamId: string): Promise<void> {
+  if (isMcpServerBlocked(await getAssistantIntegrationPolicy(teamId), ON_SHAPE_MCP_SERVER_ID)) {
+    throw new Error("Onshape is blocked by your team admin. Ask an admin to remove the block before connecting or using it.");
+  }
+}
 
 type OAuthMetadata = {
   authorization_endpoint: string;
@@ -139,6 +146,7 @@ export async function beginOnshapeAuthorization(input: {
   redirectUri: string;
   returnOrigin: string;
 }): Promise<{ authorizationUrl: string }> {
+  await assertOnshapeAllowed(input.teamId);
   const metadata = await oauthMetadata();
   const clientId = await registerClient(input.redirectUri);
   await pool.query(`delete from onshape_mcp_oauth_states where created_at < now() - interval '15 minutes'`);
@@ -192,6 +200,7 @@ export async function finishOnshapeAuthorization(input: {
     return_origin: string;
   } | undefined;
   if (!row) throw new Error("The Onshape sign-in request expired or was already used.");
+  await assertOnshapeAllowed(row.team_id);
 
   const metadata = await oauthMetadata();
   const verifier = typeof row.code_verifier === "string"
@@ -373,6 +382,9 @@ export async function listOnshapeMcpTools(accountId: string, teamId: string): Pr
   tools: OnshapeMcpTool[];
   bindings: Map<string, OnshapeToolBinding>;
 }> {
+  if (isMcpServerBlocked(await getAssistantIntegrationPolicy(teamId), ON_SHAPE_MCP_SERVER_ID)) {
+    return { tools: [], bindings: new Map() };
+  }
   const accessToken = await getAccessToken(accountId, teamId);
   if (!accessToken) return { tools: [], bindings: new Map() };
   return withMcpSession(accountId, teamId, accessToken, async (session) => {
@@ -419,6 +431,7 @@ export async function callOnshapeMcpTool(
   toolName: string,
   args: Record<string, unknown>,
 ): Promise<string> {
+  await assertOnshapeAllowed(teamId);
   const accessToken = await getAccessToken(accountId, teamId);
   if (!accessToken) throw new Error("Onshape is not connected. Connect Onshape in the assistant first.");
   return withMcpSession(accountId, teamId, accessToken, async (session) => {

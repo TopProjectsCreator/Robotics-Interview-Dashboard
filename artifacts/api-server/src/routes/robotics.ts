@@ -320,6 +320,16 @@ import {
   type AssistantSkillForRuntime,
 } from "../lib/assistantSkills";
 import {
+  getAssistantIntegrationPolicy,
+  isMcpServerBlocked,
+  normalizeBlockedGithubRepositories,
+  normalizeBlockedMcpServers,
+  normalizeMcpServerIdentifier,
+  ON_SHAPE_MCP_SERVER_ID,
+  saveAssistantIntegrationPolicy,
+  withoutBlockedGithubSkills,
+} from "../lib/assistantIntegrationPolicy";
+import {
   ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME,
   buildGitHubRepositoryTool,
   createGitHubRepositoryAccessState,
@@ -1953,6 +1963,7 @@ const APPROVED_ASSISTANT_SKILL_ACTIONS = new Set(
 const MAX_CHAT_AI_REPLY_CHARS = 50_000;
 
 async function getEnabledAssistantSkills(teamId: string): Promise<AssistantSkillForRuntime[]> {
+  const integrationPolicy = await getAssistantIntegrationPolicy(teamId);
   const rows = await db.select({
     name: assistantSkillsTable.name,
     description: assistantSkillsTable.description,
@@ -1961,12 +1972,13 @@ async function getEnabledAssistantSkills(teamId: string): Promise<AssistantSkill
     githubRepositoryUrl: assistantSkillsTable.githubRepositoryUrl,
   }).from(assistantSkillsTable)
     .where(and(eq(assistantSkillsTable.enabled, true), teamFilter(assistantSkillsTable.teamId, teamId)));
-  return rows.map((row) => ({
+  const skills = rows.map((row) => ({
     ...row,
     actions: row.actions.filter((action) =>
       APPROVED_ASSISTANT_SKILL_ACTIONS.has(action) || CUSTOM_WORKSPACE_TOOL_NAME_PATTERN.test(action),
     ),
   }));
+  return withoutBlockedGithubSkills(skills, integrationPolicy);
 }
 
 function assistantToolsForRequest(
@@ -9915,7 +9927,10 @@ router.get("/assistant/custom-mcp/callback", async (req, res): Promise<void> => 
     res.type("html").send("<!doctype html><title>MCP connected</title><p>MCP server connected. You can close this window and return to the assistant.</p>");
   } catch (error) {
     req.log.warn({ err: error }, "Custom MCP OAuth callback failed");
-    res.status(400).type("html").send("<!doctype html><title>MCP connection</title><p>MCP server could not be connected. Close this window and try again.</p>");
+    const message = error instanceof Error && error.message.includes("blocked by your team admin")
+      ? "This MCP server was blocked by your team admin before sign-in completed. Ask an admin to remove the block, then reconnect."
+      : "MCP server could not be connected. Close this window and try again.";
+    res.status(400).type("html").send(`<!doctype html><title>MCP connection</title><p>${message}</p>`);
   }
 });
 
@@ -9957,8 +9972,10 @@ router.get("/onshape-mcp/connect", requireAdmin, async (req, res): Promise<void>
   } catch (error) {
     req.log.error({ err: error }, "Could not start Onshape authorization");
     const detail = error instanceof Error ? error.message : "";
-    const publicError = detail.startsWith("Onshape client registration returned")
+    const publicError = detail.includes("blocked by your team admin")
       ? detail
+      : detail.startsWith("Onshape client registration returned")
+        ? detail
       : detail.includes("SESSION_SECRET")
         ? "Onshape connection encryption is not configured on the server."
         : "Onshape sign-in could not be started. Try again; the server logged the setup error.";
@@ -9980,7 +9997,10 @@ router.get("/onshape-mcp/callback", async (req, res): Promise<void> => {
     res.type("html").send("<!doctype html><meta charset=\"utf-8\"><title>Onshape connected</title><p>Onshape is connected. You can close this window and return to the assistant.</p>");
   } catch (error) {
     req.log.warn({ err: error }, "Onshape authorization callback failed");
-    res.status(400).type("html").send("<!doctype html><meta charset=\"utf-8\"><title>Onshape connection</title><p>Onshape could not be connected. Close this window and try again.</p>");
+    const message = error instanceof Error && error.message.includes("blocked by your team admin")
+      ? "Onshape was blocked by your team admin before sign-in completed. Ask an admin to remove the block, then reconnect."
+      : "Onshape could not be connected. Close this window and try again.";
+    res.status(400).type("html").send(`<!doctype html><meta charset="utf-8"><title>Onshape connection</title><p>${message}</p>`);
   }
 });
 
@@ -10287,6 +10307,72 @@ router.get("/assistant/tool-policy", requireCoordinator, async (req, res): Promi
     roles: roleOptions,
     updatedAt: row?.updatedAt ?? null,
   }));
+});
+
+async function assistantIntegrationPolicyResponse(teamId: string) {
+  const policy = await getAssistantIntegrationPolicy(teamId);
+  const [customConnections, onshapeConnections, linkedSkills] = await Promise.all([
+    pool.query(
+      `select endpoint_url, count(distinct account_id)::int as account_count
+         from custom_mcp_connections where team_id = $1 group by endpoint_url`,
+      [teamId],
+    ),
+    pool.query(
+      `select count(distinct account_id)::int as account_count
+         from onshape_mcp_connections where team_id = $1`,
+      [teamId],
+    ),
+    db.select({
+      name: assistantSkillsTable.name,
+      githubRepositoryUrl: assistantSkillsTable.githubRepositoryUrl,
+    }).from(assistantSkillsTable).where(eq(assistantSkillsTable.teamId, teamId)),
+  ]);
+  const connectionCounts = new Map<string, number>();
+  for (const row of customConnections.rows as { endpoint_url: string; account_count: number }[]) {
+    const identifier = normalizeMcpServerIdentifier(row.endpoint_url);
+    if (identifier) connectionCounts.set(identifier, row.account_count);
+  }
+  connectionCounts.set(ON_SHAPE_MCP_SERVER_ID, Number(onshapeConnections.rows[0]?.account_count ?? 0));
+  const impactedSkills = new Map<string, string[]>();
+  const blockedRepositories = new Set(policy.blockedGithubRepositories);
+  for (const skill of linkedSkills) {
+    const repositoryUrl = skill.githubRepositoryUrl
+      ? normalizeBlockedGithubRepositories([skill.githubRepositoryUrl])?.[0]
+      : undefined;
+    if (!repositoryUrl || !blockedRepositories.has(repositoryUrl)) continue;
+    impactedSkills.set(repositoryUrl, [...(impactedSkills.get(repositoryUrl) ?? []), skill.name]);
+  }
+  return {
+    blockedMcpServers: policy.blockedMcpServers,
+    blockedGithubRepositories: policy.blockedGithubRepositories,
+    affectedMcpServers: policy.blockedMcpServers.map((identifier) => ({
+      identifier,
+      connectedAccounts: connectionCounts.get(identifier) ?? 0,
+    })),
+    affectedSkills: [...impactedSkills.entries()].map(([repositoryUrl, skillNames]) => ({
+      repositoryUrl,
+      skillNames: skillNames.sort((a, b) => a.localeCompare(b)),
+    })),
+    updatedAt: policy.updatedAt?.toISOString() ?? null,
+  };
+}
+
+router.get("/assistant/integration-policy", requireCoordinator, async (req, res): Promise<void> => {
+  res.json(await assistantIntegrationPolicyResponse(await requestTeamId(req)));
+});
+
+router.put("/assistant/integration-policy", requireCoordinator, async (req, res): Promise<void> => {
+  const blockedMcpServers = normalizeBlockedMcpServers(req.body?.blockedMcpServers);
+  const blockedGithubRepositories = normalizeBlockedGithubRepositories(req.body?.blockedGithubRepositories);
+  if (!blockedMcpServers || !blockedGithubRepositories) {
+    res.status(400).json({
+      error: "Use unique MCP identifiers (onshape or an HTTPS endpoint URL) and public GitHub repository URLs.",
+    });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  await saveAssistantIntegrationPolicy(teamId, { blockedMcpServers, blockedGithubRepositories });
+  res.json(await assistantIntegrationPolicyResponse(teamId));
 });
 
 router.put("/assistant/tool-policy", requireCoordinator, async (req, res): Promise<void> => {
