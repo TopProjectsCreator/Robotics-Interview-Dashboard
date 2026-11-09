@@ -65,18 +65,15 @@ app.use(
     },
   }),
 );
-// The dashboard can be hosted inside a coordinator's iframe. Reflect the
-// embedding origin so browser requests are allowed to include the session
-// cookie, while keeping the API usable from the same-origin preview too.
-// In production, set ALLOWED_ORIGINS (comma-separated) to restrict which
-// sites may call the API — open reflection invites cross-site request
-// forgery against coordinator sessions.
+// The dashboard can be hosted inside a coordinator's iframe. In production,
+// set ALLOWED_ORIGINS (comma-separated) to explicitly allow embedding sites.
+// Never reflect arbitrary origins while credentials are enabled.
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
 app.use(cors({
-  origin: allowedOrigins.length > 0 ? allowedOrigins : true,
+  origin: allowedOrigins.length > 0 ? allowedOrigins : false,
   credentials: true,
 }));
 // Security headers. The app is embeddable in a coordinator's iframe, so
@@ -126,6 +123,20 @@ export const securityHeaders: RequestHandler = (req, res, next) => {
 app.use(securityHeaders);
 app.use(cookieParser());
 app.use(attachAdminSession);
+app.use((req, res, next) => {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) {
+    next();
+    return;
+  }
+  const session = req.cookies?.robotics_admin_session;
+  const origin = req.get("origin");
+  const sameOrigin = origin === `${req.protocol}://${req.get("host")}`;
+  if (!session || !origin || sameOrigin || allowedOrigins.includes(origin)) {
+    next();
+    return;
+  }
+  res.status(403).json({ error: "Origin is not allowed" });
+});
 // Shrink JSON over the wire (Render meters every byte out): ~75% off lists
 // and boards for ~1ms of CPU. Skips streams, images, and tiny bodies.
 app.use(compression({
