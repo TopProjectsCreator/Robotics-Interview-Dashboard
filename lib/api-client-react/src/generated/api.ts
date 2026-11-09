@@ -274,6 +274,11 @@ import type {
   TeamMailboxSyncResult,
   TeamNameRules,
   TeamNameRulesUpdateInput,
+  TeamRole,
+  TeamRoleAssignmentInput,
+  TeamRoleInput,
+  TeamRoleList,
+  TeamRoleUpdate,
   TeamVerifyResponse,
   UpdateCodeFile200,
   UpdateCodeProject200,
@@ -1057,6 +1062,297 @@ export function useGetSession<TData = Awaited<ReturnType<typeof getSession>>, TE
 
 
 
+
+export const getListTeamRolesUrl = () => {
+
+
+
+
+  return `/api/auth/roles`
+}
+
+/**
+ * @summary List custom roles for the signed-in team
+ */
+export const listTeamRoles = async ( options?: Parameters<typeof customFetch>[1]): Promise<TeamRoleList> => {
+
+  return customFetch<TeamRoleList>(getListTeamRolesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamRolesQueryKey = () => {
+    return [
+    `/api/auth/roles`
+    ] as const;
+    }
+
+
+export const getListTeamRolesQueryOptions = <TData = Awaited<ReturnType<typeof listTeamRoles>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamRoles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamRolesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamRoles>>> = ({ signal }) => listTeamRoles({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamRoles>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamRolesQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamRoles>>>
+export type ListTeamRolesQueryError = ErrorType<void>
+
+
+/**
+ * @summary List custom roles for the signed-in team
+ */
+
+export function useListTeamRoles<TData = Awaited<ReturnType<typeof listTeamRoles>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamRoles>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamRolesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTeamRoleUrl = () => {
+
+
+
+
+  return `/api/auth/roles`
+}
+
+/**
+ * @summary Create a custom role for the signed-in team
+ */
+export const createTeamRole = async (teamRoleInput: TeamRoleInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamRole> => {
+
+  return customFetch<TeamRole>(getCreateTeamRoleUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamRoleInput)
+  }
+);}
+
+
+
+
+
+export const getCreateTeamRoleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamRole>>, TError,{data: BodyType<TeamRoleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTeamRole>>, TError,{data: BodyType<TeamRoleInput>}, TContext> => {
+
+const mutationKey = ['createTeamRole'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTeamRole>>, {data: BodyType<TeamRoleInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTeamRole(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTeamRoleMutationResult = NonNullable<Awaited<ReturnType<typeof createTeamRole>>>
+    export type CreateTeamRoleMutationBody = BodyType<TeamRoleInput>
+    export type CreateTeamRoleMutationError = ErrorType<void>
+
+    /**
+ * @summary Create a custom role for the signed-in team
+ */
+export const useCreateTeamRole = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamRole>>, TError,{data: BodyType<TeamRoleInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTeamRole>>,
+        TError,
+        {data: BodyType<TeamRoleInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTeamRoleMutationOptions(options));
+    }
+
+export const getUpdateTeamRoleUrl = (roleId: string,) => {
+
+
+
+
+  return `/api/auth/roles/${roleId}`
+}
+
+/**
+ * @summary Edit a custom role for the signed-in team
+ */
+export const updateTeamRole = async (roleId: string,
+    teamRoleUpdate: TeamRoleUpdate, options?: Parameters<typeof customFetch>[1]): Promise<TeamRole> => {
+
+  return customFetch<TeamRole>(getUpdateTeamRoleUrl(roleId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamRoleUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateTeamRoleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamRole>>, TError,{roleId: string;data: BodyType<TeamRoleUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamRole>>, TError,{roleId: string;data: BodyType<TeamRoleUpdate>}, TContext> => {
+
+const mutationKey = ['updateTeamRole'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamRole>>, {roleId: string;data: BodyType<TeamRoleUpdate>}> = (props) => {
+          const {roleId,data} = props ?? {};
+
+          return  updateTeamRole(roleId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamRoleMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamRole>>>
+    export type UpdateTeamRoleMutationBody = BodyType<TeamRoleUpdate>
+    export type UpdateTeamRoleMutationError = ErrorType<void>
+
+    /**
+ * @summary Edit a custom role for the signed-in team
+ */
+export const useUpdateTeamRole = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamRole>>, TError,{roleId: string;data: BodyType<TeamRoleUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamRole>>,
+        TError,
+        {roleId: string;data: BodyType<TeamRoleUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamRoleMutationOptions(options));
+    }
+
+export const getDeleteTeamRoleUrl = (roleId: string,) => {
+
+
+
+
+  return `/api/auth/roles/${roleId}`
+}
+
+/**
+ * @summary Delete a custom role and clear its assignments
+ */
+export const deleteTeamRole = async (roleId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteTeamRoleUrl(roleId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteTeamRoleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamRole>>, TError,{roleId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTeamRole>>, TError,{roleId: string}, TContext> => {
+
+const mutationKey = ['deleteTeamRole'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTeamRole>>, {roleId: string}> = (props) => {
+          const {roleId} = props ?? {};
+
+          return  deleteTeamRole(roleId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTeamRoleMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTeamRole>>>
+
+    export type DeleteTeamRoleMutationError = ErrorType<void>
+
+    /**
+ * @summary Delete a custom role and clear its assignments
+ */
+export const useDeleteTeamRole = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTeamRole>>, TError,{roleId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTeamRole>>,
+        TError,
+        {roleId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteTeamRoleMutationOptions(options));
+    }
 
 export const getGetPersonalNotepadUrl = () => {
 
@@ -2519,6 +2815,78 @@ export const useUpdateInterviewerRole = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getUpdateInterviewerRoleMutationOptions(options));
+    }
+
+export const getAssignCustomRoleUrl = (interviewerId: string,) => {
+
+
+
+
+  return `/api/auth/interviewers/${interviewerId}/custom-role`
+}
+
+/**
+ * @summary Assign or clear a custom role for a team account
+ */
+export const assignCustomRole = async (interviewerId: string,
+    teamRoleAssignmentInput: TeamRoleAssignmentInput, options?: Parameters<typeof customFetch>[1]): Promise<InterviewerAccount> => {
+
+  return customFetch<InterviewerAccount>(getAssignCustomRoleUrl(interviewerId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamRoleAssignmentInput)
+  }
+);}
+
+
+
+
+
+export const getAssignCustomRoleMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof assignCustomRole>>, TError,{interviewerId: string;data: BodyType<TeamRoleAssignmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof assignCustomRole>>, TError,{interviewerId: string;data: BodyType<TeamRoleAssignmentInput>}, TContext> => {
+
+const mutationKey = ['assignCustomRole'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof assignCustomRole>>, {interviewerId: string;data: BodyType<TeamRoleAssignmentInput>}> = (props) => {
+          const {interviewerId,data} = props ?? {};
+
+          return  assignCustomRole(interviewerId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AssignCustomRoleMutationResult = NonNullable<Awaited<ReturnType<typeof assignCustomRole>>>
+    export type AssignCustomRoleMutationBody = BodyType<TeamRoleAssignmentInput>
+    export type AssignCustomRoleMutationError = ErrorType<void>
+
+    /**
+ * @summary Assign or clear a custom role for a team account
+ */
+export const useAssignCustomRole = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof assignCustomRole>>, TError,{interviewerId: string;data: BodyType<TeamRoleAssignmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof assignCustomRole>>,
+        TError,
+        {interviewerId: string;data: BodyType<TeamRoleAssignmentInput>},
+        TContext
+      > => {
+      return useMutation(getAssignCustomRoleMutationOptions(options));
     }
 
 export const getUpdateInterviewerPasswordUrl = (interviewerId: string,) => {

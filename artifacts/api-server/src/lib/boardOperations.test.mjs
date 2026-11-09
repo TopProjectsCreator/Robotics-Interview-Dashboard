@@ -63,6 +63,7 @@ const databaseTableNames = [
   "presenceHeartbeatsTable",
   "seatingSettingsTable",
   "scheduledChatMessagesTable",
+  "teamRolesTable",
 ];
 
 function apply(data, operation) {

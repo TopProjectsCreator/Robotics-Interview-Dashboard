@@ -17,8 +17,10 @@ import {
   DEFAULT_TEAM_ID,
   type DbInstance,
 } from "@workspace/db";
+import { hasPermission } from "@workspace/api-zod";
 import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import { findAccountAnywhere } from "./teams";
+import { permissionsForAccount } from "./teamRoles";
 import {
   interviewerIdFromSession,
   isRevokedAdminSession,
@@ -69,7 +71,14 @@ function sessionOf(req: IncomingMessage, url: URL): string | undefined {
   return isValidAdminSession(cookie) ? cookie : undefined;
 }
 
-async function identity(session: string): Promise<{ id: string; displayName: string; teamId: string; instance: "primary" | "secondary" } | null> {
+async function identity(session: string): Promise<{
+  id: string;
+  displayName: string;
+  teamId: string;
+  role: string;
+  customRoleId: string | null;
+  instance: "primary" | "secondary";
+} | null> {
   if (await isRevokedAdminSession(session)) return null;
   const id = interviewerIdFromSession(session);
   if (!id) return null;
@@ -79,6 +88,8 @@ async function identity(session: string): Promise<{ id: string; displayName: str
     id: found.account.id,
     displayName: found.account.displayName,
     teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID,
+    role: found.account.role,
+    customRoleId: found.account.customRoleId ?? null,
     instance: found.instance,
   };
 }
@@ -207,7 +218,7 @@ export function applyCodeFileContent(fileId: string, content: string): boolean {
   return true;
 }
 
-async function open(socket: WebSocket, fileId: string, displayName: string, teamId: string): Promise<void> {
+async function open(socket: WebSocket, fileId: string, displayName: string, teamId: string, canEdit: boolean): Promise<void> {
   const [file] = await db.select({
     id: codeFilesTable.id, content: codeFilesTable.content, teamId: codeFilesTable.teamId,
   }).from(codeFilesTable).where(eq(codeFilesTable.id, fileId)).limit(1);
@@ -239,6 +250,10 @@ async function open(socket: WebSocket, fileId: string, displayName: string, team
     const update = data.subarray(1);
     try {
       if (kind === Y_UPDATE) {
+        if (!canEdit) {
+          sendJson(socket, { type: "error", message: "This code workspace is read-only for your role." });
+          return;
+        }
         Y.applyUpdate(room.doc, update, socket);
       } else if (kind === AWARENESS_UPDATE) {
         applyAwarenessUpdate(room.awareness, update, socket);
@@ -294,7 +309,13 @@ export function setupCodeCollaboration(server: Server): void {
           client.close(4401, "unauthorized");
           return;
         }
-        void open(client, fileId, who.displayName, who.teamId).catch((error) => {
+        void permissionsForAccount(who).then((permissions) => {
+          if (!hasPermission(permissions, "code.view")) {
+            client.close(4403, "forbidden");
+            return;
+          }
+          return open(client, fileId, who.displayName, who.teamId, hasPermission(permissions, "code.edit"));
+        }).catch((error) => {
           logger.error({ err: error, fileId }, "Code collaboration connection failed");
           try { client.close(1011, "error"); } catch { /* closed */ }
         });

@@ -107,6 +107,7 @@
     "@tiptap/react": "^3.31.3",
     "@tiptap/starter-kit": "^3.31.3",
     "@tiptap/y-tiptap": "^3.0.9",
+    "@workspace/api-zod": "workspace:*",
     "@yume-chan/adb": "^2.6.4",
     "@yume-chan/adb-daemon-webusb": "^2.3.2",
     "@yume-chan/stream-extra": "^2.6.1",

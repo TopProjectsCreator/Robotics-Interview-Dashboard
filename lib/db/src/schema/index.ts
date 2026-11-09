@@ -27,6 +27,7 @@ export * from "./sessions";
 export * from "./dashboard";
 export * from "./snapshots";
 export * from "./interviewerAccounts";
+export * from "./teamRoles";
 export * from "./whiteboards";
 export * from "./parts";
 export * from "./cad";

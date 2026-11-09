@@ -56,6 +56,7 @@ const tableNames = [
   "presenceHeartbeatsTable",
   "seatingSettingsTable",
   "scheduledChatMessagesTable",
+  "teamRolesTable",
 ];
 
 test("public display state scopes by event code and exposes only approved fields", async (t) => {

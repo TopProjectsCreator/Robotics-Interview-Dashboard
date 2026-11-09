@@ -839,6 +839,14 @@ async function createHarness(t) {
       },
     },
   });
+  mock.module("./teamRoles", {
+    namedExports: {
+      permissionsForAccount: async (account) =>
+        account.role === "coordinator" || account.role === "admin"
+          ? ["customWorkspaces.manage", "customWorkspaces.data"]
+          : [],
+    },
+  });
   mock.module("./workspaceAccess", { namedExports: { readWorkspaceVisibility: async () => ({}) } });
   mock.module("./workspaceVisibility", {
     namedExports: { userCanSeeWorkspace: () => true },

@@ -14,4 +14,6 @@ export interface InterviewerAccount {
   hasPasskey?: boolean;
   /** coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts */
   role: string;
+  /** @nullable */
+  customRoleId?: string | null;
 }

@@ -2,6 +2,8 @@ import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypt
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
 import { assistantBuilderRunsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
+import { hasPermission } from "@workspace/api-zod";
+import { permissionsForAccount } from "../lib/teamRoles";
 import {
   AskAssistantBody,
   AskAssistantResponse,
@@ -4210,11 +4212,35 @@ function canonicalInterviewerPair(left: string, right: string): string {
 
 type ChatChannelRow = typeof chatChannelsTable.$inferSelect;
 type ChatChannelMemberRow = typeof chatChannelMembersTable.$inferSelect;
-type ChannelViewer = { id: string; role: string; displayName: string };
+type ChannelViewer = {
+  id: string;
+  role: string;
+  displayName: string;
+  customRoleId?: string | null;
+  teamId?: string | null;
+};
 
 /** The signed-in viewer in the shape chat-channel checks expect. */
-function channelViewerFor(account: { id: string; role: string; displayName: string }): ChannelViewer {
-  return { id: account.id, role: account.role, displayName: account.displayName };
+function channelViewerFor(account: {
+  id: string;
+  role: string;
+  displayName: string;
+  customRoleId?: string | null;
+  teamId?: string | null;
+}): ChannelViewer {
+  return {
+    id: account.id,
+    role: account.role,
+    displayName: account.displayName,
+    customRoleId: account.customRoleId,
+    teamId: account.teamId,
+  };
+}
+
+async function viewerCanManageChat(viewer: ChannelViewer | null | undefined): Promise<boolean> {
+  if (!viewer) return false;
+  if (isAdminRole(viewer.role)) return true;
+  return hasPermission(await permissionsForAccount(viewer), "chat.manage");
 }
 
 function normalizeChannelName(value: unknown): string | null {
@@ -4252,7 +4278,7 @@ async function accessibleChatChannelIds(teamId: string, viewer: ChannelViewer | 
     .from(chatChannelsTable)
     .where(teamFilter(chatChannelsTable.teamId, teamId))
     .orderBy(desc(chatChannelsTable.updatedAt));
-  if (isAdminRole(viewer.role)) return channels.map((channel) => channel.id);
+  if (await viewerCanManageChat(viewer)) return channels.map((channel) => channel.id);
   const memberships = await db.select({ channelId: chatChannelMembersTable.channelId })
     .from(chatChannelMembersTable)
     .where(and(eq(chatChannelMembersTable.memberId, viewer.id), teamFilter(chatChannelMembersTable.teamId, teamId)));
@@ -4288,7 +4314,7 @@ async function resolveChatConversation(
     const channel = await chatChannelById(channelId, teamId);
     if (!channel) return { error: "That channel was not found." };
     const viewer = options.viewer;
-    const isAdmin = viewer ? isAdminRole(viewer.role) : false;
+    const isAdmin = await viewerCanManageChat(viewer);
     const isInvited = viewer ? await isChatChannelMember(channelId, viewer.id) : false;
     if (!viewer || (!isAdmin && !isInvited)) {
       return { error: "You are not a member of that channel." };
@@ -4565,7 +4591,7 @@ async function whiteboardConversationForAccount(
     const team = teamId?.trim() ? teamId : undefined;
     const channel = team ? await chatChannelById(channelId, team) : undefined;
     if (!channel) return null;
-    if (viewer && isAdminRole(viewer.role)) {
+    if (viewer && await viewerCanManageChat(viewer)) {
       return { scope: "channel", peer: channel.id, key: channel.id, channelId: channel.id, channelName: channel.name };
     }
     const memberId = viewer?.id ? viewer.id : "";
@@ -5620,6 +5646,7 @@ function chatChannelResponse(
   accountsById: Map<string, { id: string; role: string; displayName: string }>,
   viewer: ChannelViewer,
   last: ChannelLastActivity | null,
+  canManage: boolean,
 ) {
   return {
     id: channel.id,
@@ -5642,7 +5669,7 @@ function chatChannelResponse(
       }),
     // Admins see every channel but "youAreMember" stays honest about invites.
     youAreMember: memberRows.some((member) => member.memberId === viewer.id),
-    canManage: isAdminRole(viewer.role),
+    canManage,
     lastMessageAt: last?.lastMessageAt ?? null,
     lastMessageAuthor: last?.lastMessageAuthor ?? null,
     lastMessage: last?.lastMessage ?? null,
@@ -5684,6 +5711,7 @@ router.get("/queue/chat/channels", requireAdmin, async (req, res): Promise<void>
       : [];
     const accountsById = new Map(accounts.map((row) => [row.id, row]));
     const last = await lastChannelActivity(accessible, teamId);
+    const canManage = await viewerCanManageChat(viewer);
     res.json(ListChatChannelsResponse.parse({
       items: channels.map((channel) => chatChannelResponse(
         channel,
@@ -5691,6 +5719,7 @@ router.get("/queue/chat/channels", requireAdmin, async (req, res): Promise<void>
         accountsById,
         viewer,
         last.get(channel.id) ?? null,
+        canManage,
       )),
     }));
   } catch (error) {
@@ -5728,6 +5757,7 @@ router.post("/queue/chat/channels", requireCoordinator, async (req, res): Promis
     return;
   }
   const viewer = channelViewerFor(account);
+  const canManage = await viewerCanManageChat(viewer);
   const [channel] = await db.insert(chatChannelsTable).values({
     id: randomUUID(),
     teamId,
@@ -5757,7 +5787,7 @@ router.post("/queue/chat/channels", requireCoordinator, async (req, res): Promis
   ]).returning();
   pushRealtimeHint("chat_channels", "INSERT");
   const accountsById = new Map([account, ...invited].map((row) => [row.id, row]));
-  res.status(201).json(CreateChatChannelResponse.parse(chatChannelResponse(channel, members, accountsById, viewer, null)));
+  res.status(201).json(CreateChatChannelResponse.parse(chatChannelResponse(channel, members, accountsById, viewer, null, canManage)));
 });
 
 router.patch("/queue/chat/channels/:channelId", requireCoordinator, async (req, res): Promise<void> => {
@@ -5845,7 +5875,9 @@ router.patch("/queue/chat/channels/:channelId", requireCoordinator, async (req, 
     : [];
   const accountsById = new Map(accounts.map((row) => [row.id, row]));
   const lastActivity = (await lastChannelActivity([channel.id], teamId)).get(channel.id) ?? null;
-  res.json(UpdateChatChannelResponse.parse(chatChannelResponse(updated, memberRows, accountsById, channelViewerFor(account), lastActivity)));
+  const viewer = channelViewerFor(account);
+  const canManage = await viewerCanManageChat(viewer);
+  res.json(UpdateChatChannelResponse.parse(chatChannelResponse(updated, memberRows, accountsById, viewer, lastActivity, canManage)));
 });
 
 router.delete("/queue/chat/channels/:channelId", requireCoordinator, async (req, res): Promise<void> => {
@@ -6424,7 +6456,9 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
   }
   // The admin role is STORED as "coordinator" (the Settings UI just labels it
   // "Admin"). Comparing against the label literally is how this bypass broke.
-  const isAdmin = isAdminRole(account.role);
+  const permissionRequest = req as Request & { effectivePermissions?: string[]; isCustomRole?: boolean };
+  const isAdmin = isAdminRole(account.role) ||
+    Boolean(permissionRequest.isCustomRole && hasPermission(permissionRequest.effectivePermissions ?? [], "chat.moderate"));
   if (!isAdmin) {
     if (existing.author.toLowerCase() !== account.displayName.toLowerCase()) {
       res.status(403).json({ error: "You can only edit your own messages." });
@@ -6498,7 +6532,9 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
     return;
   }
   // Stored admin role is "coordinator" — the UI label "Admin" is display-only.
-  if (!isAdminRole(account.role)) {
+  const permissionRequest = req as Request & { effectivePermissions?: string[]; isCustomRole?: boolean };
+  const canModerate = Boolean(permissionRequest.isCustomRole && hasPermission(permissionRequest.effectivePermissions ?? [], "chat.moderate"));
+  if (!isAdminRole(account.role) && !canModerate) {
     if (existingMessage.author.toLowerCase() !== account.displayName.toLowerCase()) {
       res.status(403).json({ error: "You can only delete your own messages." });
       return;
@@ -6723,7 +6759,9 @@ router.delete("/queue/chat/scheduled/:scheduledId", requireAdmin, async (req, re
     res.status(404).json({ error: "Scheduled message not found." });
     return;
   }
-  const canCancel = row.createdBy === accountId || isAdminRole(account.role);
+  const permissionRequest = req as Request & { effectivePermissions?: string[]; isCustomRole?: boolean };
+  const canCancel = row.createdBy === accountId || isAdminRole(account.role) ||
+    Boolean(permissionRequest.isCustomRole && hasPermission(permissionRequest.effectivePermissions ?? [], "chat.manage"));
   if (!canCancel) {
     res.status(403).json({ error: "Only the scheduler or a coordinator can cancel this." });
     return;
@@ -8099,8 +8137,8 @@ router.post("/assistant/custom-workspace-builder/runs", requireCoordinator, asyn
   }
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
-  if (!account || account.role !== "coordinator") {
-    res.status(401).json({ error: "Coordinator authentication required" });
+  if (!account || !hasPermission(await permissionsForAccount(account), "customWorkspaces.manage")) {
+    res.status(403).json({ error: "Custom workspace management permission required" });
     return;
   }
   const teamId = await requestTeamId(req);

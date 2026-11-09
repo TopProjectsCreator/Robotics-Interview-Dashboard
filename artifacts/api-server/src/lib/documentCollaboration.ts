@@ -18,6 +18,7 @@ import {
   interviewWhiteboardsTable,
   type DbInstance,
 } from "@workspace/db";
+import { hasPermission } from "@workspace/api-zod";
 import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import {
   applyDocumentAssistantContent,
@@ -33,6 +34,7 @@ import {
 import { logger } from "./logger";
 import { pushRealtimeHint } from "./realtime";
 import { teamFilter, findAccountAnywhere } from "./teams";
+import { permissionsForAccount } from "./teamRoles";
 
 const MAX_DOCUMENT_DATA_BYTES = 1_500_000;
 const DOCUMENT_PATH = /^\/api\/whiteboards\/([^/]+)\/document-collab$/;
@@ -102,14 +104,28 @@ function canAccessDocument(
 async function authenticateUpgrade(
   request: IncomingMessage,
   url: URL,
-): Promise<{ id: string; displayName: string; teamId: string; instance: "primary" | "secondary" } | null> {
+): Promise<{
+  id: string;
+  displayName: string;
+  teamId: string;
+  role: string;
+  customRoleId: string | null;
+  instance: "primary" | "secondary";
+} | null> {
   const session = sessionFromUpgrade(request, url);
   if (!session || await isRevokedAdminSession(session)) return null;
   const id = interviewerIdFromSession(session);
   if (!id) return null;
   const found = await findAccountAnywhere(id);
   if (!found?.account.passwordHash) return null;
-  return { id: found.account.id, displayName: found.account.displayName, teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID, instance: found.instance };
+  return {
+    id: found.account.id,
+    displayName: found.account.displayName,
+    teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID,
+    role: found.account.role,
+    customRoleId: found.account.customRoleId ?? null,
+    instance: found.instance,
+  };
 }
 
 function rawBytes(raw: RawData): Uint8Array {
@@ -399,7 +415,8 @@ function candidateDocumentSize(doc: Y.Doc, update: Uint8Array): number {
 async function openDocumentRoom(
   socket: WebSocket,
   documentId: string,
-  identity: { id: string; displayName: string; teamId: string },
+  identity: { id: string; displayName: string; teamId: string; role: string; customRoleId: string | null },
+  canEdit: boolean,
 ): Promise<void> {
   const [document] = await db.select().from(interviewWhiteboardsTable)
     .where(and(eq(interviewWhiteboardsTable.id, documentId), teamFilter(interviewWhiteboardsTable.teamId, identity.teamId)))
@@ -440,6 +457,10 @@ async function openDocumentRoom(
       const update = bytes.subarray(1);
       try {
         if (kind === Y_UPDATE) {
+          if (!canEdit) {
+            sendJson(socket, { type: "error", message: "This document is read-only for your role." });
+            return;
+          }
           if (candidateDocumentSize(room.doc, update) > MAX_DOCUMENT_DATA_BYTES) {
             sendJson(socket, { type: "error", message: "This document reached the maximum size." });
             return;
@@ -461,6 +482,10 @@ async function openDocumentRoom(
     if (!message || typeof message !== "object") return;
     const payload = message as { type?: unknown; title?: unknown };
     if (payload.type !== "title" || typeof payload.title !== "string") return;
+    if (!canEdit) {
+      sendJson(socket, { type: "error", message: "This document is read-only for your role." });
+      return;
+    }
     const title = payload.title.trim().slice(0, 120);
     if (!title) return;
     room.title = title;
@@ -529,14 +554,20 @@ export function setupDocumentCollaboration(server: Server): void {
     if (!match) return;
     const documentId = decodeURIComponent(match[1]);
     void authenticateUpgrade(request, url)
-      .then((identity) => runWithInstance(identity?.instance ?? activeTeamDatabaseInstance(), () => {
+      .then((identity) => runWithInstance(identity?.instance ?? activeTeamDatabaseInstance(), async () => {
         if (!identity) {
           socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
           socket.destroy();
           return;
         }
+        const permissions = await permissionsForAccount(identity);
+        if (!hasPermission(permissions, "collaboration.view")) {
+          socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+          socket.destroy();
+          return;
+        }
         websocketServer.handleUpgrade(request, socket, head, (clientSocket) => {
-          void openDocumentRoom(clientSocket, documentId, identity).catch((error) => {
+          void openDocumentRoom(clientSocket, documentId, identity, hasPermission(permissions, "collaboration.edit")).catch((error) => {
             logger.error({ err: error, documentId }, "Document collaboration connection failed");
             clientSocket.close(1011, "Collaboration unavailable");
           });

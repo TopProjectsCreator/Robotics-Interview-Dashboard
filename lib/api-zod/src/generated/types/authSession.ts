@@ -18,6 +18,10 @@ export interface AuthSession {
   teamName?: string;
   /** True when this account is the site owner (sees every team's feature requests and site stats) */
   isSiteOwner?: boolean;
+  customRoleId?: string;
+  customRoleName?: string;
+  /** Effective team capabilities; unknown values are ignored */
+  permissions?: string[];
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
 }

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { hasPermission } from "@workspace/api-zod";
 import { teamAssistantAI } from "./teamAssistantAi";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
 import { applyCodeFileContent } from "./codeCollaboration";
@@ -17,6 +18,7 @@ import { getAssistantModel } from "./assistantModel";
 import { nextAssistantTaskOccurrence, validateAssistantTaskSchedule, type AssistantTaskRecurrence } from "./assistantSchedule";
 import { customWorkspaceDraftId } from "./assistantBuilderJobs";
 import { deleteCustomWorkspace } from "./customWorkspaceDeletion";
+import { permissionsForAccount } from "./teamRoles";
 import {
   applySearchReplace,
   diffSnippet,
@@ -584,6 +586,12 @@ async function chatAccountInTeam(context: ToolContext) {
   return account;
 }
 
+async function canManageCustomWorkspaces(context: ToolContext): Promise<boolean> {
+  const account = await chatAccountInTeam(context);
+  if (!account) return false;
+  return hasPermission(await permissionsForAccount(account), "customWorkspaces.manage");
+}
+
 async function accessibleTeamChatChannels(context: ToolContext, accountId: string, role: string) {
   return pool.query<{ id: string; name: string }>(
     `select c."id", c."name"
@@ -656,9 +664,8 @@ export async function runAssistantWorkspaceTool(
         ? "cad"
         : "code";
   if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "spawn_workspace_subagent_team" || name === "ask_user" || name === "preview_custom_workspace" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files" || name === "list_custom_workspaces" || name === "delete_custom_workspace" || name === "suggest_custom_workspace_tools") {
-    const account = await chatAccountInTeam(context);
-    if (account?.role !== "coordinator") {
-      return { content: "Only coordinators in this team can manage custom workspaces.", detail: "access denied" };
+    if (!(await canManageCustomWorkspaces(context))) {
+      return { content: "This account does not have permission to manage custom workspaces.", detail: "access denied" };
     }
   } else if (!(await canUseWorkspace(context, workspace))) {
     return { content: `This account does not have access to the ${workspace} workspace.`, detail: "access denied" };
@@ -695,9 +702,10 @@ export async function runAssistantWorkspaceTool(
       }
       const id = randomUUID();
       const activationCode = randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
+      const canManageChat = hasPermission(await permissionsForAccount(account), "chat.manage");
       const permitted = [...new Set((context.allowedToolNames ?? [...ASSISTANT_SCHEDULED_SAFE_TOOLS])
         .filter((toolName) => ASSISTANT_SCHEDULED_SAFE_TOOLS.has(toolName))
-        .filter((toolName) => toolName !== "create_team_chat_channel" || account.role === "coordinator")
+        .filter((toolName) => toolName !== "create_team_chat_channel" || canManageChat)
         .filter((toolName) => !(context.disabledTools ?? []).includes(toolName)))];
       const disabledTools = [...new Set(context.disabledTools ?? [])];
       if (!permitted.includes("send_team_chat_message") && destinationChannel) {
@@ -936,7 +944,9 @@ export async function runAssistantWorkspaceTool(
   if (name === "create_team_chat_channel") {
     const account = await chatAccountInTeam(context);
     if (!account) return { content: "Authentication is required to create a channel.", detail: "access denied" };
-    if (account.role !== "coordinator") return { content: "Only a coordinator can create a channel or invite team members.", detail: "access denied" };
+    if (!hasPermission(await permissionsForAccount(account), "chat.manage")) {
+      return { content: "The chat management permission is required to create a channel or invite team members.", detail: "access denied" };
+    }
     const channelName = textArg(args, "name", 80).replace(/\s+/g, " ");
     const normalized = channelName.toLowerCase();
     if (!channelName) return { content: "A channel name is required.", detail: "invalid channel name" };
@@ -1205,10 +1215,6 @@ export async function runAssistantWorkspaceTool(
   }
 
   if (name === "list_custom_workspaces") {
-    const account = await chatAccountInTeam(context);
-    if (account?.role !== "coordinator") {
-      return { content: "Only coordinators in this team can list custom workspaces.", detail: "access denied" };
-    }
     const workspaces = await pool.query<{ id: string; title: string; status: string }>(
       `select "id", "title", "status" from "custom_workspaces"
         where ${teamSqlCondition('"team_id"', "$1")}
@@ -1222,9 +1228,8 @@ export async function runAssistantWorkspaceTool(
   }
 
   if (name === "suggest_custom_workspace_tools") {
-    const account = await chatAccountInTeam(context);
     const workspaceId = textArg(args, "workspaceId", 128);
-    if (account?.role !== "coordinator" || !context.builderRunId ||
+    if (!(await canManageCustomWorkspaces(context)) || !context.builderRunId ||
       !context.builderWorkspaceId || context.builderWorkspaceId !== workspaceId) {
       return {
         content: "Only the active coordinator builder run can suggest actions for its own workspace draft.",
@@ -1289,10 +1294,6 @@ export async function runAssistantWorkspaceTool(
   }
 
   if (name === "delete_custom_workspace") {
-    const account = await chatAccountInTeam(context);
-    if (account?.role !== "coordinator") {
-      return { content: "Only coordinators in this team can delete custom workspaces.", detail: "access denied" };
-    }
     const workspaceId = textArg(args, "workspaceId", 128);
     if (!workspaceId) {
       return { content: "Choose a custom workspace from this team's list before requesting deletion.", detail: "workspace id required" };
@@ -1824,10 +1825,9 @@ export async function runAssistantWorkspaceTool(
   }
 
   if (name === "preview_custom_workspace") {
-    const account = context.accountId ? await accountById(context.accountId) : undefined;
     const workspaceId = textArg(args, "workspaceId", 128);
-    if (account?.role !== "coordinator" || !workspaceId) {
-      return { content: "Only coordinators can preview a custom workspace draft.", detail: "access denied" };
+    if (!(await canManageCustomWorkspaces(context)) || !workspaceId) {
+      return { content: "This account cannot preview that custom workspace draft.", detail: "access denied" };
     }
     const draft = await pool.query<{ title: string; prompt: string; html: string }>(
       `select "title", "prompt", "html" from "custom_workspaces"
@@ -1890,10 +1890,9 @@ export async function runAssistantWorkspaceTool(
   };
 
   if (name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files") {
-    const account = context.accountId ? await accountById(context.accountId) : undefined;
     const workspaceId = textArg(args, "workspaceId", 128);
-    if (account?.role !== "coordinator" || !workspaceId) {
-      return { content: "Only coordinators can edit a custom workspace draft.", detail: "access denied" };
+    if (!(await canManageCustomWorkspaces(context)) || !workspaceId) {
+      return { content: "This account cannot edit that custom workspace draft.", detail: "access denied" };
     }
     const workspace = await pool.query<{ id: string }>(
       `select "id" from "custom_workspaces"

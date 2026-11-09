@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
+import { hasPermission } from "@workspace/api-zod";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
 import { accountById } from "./interviewerAccounts";
 import { teamSqlCondition } from "./teams";
+import { permissionsForAccount } from "./teamRoles";
 
 export type WorkspaceToolField = {
   type: "string" | "number" | "integer" | "boolean";
@@ -394,8 +396,9 @@ export async function listAssistantCustomWorkspaceTools(
   teamId: string,
 ): Promise<AssistantCustomWorkspaceTool[]> {
   const account = await accountById(accountId);
-  if (!account || account.role !== "coordinator" ||
-    (account.teamId && account.teamId !== teamId) || (!account.teamId && teamId !== DEFAULT_TEAM_ID)) return [];
+  if (!account || (account.teamId && account.teamId !== teamId) ||
+    (!account.teamId && teamId !== DEFAULT_TEAM_ID) ||
+    !hasPermission(await permissionsForAccount(account), "customWorkspaces.data")) return [];
   const result = await pool.query<WorkspaceToolSource>(
     `select "id", "title", "status", "capabilities", "created_by" as "createdBy",
             "access_mode" as "accessMode", "allowed_interviewer_ids" as "allowedInterviewerIds",
@@ -490,8 +493,9 @@ export async function runAssistantCustomWorkspaceTool(
     return { content: "The workspace action input must be a JSON object. No data was changed.", detail: "invalid workspace action arguments" };
   }
   const account = await accountById(context.accountId);
-  if (!account || account.role !== "coordinator" || (account.teamId && account.teamId !== context.teamId) ||
-    (!account.teamId && context.teamId !== DEFAULT_TEAM_ID)) {
+  if (!account || (account.teamId && account.teamId !== context.teamId) ||
+    (!account.teamId && context.teamId !== DEFAULT_TEAM_ID) ||
+    !hasPermission(await permissionsForAccount(account), "customWorkspaces.data")) {
     return { content: "Your account is no longer available in this team. No workspace data was changed.", detail: "workspace account unavailable" };
   }
   const workspaceResult = await pool.query<WorkspaceToolSource>(

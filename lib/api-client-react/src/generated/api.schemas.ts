@@ -902,6 +902,10 @@ export interface AuthSession {
   teamName?: string;
   /** True when this account is the site owner (sees every team's feature requests and site stats) */
   isSiteOwner?: boolean;
+  customRoleId?: string;
+  customRoleName?: string;
+  /** Effective team capabilities; unknown values are ignored */
+  permissions?: string[];
   /** Session token for embedded clients that cannot use third-party cookies */
   token?: string;
 }
@@ -986,6 +990,92 @@ export interface InterviewerAccount {
   hasPasskey?: boolean;
   /** coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts */
   role: string;
+  /** @nullable */
+  customRoleId?: string | null;
+}
+
+export interface TeamRole {
+  id: string;
+  name: string;
+  permissions: string[];
+}
+
+export interface TeamRoleList {
+  roles: TeamRole[];
+}
+
+export type TeamRoleInputPermissionsItem = typeof TeamRoleInputPermissionsItem[keyof typeof TeamRoleInputPermissionsItem];
+
+
+export const TeamRoleInputPermissionsItem = {
+  interviewview: 'interview.view',
+  chatview: 'chat.view',
+  partsview: 'parts.view',
+  cadview: 'cad.view',
+  codeview: 'code.view',
+  applicantsview: 'applicants.view',
+  applicantssearch: 'applicants.search',
+  applicantsedit: 'applicants.edit',
+  applicantsmanage: 'applicants.manage',
+  queueview: 'queue.view',
+  queuemanage: 'queue.manage',
+  attendanceview: 'attendance.view',
+  attendancemanage: 'attendance.manage',
+  displayview: 'display.view',
+  displaymanage: 'display.manage',
+  dashboardview: 'dashboard.view',
+  dashboardmanage: 'dashboard.manage',
+  snapshotsview: 'snapshots.view',
+  snapshotsmanage: 'snapshots.manage',
+  chatsend: 'chat.send',
+  chatmoderate: 'chat.moderate',
+  chatmanage: 'chat.manage',
+  broadcastsview: 'broadcasts.view',
+  broadcastssend: 'broadcasts.send',
+  broadcastsmanage: 'broadcasts.manage',
+  personalnotepadread: 'personal.notepad.read',
+  personalnotepadwrite: 'personal.notepad.write',
+  assistantview: 'assistant.view',
+  assistantuse: 'assistant.use',
+  assistantmanage: 'assistant.manage',
+  partsedit: 'parts.edit',
+  partsmanage: 'parts.manage',
+  cadedit: 'cad.edit',
+  cadmanage: 'cad.manage',
+  codeedit: 'code.edit',
+  codemanage: 'code.manage',
+  collaborationview: 'collaboration.view',
+  collaborationedit: 'collaboration.edit',
+  collaborationmanage: 'collaboration.manage',
+  customWorkspacesview: 'customWorkspaces.view',
+  customWorkspacesmanage: 'customWorkspaces.manage',
+  customWorkspacesaccess: 'customWorkspaces.access',
+  customWorkspacesdata: 'customWorkspaces.data',
+  teambrandingmanage: 'team.branding.manage',
+  teammailboxmanage: 'team.mailbox.manage',
+  teamnameRulesmanage: 'team.nameRules.manage',
+  featureRequestsview: 'featureRequests.view',
+  featureRequestscreate: 'featureRequests.create',
+  eventsview: 'events.view',
+  presenceview: 'presence.view',
+  presenceheartbeat: 'presence.heartbeat',
+  presencemanage: 'presence.manage',
+} as const;
+
+export interface TeamRoleInput {
+  /**
+     * @minLength 1
+     * @maxLength 60
+     */
+  name: string;
+  permissions: TeamRoleInputPermissionsItem[];
+}
+
+export type TeamRoleUpdate = TeamRoleInput;
+
+export interface TeamRoleAssignmentInput {
+  /** @nullable */
+  customRoleId: string | null;
 }
 
 export interface InterviewerAccountList {

@@ -10,6 +10,9 @@ export const interviewerAccountsTable = pgTable("interviewer_accounts", {
   normalizedName: text("normalized_name").notNull(),
   passwordHash: text("password_hash"),
   role: text("role").notNull().default("coordinator"),
+  // Optional team-local custom role. The legacy role remains unchanged so
+  // older clients and authentication flows can continue to read the account.
+  customRoleId: text("custom_role_id"),
   // True for the site owner (Ishaan Bansal): sees every team's feature
   // requests plus site-wide stats. Set once by boot migration.
   isSiteOwner: boolean("is_site_owner").notNull().default(false),

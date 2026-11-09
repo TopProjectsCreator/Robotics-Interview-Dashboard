@@ -41,6 +41,7 @@ export type DocumentEditorProps = {
   activeInterviewer: string;
   saving: boolean;
   error: string;
+  readOnly?: boolean;
   onClose: () => void;
   onTitleSave: (title: string) => void;
 };
@@ -109,6 +110,7 @@ export function DocumentEditor({
   activeInterviewer,
   saving,
   error,
+  readOnly = false,
   onClose,
   onTitleSave,
 }: DocumentEditorProps) {
@@ -133,6 +135,7 @@ export function DocumentEditor({
   const editor = useEditor(
     {
       immediatelyRender: false,
+      editable: !readOnly,
       extensions: [
         StarterKit.configure({ undoRedo: false }),
         TextAlign.configure({ types: ["heading", "paragraph"] }),
@@ -150,7 +153,7 @@ export function DocumentEditor({
         },
       },
     },
-    [collaboration, activeInterviewer],
+    [collaboration, activeInterviewer, readOnly],
   );
 
   useEffect(() => {
@@ -185,6 +188,7 @@ export function DocumentEditor({
   }, [documentRecord.id, documentRecord.title]);
 
   const saveTitleNow = useCallback(() => {
+    if (readOnly) return;
     const nextTitle = title.trim() || "Untitled interview plan";
     if (nextTitle === lastSavedTitleRef.current) return;
     lastSavedTitleRef.current = nextTitle;
@@ -192,9 +196,10 @@ export function DocumentEditor({
     titleTimerRef.current = null;
     collaboration.provider.setTitle(nextTitle);
     onTitleSave(nextTitle);
-  }, [collaboration.provider, onTitleSave, title]);
+  }, [collaboration.provider, onTitleSave, readOnly, title]);
 
   useEffect(() => {
+    if (readOnly) return;
     const nextTitle = title.trim() || "Untitled interview plan";
     if (nextTitle === lastSavedTitleRef.current || titleDocumentIdRef.current !== documentRecord.id) return;
     if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
@@ -207,7 +212,7 @@ export function DocumentEditor({
     return () => {
       if (titleTimerRef.current) clearTimeout(titleTimerRef.current);
     };
-  }, [collaboration.provider, documentRecord.id, onTitleSave, title]);
+  }, [collaboration.provider, documentRecord.id, onTitleSave, readOnly, title]);
 
   useEffect(
     () => () => {
@@ -289,6 +294,7 @@ export function DocumentEditor({
               <input
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}
+                readOnly={readOnly}
                 onBlur={saveTitleNow}
                 maxLength={120}
                 aria-label="Document title"
@@ -313,7 +319,7 @@ export function DocumentEditor({
           </div>
         </div>
         <div className="document-toolbar flex flex-wrap items-center justify-between gap-3 border-t px-4 py-2 sm:px-7">
-          <div className="flex min-w-0 items-center gap-1">
+          <div className="flex min-w-0 items-center gap-1" hidden={readOnly}>
             <ToolbarButton label="Undo" testId="button-document-undo" disabled={!editor?.can().undo()} onClick={() => run((currentEditor) => currentEditor.chain().focus().undo().run())}><Undo2 size={16} /></ToolbarButton>
             <ToolbarButton label="Redo" testId="button-document-redo" disabled={!editor?.can().redo()} onClick={() => run((currentEditor) => currentEditor.chain().focus().redo().run())}><Redo2 size={16} /></ToolbarButton>
             <span className="document-toolbar-separator mx-2 h-5 w-px" />

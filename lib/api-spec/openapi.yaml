@@ -233,6 +233,92 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthSession"
+  /auth/roles:
+    get:
+      operationId: listTeamRoles
+      tags: [auth]
+      summary: List custom roles for the signed-in team
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Team-scoped custom roles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamRoleList"
+        "403":
+          description: Admin access required
+    post:
+      operationId: createTeamRole
+      tags: [auth]
+      summary: Create a custom role for the signed-in team
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamRoleInput"
+      responses:
+        "201":
+          description: Created team role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamRole"
+        "400":
+          description: Invalid role name or permission list
+  /auth/roles/{roleId}:
+    patch:
+      operationId: updateTeamRole
+      tags: [auth]
+      summary: Edit a custom role for the signed-in team
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamRoleUpdate"
+      responses:
+        "200":
+          description: Updated team role
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamRole"
+        "404":
+          description: Role not found for this team
+    delete:
+      operationId: deleteTeamRole
+      tags: [auth]
+      summary: Delete a custom role and clear its assignments
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Role deleted
+        "404":
+          description: Role not found for this team
   /auth/personal-notepad:
     get:
       operationId: getPersonalNotepad
@@ -740,6 +826,35 @@ paths:
                 $ref: "#/components/schemas/InterviewerAccount"
         "404":
           description: Interviewer not found
+  /auth/interviewers/{interviewerId}/custom-role:
+    put:
+      operationId: assignCustomRole
+      tags: [auth]
+      summary: Assign or clear a custom role for a team account
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: interviewerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamRoleAssignmentInput"
+      responses:
+        "200":
+          description: Updated team account
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterviewerAccount"
+        "404":
+          description: Account or role not found in this team
   /auth/interviewers/{interviewerId}/password:
     patch:
       operationId: updateInterviewerPassword
@@ -6170,6 +6285,15 @@ components:
         isSiteOwner:
           type: boolean
           description: True when this account is the site owner (sees every team's feature requests and site stats)
+        customRoleId:
+          type: string
+        customRoleName:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+          description: Effective team capabilities; unknown values are ignored
         token:
           type: string
           description: Session token for embedded clients that cannot use third-party cookies
@@ -6274,6 +6398,103 @@ components:
         role:
           type: string
           description: "coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts"
+        customRoleId:
+          type: ["string", "null"]
+    TeamRole:
+      type: object
+      required: [id, name, permissions]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+    TeamRoleList:
+      type: object
+      required: [roles]
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRole"
+    TeamRoleInput:
+      type: object
+      required: [name, permissions]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 60
+        permissions:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum:
+              - interview.view
+              - chat.view
+              - parts.view
+              - cad.view
+              - code.view
+              - applicants.view
+              - applicants.search
+              - applicants.edit
+              - applicants.manage
+              - queue.view
+              - queue.manage
+              - attendance.view
+              - attendance.manage
+              - display.view
+              - display.manage
+              - dashboard.view
+              - dashboard.manage
+              - snapshots.view
+              - snapshots.manage
+              - chat.send
+              - chat.moderate
+              - chat.manage
+              - broadcasts.view
+              - broadcasts.send
+              - broadcasts.manage
+              - personal.notepad.read
+              - personal.notepad.write
+              - assistant.view
+              - assistant.use
+              - assistant.manage
+              - parts.edit
+              - parts.manage
+              - cad.edit
+              - cad.manage
+              - code.edit
+              - code.manage
+              - collaboration.view
+              - collaboration.edit
+              - collaboration.manage
+              - customWorkspaces.view
+              - customWorkspaces.manage
+              - customWorkspaces.access
+              - customWorkspaces.data
+              - team.branding.manage
+              - team.mailbox.manage
+              - team.nameRules.manage
+              - featureRequests.view
+              - featureRequests.create
+              - events.view
+              - presence.view
+              - presence.heartbeat
+              - presence.manage
+    TeamRoleUpdate:
+      allOf:
+        - $ref: "#/components/schemas/TeamRoleInput"
+    TeamRoleAssignmentInput:
+      type: object
+      required: [customRoleId]
+      properties:
+        customRoleId:
+          type: ["string", "null"]
     InterviewerAccountList:
       type: object
       required: [items]

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { hasPermission } from "@workspace/api-zod";
 import {
   AlertCircle,
   ArrowUpRight,
@@ -783,7 +784,9 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   const pricingPreferenceMutation = useUpdatePartsPricingPreference();
   const vendors = dashboardQuery.data?.vendors ?? [];
   const canManageVendors =
-    sessionQuery.data?.role === "admin" || sessionQuery.data?.role === "coordinator";
+    sessionQuery.data?.role === "admin" ||
+    sessionQuery.data?.role === "coordinator" ||
+    hasPermission(sessionQuery.data?.permissions, "parts.manage");
   const availableVendors = vendors.filter((vendor) => !vendor.blocked);
   const useFtcPricing = pricingPreferenceQuery.data?.useFtcPricing ?? false;
   const robots = dashboardQuery.data?.robots ?? [];

@@ -9,16 +9,36 @@ registerHooks({
       return nextResolve(specifier, context);
     } catch (error) {
       if (specifier.startsWith(".") && !specifier.endsWith(".ts") && !specifier.endsWith(".js")) {
-        return nextResolve(`${specifier}.ts`, context);
+        try {
+          return nextResolve(`${specifier}.ts`, context);
+        } catch {
+          return nextResolve(`${specifier}/index.ts`, context);
+        }
       }
       throw error;
     }
   },
 });
 
-mock.module("@workspace/db", { namedExports: { DEFAULT_TEAM_ID: "default", pool: { query: async () => ({ rows: [], rowCount: 0 }) } } });
+mock.module("@workspace/db", {
+  namedExports: {
+    DEFAULT_TEAM_ID: "default",
+    db: {},
+    codeFilesTable: { id: "id" },
+    currentInstance: () => "primary",
+    interviewerAccountsTable: { id: "id", teamId: "teamId", role: "role", passwordHash: "passwordHash" },
+    revokedSessionsTable: { tokenHash: "tokenHash", expiresAt: "expiresAt" },
+    runWithInstance: (_instance, callback) => callback(),
+    pool: { query: async () => ({ rows: [], rowCount: 0 }) },
+  },
+});
 mock.module("./interviewerAccounts", { namedExports: { accountById: async () => null } });
-mock.module("./teams", { namedExports: { teamSqlCondition: (column, placeholder) => `(${column} = ${placeholder})` } });
+  mock.module("./teams", {
+    namedExports: {
+      teamSqlCondition: (column, placeholder) => `(${column} = ${placeholder})`,
+      findAccountAnywhere: async () => null,
+    },
+  });
 
 const {
   parseRecordQuery,

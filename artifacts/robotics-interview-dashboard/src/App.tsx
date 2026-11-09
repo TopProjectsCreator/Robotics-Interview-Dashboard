@@ -51,6 +51,7 @@ import {
   regenerateApplicant,
 } from "@workspace/api-client-react";
 import type { FeatureRequest } from "@workspace/api-client-react";
+import { permissionsForBuiltInRole, hasPermission as hasCatalogPermission } from "@workspace/api-zod";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
@@ -146,6 +147,7 @@ import {
 import { useRealtimeHealthy } from "./realtimeHealth";
 import { useAccessibleCustomWorkspaces } from "./lib/customWorkspaces";
 import { CustomWorkspaceOverviewCard, CustomWorkspaceSidebarLinks } from "./components/CustomWorkspaceNavigation";
+import { TeamRoleManagement } from "./components/TeamRoleManagement";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
 const authenticatedSessionQueries = new WeakSet<object>();
@@ -398,12 +400,19 @@ export function AccountMenu({ onOpenSettings }: { onOpenSettings: () => void }) 
   }, [open ]);
   const name = session.data?.label || settings.displayName.trim() || "Interviewer";
   const isCoordinatorMenu = session.data?.role === "coordinator" || session.data?.role === "admin";
+  const canOpenSettings = isCoordinatorMenu || [
+    "team.branding.manage",
+    "team.mailbox.manage",
+    "team.nameRules.manage",
+    "assistant.manage",
+    "chat.manage",
+  ].some((permission) => canSessionUsePermission(session.data, permission));
   return <div ref={ref} className="relative">
     <button onClick={() => setOpen(o => !o)} aria-label="Account menu" aria-haspopup="menu" data-testid="button-account-menu" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-xs font-bold text-[#176a77] transition hover:brightness-95 dark:bg-[#1d3a47] dark:text-[#6fc3cf]">{avatarInitials(settings)}</button>
     {open && <div role="menu" data-testid="account-menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-2xl border border-border bg-[hsl(var(--popover))] text-[hsl(var(--popover-foreground))] shadow-2xl">
       <div className="border-b border-border px-4 py-3"><p className="truncate text-sm font-semibold">{name}</p><p className="mono mt-0.5 text-[10px] uppercase tracking-[.14em] text-muted-foreground">Interviewer account</p></div>
       <div className="p-2">
-        {isCoordinatorMenu && <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[hsl(var(--popover-foreground))] transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><Settings size={16} /> Settings</button>}
+        {canOpenSettings && <button role="menuitem" onClick={() => { setOpen(false); onOpenSettings(); }} data-testid="button-open-settings" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[hsl(var(--popover-foreground))] transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><Settings size={16} /> Settings</button>}
         <button role="menuitem" onClick={() => { setOpen(false); setNotepadOpen(true); }} data-testid="button-open-notepad" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[hsl(var(--popover-foreground))] transition hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover"><FileText size={16} /> Notepad</button>
         <button role="menuitem" onClick={() => logout.mutate(undefined, { onSuccess: () => { clearAuthSession(queryClient); setLocation("/"); } })} data-testid="button-logout-menu" className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-destructive transition hover:bg-destructive/10 focus-visible:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-popover dark:text-[#f1aaa4] dark:hover:bg-[#40221f] dark:focus-visible:bg-[#40221f] dark:focus-visible:text-[#f1aaa4]"><LogOut size={16} /> End session</button>
       </div>
@@ -599,7 +608,7 @@ export function FeatureRequestSection() {
 function AdminOnlyRoute({ children }: { children: ReactNode }) {
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   if (session.data?.authenticated !== true) return null;
-  if (session.data.role !== "coordinator" && session.data.role !== "admin") return <Redirect to="/dashboard" />;
+  if (!canSessionUsePermission(session.data, "customWorkspaces.manage")) return <Redirect to="/dashboard" />;
   return <>{children}</>;
 }
 
@@ -631,6 +640,20 @@ function isAdminAccountRole(role: string): boolean {
   return role === "coordinator" || role === "admin";
 }
 
+function canSessionUsePermission(
+  session: { role?: string | null; customRoleId?: string | null; permissions?: readonly string[] | null } | null | undefined,
+  permission: string,
+): boolean {
+  if (isAdminAccountRole(session?.role ?? "")) return true;
+  if (session?.customRoleId) {
+    return Array.isArray(session.permissions) && hasCatalogPermission(session.permissions, permission);
+  }
+  const permissions = Array.isArray(session?.permissions)
+    ? session.permissions
+    : permissionsForBuiltInRole(session?.role);
+  return hasCatalogPermission(permissions, permission);
+}
+
 function SettingsModal({
   onClose,
   onOpenProviderSetup,
@@ -656,8 +679,13 @@ function SettingsModal({
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
   const isAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
+  const canManageMailbox = isAdmin || canSessionUsePermission(session.data, "team.mailbox.manage");
+  const canManageBranding = isAdmin || canSessionUsePermission(session.data, "team.branding.manage");
+  const canManageNameRules = isAdmin || canSessionUsePermission(session.data, "team.nameRules.manage");
+  const canManageAssistant = isAdmin || canSessionUsePermission(session.data, "assistant.manage");
+  const canManageChatSettings = isAdmin || canSessionUsePermission(session.data, "chat.manage");
   const mailboxQuery = useGetTeamMailboxSettings({
-    query: { queryKey: getGetTeamMailboxSettingsQueryKey(), enabled: isAdmin, retry: false },
+    query: { queryKey: getGetTeamMailboxSettingsQueryKey(), enabled: canManageMailbox, retry: false },
   });
   const updateMailbox = useUpdateTeamMailboxSettings();
   const checkMailbox = useSyncTeamMailbox();
@@ -1019,8 +1047,8 @@ function SettingsModal({
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>
-      <AIProviderSettingsCategory canManageProvider={isAdmin && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
-      {isAdmin && <div className={divider} data-testid="settings-team-inbox">
+      <AIProviderSettingsCategory canManageProvider={canManageAssistant && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
+      {canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>
         <div className="mt-3 rounded-xl border border-[#dce5e5] bg-[#f8faf9] p-3 dark:border-[#31495a] dark:bg-[#0f1e27]">
@@ -1074,9 +1102,9 @@ function SettingsModal({
         </>}
         {mailboxResult && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-inbox-result">{mailboxResult}</p>}
       </div>}
-      {session.data?.role === "coordinator" && <div className={divider} data-testid="settings-team-branding">
+      {canManageBranding && <div className={divider} data-testid="settings-team-branding">
         <p className={sectionLabel}>Team branding</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Shown to everyone in {session.data.teamName?.trim() || "your team"}. Changes are saved for the team, not just this device.</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Shown to everyone in {session.data?.teamName?.trim() || "your team"}. Changes are saved for the team, not just this device.</p>
         <SettingRow title="Primary color" detail="Used for the team mark and selected workspace">
           <div className="flex items-center gap-2">
             <input aria-label="Team primary color" type="color" value={brandColorDraft} onChange={event => setBrandColorDraft(event.target.value)} data-testid="input-team-brand-color" className="h-10 w-14 cursor-pointer rounded-lg border border-[#dce5e5] bg-white p-1 dark:border-[#31495a] dark:bg-[#0f1e27]" />
@@ -1109,10 +1137,15 @@ function SettingsModal({
           {branding.updateColor.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateColor.error.message}</p>}
         </SettingRow>
       </div>}
-      {session.data?.role === "coordinator" && session.data.teamId && <TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} />}
+      {canManageNameRules && session.data?.teamId && <TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} />}
       <div className={divider}><p className={sectionLabel}>Applicants list</p>
         <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
       </div>
+      {isAdmin && <TeamRoleManagement
+        teamId={session.data?.teamId}
+        accounts={interviewerAccounts.data?.items ?? []}
+        accountsLoading={interviewerAccounts.isLoading}
+      />}
       <div className={divider}><p className={sectionLabel}>Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
         <SettingRow title="Instant updates" detail="Pushes changes to the team in about a second. Periodic refresh stays on as a backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
@@ -1241,14 +1274,15 @@ function SettingsModal({
           {passkeyError && <p className="text-[11px] font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="passkey-error">{passkeyError}</p>}
         </div>}
       </div>
-      <div className={divider}><p className={sectionLabel}>Chat slow mode</p>
+      {canManageChatSettings && <div className={divider}><p className={sectionLabel}>Chat slow mode</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Like Discord: each person on the team chat may only send one message every N seconds. The send button counts down for them. Direct messages are never slowed.</p>
         <SettingRow title="Slow mode" detail={chatSettings.isLoading ? "Loading…" : `One message every ${(() => { const v = chatSettings.data?.slowmodeSeconds ?? 0; return v === 0 ? "no limit" : v < 60 ? `${v}s` : "1m"; })()}`}>
           <Segmented options={[{ value: 0, label: "Off" }, { value: 5, label: "5s" }, { value: 10, label: "10s" }, { value: 30, label: "30s" }, { value: 60, label: "1m" }]} value={chatSettings.data?.slowmodeSeconds ?? 0} onChange={(v) => setSlowmode(v)} testId="segment-settings-slowmode" />
         </SettingRow>
         {slowmodeBusy && <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Saving…</p>}
-      </div>
-      <FeatureRequestSection />
+      </div>}
+      {(canSessionUsePermission(session.data, "featureRequests.view") ||
+        canSessionUsePermission(session.data, "featureRequests.create")) && <FeatureRequestSection />}
       <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
         <SettingRow title="Reset all settings" detail="Back to defaults on this device"><button onClick={reset} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> Reset</button></SettingRow>
@@ -3420,7 +3454,7 @@ function Shell({
     }
   }, [demoMode, broadcasts.data, dismissedBroadcasts]);
   const isCoordinator = !demoMode && session.data?.role === "coordinator";
-  const isTreasurer = !demoMode && session.data?.role === "treasurer";
+  const canViewApplicants = !demoMode && canSessionUsePermission(session.data, "applicants.view");
   const activeTeamName = demoMode
     ? "Demo Robotics"
     : session.data?.teamId === "default"
@@ -3432,7 +3466,10 @@ function Shell({
   const isSignedIn = !demoMode && session.data?.authenticated === true;
   const sessionUserId = demoMode ? undefined : session.data?.interviewerId;
   const customWorkspacesQuery = useAccessibleCustomWorkspaces(
-    isSignedIn,
+    isSignedIn && (
+      canSessionUsePermission(session.data, "customWorkspaces.view") ||
+      canSessionUsePermission(session.data, "customWorkspaces.manage")
+    ),
     session.data?.teamId,
     sessionUserId,
   );
@@ -3457,10 +3494,10 @@ function Shell({
     // Per-user access: coordinators always see everything (enforced inside
     // userCanSeeWorkspace), everyone else sees exactly their own workspaces.
     for (const key of visibleWorkspacesForUser(visibility, sessionUserId, sessionRole)) {
-      set.add(key);
+      if (canSessionUsePermission(session.data, `${key}.view`)) set.add(key);
     }
     return set;
-  }, [demoMode, visibility, sessionUserId, sessionRole]);
+  }, [demoMode, visibility, sessionUserId, sessionRole, session.data]);
   const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
   const isDashboardPath = demoMode ? demoView === "overview" : shellPath === "/dashboard";
   const isInterviewPath = !demoMode && (
@@ -3487,17 +3524,31 @@ function Shell({
   const isCodePath = demoMode ? demoView === "code" : shellPath === "/code" || shellPath.startsWith("/code/");
   const isTreasurerRosterPath =
     shellPath === "/applicants" || shellPath.startsWith("/applicants/");
+  const assistantRoute = shellPath === "/assistant" || shellPath.startsWith("/assistant/") ||
+    shellPath === "/interview/assistant" || shellPath === "/parts/assistant";
+  const assistantAccessible = canSessionUsePermission(session.data, "assistant.view");
+  const canOpenInterviewRoute = areaCanSee("interview") && isInterviewPath &&
+    (!assistantRoute || assistantAccessible);
+  const canOpenChatRoute = areaCanSee("chat") && isChatPath &&
+    (!assistantRoute || assistantAccessible);
+  const canOpenPartsRoute = areaCanSee("parts") && isPartsPath &&
+    (!assistantRoute || assistantAccessible);
+  const canOpenCustomWorkspaceRoute = shellPath === "/custom-workspaces"
+    ? canSessionUsePermission(session.data, "customWorkspaces.manage")
+    : shellPath.startsWith("/custom-workspaces/")
+      ? canSessionUsePermission(session.data, "customWorkspaces.view")
+      : false;
   const restrictedAllowed = demoMode ||
-    location.split(/[?#]/, 1)[0].startsWith("/custom-workspaces") ||
+    canOpenCustomWorkspaceRoute ||
     // /dashboard is the per-user home: every signed-in account can open it and
     // sees only their own workspaces there.
     isDashboardPath ||
     isCoordinator ||
     // Treasurers keep the read-only applicant roster even without Interview access.
-    (isTreasurer && isTreasurerRosterPath) ||
-    (areaCanSee("chat") && isChatPath) ||
-    (areaCanSee("interview") && isInterviewPath) ||
-    (areaCanSee("parts") && isPartsPath) ||
+    (canViewApplicants && isTreasurerRosterPath) ||
+    canOpenChatRoute ||
+    canOpenInterviewRoute ||
+    canOpenPartsRoute ||
     (areaCanSee("cad") && isCadPath) ||
     (areaCanSee("code") && isCodePath);
   const restrictedBlocked = isSignedIn && !workspaceVisibilityLoading && !restrictedAllowed;
@@ -3537,8 +3588,17 @@ function Shell({
     ...getWorkspaceNavigation(workspaceArea, visibleWorkspaces),
     // Treasurers keep the read-only applicant roster, which is granted
     // separately from the rest of the Interview workspace.
-    ...(isTreasurer ? getCrossWorkspaceSections(visibleWorkspaces) : []),
-  ].map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
+    ...(canViewApplicants ? getCrossWorkspaceSections(visibleWorkspaces) : []),
+  ].filter((item) => {
+    if (item.href.includes("assistant") && !assistantAccessible) return false;
+    const path = item.href.split(/[?#]/, 1)[0] ?? "";
+    if (path.startsWith("/applicants")) return canSessionUsePermission(session.data, "applicants.view");
+    if (path.startsWith("/queue")) return canSessionUsePermission(session.data, "queue.view");
+    if (path.startsWith("/attendance") || path.startsWith("/seating")) return canSessionUsePermission(session.data, "attendance.view");
+    if (path.startsWith("/display") || path.startsWith("/big-screen")) return canSessionUsePermission(session.data, "display.view");
+    return true;
+  })
+    .map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
   const demoNav = [
     { href: "/demo?view=overview", label: "Overview", icon: LayoutDashboard, kind: "section" as const, workspace: "chat" as WorkspaceKey, demoView: "overview" as DemoView },
     { href: "/demo?view=chat", label: "Chat", icon: MessageSquare, kind: "workspace" as const, workspace: "chat" as WorkspaceKey, demoView: "chat" as DemoView },
@@ -3682,7 +3742,7 @@ function Shell({
             assistantProviderSetupOpen &&
             !demoMode &&
             session.data?.authenticated === true &&
-            (session.data.role === "coordinator" || session.data.role === "admin") &&
+            canSessionUsePermission(session.data, "assistant.manage") &&
             Boolean(session.data.teamId)
           }
           onOpenChange={setAssistantProviderSetupOpen}
@@ -3781,18 +3841,22 @@ function CustomChartView({ data, chart, colorIndex, xAxisLabel, yAxisLabel }: { 
 }
 
 function CustomCharts() {
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const canViewDashboard = canSessionUsePermission(session.data, "dashboard.view");
+  const canManageDashboard = canSessionUsePermission(session.data, "dashboard.manage");
+  const canViewApplicants = canSessionUsePermission(session.data, "applicants.view");
   const [xAxis, setXAxis] = useState<CustomChartXAxis>("grade");
   const [yAxis, setYAxis] = useState<CustomChartYAxis>("count");
   const [chart, setChart] = useState<CustomChartType>("pie");
   const queryClient = useQueryClient();
-  const chartsQuery = useListDashboardCharts({ query: { queryKey: getListDashboardChartsQueryKey() } });
+  const chartsQuery = useListDashboardCharts({ query: { queryKey: getListDashboardChartsQueryKey(), enabled: canViewDashboard } });
   const createChart = useCreateDashboardChart();
   const updateChart = useUpdateDashboardChart();
   const deleteChart = useDeleteDashboardChart();
-  const list = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }) } });
+  const list = useListApplicants({ sort: "rank" }, { query: { queryKey: getListApplicantsQueryKey({ sort: "rank" }), enabled: canViewApplicants } });
   const importedRef = useRef(false);
   useEffect(() => {
-    if (importedRef.current || chartsQuery.isLoading || !chartsQuery.data) return;
+    if (!canManageDashboard || importedRef.current || chartsQuery.isLoading || !chartsQuery.data) return;
     if (chartsQuery.data.items.length > 0) return;
     const legacy = loadCustomCharts();
     if (!legacy.length) return;
@@ -3812,7 +3876,7 @@ function CustomCharts() {
       }
       queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() });
     })();
-  }, [chartsQuery.data, chartsQuery.isLoading, createChart, queryClient]);
+  }, [canManageDashboard, chartsQuery.data, chartsQuery.isLoading, createChart, queryClient]);
   const applicants = list.data?.items ?? [];
   const charts = chartsQuery.data?.items ?? [];
   const xAxisOf = (value: string): CustomChartXAxis => CUSTOM_CHART_X_AXES.some(entry => entry.value === value) ? value as CustomChartXAxis : legacyChartXAxis(value);
@@ -3853,12 +3917,20 @@ function CustomCharts() {
   };
   const chartTypeOf = (value: string): CustomChartType => value === "pie" || value === "line" ? value : "bars";
   const addChart = () => {
+    if (!canManageDashboard) return;
     if (createChart.isPending) return;
     createChart.mutate({ data: { xAxis, yAxis, chart } }, {
       onSuccess: () => queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() }),
     });
   };
   const refresh = () => queryClient.invalidateQueries({ queryKey: getListDashboardChartsQueryKey() });
+  if (!canViewDashboard) return null;
+  if (!canManageDashboard) return <Section title="Custom charts" kicker="Shared dashboard charts.">
+    {chartsQuery.isLoading ? <Skeleton className="h-56" /> : chartsQuery.isError ? <p className="text-sm text-[#b34a42]">Custom charts could not load.</p> : charts.length ? <div className="grid gap-5 md:grid-cols-2">{charts.map((config, index) => {
+      const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart);
+      return <CustomChartView key={config.id} data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} />;
+    })}</div> : <p className="text-sm text-[#7c8c91]">No custom charts yet.</p>}
+  </Section>;
   return <Section title="Custom charts" kicker="Choose axes for bars and lines, or a group and measure for pie charts. Shared with the other admins."><div className="flex flex-wrap items-end gap-2"><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Group by" : "X axis"}<select value={xAxis} onChange={event => setXAxis(event.target.value as CustomChartXAxis)} data-testid="select-chart-x-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_X_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">{chart === "pie" ? "Measure" : "Y axis"}<select value={yAxis} onChange={event => setYAxis(event.target.value as CustomChartYAxis)} data-testid="select-chart-y-axis" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_Y_AXES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><label className="text-[11px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]">Diagram<select value={chart} onChange={event => setChart(event.target.value as CustomChartType)} data-testid="select-chart-type" className="mt-1 block h-10 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs normal-case tracking-normal outline-none focus:border-[#16869a]">{CUSTOM_CHART_TYPES.map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></label><button onClick={addChart} disabled={createChart.isPending} data-testid="button-add-chart" className="flex h-10 items-center gap-1.5 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Plus size={15} /> Add chart</button></div>{chartsQuery.isLoading ? <div className="mt-5 grid gap-5 md:grid-cols-2">{[1, 2].map(i => <Skeleton key={i} className="h-56" />)}</div> : chartsQuery.isError ? <p className="mt-4 text-sm text-[#b34a42]">Custom charts could not load. <button onClick={() => chartsQuery.refetch()} className="font-semibold text-[#16869a]">Retry</button></p> : charts.length > 0 ? <div className="mt-5 grid gap-5 md:grid-cols-2">{charts.map((config, index) => { const currentXAxis = xAxisOf(config.xAxis); const currentYAxis = yAxisOf(config.yAxis); const currentChart = chartTypeOf(config.chart); const title = currentChart === "pie" ? `${axisLabel(currentXAxis)} distribution` : `${axisLabel(currentXAxis)} × ${axisLabel(currentYAxis)}`; return <div key={config.id} className="rounded-2xl border border-[#e3ebeb] p-4" data-testid={`custom-chart-${config.id}`}><div className="mb-3 flex items-start justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold">{title}</p><p className="mt-1 text-[11px] text-[#7c8c91]">{currentChart === "pie" ? `Grouped by ${axisLabel(currentXAxis)} · measured as ${axisLabel(currentYAxis)}` : `X: ${axisLabel(currentXAxis)} · Y: ${axisLabel(currentYAxis)}`}</p></div><div className="flex shrink-0 items-center gap-1">{CUSTOM_CHART_TYPES.map(entry => <button key={entry.value} onClick={() => updateChart.mutate({ chartId: config.id, data: { chart: entry.value } }, { onSuccess: refresh })} data-testid={`button-chart-type-${config.id}-${entry.value}`} className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${config.chart === entry.value ? "bg-[#16869a] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{entry.label}</button>)}<button onClick={() => deleteChart.mutate({ chartId: config.id }, { onSuccess: refresh })} aria-label={`Remove ${title} chart`} data-testid={`button-remove-chart-${config.id}`} className="rounded-md p-1.5 text-[#a34d46] transition hover:bg-[#fff1ef]"><X size={14} /></button></div></div><div className="mb-3 flex flex-wrap gap-2"><select value={currentXAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { xAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Group by" : "X axis"} for ${title}`} data-testid={`select-chart-x-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs"><option value={currentXAxis}>{axisLabel(currentXAxis)}</option>{CUSTOM_CHART_X_AXES.filter(entry => entry.value !== currentXAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select><select value={currentYAxis} onChange={event => updateChart.mutate({ chartId: config.id, data: { yAxis: event.target.value } }, { onSuccess: refresh })} aria-label={`${currentChart === "pie" ? "Measure" : "Y axis"} for ${title}`} data-testid={`select-chart-y-axis-${config.id}`} className="h-8 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs"><option value={currentYAxis}>{axisLabel(currentYAxis)}</option>{CUSTOM_CHART_Y_AXES.filter(entry => entry.value !== currentYAxis).map(entry => <option key={entry.value} value={entry.value}>{entry.label}</option>)}</select></div><CustomChartView data={dataFor({ xAxis: currentXAxis, yAxis: currentYAxis })} chart={currentChart} colorIndex={index} xAxisLabel={axisLabel(currentXAxis)} yAxisLabel={axisLabel(currentYAxis)} /></div>; })}</div> : <p className="mt-4 text-sm text-[#7c8c91]">No custom charts yet. Choose a group and measure for pie, or X and Y for bars and lines.</p>}</Section>;
 }
 
@@ -3868,15 +3940,20 @@ function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
   const sessionRole = session.data?.role ?? "interviewer";
   const { visibility } = useWorkspaceVisibility(!demoMode && session.data?.authenticated === true, sessionRole, sessionUserId);
   const customWorkspacesQuery = useAccessibleCustomWorkspaces(
-    !demoMode && session.data?.authenticated === true,
+    !demoMode && session.data?.authenticated === true && (
+      canSessionUsePermission(session.data, "customWorkspaces.view") ||
+      canSessionUsePermission(session.data, "customWorkspaces.manage")
+    ),
     session.data?.teamId,
     sessionUserId,
   );
   const customWorkspaces = demoMode ? DEMO_CUSTOM_WORKSPACES : customWorkspacesQuery.data ?? [];
   const isCoordinator = !demoMode && sessionRole === "coordinator";
+  const canManageCustomWorkspaces = !demoMode && canSessionUsePermission(session.data, "customWorkspaces.manage");
   const canSee = (key: WorkspaceKey) => demoMode
     ? key !== "interview"
-    : userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key);
+    : userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key) &&
+      canSessionUsePermission(session.data, `${key}.view`);
   // Per-user workspace list in canonical order: numbering and the count below
   // are relative to what this person can open, so the same workspace can be
   // Workspace 01 for one person and Workspace 03 for another.
@@ -3897,7 +3974,7 @@ function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
             <p className="mt-2 text-sm text-[#65747a] dark:text-[#afc1c9]">Pick the space you need and jump straight in.</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {isCoordinator && !demoMode && (
+            {(isCoordinator || canManageCustomWorkspaces) && !demoMode && (
               <Link
                 href="/custom-workspaces"
                 data-testid="link-create-workspace"
@@ -4323,6 +4400,10 @@ function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
 
 function Applicants() {
   const { settings } = useWorkspaceSettings();
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const canManageApplicants = canSessionUsePermission(session.data, "applicants.manage");
+  const canManageSnapshots = canSessionUsePermission(session.data, "snapshots.manage");
+  const canSearchApplicants = canSessionUsePermission(session.data, "applicants.search");
   const [, setLocation] = useLocation();
   const searchParams = useSearch();
   const [search, setSearch] = useState("");
@@ -4444,10 +4525,10 @@ function Applicants() {
   return <div className="fade-up">
     <PageHeading eyebrow="Applicant review / triage" title="The applicant field." detail="Rank with the team. Drag a candidate into a decision lane when the signal is clear." action={<div className="flex flex-wrap gap-2">
       <button onClick={() => setPrintOpen(true)} data-testid="button-print-roster" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Printer size={16} /> Print roster</button>
-      <button onClick={() => setImportOpen(!importOpen)} data-testid="button-import" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><FileUp size={16} /> Import roster</button>
+      <button onClick={() => setImportOpen(!importOpen)} disabled={!canManageApplicants} data-testid="button-import" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762] disabled:opacity-50"><FileUp size={16} /> Import roster</button>
       <button onClick={() => setExportOpen(!exportOpen)} data-testid="button-export" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><Download size={16} /> Export roster</button>
-      <button onClick={() => setHistoryOpen(!historyOpen)} data-testid="button-version-history" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762]"><History size={16} /> Version history</button>
-      <button onClick={() => void regenerateAllScores()} disabled={regenAll.running} data-testid="button-regenerate-all-scores" title="Regenerate every AI score from transcripts" className="flex items-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-3 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={16} className={regenAll.running ? "animate-spin" : ""} /> {regenAll.running ? `Regenerating ${regenAll.done}/${regenAll.total}` : "Regenerate all scores"}</button>
+      <button onClick={() => setHistoryOpen(!historyOpen)} disabled={!canManageSnapshots} data-testid="button-version-history" className="flex items-center gap-2 rounded-xl border border-[#cbd9da] bg-white px-4 py-3 text-sm font-semibold text-[#385762] disabled:opacity-50"><History size={16} /> Version history</button>
+      <button onClick={() => void regenerateAllScores()} disabled={!canManageApplicants || regenAll.running} data-testid="button-regenerate-all-scores" title="Regenerate every AI score from transcripts" className="flex items-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-3 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={16} className={regenAll.running ? "animate-spin" : ""} /> {regenAll.running ? `Regenerating ${regenAll.done}/${regenAll.total}` : "Regenerate all scores"}</button>
     </div>} />
     {importOpen && <ImportPanel onClose={() => setImportOpen(false)} />}
     {exportOpen && <ExportPanel applicants={list.data?.items ?? []} onClose={() => setExportOpen(false)} />}
@@ -4467,13 +4548,13 @@ function Applicants() {
     {list.isLoading ? <div className="space-y-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div> : list.isError ? <ErrorState compact onRetry={() => list.refetch()} /> : <>
       <div className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-3">
         <div className="flex flex-wrap gap-2">
-         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => { setSearch(e.target.value); setAiSearchNote(null); }} data-testid="input-search-applicants" aria-label="Search applicants with text or qualifiers" placeholder="Search applicants or try name:maya age:>=14..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-10 text-base md:text-sm outline-none focus:border-[#16869a]" /><button type="button" onClick={() => setAiSearchOpen(open => !open)} title="Ask AI to build this search" aria-label="Ask AI to build this search" data-testid="button-ai-search" className={`absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded-md transition ${aiSearchOpen ? "bg-[#dff2ee] text-[#12737d]" : "text-[#16869a] hover:bg-[#edf7f5]"}`}><Sparkles size={14} /></button></div>
+         <div className="relative min-w-[220px] flex-1"><Search size={16} className="absolute left-3 top-3 text-[#819198]" /><input value={search} onChange={e => { setSearch(e.target.value); setAiSearchNote(null); }} data-testid="input-search-applicants" aria-label="Search applicants with text or qualifiers" placeholder="Search applicants or try name:maya age:>=14..." className="h-10 w-full rounded-lg border border-[#dce5e5] pl-9 pr-10 text-base md:text-sm outline-none focus:border-[#16869a]" /><button type="button" disabled={!canSearchApplicants} onClick={() => setAiSearchOpen(open => !open)} title="Ask AI to build this search" aria-label="Ask AI to build this search" data-testid="button-ai-search" className={`absolute right-0 top-0 flex h-10 w-10 items-center justify-center rounded-md transition disabled:opacity-40 ${aiSearchOpen ? "bg-[#dff2ee] text-[#12737d]" : "text-[#16869a] hover:bg-[#edf7f5]"}`}><Sparkles size={14} /></button></div>
         <select value={category} onChange={e => setCategory(e.target.value)} data-testid="select-category-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-base md:text-sm"><option value="">All categories</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select>
         <select value={grade} onChange={e => setGrade(e.target.value)} data-testid="select-grade-filter" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-base md:text-sm"><option value="">All grades</option>{["6th","7th","8th"].map(g => <option key={g} value={g}>{g}</option>)}</select>
         <select value={sort} onChange={e => setSort(e.target.value)} data-testid="select-sort" className="h-10 rounded-lg border border-[#dce5e5] bg-white px-3 text-base md:text-sm" title="Sort applicants"><option value="rank">Sort: Rank</option><option value="queue">Sort: Queue order</option><option value="score">Sort: AI score</option><option value="name">Sort: Name</option><option value="grade">Sort: Grade</option><option value="skill">Sort: Skill</option><option value="gender">Sort: Gender</option><option value="newest">Sort: Newest first</option><option value="oldest">Sort: Oldest first</option></select>
         <button onClick={() => { setSearch(""); setCategory(""); setGrade(""); setSort("rank"); }} data-testid="button-reset-filters" className="flex h-10 items-center gap-2 rounded-lg px-3 text-sm text-[#60757c] hover:bg-[#edf2f2]"><RefreshCw size={14} /> Reset</button>
          </div>
-          {aiSearchOpen && <form onSubmit={event => { event.preventDefault(); const prompt = aiPrompt.trim(); if (!prompt || interpretSearch.isPending) return; interpretSearch.mutate({ data: { prompt } }, { onSuccess: result => { setSearch(result.search); setAiSearchNote(result); }, }); }} className="ai-search-panel mt-2 rounded-xl border border-[#b9d9d7] bg-[#f2faf8] p-2.5" data-testid="ai-search-panel"><div className="flex flex-wrap gap-2"><input value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} autoFocus placeholder="Try “female applicants who code, but not CAD”" aria-label="Describe the applicant search" data-testid="input-ai-search" className="ai-search-input h-9 min-w-[220px] flex-1 rounded-lg border border-[#c9e0dd] bg-white px-3 text-base md:text-sm outline-none focus:border-[#16869a]" /><button type="submit" disabled={interpretSearch.isPending || !aiPrompt.trim()} data-testid="button-run-ai-search" className="ai-search-submit flex h-9 items-center gap-1.5 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white disabled:opacity-50"><Sparkles size={13} /> {interpretSearch.isPending ? "Building…" : "Build search"}</button></div>{interpretSearch.isError && <p className="ai-search-error mt-2 text-xs text-[#ad4b43]">{serverErrorMessage(interpretSearch.error, "The assistant could not build that search. Try again.")}</p>}{aiSearchNote && <p className="ai-search-result mt-2 text-xs leading-5 text-[#48656b]">Using <code className="ai-search-query rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{aiSearchNote.search}</code> · {aiSearchNote.explanation}</p>}</form>}
+          {aiSearchOpen && <form onSubmit={event => { event.preventDefault(); const prompt = aiPrompt.trim(); if (!canSearchApplicants || !prompt || interpretSearch.isPending) return; interpretSearch.mutate({ data: { prompt } }, { onSuccess: result => { setSearch(result.search); setAiSearchNote(result); }, }); }} className="ai-search-panel mt-2 rounded-xl border border-[#b9d9d7] bg-[#f2faf8] p-2.5" data-testid="ai-search-panel"><div className="flex flex-wrap gap-2"><input value={aiPrompt} onChange={event => setAiPrompt(event.target.value)} autoFocus placeholder="Try “female applicants who code, but not CAD”" aria-label="Describe the applicant search" data-testid="input-ai-search" className="ai-search-input h-9 min-w-[220px] flex-1 rounded-lg border border-[#c9e0dd] bg-white px-3 text-base md:text-sm outline-none focus:border-[#16869a]" /><button type="submit" disabled={!canSearchApplicants || interpretSearch.isPending || !aiPrompt.trim()} data-testid="button-run-ai-search" className="ai-search-submit flex h-9 items-center gap-1.5 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white disabled:opacity-50"><Sparkles size={13} /> {interpretSearch.isPending ? "Building…" : "Build search"}</button></div>{interpretSearch.isError && <p className="ai-search-error mt-2 text-xs text-[#ad4b43]">{serverErrorMessage(interpretSearch.error, "The assistant could not build that search. Try again.")}</p>}{aiSearchNote && <p className="ai-search-result mt-2 text-xs leading-5 text-[#48656b]">Using <code className="ai-search-query rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{aiSearchNote.search}</code> · {aiSearchNote.explanation}</p>}</form>}
          <p className="mt-2 text-[11px] leading-5 text-[#7c8c91]" data-testid="applicant-search-help">Qualifiers: <code className="font-mono text-[#526d75]">name:</code>, <code className="font-mono text-[#526d75]">age:</code>, <code className="font-mono text-[#526d75]">gender:</code>, <code className="font-mono text-[#526d75]">grade:</code>, <code className="font-mono text-[#526d75]">skill:</code>, <code className="font-mono text-[#526d75]">recommendation:</code>, <code className="font-mono text-[#526d75]">category:</code>, <code className="font-mono text-[#526d75]">status:</code>, <code className="font-mono text-[#526d75]">invalid:true</code>. Combine with <code className="font-mono text-[#526d75]">AND</code>, <code className="font-mono text-[#526d75]">OR</code>, <code className="font-mono text-[#526d75]">NOT</code>, parentheses, or <code className="font-mono text-[#526d75]">IF … THEN …</code>. Quote values with spaces.</p>
       </div>
       <div className="grid gap-5 xl:grid-cols-[1fr_330px]">
@@ -4488,7 +4569,37 @@ function Applicants() {
     {printOpen && <PrintRoster applicants={list.data?.items ?? []} onClose={() => setPrintOpen(false)} />}
   </div>;
 }
-function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd, onMove }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void; onMove: (lane: string) => void }) { const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"; const signals = getApplicantSignals(a); const { settings } = useWorkspaceSettings(); const compact = settings.density === "compact"; const rowSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } }); const rowReadOnly = rowSession.data?.authenticated === true && rowSession.data.role !== "coordinator"; const flagUpdate = useUpdateApplicant(); const rowQc = useQueryClient(); const toggleFlag = () => flagUpdate.mutate({ id: a.id, data: { flagged: !a.flagged } }, { onSuccess: () => { rowQc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); rowQc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); return <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className={`group flex flex-wrap cursor-grab items-center gap-3 px-5 transition hover:bg-[#f6f9f8] ${compact ? "py-2" : "py-4"}`}><GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />{settings.showPhotos && (a.photoUrl ? <img src={a.photoThumbUrl ?? a.photoUrl} alt="" loading="lazy" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0,2)}</div>)}<button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left"><div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge>{(a.interviewDecision?.trim() && a.interviewDecision.trim() !== "Undecided") && <Badge tone={interviewDecisionTone(a.interviewDecision.trim())}>{a.interviewDecision.trim()}</Badge>}<SignalChips signals={signals} /></div><p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p></button>{!rowReadOnly && <button onClick={toggleFlag} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-${a.id}`} className={`touch-target shrink-0 rounded-lg p-2 transition ${a.flagged ? "text-[#b34a42]" : "text-[#b4c1c4] hover:text-[#b34a42]"}`}><Flag size={15} className={a.flagged ? "fill-current" : ""} /></button>}<div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div><label className="sr-only" htmlFor={`lane-select-${a.id}`}>Decision lane for {a.name}</label><select id={`lane-select-${a.id}`} value={a.category ?? ""} onChange={event => onMove(event.target.value)} data-testid={`select-applicant-lane-${a.id}`} className="touch-target h-9 w-full shrink-0 basis-full rounded-lg border border-[#dce5e5] bg-white px-2 text-base md:text-xs text-[#52666e] outline-none focus:border-[#16869a] sm:w-24 sm:basis-auto"><option value="">No lane</option>{DECISION_LANES.map(lane => <option key={lane} value={lane}>{DECISION_LANE_LABELS[lane]}</option>)}</select><ChevronRight size={16} className="text-[#b4c1c4]" /></div>; }
+function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd, onMove }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void; onMove: (lane: string) => void }) {
+  const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow";
+  const signals = getApplicantSignals(a);
+  const { settings } = useWorkspaceSettings();
+  const compact = settings.density === "compact";
+  const rowSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const rowReadOnly = rowSession.data?.authenticated === true && !canSessionUsePermission(rowSession.data, "applicants.edit");
+  const flagUpdate = useUpdateApplicant();
+  const rowQc = useQueryClient();
+  const toggleFlag = () => flagUpdate.mutate({ id: a.id, data: { flagged: !a.flagged } }, { onSuccess: () => {
+    rowQc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+    rowQc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+    rowQc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+    rowQc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+  } });
+  return <div draggable={canSessionUsePermission(rowSession.data, "applicants.edit")} onDragStart={onDragStart} onDragEnd={onDragEnd} data-testid={`row-applicant-${a.id}`} className={`group flex flex-wrap cursor-grab items-center gap-3 px-5 transition hover:bg-[#f6f9f8] ${compact ? "py-2" : "py-4"}`}>
+    <GripVertical size={15} className="shrink-0 text-[#b4c1c4]" />
+    {settings.showPhotos && (a.photoUrl ? <img src={a.photoThumbUrl ?? a.photoUrl} alt="" loading="lazy" className="h-9 w-9 shrink-0 rounded-xl border border-[#dcecea] object-cover" /> : <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#dcecea] text-sm font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>)}
+    <button onClick={onSelect} data-testid={`button-open-applicant-${a.id}`} className="min-w-0 flex-1 text-left">
+      <div className="flex flex-wrap items-center gap-2"><p className="truncate text-sm font-semibold">{a.name}</p><Badge tone={tone}>{a.aiRecommendation}</Badge>{(a.interviewDecision?.trim() && a.interviewDecision.trim() !== "Undecided") && <Badge tone={interviewDecisionTone(a.interviewDecision.trim())}>{a.interviewDecision.trim()}</Badge>}<SignalChips signals={signals} /></div>
+      <p className="mt-1 truncate text-xs text-[#7a8b90]">Grade {a.grade} · {a.roboticsExperience || "No robotics experience noted"}</p>
+    </button>
+    {!rowReadOnly && <button onClick={toggleFlag} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-${a.id}`} className={`touch-target shrink-0 rounded-lg p-2 transition ${a.flagged ? "text-[#b34a42]" : "text-[#b4c1c4] hover:text-[#b34a42]"}`}><Flag size={15} className={a.flagged ? "fill-current" : ""} /></button>}
+    <div className="hidden text-right sm:block"><p className="mono text-lg font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p></div>
+    <label className="sr-only" htmlFor={`lane-select-${a.id}`}>Decision lane for {a.name}</label>
+    <select id={`lane-select-${a.id}`} value={a.category ?? ""} disabled={rowReadOnly} onChange={event => onMove(event.target.value)} data-testid={`select-applicant-lane-${a.id}`} className="touch-target h-9 w-full shrink-0 basis-full rounded-lg border border-[#dce5e5] bg-white px-2 text-base md:text-xs text-[#52666e] outline-none focus:border-[#16869a] disabled:cursor-not-allowed disabled:opacity-50 sm:w-24 sm:basis-auto">
+      <option value="">No lane</option>{DECISION_LANES.map(lane => <option key={lane} value={lane}>{DECISION_LANE_LABELS[lane]}</option>)}
+    </select>
+    <ChevronRight size={16} className="text-[#b4c1c4]" />
+  </div>;
+}
 function DropLane({ category, applicants, onDrop, onSelect, onDragStart, onDragEnd, onMove }: { category: string; applicants: Applicant[]; onDrop: () => void; onSelect: (id: string) => void; onDragStart: (id: string) => void; onDragEnd?: () => void; onMove: (applicantId: string, lane: string) => void }) { const labels = DECISION_LANE_LABELS; return <div onDragOver={e => e.preventDefault()} onDrop={onDrop} data-testid={`drop-lane-${category}`} className="rounded-2xl border border-dashed border-[#c5d5d7] bg-[#eef4f3] p-3"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{labels[category]}</p><span className="mono text-xs text-[#809196]">{applicants.length}</span></div><p className="px-2 pb-2 pt-1 text-[11px] text-[#819196]">Drop candidates here{applicants.length > 4 ? ` · showing 4 of ${applicants.length}` : ""}</p>{applicants.slice(0,4).map(a => <div key={a.id} className="mb-2 flex items-center gap-2"><button draggable onDragStart={e => { e.stopPropagation(); onDragStart(a.id); }} onDragEnd={onDragEnd} onClick={() => onSelect(a.id)} data-testid={`lane-applicant-${a.id}`} className="flex min-w-0 flex-1 cursor-grab items-center justify-between rounded-xl border border-[#d7e4e3] bg-white px-3 py-3 text-left shadow-sm active:cursor-grabbing"><span className="truncate text-xs font-semibold">{a.name}</span><span className="mono text-xs text-[#16869a]">{a.aiScore.toFixed(1)}</span></button><label className="sr-only" htmlFor={`lane-select-lane-${a.id}`}>Decision lane for {a.name}</label><select id={`lane-select-lane-${a.id}`} value={a.category ?? ""} onChange={event => onMove(a.id, event.target.value)} data-testid={`select-lane-applicant-${a.id}`} className="touch-target h-9 w-20 shrink-0 rounded-lg border border-[#cbd9da] bg-white px-1.5 text-base md:text-[11px] text-[#52666e] outline-none focus:border-[#16869a]"><option value="">No lane</option>{DECISION_LANES.map(lane => <option key={lane} value={lane}>{DECISION_LANE_LABELS[lane]}</option>)}</select></div>)}</div>; }
 type ExportFormat = "csv" | "semicolon" | "tsv" | "xlsx";
 
@@ -4736,8 +4847,71 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
       setPhotoError(serverErrorMessage(photoFailure, "Photo upload failed. Try again."));
     }
   };
-  const destroy = async () => { if (remove.isPending || !(await confirmAction({ title: `Delete ${a.name} permanently?`, detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return; remove.mutate({ id: a.id }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); onClose(); } });   }; const readOnly = roleSession.data?.authenticated === true && roleSession.data.role !== "coordinator";
-  if (readOnly) return <div {...overlayProps} data-testid="applicant-detail" className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside {...panelProps} role="dialog" aria-modal="true" aria-label="Applicant details" onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}</div><p className="mono mt-4 text-4xl font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762]">{a.roboticsExperience || "No robotics experience noted."}</p>{a.notes ? <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Admin notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762]">{a.notes}</p></> : null}</div></aside></div>;
+  const destroy = async () => {
+    if (!canSessionUsePermission(roleSession.data, "applicants.manage") || remove.isPending ||
+      !(await confirmAction({ title: `Delete ${a.name} permanently?`, detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return;
+    remove.mutate({ id: a.id }, { onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+      queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
+      onClose();
+    } });
+  };
+  const canEditApplicant = canSessionUsePermission(roleSession.data, "applicants.edit");
+  const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
+  const canManageQueue = canSessionUsePermission(roleSession.data, "queue.manage");
+  const canManageApplicants = canSessionUsePermission(roleSession.data, "applicants.manage");
+  const readOnly = roleSession.data?.authenticated === true && !canEditApplicant;
+  if (roleSession.data?.customRoleId) return (
+    <div {...overlayProps} data-testid="applicant-detail" className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}>
+      <aside {...panelProps} role="dialog" aria-modal="true" aria-label="Applicant details" onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 text-[#182232] shadow-2xl dark:bg-[#101b23] dark:text-[#e8eff2]">
+        <div className="flex items-start justify-between">
+          <div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0, 8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189] dark:text-[#afc1c9]">Grade {a.grade} · {a.email || "No email provided"}</p></div>
+          <IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton>
+        </div>
+        <div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5 dark:border-[#344953] dark:bg-[#1a2b34]">
+          <div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}{canEditApplicant && <button onClick={() => save({ flagged: !a.flagged })} data-testid={`button-flag-detail-${a.id}`} className="rounded-lg border border-[#cbd9da] px-3 py-2 text-xs font-semibold text-[#60757c] dark:border-[#3a5567] dark:text-[#afc1c9]">{a.flagged ? "Remove flag" : "Flag"}</button>}</div>
+          <p className="mono mt-4 text-4xl font-medium text-[#183a4b] dark:text-[#d5e4ea]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p>
+          <p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762] dark:text-[#c0d0d6]">{a.roboticsExperience || "No robotics experience noted."}</p>
+          {a.notes && <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Admin notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762] dark:text-[#c0d0d6]">{a.notes}</p></>}
+        </div>
+        {canEditApplicant && <div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5 dark:border-[#344953] dark:bg-[#1a2b34]">
+          <h3 className="font-semibold">Applicant information</h3>
+          <div className="mt-4 grid gap-3">
+            <label className="text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Name<input value={editName} onChange={e => { dirtyFields.current.add("name"); setEditName(e.target.value); }} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"/></label>
+            <div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Grade<input value={editGrade} onChange={e => { dirtyFields.current.add("grade"); setEditGrade(e.target.value); }} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"/></label><label className="text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Email<input value={editEmail} onChange={e => { dirtyFields.current.add("email"); setEditEmail(e.target.value); }} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"/></label></div>
+            <div className="grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">AI score<input value={editScore} onChange={e => { dirtyFields.current.add("score"); setEditScore(e.target.value); }} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"/></label><label className="text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Recommendation<input value={editRec} onChange={e => { dirtyFields.current.add("recommendation"); setEditRec(e.target.value); }} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"/></label></div>
+            <label className="block text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Notes<textarea value={notes} onChange={e => { dirtyFields.current.add("notes"); setNotes(e.target.value); }} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"/></label>
+          </div>
+          <button onClick={saveInfo} data-testid="button-save-info" className="mt-3 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white dark:bg-[#1c4f5e]">Save details</button>
+          <button onClick={() => save({ notes }, ["notes"])} data-testid="button-save-notes" className="ml-2 mt-3 rounded-lg border border-[#cbd9da] px-4 py-2.5 text-sm font-semibold text-[#385762] dark:border-[#3a5567] dark:text-[#c3d3db]">Save notes</button>
+          <div className="mt-4 flex flex-wrap gap-2"><label className="cursor-pointer rounded-lg border border-[#cbd9da] px-4 py-2 text-xs font-semibold dark:border-[#3a5567]"><FileUp size={14} className="mr-1 inline"/>Upload photo<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }}/></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null, photoThumbUrl: null })} data-testid="button-remove-photo" className="rounded-lg border border-[#e0b8b4] px-4 py-2 text-xs font-semibold text-[#a34a42] dark:border-[#7d4038] dark:text-[#e89087]">Remove photo</button>}</div>
+          {photoError && <p className="mt-2 text-xs text-[#ad4b43]" role="alert">{photoError}</p>}
+        </div>}
+        {canManageQueue && <div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5 dark:border-[#344953] dark:bg-[#1a2b34]">
+          <h3 className="font-semibold">Queue</h3><div className="mt-4 grid grid-cols-2 gap-3">
+            <label className="text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+            <label className="text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label>
+          </div>
+        </div>}
+        {canManageAttendance && <div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5 dark:border-[#344953] dark:bg-[#1a2b34]">
+          <h3 className="font-semibold">Attendance</h3>
+          <label className="mt-3 block text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Status<select defaultValue={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>
+          {a.attendance === "late" && <label className="mt-3 block text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Arrival time<input type="time" defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"/></label>}
+          {a.attendance === "absent" && <label className="mt-3 block text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]">Makeup date<input type="date" defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base text-[#182232] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#e8eff2]"/></label>}
+          {(a.attendance === "late" || a.attendance === "absent") && <label className="mt-3 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c] dark:text-[#afc1c9]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]"/> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}
+        </div>}
+        {canManageApplicants && <div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5 dark:border-[#70433e] dark:bg-[#382725]">
+          <h3 className="font-semibold text-[#9f3b33] dark:text-[#f1c4ba]">Applicant management</h3>
+          <button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 rounded-lg border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50 dark:border-[#3d7776] dark:bg-[#173331] dark:text-[#8bd8cf]"><RefreshCw size={15} className="mr-1 inline"/>Regenerate evaluation</button>
+          <button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="ml-2 mt-3 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{remove.isPending ? "Deleting..." : "Delete applicant"}</button>
+          {remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}
+        </div>}
+      </aside>
+    </div>
+  );
+  if (readOnly && !canManageAttendance && !canManageQueue) return <div {...overlayProps} data-testid="applicant-detail" className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside {...panelProps} role="dialog" aria-modal="true" aria-label="Applicant details" onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex flex-wrap items-center gap-2"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow"}>{a.aiRecommendation}</Badge><SignalChips signals={getApplicantSignals(a)} />{a.flagged ? <Badge tone="red">Flagged</Badge> : null}</div><p className="mono mt-4 text-4xl font-medium text-[#183a4b]">{a.aiScore.toFixed(1)}</p><p className="text-[10px] uppercase tracking-[.1em] text-[#9aa7aa]">AI score</p><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Robotics background</p><p className="mt-1 text-sm leading-6 text-[#385762]">{a.roboticsExperience || "No robotics experience noted."}</p>{a.notes ? <><p className="mt-4 text-xs font-semibold uppercase tracking-[.12em] text-[#7c8c91]">Admin notes</p><p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-[#385762]">{a.notes}</p></> : null}</div></aside></div>;
   return <div {...overlayProps} data-testid="applicant-detail" className="fixed inset-0 z-40 bg-[#112433]/25" onClick={onClose}><aside {...panelProps} role="dialog" aria-modal="true" aria-label="Applicant details" onClick={e => e.stopPropagation()} className="absolute inset-y-0 right-0 w-full max-w-[520px] overflow-y-auto bg-[#f8faf9] p-6 shadow-2xl"><div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.18em] text-[#16869a]">Applicant file / {a.id.slice(0,8)}</p><h2 className="mt-2 text-3xl font-semibold tracking-[-.05em]">{a.name}</h2><p className="mt-1 text-sm text-[#718189]">Grade {a.grade} · {a.email || "No email provided"}</p></div><div className="flex items-center gap-2"><button onClick={() => save({ flagged: !a.flagged })} title={a.flagged ? "Remove flag" : "Flag for follow-up"} aria-label={a.flagged ? "Remove flag" : "Flag for follow-up"} data-testid={`button-flag-detail-${a.id}`} className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold ${a.flagged ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#cbd9da] text-[#60757c]"}`}><Flag size={14} className={a.flagged ? "fill-current" : ""} />{a.flagged ? "Flagged" : "Flag"}</button><IconButton label="Close applicant detail" testId="button-close-detail" onClick={onClose}><X size={17} /></IconButton></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Applicant info</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid gap-3"><label className="text-xs font-semibold text-[#63747c]">Name<input value={editName} onChange={e => { dirtyFields.current.add("name"); setEditName(e.target.value); }} data-testid="input-detail-name" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-[#63747c]">Grade<input value={editGrade} onChange={e => { dirtyFields.current.add("grade"); setEditGrade(e.target.value); }} data-testid="input-detail-grade" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Email<input value={editEmail} onChange={e => { dirtyFields.current.add("email"); setEditEmail(e.target.value); }} data-testid="input-detail-email" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-[#63747c]">AI score (whole number)<input value={editScore} onChange={e => { dirtyFields.current.add("score"); setEditScore(e.target.value); }} inputMode="numeric" data-testid="input-detail-score" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label><label className="text-xs font-semibold text-[#63747c]">Recommendation<input value={editRec} onChange={e => { dirtyFields.current.add("recommendation"); setEditRec(e.target.value); }} data-testid="input-detail-recommendation" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" /></label></div>{a.aiScore === -1 && <p className="text-xs text-[#805c08]">Score is invalid (-1). Enter the corrected score, or fix the file and re-import.</p>}</div><button onClick={saveInfo} data-testid="button-save-info" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save details</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Profile photo</h3><div className="mt-3 flex items-center gap-4">{a.photoUrl ? <img src={a.photoUrl} alt={`${a.name} profile photo`} className="h-24 w-24 rounded-2xl border border-[#dce5e5] object-cover" /> : <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-[#dcecea] text-2xl font-bold text-[#176a77]">{a.name.split(" ").map(x => x[0]).join("").slice(0, 2)}</div>}<div className="space-y-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><FileUp size={15} /> {a.photoUrl ? "Replace photo" : "Upload photo"}<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }} /></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null, photoThumbUrl: null })} data-testid="button-remove-photo" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] px-4 py-2.5 text-sm font-semibold text-[#a34d46] hover:bg-[#fff7f6]"><Trash2 size={15} /> Remove</button>}</div></div>{photoUpload.isPending && <p className="mt-2 text-xs text-[#718189]">Uploading photo...</p>}{photoError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="photo-error">{photoError}</p>}</div><div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2"><StatCard label="AI score" value={a.aiScore.toFixed(1)} suffix="/ 10" tone="yellow" /><div className="rounded-2xl border border-[#dce5e5] bg-white p-4"><p className="text-xs uppercase tracking-[.12em] text-[#72838a]">Recommendation</p><div className="mt-3"><Badge tone={a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : "yellow"}>{a.aiRecommendation}</Badge></div></div></div><button onClick={regenerate} disabled={regen.isPending} data-testid="button-regenerate-evaluation" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-[#a9d3ce] bg-[#eff8f6] px-4 py-2.5 text-sm font-semibold text-[#12737d] disabled:opacity-50"><RefreshCw size={15} className={regen.isPending ? "animate-spin" : ""} /> {regen.isPending ? "Regenerating from transcript..." : a.aiScore === -1 ? "Score invalid — regenerate from transcript" : "Regenerate AI evaluation"}</button>{regen.isError && <p className="mt-2 text-xs text-[#ad4b43]" data-testid="regenerate-error">{serverErrorMessage(regen.error, "Regeneration failed. Try again.")}</p>}{regen.isSuccess && <p className="mt-2 text-xs font-semibold text-[#168069]">Evaluation regenerated and saved.</p>}<div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">AI readout</h3><p className="mt-3 text-sm leading-6 text-[#52666e]">{a.aiSummary || "No summary available."}</p><div className="mt-4 grid gap-3 text-xs"><div><p className="font-bold uppercase tracking-[.1em] text-[#16869a]">Strengths</p><p className="mt-1 text-[#64777d]">{a.aiStrengths || "Not listed"}</p></div><div><p className="font-bold uppercase tracking-[.1em] text-[#bd5047]">Concerns</p><p className="mt-1 text-[#64777d]">{a.aiConcerns || "Not listed"}</p></div></div></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><h3 className="font-semibold">Admin decision</h3>{update.isSuccess && <span className="text-xs font-semibold text-[#168069]">Saved</span>}</div><div className="mt-4 grid grid-cols-2 gap-3"><label className="text-xs font-semibold text-[#63747c]">Category<select defaultValue={a.category} onChange={e => save({ category: e.target.value })} data-testid="select-detail-category" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]"><option value="">Unranked</option>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label><label className="text-xs font-semibold text-[#63747c]">Interview status<select defaultValue={a.interviewStatus} onChange={e => save({ interviewStatus: e.target.value })} data-testid="select-detail-status" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]">{statuses.map(s => <option key={s} value={s}>{s}</option>)}</select></label></div><label className="mt-4 block text-xs font-semibold text-[#63747c]">Attendance<select value={a.attendance ?? "unmarked"} onChange={e => { const v = e.target.value; save(v === "late" ? { attendance: v, makeupDate: null, attendanceExcused: null } : v === "absent" ? { attendance: v, lateArrivalTime: null, attendanceExcused: null } : { attendance: v, lateArrivalTime: null, makeupDate: null, attendanceExcused: null }); }} data-testid="select-detail-attendance" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]">{ATTENDANCE_OPTIONS.map(o => <option key={o} value={o}>{attendanceLabel(o)}</option>)}</select></label>{a.attendance === "late" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Arrival time<input type="time" key={`late-${a.id}-${a.lateArrivalTime ?? "empty"}`} defaultValue={a.lateArrivalTime ?? ""} onChange={e => save({ lateArrivalTime: e.target.value || null })} data-testid="input-detail-late-time" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]" />{a.lateArrivalTime && <span className="mono mt-1 block text-[11px] font-normal text-[#8a6d1c]">Arrived {formatArrivalTime(a.lateArrivalTime)}</span>}</label>}{a.attendance === "absent" && <label className="mt-4 block text-xs font-semibold text-[#63747c]">Makeup date (optional)<input type="date" key={`makeup-${a.id}-${a.makeupDate ?? "empty"}`} defaultValue={a.makeupDate ?? ""} onChange={e => save({ makeupDate: e.target.value || null })} data-testid="input-detail-makeup-date" className="mt-1 h-10 w-full rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-sm text-[#182232]" />{a.makeupDate && <span className="mono mt-1 block text-[11px] font-normal text-[#a34d46]">Makeup {formatMakeupDate(a.makeupDate)}</span>}</label>}{(a.attendance === "late" || a.attendance === "absent") && <label className="mt-4 flex cursor-pointer items-center gap-2 text-xs font-semibold text-[#63747c]"><input type="checkbox" checked={a.attendanceExcused ?? false} onChange={e => save({ attendanceExcused: e.target.checked })} data-testid="input-detail-excused" className="h-4 w-4 accent-[#16869a]" /> Excused {a.attendance === "late" ? "late arrival" : "absence"}</label>}<label className="mt-4 block text-xs font-semibold text-[#63747c]">Notes<textarea value={notes} onChange={e => { dirtyFields.current.add("notes"); setNotes(e.target.value); }} data-testid="textarea-applicant-notes" className="mt-1 min-h-[110px] w-full resize-y rounded-lg border border-[#d5e0e0] bg-white p-3 text-base md:text-sm font-normal text-[#182232] outline-none focus:border-[#16869a]" placeholder="Capture the human signal..." /></label><button onClick={() => save({ notes }, ["notes"])} data-testid="button-save-notes" className="mt-3 flex items-center gap-2 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white"><Check size={15} /> Save notes</button></div><div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><h3 className="font-semibold">Application evidence</h3><div className="mt-3"><TranscriptView transcript={a.transcript ?? null} /></div></div><div className="mt-5 rounded-2xl border border-[#f0d4d1] bg-[#fff7f6] p-5"><h3 className="font-semibold text-[#9f3b33]">Danger zone</h3><p className="mt-1 text-xs text-[#8a6a67]">Removes this applicant from the roster, queue, and display permanently.</p><button onClick={destroy} disabled={remove.isPending} data-testid="button-delete-applicant" className="mt-3 flex items-center gap-2 rounded-lg bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Trash2 size={15} /> {remove.isPending ? "Deleting..." : "Delete applicant"}</button>{remove.isError && <p className="mt-2 text-xs text-[#ad4b43]">Delete failed. Try again.</p>}</div></aside></div>; }
 
 const RESET_CONFIRM_PHRASE = "I understand";
@@ -4784,7 +4958,10 @@ type AttendancePatch = { attendance: string; lateArrivalTime?: string | null; ma
 
 function DisplayTextCard() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
-  const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
+  const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const canViewDisplay = canSessionUsePermission(roleSession.data, "display.view");
+  const canManageDisplay = canSessionUsePermission(roleSession.data, "display.manage");
+  const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), enabled: canViewDisplay, refetchInterval: streamHealthy ? false : (5000 )} });
   const live = useGetDisplayState(undefined, { query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
   const update = useUpdateDisplaySettings();
   // Draft-first: edits live here only. Nothing reaches the big screen until
@@ -4862,6 +5039,13 @@ function DisplayTextCard() { const streamHealthy = useRealtimeHealthy();
   // Spoken line mirrors server logic: custom text wins when set, otherwise
   // the live announcement.
   const previewSpoken = !announce ? "" : draftCustom ? `${headline.trim() || liveHeadline}. ${subheading.trim() || liveSubheadline}.` : liveAnnouncement;
+  if (!canViewDisplay) return null;
+  if (!canManageDisplay) return <section className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-4 dark:border-[#344953] dark:bg-[#1a2b34]" data-testid="display-text-card">
+    <h2 className="font-semibold text-[#182232] dark:text-[#e8eff2]">Big-screen text</h2>
+    <p className="mt-2 text-sm text-[#52666e] dark:text-[#c0d0d6]">Headline: {saved?.headline || liveHeadline || "No headline"}</p>
+    <p className="mt-1 text-sm text-[#52666e] dark:text-[#c0d0d6]">Subheading: {saved?.subheadline || liveSubheadline || "No subheading"}</p>
+    <p className="mt-1 text-xs text-[#7c8c91] dark:text-[#afc1c9]">{saved?.showNames ? "Applicant names are shown." : "Applicant names are hidden."} {saved?.announce ? "Announcements are on." : "Announcements are muted."}</p>
+  </section>;
   return <section className="mb-5 rounded-2xl border border-[#dce5e5] bg-white p-4" data-testid="display-text-card">
     <div><p className="text-sm font-semibold">Big-screen text</p><p className="mt-1 text-xs text-[#7c8c91]">Edits stay here as a draft — the big screen does not change until you push. Check the preview, then push when it looks right. The announce switch mutes spoken announcements (manual tests still speak).</p></div>
     <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -4990,6 +5174,8 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
   onMark: (id: string, patch: AttendancePatch) => void;
   onMarkAll: () => void;
 }) {
+  const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [excusedDraft, setExcusedDraft] = useState(false);
@@ -4999,6 +5185,7 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
     setExcusedDraft(a.attendanceExcused ?? false);
   };
   const saveEditor = (a: Applicant, kind: "late" | "absent") => {
+    if (!canManageAttendance) return;
     if (kind === "late") {
       if (!draft) return;
       onMark(a.id, { attendance: "late", lateArrivalTime: draft, makeupDate: null, attendanceExcused: excusedDraft });
@@ -5008,6 +5195,7 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
     setEditing(null);
   };
   const clearEditor = (a: Applicant) => {
+    if (!canManageAttendance) return;
     onMark(a.id, { attendance: "unmarked", lateArrivalTime: null, makeupDate: null, attendanceExcused: null });
     setEditing(null);
   };
@@ -5015,6 +5203,7 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
   // arrival time, an agreed makeup date, and the excused flag. That is a
   // legitimate correction, but never a silent one.
   const markHere = async (a: Applicant) => {
+    if (!canManageAttendance) return;
     setEditing(null);
     if (a.attendance === "here") {
       onMark(a.id, { attendance: "unmarked", lateArrivalTime: null, makeupDate: null, attendanceExcused: null });
@@ -5032,8 +5221,8 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
     onMark(a.id, { attendance: "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null });
   };
   const excusedToggle = (id: string) => <div className="flex shrink-0 overflow-hidden rounded-lg border border-[#d5e0e0]" role="group" aria-label="Excused status">
-    <button onClick={() => setExcusedDraft(true)} data-testid={`button-excused-${id}`} title="Mark excused" className={`px-2.5 py-1.5 text-[11px] font-bold transition ${excusedDraft ? "bg-[#28a47f] text-white" : "bg-white text-[#63747c] hover:bg-[#eef3f2]"}`}>Excused</button>
-    <button onClick={() => setExcusedDraft(false)} data-testid={`button-unexcused-${id}`} title="Mark unexcused" className={`px-2.5 py-1.5 text-[11px] font-bold transition ${excusedDraft ? "bg-white text-[#63747c] hover:bg-[#eef3f2]" : "bg-[#3d4b54] text-white"}`}>Unexcused</button>
+    <button disabled={!canManageAttendance} onClick={() => setExcusedDraft(true)} data-testid={`button-excused-${id}`} title="Mark excused" className={`px-2.5 py-1.5 text-[11px] font-bold transition disabled:opacity-50 ${excusedDraft ? "bg-[#28a47f] text-white" : "bg-white text-[#63747c] hover:bg-[#eef3f2]"}`}>Excused</button>
+    <button disabled={!canManageAttendance} onClick={() => setExcusedDraft(false)} data-testid={`button-unexcused-${id}`} title="Mark unexcused" className={`px-2.5 py-1.5 text-[11px] font-bold transition disabled:opacity-50 ${excusedDraft ? "bg-white text-[#63747c] hover:bg-[#eef3f2]" : "bg-[#3d4b54] text-white"}`}>Unexcused</button>
   </div>;
   const rowTone = (a: Applicant) => a.attendance === "absent" ? "border-[#e5c4c0] bg-[#fff7f6]" : a.attendance === "late" ? "border-[#e8d9b0] bg-[#fffdf4]" : a.attendance === "here" ? "border-[#bfe3d8] bg-[#f4fbf8]" : "border-[#e1e9e8] bg-white";
   const avatarTone = (a: Applicant) => a.attendance === "here" ? "bg-[#28a47f] text-white" : a.attendance === "late" ? "bg-[#c99a1f] text-white" : a.attendance === "absent" ? "bg-[#b34a42] text-white" : "bg-[#dcecea] text-[#176a77]";
@@ -5061,23 +5250,23 @@ function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
               </span>
             </span>
             <div className="flex shrink-0 gap-1">
-              <button onClick={() => { void markHere(a); }} disabled={pending} data-testid={`button-attendance-here-${a.id}`} title="Mark here" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "here" ? "bg-[#28a47f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Here</button>
-              <button onClick={() => { if (lateOpen) setEditing(null); else openEditor(a, "late"); }} disabled={pending} data-testid={`button-attendance-late-${a.id}`} title="Mark late" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "late" ? "bg-[#c99a1f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Late</button>
-              <button onClick={() => { if (absentOpen) setEditing(null); else openEditor(a, "absent"); }} disabled={pending} data-testid={`button-attendance-absent-${a.id}`} title="Mark absent" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${a.attendance === "absent" ? "bg-[#b34a42] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Absent</button>
+              <button onClick={() => { void markHere(a); }} disabled={!canManageAttendance || pending} data-testid={`button-attendance-here-${a.id}`} title="Mark here" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition disabled:opacity-40 ${a.attendance === "here" ? "bg-[#28a47f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Here</button>
+              <button onClick={() => { if (lateOpen) setEditing(null); else openEditor(a, "late"); }} disabled={!canManageAttendance || pending} data-testid={`button-attendance-late-${a.id}`} title="Mark late" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition disabled:opacity-40 ${a.attendance === "late" ? "bg-[#c99a1f] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Late</button>
+              <button onClick={() => { if (absentOpen) setEditing(null); else openEditor(a, "absent"); }} disabled={!canManageAttendance || pending} data-testid={`button-attendance-absent-${a.id}`} title="Mark absent" className={`rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition disabled:opacity-40 ${a.attendance === "absent" ? "bg-[#b34a42] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>Absent</button>
             </div>
           </div>
           {lateOpen && <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input type="time" value={draft} onChange={e => setDraft(e.target.value)} data-testid={`input-late-time-${a.id}`} aria-label={`Arrival time for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a]" />
+            <input type="time" value={draft} disabled={!canManageAttendance} onChange={e => setDraft(e.target.value)} data-testid={`input-late-time-${a.id}`} aria-label={`Arrival time for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a] disabled:opacity-50" />
             {excusedToggle(a.id)}
-            <button onClick={() => saveEditor(a, "late")} disabled={pending || !draft} data-testid={`button-late-save-${a.id}`} className="rounded-lg bg-[#183a4b] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Save</button>
-            <button onClick={() => clearEditor(a)} disabled={pending} data-testid={`button-late-clear-${a.id}`} title="Clear late mark" className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Clear</button>
+            <button onClick={() => saveEditor(a, "late")} disabled={!canManageAttendance || pending || !draft} data-testid={`button-late-save-${a.id}`} className="rounded-lg bg-[#183a4b] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Save</button>
+            <button onClick={() => clearEditor(a)} disabled={!canManageAttendance || pending} data-testid={`button-late-clear-${a.id}`} title="Clear late mark" className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c] disabled:opacity-50">Clear</button>
             <button onClick={() => setEditing(null)} data-testid={`button-late-cancel-${a.id}`} className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Cancel</button>
           </div>}
           {absentOpen && <div className="mt-2 flex flex-wrap items-center gap-2">
-            <input type="date" value={draft} min={localYMD()} onChange={e => setDraft(e.target.value)} data-testid={`input-makeup-date-${a.id}`} aria-label={`Makeup date for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a]" />
+            <input type="date" value={draft} min={localYMD()} disabled={!canManageAttendance} onChange={e => setDraft(e.target.value)} data-testid={`input-makeup-date-${a.id}`} aria-label={`Makeup date for ${a.name}`} className="h-9 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs text-[#182232] outline-none focus:border-[#16869a] disabled:opacity-50" />
             {excusedToggle(a.id)}
-            <button onClick={() => saveEditor(a, "absent")} disabled={pending} data-testid={`button-absent-save-${a.id}`} title={draft ? "Save with makeup date" : "Save absent without makeup date"} className="rounded-lg bg-[#183a4b] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Save</button>
-            <button onClick={() => clearEditor(a)} disabled={pending} data-testid={`button-absent-clear-${a.id}`} title="Clear absent mark" className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Clear</button>
+            <button onClick={() => saveEditor(a, "absent")} disabled={!canManageAttendance || pending} data-testid={`button-absent-save-${a.id}`} title={draft ? "Save with makeup date" : "Save absent without makeup date"} className="rounded-lg bg-[#183a4b] px-3 py-1.5 text-[11px] font-bold text-white disabled:opacity-50">Save</button>
+            <button onClick={() => clearEditor(a)} disabled={!canManageAttendance || pending} data-testid={`button-absent-clear-${a.id}`} title="Clear absent mark" className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c] disabled:opacity-50">Clear</button>
             <button onClick={() => setEditing(null)} data-testid={`button-absent-cancel-${a.id}`} className="rounded-lg bg-[#eef3f2] px-3 py-1.5 text-[11px] font-bold text-[#63747c]">Cancel</button>
           </div>}
         </div>;
@@ -5387,6 +5576,8 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     return new URLSearchParams(window.location.search).get("channel")?.trim() || null;
   });
   const activeInterviewer = session.data?.label ?? "Interviewer";
+  const canEditCollaboration = canSessionUsePermission(session.data, "collaboration.edit");
+  const canManageChat = canSessionUsePermission(session.data, "chat.manage");
   const conversations = useGetChatConversations({
     query: { queryKey: getGetChatConversationsQueryKey(), refetchInterval: streamHealthy ? false : (5000 ), enabled: !demoMode },
   });
@@ -5408,7 +5599,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     () => channels.find(channel => channel.id === conversationChannelId) ?? null,
     [channels, conversationChannelId],
   );
-  const canManageChannels = session.data?.role === "coordinator";
+  const canManageChannels = canManageChat;
   const unreadChannels = useMemo(() => {
     const active = conversationChannelId ?? "";
     const unread = new Set<string>();
@@ -6995,8 +7186,10 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     // Admins moderate every message, including AI assistant ones. Everyone
     // else can only manage their own messages (never the AI's).
     const isAdminChat = session.data?.role === "coordinator" || session.data?.role === "admin";
-    const canManage = isAdminChat
-      || (item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.author !== "AI assistant");
+    const canModerateOthers = isAdminChat ||
+      (Boolean(session.data?.customRoleId) && canSessionUsePermission(session.data, "chat.moderate"));
+    const canManage = canModerateOthers ||
+      (item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.author !== "AI assistant");
     const editing = editingMessageId === item.id;
     const mentionedYou = messageMentionsInterviewer(item.message, activeInterviewer, mentionPeople);
     return <div key={item.id} id={`chat-message-${item.id}`} data-chat-message-id={item.id} data-mentioned-you={mentionedYou || undefined} className={`chat-message-card group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${mentionedYou ? "chat-message-mentioned" : ""} ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
@@ -7354,8 +7547,8 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       {whiteboardOpen && (activeWhiteboardId && !activeWhiteboard
         ? <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4" role="status" data-testid="status-loading-collaboration"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading shared workspace…</div></div>
         : activeWhiteboard && isDocumentData(activeWhiteboard.data)
-          ? <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} /></Suspense>
-           : <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} /></Suspense>)}
+          ? <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} readOnly={!canEditCollaboration} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} /></Suspense>
+           : <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} readOnly={!canEditCollaboration} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} /></Suspense>)}
        {boardOpen && activeBoardId && <BoardEditor boardId={activeBoardId} assignees={mentionLabels} onClose={() => { setBoardOpen(false); setActiveBoardId(null); }} />}
        {channelDialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#183a4b]/40 p-4" role="dialog" aria-modal="true" aria-label={channelDialogId ? "Channel settings" : "New invite-only channel"} data-testid="chat-channel-dialog">
          <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-[#dce5e5] bg-white p-5 shadow-2xl">
@@ -7439,12 +7632,17 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
 function Queue() { const streamHealthy = useRealtimeHealthy();
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
-  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), refetchInterval: streamHealthy ? false : (refreshMs )} });
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const canViewQueue = canSessionUsePermission(session.data, "queue.view");
+  const canManageQueue = canSessionUsePermission(session.data, "queue.manage");
+  const canViewApplicants = canSessionUsePermission(session.data, "applicants.view");
+  const canEditApplicants = canSessionUsePermission(session.data, "applicants.edit");
+  const canViewChat = canSessionUsePermission(session.data, "chat.view");
+  const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), enabled: canViewQueue, refetchInterval: streamHealthy ? false : (refreshMs )} });
   const advance = useAdvanceQueue();
   const callback = useCallbackQueue();
   const finishedParams = useMemo(() => ({ interviewStatus: "completed", sort: "rank" }), []);
-  const finished = useListApplicants(finishedParams, { query: { queryKey: getListApplicantsQueryKey(finishedParams) } });
+  const finished = useListApplicants(finishedParams, { query: { queryKey: getListApplicantsQueryKey(finishedParams), enabled: canViewApplicants } });
   const reorder = useReorderQueue();
   const updateApplicant = useUpdateApplicant();
   const updateSettings = useUpdateQueueSettings();
@@ -7453,7 +7651,7 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
   const [board, setBoard] = useState<Applicant[]>([]);
   const [drag, setDrag] = useState<string | null>(null);
   const boardParams = useMemo(() => ({ sort: "queue" }), []);
-  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), enabled: canViewApplicants, refetchInterval: streamHealthy ? false : (refreshMs )} });
   const [labels, setLabels] = useState<string[]>([]);
   const labelsDirty = useRef(false);
   const boardDirty = useRef(false);
@@ -7467,6 +7665,7 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
   const [focusedApplicantId, setFocusedApplicantId] = useState<string | null>(null);
   const queueSearchRef = useRef<HTMLInputElement>(null);
   const saveNote = async (id: string, note: string, original: string) => {
+    if (!canEditApplicants) return;
     if (note === original) return;
     await updateApplicant.mutateAsync({ id, data: { notes: note } });
     qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
@@ -7475,12 +7674,15 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
   };
   const assignInterviewer = (id: string, interviewer: string) => {
+    if (!canManageQueue) return;
     updateApplicant.mutate({ id, data: { interviewer } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   const finishApplicant = (id: string) => {
+    if (!canManageQueue) return;
     advance.mutate({ data: { applicantId: id } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   const setDecision = (id: string, decision: string) => {
+    if (!canManageQueue) return;
     updateApplicant.mutate({ id, data: { interviewDecision: decision } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   useEffect(() => {
@@ -7573,12 +7775,14 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     callback.mutate({ data: { applicantId: id } }, { onSuccess: () => { { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } finished.refetch(); } });
   };
   const sendBoardOrder = (list: Applicant[]) => {
+    if (!canManageQueue) return;
     reorder.mutate({ data: { applicantIds: list.map(item => item.id) } }, {
       onSuccess: () => { boardDirty.current = false; qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); },
       onError: () => { boardDirty.current = false; },
     });
   };
   const finishBoardDrop = (next: Applicant[], dragged: Applicant, newInterviewer: string) => {
+    if (!canManageQueue) return;
     setBoard(next);
     setDrag(null);
     boardDirty.current = true;
@@ -7601,6 +7805,7 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     finishBoardDrop(next, dragged, targetLabel);
   };
   const moveToColumn = (applicantId: string, targetLabel: string) => {
+    if (!canManageQueue) return;
     const dragged = board.find(item => item.id === applicantId);
     if (!dragged) return;
     const next = board.filter(item => item.id !== applicantId);
@@ -7615,11 +7820,13 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     finishBoardDrop(next, dragged, targetLabel);
   };
   const dropOnColumn = (targetLabel: string) => {
+    if (!canManageQueue) return;
     if (!drag) return;
     moveToColumn(drag, targetLabel);
     setDrag(null);
   };
   const moveInBoard = (id: string, direction: -1 | 1) => {
+    if (!canManageQueue) return;
     const index = board.findIndex(item => item.id === id);
     const nextIndex = index + direction;
     if (index < 0 || nextIndex < 0 || nextIndex >= board.length) return;
@@ -7630,6 +7837,7 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     sendBoardOrder(next);
   };
   const saveLabels = () => {
+    if (!canManageQueue) return;
     const clean = [...new Set(labels.map(label => label.trim()).filter(Boolean))];
     if (clean.length) updateSettings.mutate({ data: { interviewerLabels: clean } }, {
       onSuccess: response => {
@@ -7642,16 +7850,18 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     });
   };
   const resetInterviewProgress = () => {
+    if (!canManageQueue) return;
     setResetConfirm("");
     setResetOpen(true);
   };
   const confirmResetProgress = () => {
+    if (!canManageQueue) return;
     if (resetConfirm !== RESET_CONFIRM_PHRASE || resetQueue.isPending) return;
     setResetOpen(false);
     resetQueue.mutate(undefined, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
   return <div className="fade-up">
-    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail={`Showing applicants assigned to ${session.data?.label ?? "your interviewer account"}.`} action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2" data-testid="queue-sync-label"><span className={`h-2 w-2 rounded-full ${streamHealthy ? "animate-pulse bg-[#28a47f]" : refreshMs ? "bg-[#c99a1f]" : "bg-[#b34a42]"}`} />{streamHealthy ? "Live updates on" : refreshMs ? `Realtime reconnecting — refreshing every ${Math.round(refreshMs / 1000)}s` : "Realtime off — this board may be stale"}</span><button onClick={resetInterviewProgress} disabled={resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
+    <PageHeading eyebrow="Interview bay / live queue" title="Interview workspace" detail={`Showing applicants assigned to ${session.data?.label ?? "your interviewer account"}.`} action={<div className="flex flex-wrap items-center gap-3 text-xs text-[#60757c]"><span className="flex items-center gap-2" data-testid="queue-sync-label"><span className={`h-2 w-2 rounded-full ${streamHealthy ? "animate-pulse bg-[#28a47f]" : refreshMs ? "bg-[#c99a1f]" : "bg-[#b34a42]"}`} />{streamHealthy ? "Live updates on" : refreshMs ? `Realtime reconnecting — refreshing every ${Math.round(refreshMs / 1000)}s` : "Realtime off — this board may be stale"}</span><button onClick={resetInterviewProgress} disabled={!canManageQueue || resetQueue.isPending} data-testid="button-reset-interview-progress" className="flex items-center gap-1.5 rounded-lg border border-[#d7b0ad] px-3 py-2 font-semibold text-[#a14b43] hover:bg-[#fff2f0] disabled:opacity-50"><RefreshCw size={13} />{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div>} />
     <section className="mb-5 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#dce5e5] bg-white p-4">
       <div className="flex items-center gap-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] px-3 py-2 text-xs text-[#527079]"><ShieldCheck size={15} className="text-[#16869a]" />Signed in as <strong>{session.data?.label ?? "interviewer"}</strong></div>
       <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
@@ -7683,12 +7893,12 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
       <Section title="Corresponding interviewers" kicker="Add as many interviewers as you need; these labels also appear on the public display.">
         <div id="interviewer-settings" />
         <div className="space-y-2">
-          {labels.map((label, index) => <div key={`label-row-${index}`} className="flex items-center gap-2"><span className="mono w-6 text-xs text-[#16869a]">{String(index + 1).padStart(2, "0")}</span><input value={label} onChange={event => { labelsDirty.current = true; setLabels(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item)); }} className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-base md:text-sm outline-none focus:border-[#16869a]" /><button disabled={labels.length <= 1} onClick={() => { labelsDirty.current = true; setLabels(current => current.filter((_, itemIndex) => itemIndex !== index)); }} className="rounded-lg px-2 text-xs text-[#bd5047] disabled:opacity-30">Remove</button></div>)}
-          <div className="flex flex-wrap gap-2 pt-2"><button onClick={() => { labelsDirty.current = true; setLabels(current => [...current, `Interviewer ${current.length + 1}`]); }} className="rounded-lg border border-[#cbd9da] px-3 py-2 text-xs font-semibold text-[#385762]">+ Add interviewer</button><button onClick={saveLabels} disabled={updateSettings.isPending} data-testid="button-save-interviewer-labels" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{updateSettings.isPending ? "Saving..." : "Save labels"}</button></div>
+          {labels.map((label, index) => <div key={`label-row-${index}`} className="flex items-center gap-2"><span className="mono w-6 text-xs text-[#16869a]">{String(index + 1).padStart(2, "0")}</span><input value={label} disabled={!canManageQueue} onChange={event => { labelsDirty.current = true; setLabels(current => current.map((item, itemIndex) => itemIndex === index ? event.target.value : item)); }} className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] px-3 text-base md:text-sm outline-none focus:border-[#16869a] disabled:opacity-50" /><button disabled={!canManageQueue || labels.length <= 1} onClick={() => { labelsDirty.current = true; setLabels(current => current.filter((_, itemIndex) => itemIndex !== index)); }} className="rounded-lg px-2 text-xs text-[#bd5047] disabled:opacity-30">Remove</button></div>)}
+          <div className="flex flex-wrap gap-2 pt-2"><button disabled={!canManageQueue} onClick={() => { labelsDirty.current = true; setLabels(current => [...current, `Interviewer ${current.length + 1}`]); }} className="rounded-lg border border-[#cbd9da] px-3 py-2 text-xs font-semibold text-[#385762] disabled:opacity-50">+ Add interviewer</button><button onClick={saveLabels} disabled={!canManageQueue || updateSettings.isPending} data-testid="button-save-interviewer-labels" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{updateSettings.isPending ? "Saving..." : "Save labels"}</button></div>
         </div>
       </Section>
     </div>
-    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5" data-testid="group-board"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Interview groups</h2><p className="mt-1 text-xs text-[#7c8c91]">Drag applicants between interviewers to assign them. Drag within or across columns, or use ↑↓, to set the overall interview order. On a phone, use the Interviewer picker on each card. Numbers show queue position.</p></div><UsersRound size={20} className="text-[#16869a]" /></div>{remaining.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-16" />)}</div> : remaining.isError ? <ErrorState compact onRetry={() => remaining.refetch()} /> : <div className="mt-4 grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">{boardColumns.map(column => <div key={column.key} onDragOver={event => event.preventDefault()} onDrop={() => dropOnColumn(column.label)} data-testid={`group-column-${column.label.toLowerCase().replaceAll(" ", "-") || "unassigned"}`} className="min-h-[140px] rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-2"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{column.label || "Unassigned"}</p><span className="mono text-xs text-[#809196]">{column.members.length}</span></div>{column.members.length ? column.members.map(applicant => { const position = (boardIndex.get(applicant.id) ?? 0) + 1; return <div key={applicant.id} draggable onDragStart={() => setDrag(applicant.id)} onDragOver={event => event.preventDefault()} onDrop={() => dropOnCard(applicant.id, column.label)} data-testid={`group-card-${applicant.id}`} className="mb-2 flex cursor-grab flex-col gap-1.5 rounded-xl border border-[#d7e4e3] bg-white px-3 py-2.5 text-left shadow-sm"><div className="flex items-center gap-2"><GripVertical size={14} className="shrink-0 text-[#b4c1c4]" /><span className="mono w-6 shrink-0 text-xs text-[#16869a]">{String(position).padStart(2, "0")}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{applicant.name}</span><span className="block text-[10px] text-[#819196]">Grade {applicant.grade}{position <= q.interviewerLabels.length ? " · up now" : ""}</span></span><button onClick={() => moveInBoard(applicant.id, -1)} aria-label={`Move ${applicant.name} earlier`} data-testid={`button-group-up-${applicant.id}`} className="touch-target shrink-0 text-[#779096] hover:text-[#16869a]">↑</button><button onClick={() => moveInBoard(applicant.id, 1)} aria-label={`Move ${applicant.name} later`} data-testid={`button-group-down-${applicant.id}`} className="touch-target shrink-0 text-[#779096] hover:text-[#16869a]">↓</button></div><label className="sr-only" htmlFor={`group-interviewer-${applicant.id}`}>Interviewer for {applicant.name}</label><select id={`group-interviewer-${applicant.id}`} value={applicant.interviewer ?? ""} onChange={event => moveToColumn(applicant.id, event.target.value)} data-testid={`select-group-interviewer-${applicant.id}`} className="touch-target h-9 w-full rounded-lg border border-[#cbd9da] bg-white px-2 text-base md:text-[11px] text-[#52666e] outline-none focus:border-[#16869a]"><option value="">Unassigned</option>{q.interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></div>; }) : <p className="px-2 py-6 text-center text-xs text-[#819196]">Drop applicants here</p>}</div>)}</div>}</section>
+    <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5" data-testid="group-board" inert={!canManageQueue}><div className="flex items-center justify-between"><div><h2 className="font-semibold">Interview groups</h2><p className="mt-1 text-xs text-[#7c8c91]">Drag applicants between interviewers to assign them. Drag within or across columns, or use ↑↓, to set the overall interview order. On a phone, use the Interviewer picker on each card. Numbers show queue position.</p></div><UsersRound size={20} className="text-[#16869a]" /></div>{remaining.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-16" />)}</div> : remaining.isError ? <ErrorState compact onRetry={() => remaining.refetch()} /> : <div className="mt-4 grid items-start gap-3 md:grid-cols-2 xl:grid-cols-3">{boardColumns.map(column => <div key={column.key} onDragOver={event => event.preventDefault()} onDrop={() => dropOnColumn(column.label)} data-testid={`group-column-${column.label.toLowerCase().replaceAll(" ", "-") || "unassigned"}`} className="min-h-[140px] rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-2"><div className="flex items-center justify-between px-2 py-1"><p className="text-xs font-bold uppercase tracking-[.12em] text-[#4f6870]">{column.label || "Unassigned"}</p><span className="mono text-xs text-[#809196]">{column.members.length}</span></div>{column.members.length ? column.members.map(applicant => { const position = (boardIndex.get(applicant.id) ?? 0) + 1; return <div key={applicant.id} draggable={canManageQueue} onDragStart={() => canManageQueue && setDrag(applicant.id)} onDragOver={event => event.preventDefault()} onDrop={() => dropOnCard(applicant.id, column.label)} data-testid={`group-card-${applicant.id}`} className={`mb-2 flex flex-col gap-1.5 rounded-xl border border-[#d7e4e3] bg-white px-3 py-2.5 text-left shadow-sm ${canManageQueue ? "cursor-grab" : ""}`}><div className="flex items-center gap-2"><GripVertical size={14} className="shrink-0 text-[#b4c1c4]" /><span className="mono w-6 shrink-0 text-xs text-[#16869a]">{String(position).padStart(2, "0")}</span><span className="min-w-0 flex-1"><span className="block truncate text-xs font-semibold">{applicant.name}</span><span className="block text-[10px] text-[#819196]">Grade {applicant.grade}{position <= q.interviewerLabels.length ? " · up now" : ""}</span></span><button disabled={!canManageQueue} onClick={() => moveInBoard(applicant.id, -1)} aria-label={`Move ${applicant.name} earlier`} data-testid={`button-group-up-${applicant.id}`} className="touch-target shrink-0 text-[#779096] hover:text-[#16869a] disabled:opacity-40">↑</button><button disabled={!canManageQueue} onClick={() => moveInBoard(applicant.id, 1)} aria-label={`Move ${applicant.name} later`} data-testid={`button-group-down-${applicant.id}`} className="touch-target shrink-0 text-[#779096] hover:text-[#16869a] disabled:opacity-40">↓</button></div><label className="sr-only" htmlFor={`group-interviewer-${applicant.id}`}>Interviewer for {applicant.name}</label><select id={`group-interviewer-${applicant.id}`} value={applicant.interviewer ?? ""} disabled={!canManageQueue} onChange={event => moveToColumn(applicant.id, event.target.value)} data-testid={`select-group-interviewer-${applicant.id}`} className="touch-target h-9 w-full rounded-lg border border-[#cbd9da] bg-white px-2 text-base md:text-[11px] text-[#52666e] outline-none focus:border-[#16869a] disabled:opacity-50"><option value="">Unassigned</option>{q.interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></div>; }) : <p className="px-2 py-6 text-center text-xs text-[#819196]">Drop applicants here</p>}</div>)}</div>}</section>
     <section className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="font-semibold">Finished — call back</h2><p className="mt-1 text-xs text-[#7c8c91]">Finished someone by accident? Send them back to the front. The big screen and audio will announce that they aren&apos;t done yet.</p></div><PhoneCall size={20} className="text-[#16869a]" /></div>{finished.isLoading ? <div className="mt-4 space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-12" />)}</div> : finished.data && finished.data.total > 0 ? <div className="mt-4 grid gap-2 md:grid-cols-2">{finished.data.items.map(applicant => <div key={applicant.id} className="flex items-center gap-3 rounded-xl border border-[#e1e9e8] p-3" data-testid={`finished-applicant-${applicant.id}`}><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e5f3f1] text-xs font-bold text-[#16869a]">{applicant.name.slice(0, 1)}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{applicant.name}</p><p className="text-xs text-[#7c8c91]">Grade {applicant.grade}</p></div><button onClick={() => recallApplicant(applicant.id, applicant.name)} disabled={callback.isPending} data-testid={`button-recall-${applicant.id}`} className="flex shrink-0 items-center gap-1.5 rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50"><PhoneCall size={13} /> Call back</button></div>)}</div> : <p className="mt-4 text-sm text-[#7c8c91]">Nobody finished yet.</p>}{callback.isError && <p className="mt-2 text-xs text-[#ad4b43]">Callback failed. Try again.</p>}</section>
     {resetOpen && <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setResetOpen(false)} data-testid="reset-dialog"><div {...panelProps} onClick={event => event.stopPropagation()} role="dialog" aria-modal="true" aria-label="Confirm reset interview progress" className="w-full max-w-md rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl"><h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Reset interview progress?</h2><p className="mt-2 text-sm leading-6 text-[#52666e]">This takes every applicant back to the start of the queue. Here is exactly what happens:</p><ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm leading-6 text-[#52666e]"><li>All <strong>completed</strong> interviews move back to <strong>queued</strong> (completed count returns to 0).</li><li>Queue order is rebuilt and active recall flags are cleared.</li><li>The big screen switches back to calling the front of the queue.</li></ul><p className="mt-3 text-sm leading-6 text-[#52666e]">Preserved: applicant data, files, notes, decisions, and lanes.</p><label className="mt-4 block text-xs font-semibold text-[#63747c]">Type <code className="rounded bg-[#edf4f3] px-1.5 py-0.5 font-mono text-[11px] text-[#315a61]">{RESET_CONFIRM_PHRASE}</code> to confirm<input value={resetConfirm} onChange={event => setResetConfirm(event.target.value)} autoFocus data-testid="input-reset-confirm" placeholder={RESET_CONFIRM_PHRASE} className="mt-1.5 h-11 w-full rounded-xl border border-[#d5e0e0] px-3 text-base md:text-sm outline-none focus:border-[#b34a42]" /></label><div className="mt-5 flex justify-end gap-2"><button onClick={() => setResetOpen(false)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button><button onClick={confirmResetProgress} disabled={resetConfirm !== RESET_CONFIRM_PHRASE || resetQueue.isPending} data-testid="button-confirm-reset" className="rounded-xl bg-[#b34a42] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{resetQueue.isPending ? "Resetting..." : "Reset progress"}</button></div></div></div>}
   </div>;
@@ -7733,6 +7943,9 @@ function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign,
   onUpdate: (data: ApplicantUpdate) => void;
   focused?: boolean;
 }) { const streamHealthy = useRealtimeHealthy();
+  const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const canManageQueue = canSessionUsePermission(roleSession.data, "queue.manage");
+  const canEditApplicants = canSessionUsePermission(roleSession.data, "applicants.edit");
   const detail = useGetApplicant(applicant.id, { query: { queryKey: getGetApplicantQueryKey(applicant.id), refetchInterval: streamHealthy ? false : (5000 )} });
   const [notes, setNotes] = useState(applicant.notes);
   const notesEditing = useRef(false);
@@ -7757,14 +7970,14 @@ function InterviewApplicantCard({ applicant, index, interviewerLabels, onAssign,
   return <article ref={cardRef} className={`rounded-2xl border bg-[#1d3545] p-5 ${focused ? "border-[#f8c84a] ring-2 ring-[#f8c84a]/60" : "border-[#365968]"}`} data-testid={`current-applicant-${applicant.id}`}>
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0"><p className="mono text-[10px] uppercase tracking-[.2em] text-[#7f9da6]">Applicant {index + 1}</p><h2 className="mt-2 break-words text-2xl font-semibold tracking-[-.05em]">{displayName}</h2><p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#acc2c7]"><span>Grade {a?.grade ?? applicant.grade}</span><span>·</span><span>{applicant.aiScore < 0 ? "invalid score" : `${applicant.aiScore.toFixed(1)} AI score`}</span></p>{looksMalformed && <p className="mt-2 break-all text-xs text-[#d2e1e3]">Imported name: {a?.name}</p>}{looksMalformed && <p className="mt-2 text-xs font-semibold text-[#f8c84a]">This applicant record looks malformed. Verify it before making a decision.</p>}</div>
-      <div className="flex shrink-0 gap-2"><button onClick={() => onUpdate({ callbackRequested: !applicant.callbackRequested })} data-testid={`button-callback-${applicant.id}`} className={`hidden items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold sm:flex ${applicant.callbackRequested ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#668795] text-[#d2e1e3]"}`}><PhoneCall size={13} />{applicant.callbackRequested ? "Callback requested" : "Request callback"}</button><button onClick={() => onFinish(applicant.id)} disabled={detail.isLoading} data-testid={`button-finish-applicant-${applicant.id}`} className="hidden rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50 sm:block">Finish</button></div>
+      <div className="flex shrink-0 gap-2"><button onClick={() => onUpdate({ callbackRequested: !applicant.callbackRequested })} disabled={!canManageQueue} data-testid={`button-callback-${applicant.id}`} className={`hidden items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-semibold sm:flex disabled:opacity-40 ${applicant.callbackRequested ? "border-[#f8c84a] bg-[#fff3cf] text-[#805c08]" : "border-[#668795] text-[#d2e1e3]"}`}><PhoneCall size={13} />{applicant.callbackRequested ? "Callback requested" : "Request callback"}</button><button onClick={() => onFinish(applicant.id)} disabled={!canManageQueue || detail.isLoading} data-testid={`button-finish-applicant-${applicant.id}`} className="hidden rounded-lg bg-[#f8c84a] px-3 py-2 text-xs font-bold text-[#182232] disabled:opacity-50 sm:block">Finish</button></div>
     </div>
     {detail.isLoading ? <div className="mt-5 space-y-2"><Skeleton className="h-10" /><Skeleton className="h-24" /></div> : null}
     {/* The controls you actually use while interviewing come before the long
         application file, so a phone does not make you scroll past a whole
         transcript to reach the notes field. */}
-    <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-xs font-semibold text-[#b6cbd0]">Corresponding interviewer<select value={applicant.interviewer} onChange={event => onAssign(applicant.id, event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-base md:text-sm text-white"><option value="">Unassigned</option>{interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></label><label className="block text-xs font-semibold text-[#b6cbd0]">Interview decision<span className="mt-0.5 block text-[10px] font-normal text-[#8fa6ac]">Also moves the roster lane</span><select value={applicant.interviewDecision} onChange={event => onUpdate({ interviewDecision: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-base md:text-sm font-semibold text-white">{interviewDecisions.map(decision => <option key={decision} value={decision}>{decision}</option>)}</select></label></div>
-    <label className="mt-4 block text-xs font-semibold text-[#b6cbd0]">Private interviewer notes<textarea value={notes} onChange={event => { notesDirty.current = true; setNotesError(""); setNotes(event.target.value); }} onFocus={() => { notesEditing.current = true; }} onBlur={() => { notesEditing.current = false; void onSaveNote(applicant.id, notes, detail.data?.notes ?? applicant.notes).then(() => { notesDirty.current = false; setNotesError(""); }).catch(() => { setNotesError("Note not saved. Check your connection and try again."); }); }} placeholder="Capture interview signal..." className="mt-1 min-h-[82px] w-full resize-y rounded-lg border border-[#486b77] bg-[#162d3d] p-3 text-base md:text-sm font-normal text-white outline-none placeholder:text-[#74919a] focus:border-[#f8c84a]" /></label>{notesError && <p role="alert" className="mt-2 text-xs font-semibold text-[#ff9b8f]" data-testid={`note-error-${applicant.id}`}>{notesError}</p>}
+    <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-xs font-semibold text-[#b6cbd0]">Corresponding interviewer<select value={applicant.interviewer} disabled={!canManageQueue} onChange={event => onAssign(applicant.id, event.target.value)} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-base md:text-sm text-white disabled:opacity-50"><option value="">Unassigned</option>{interviewerLabels.map(label => <option key={label} value={label}>{label}</option>)}</select></label><label className="block text-xs font-semibold text-[#b6cbd0]">Interview decision<span className="mt-0.5 block text-[10px] font-normal text-[#8fa6ac]">Also moves the roster lane</span><select value={applicant.interviewDecision} disabled={!canManageQueue} onChange={event => onUpdate({ interviewDecision: event.target.value })} className="mt-1 h-10 w-full rounded-lg border border-[#486b77] bg-[#162d3d] px-3 text-base md:text-sm font-semibold text-white disabled:opacity-50">{interviewDecisions.map(decision => <option key={decision} value={decision}>{decision}</option>)}</select></label></div>
+    <label className="mt-4 block text-xs font-semibold text-[#b6cbd0]">Private interviewer notes<textarea value={notes} readOnly={!canEditApplicants} onChange={event => { notesDirty.current = true; setNotesError(""); setNotes(event.target.value); }} onFocus={() => { notesEditing.current = true; }} onBlur={() => { notesEditing.current = false; if (!canEditApplicants) return; void onSaveNote(applicant.id, notes, detail.data?.notes ?? applicant.notes).then(() => { notesDirty.current = false; setNotesError(""); }).catch(() => { setNotesError("Note not saved. Check your connection and try again."); }); }} placeholder="Capture interview signal..." className="mt-1 min-h-[82px] w-full resize-y rounded-lg border border-[#486b77] bg-[#162d3d] p-3 text-base md:text-sm font-normal text-white outline-none placeholder:text-[#74919a] focus:border-[#f8c84a] read-only:opacity-60" /></label>{notesError && <p role="alert" className="mt-2 text-xs font-semibold text-[#ff9b8f]" data-testid={`note-error-${applicant.id}`}>{notesError}</p>}
     {a && <details className="mt-4 rounded-xl border border-[#486b77] bg-[#162d3d] p-4"><summary className="cursor-pointer text-xs font-semibold uppercase tracking-[.12em] text-[#d2e1e3]">Full applicant file</summary>
       <div className="mt-4 grid gap-4 text-sm text-[#d2e1e3]">
         <div className="grid gap-2 sm:grid-cols-2"><p className="flex min-w-0 items-start gap-2 break-all"><Mail size={14} className="mt-0.5 shrink-0 text-[#f8c84a]" />{a.email || "No email provided"}</p><p className="text-[#acc2c7]">Interview status: <strong className="text-white">{a.interviewStatus}</strong></p></div>
@@ -8140,7 +8353,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const assistantSession = useGetSession({
     query: { queryKey: getGetSessionQueryKey() },
   });
-  const canManageAssistantTools = assistantSession.data?.role === "coordinator" || assistantSession.data?.role === "admin";
+  const canManageAssistantTools = canSessionUsePermission(assistantSession.data, "assistant.manage");
   const assistantIdentity = `${assistantSession.data?.interviewerId ?? ""}:${assistantSession.data?.teamId ?? ""}`;
   const assistantIdentityRef = useRef(assistantIdentity);
   assistantIdentityRef.current = assistantIdentity;
@@ -9654,11 +9867,14 @@ function seatDot(attendance: string | null | undefined): string {
 
 function SeatingChart({ applicants }: { applicants: Applicant[] }) { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
-  const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
+  const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const canViewAttendance = canSessionUsePermission(roleSession.data, "attendance.view");
+  const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
+  const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), enabled: canViewAttendance, refetchInterval: streamHealthy ? false : (5000 )} });
   const updateSettings = useUpdateSeatingSettings();
   const assign = useAssignSeat();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const busy = assign.isPending || updateSettings.isPending;
+  const busy = !canManageAttendance || assign.isPending || updateSettings.isPending;
   const rows = settings.data?.rows ?? 4;
   const cols = settings.data?.cols ?? 6;
   const bySeat = new Map<string, Applicant>();
@@ -9672,6 +9888,7 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) { const strea
     qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() });
   };
   const place = (applicantId: string, row: number, col: number) => {
+    if (!canManageAttendance) return;
     assign.mutate({ data: { applicantId, row, col } }, {
       onSuccess: () => { setSelectedId(null); invalidate(); },
     });
@@ -9688,9 +9905,11 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) { const strea
     }
   };
   const resize = (nextRows: number, nextCols: number) => {
+    if (!canManageAttendance) return;
     updateSettings.mutate({ data: { rows: nextRows, cols: nextCols } }, { onSuccess: invalidate });
   };
   const unseatAll = async () => {
+    if (!canManageAttendance) return;
     if (!(await confirmAction({ title: "Remove everyone from their seats?", danger: true, confirmLabel: "Clear seats" }))) return;
     const seated = applicants.filter(a => a.seatRow != null && a.seatCol != null);
     seated.forEach(a => assign.mutate({ data: { applicantId: a.id, row: -1, col: -1 } }, { onSuccess: invalidate }));
@@ -9737,10 +9956,14 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) { const strea
 
 function AttendancePage() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
+  const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const canViewAttendance = canSessionUsePermission(roleSession.data, "attendance.view");
+  const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
+  const canViewApplicants = canSessionUsePermission(roleSession.data, "applicants.view");
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const boardParams = useMemo(() => ({ sort: "queue" }), []);
-  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), refetchInterval: streamHealthy ? false : (refreshMs )} });
+  const remaining = useListApplicants(boardParams, { query: { queryKey: getListApplicantsQueryKey(boardParams), enabled: canViewAttendance && canViewApplicants, refetchInterval: streamHealthy ? false : (refreshMs )} });
   const updateApplicant = useUpdateApplicant();
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: getGetQueueQueryKey() });
@@ -9749,9 +9972,11 @@ function AttendancePage() { const streamHealthy = useRealtimeHealthy();
     qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() });
   };
   const markAttendance = (id: string, patch: AttendancePatch) => {
+    if (!canManageAttendance) return;
     updateApplicant.mutate({ id, data: patch }, { onSuccess: invalidate });
   };
   const markAllHere = async () => {
+    if (!canManageAttendance) return;
     // Only students nobody has classified yet. Marking a late or absent
     // student as "here" used to wipe their recorded arrival time, agreed
     // makeup date, and excused flag -- in bulk, with no confirmation.
@@ -9768,6 +9993,7 @@ function AttendancePage() { const streamHealthy = useRealtimeHealthy();
     todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendance: "here", lateArrivalTime: null, makeupDate: null, attendanceExcused: null } }, { onSuccess: invalidate }));
   };
   const excuseAllOutstanding = async () => {
+    if (!canManageAttendance) return;
     // Close out every late/absent record without touching the recorded
     // arrival time or the agreed makeup date.
     const todo = (remaining.data?.items ?? []).filter(a => a.interviewStatus !== "completed" && (a.attendance === "late" || a.attendance === "absent") && a.attendanceExcused !== true);
@@ -9808,6 +10034,7 @@ function AttendancePage() { const streamHealthy = useRealtimeHealthy();
   const filterButton = (value: "all" | "remaining" | "completed", label: string, count: number) => <button key={value} onClick={() => setStatusFilter(value)} data-testid={`button-attendance-filter-${value}`} className={`rounded-lg px-3 py-1.5 text-xs font-bold transition ${statusFilter === value ? "bg-[#183a4b] text-white" : "bg-[#eef3f2] text-[#63747c] hover:bg-[#dce9e8]"}`}>{label} · {count}</button>;
   const toggleAtt = (value: "here" | "late" | "absent" | "unmarked" | "excused") => setAttFilter(current => current === value ? "all" : value);
   const clearMarks = async () => {
+    if (!canManageAttendance) return;
     if (!(await confirmAction({ title: "Clear all attendance marks?", detail: "Everyone goes back to unmarked (times, makeup dates, and excused flags are removed). Seats are kept.", danger: true, confirmLabel: "Clear marks" }))) return;
     const todo = eligible.filter(a => a.attendance !== "unmarked" || a.lateArrivalTime || a.makeupDate || a.attendanceExcused != null);
     todo.forEach(a => updateApplicant.mutate({ id: a.id, data: { attendance: "unmarked", lateArrivalTime: null, makeupDate: null, attendanceExcused: null } }, { onSuccess: invalidate }));
@@ -9842,7 +10069,7 @@ function AttendancePage() { const streamHealthy = useRealtimeHealthy();
   const tile = (value: "here" | "late" | "absent" | "unmarked" | "excused", label: string, count: number, numClass: string) => <button key={value} onClick={() => toggleAtt(value)} data-testid={`button-attendance-tile-${value}`} title={attFilter === value ? "Show all" : `Show only ${label.toLowerCase()}`} className={`min-w-[86px] flex-1 rounded-2xl border px-3 py-3 text-left transition ${attFilter === value ? "border-[#f8c84a] bg-[#f8c84a]/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`}><p className={`mono text-2xl font-bold ${numClass}`}>{count}</p><p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[.12em] text-[#9db6bd]">{label}</p></button>;
   return <div className="fade-up">
     <PageHeading eyebrow="Interview bay / check-in" title="Attendance" detail="Mark who showed up before interviews start. Late arrivals record a time, absent applicants can get a makeup date, and both can be excused." />
-    {remaining.isLoading ? <Skeleton className="h-64" /> : remaining.isError || !remaining.data ? <ErrorState onRetry={() => remaining.refetch()} /> : <>
+    {canViewAttendance && !canViewApplicants ? <div className="rounded-2xl border border-[#e8d9b0] bg-[#fffdf4] p-5 text-sm text-[#72591d] dark:border-[#5b4a28] dark:bg-[#2d2719] dark:text-[#ead79b]" role="status">Viewing attendance also requires the View applicants permission for this roster.</div> : remaining.isLoading ? <Skeleton className="h-64" /> : remaining.isError || !remaining.data ? <ErrorState onRetry={() => remaining.refetch()} /> : <>
       <section className="relative mb-5 overflow-hidden rounded-3xl bg-[#172a3a] p-6 text-white" data-testid="attendance-hero">
         <div className="absolute -right-20 -top-20 h-60 w-60 rounded-full border border-[#f8c84a]/20" />
         <div className="relative flex flex-wrap items-center gap-6">
@@ -9886,9 +10113,9 @@ function AttendancePage() { const streamHealthy = useRealtimeHealthy();
           <option value="seat">Sort: Seat</option>
           <option value="status">Sort: Needs attention</option>
         </select>
-        <button onClick={() => { void markAllHere(); }} disabled={updateApplicant.isPending || !eligible.length} data-testid="button-attendance-all-here" title="Mark every unclassified student as here (late and absent records are left alone)" className="rounded-xl bg-[#16869a] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Mark all here</button>
-        <button onClick={() => { void excuseAllOutstanding(); }} disabled={updateApplicant.isPending || !(late + absent)} data-testid="button-attendance-excuse-all" title="Set the excused flag on every late/absent record (arrival times and makeup dates are kept)" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Excuse late/absent</button>
-        <button onClick={clearMarks} disabled={updateApplicant.isPending} data-testid="button-attendance-clear" title="Reset everyone to unmarked (seats are kept)" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Clear marks</button>
+        <button onClick={() => { void markAllHere(); }} disabled={!canManageAttendance || updateApplicant.isPending || !eligible.length} data-testid="button-attendance-all-here" title="Mark every unclassified student as here (late and absent records are left alone)" className="rounded-xl bg-[#16869a] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Mark all here</button>
+        <button onClick={() => { void excuseAllOutstanding(); }} disabled={!canManageAttendance || updateApplicant.isPending || !(late + absent)} data-testid="button-attendance-excuse-all" title="Set the excused flag on every late/absent record (arrival times and makeup dates are kept)" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Excuse late/absent</button>
+        <button onClick={clearMarks} disabled={!canManageAttendance || updateApplicant.isPending} data-testid="button-attendance-clear" title="Reset everyone to unmarked (seats are kept)" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Clear marks</button>
         <button onClick={() => void copySummary()} data-testid="button-attendance-copy" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2]">{copied ? "Copied!" : "Copy summary"}</button>
       </div>
       {visible.length ? <AttendancePanel applicants={visible} pending={updateApplicant.isPending} onMark={markAttendance} onMarkAll={markAllHere} /> : <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]">No students match this filter.</p>}

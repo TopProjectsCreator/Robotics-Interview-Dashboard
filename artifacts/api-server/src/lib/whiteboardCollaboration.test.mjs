@@ -183,6 +183,11 @@ function mockDatabase() {
       hasSecondary: () => false,
     },
   });
+  mock.module("./teamRoles", {
+    namedExports: {
+      permissionsForAccount: async () => ["collaboration.view", "collaboration.edit"],
+    },
+  });
 }
 
 function watchMessages(socket) {  const messages = [];
@@ -351,6 +356,11 @@ test("removes a disconnected collaborator cursor from the room presence update",
       secondaryDb: () => null,
       secondaryPool: () => null,
       hasSecondary: () => false,
+    },
+  });
+  mock.module("./teamRoles", {
+    namedExports: {
+      permissionsForAccount: async () => ["collaboration.view", "collaboration.edit"],
     },
   });
   const [{ createInterviewerSession }, { setupWhiteboardCollaboration }] = await Promise.all([

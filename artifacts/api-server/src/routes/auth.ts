@@ -86,7 +86,19 @@ import {
   GetTeamNameRulesResponse,
   UpdateTeamNameRulesBody,
   UpdateTeamNameRulesResponse,
+  CreateTeamRoleBody,
+  CreateTeamRoleResponse,
+  ListTeamRolesResponse,
+  UpdateTeamRoleBody,
+  UpdateTeamRoleResponse,
+  DeleteTeamRoleParams,
+  AssignCustomRoleBody,
+  AssignCustomRoleParams,
+  AssignCustomRoleResponse,
+  permissionsForBuiltInRole,
 } from "@workspace/api-zod";
+import { teamRolesTable } from "@workspace/db";
+import { findAssignedTeamRole, normalizeRoleTeamId, parsePermissionSelection, publicTeamRole } from "../lib/teamRoles";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -119,6 +131,99 @@ router.put("/auth/name-rules", requireCoordinator, async (req, res): Promise<voi
     })
     .returning({ rules: teamNameRulesTable.rules });
   res.json(UpdateTeamNameRulesResponse.parse({ rules: record?.rules ?? rules }));
+});
+
+router.get("/auth/roles", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = normalizeRoleTeamId(await requestTeamId(req));
+  const roles = await db.select().from(teamRolesTable).where(eq(teamRolesTable.teamId, teamId))
+    .orderBy(teamRolesTable.name);
+  res.json(ListTeamRolesResponse.parse({ roles: roles.map(publicTeamRole) }));
+});
+
+router.post("/auth/roles", requireCoordinator, async (req, res): Promise<void> => {
+  const parsed = CreateTeamRoleBody.safeParse(req.body);
+  const permissions = parsePermissionSelection(parsed.success ? parsed.data.permissions : undefined);
+  const name = parsed.success ? parsed.data.name.trim().replace(/\s+/g, " ") : "";
+  if (!parsed.success || !name || !permissions) {
+    res.status(400).json({ error: "Enter a role name and choose only listed permissions." });
+    return;
+  }
+  const teamId = normalizeRoleTeamId(await requestTeamId(req));
+  const duplicate = await db.select({ id: teamRolesTable.id }).from(teamRolesTable)
+    .where(and(eq(teamRolesTable.teamId, teamId), eq(teamRolesTable.name, name))).limit(1);
+  if (duplicate.length) {
+    res.status(409).json({ error: "A role with that name already exists." });
+    return;
+  }
+  try {
+    const [role] = await db.insert(teamRolesTable).values({
+      id: randomBytes(16).toString("hex"),
+      teamId,
+      name,
+      permissions,
+    }).returning();
+    res.status(201).json(CreateTeamRoleResponse.parse(publicTeamRole(role)));
+  } catch (error) {
+    if (typeof error === "object" && error !== null && (error as { code?: string }).code === "23505") {
+      res.status(409).json({ error: "A role with that name already exists." });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.patch("/auth/roles/:roleId", requireCoordinator, async (req, res): Promise<void> => {
+  const params = DeleteTeamRoleParams.safeParse(req.params);
+  const parsed = UpdateTeamRoleBody.safeParse(req.body);
+  const permissions = parsePermissionSelection(parsed.success ? parsed.data.permissions : undefined);
+  const name = parsed.success ? parsed.data.name.trim().replace(/\s+/g, " ") : "";
+  if (!params.success || !parsed.success || !name || !permissions) {
+    res.status(400).json({ error: "Enter a role name and choose only listed permissions." });
+    return;
+  }
+  const teamId = normalizeRoleTeamId(await requestTeamId(req));
+  const duplicate = await db.select({ id: teamRolesTable.id }).from(teamRolesTable)
+    .where(and(eq(teamRolesTable.teamId, teamId), eq(teamRolesTable.name, name))).limit(1);
+  if (duplicate[0] && duplicate[0].id !== params.data.roleId) {
+    res.status(409).json({ error: "A role with that name already exists." });
+    return;
+  }
+  try {
+    const [role] = await db.update(teamRolesTable).set({ name, permissions, updatedAt: new Date() })
+      .where(and(eq(teamRolesTable.id, params.data.roleId), eq(teamRolesTable.teamId, teamId)))
+      .returning();
+    if (!role) {
+      res.status(404).json({ error: "Role not found for this team." });
+      return;
+    }
+    res.json(UpdateTeamRoleResponse.parse(publicTeamRole(role)));
+  } catch (error) {
+    if (typeof error === "object" && error !== null && (error as { code?: string }).code === "23505") {
+      res.status(409).json({ error: "A role with that name already exists." });
+      return;
+    }
+    throw error;
+  }
+});
+
+router.delete("/auth/roles/:roleId", requireCoordinator, async (req, res): Promise<void> => {
+  const params = DeleteTeamRoleParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Role is required." });
+    return;
+  }
+  const teamId = normalizeRoleTeamId(await requestTeamId(req));
+  const deleted = await db.delete(teamRolesTable).where(and(
+    eq(teamRolesTable.id, params.data.roleId),
+    eq(teamRolesTable.teamId, teamId),
+  )).returning({ id: teamRolesTable.id });
+  if (!deleted.length) {
+    res.status(404).json({ error: "Role not found for this team." });
+    return;
+  }
+  await db.update(interviewerAccountsTable).set({ customRoleId: null, updatedAt: new Date() })
+    .where(and(eq(interviewerAccountsTable.customRoleId, params.data.roleId), teamFilter(interviewerAccountsTable.teamId, teamId)));
+  res.status(204).end();
 });
 
 router.get("/auth/personal-notepad", requireAdmin, async (req, res): Promise<void> => {
@@ -444,12 +549,13 @@ function passwordHashMatches(password: string, encoded: string | null): boolean 
   }
 }
 
-function publicAccount(account: { id: string; displayName: string; passwordHash: string | null; role: string }) {
+function publicAccount(account: { id: string; displayName: string; passwordHash: string | null; role: string; customRoleId?: string | null }) {
   return {
     id: account.id,
     displayName: account.displayName,
     hasPassword: Boolean(account.passwordHash),
     role: account.role,
+    customRoleId: account.customRoleId ?? null,
   };
 }
 
@@ -723,6 +829,48 @@ router.patch("/auth/interviewers/:interviewerId/role", requireCoordinator, async
     return;
   }
   res.json(UpdateInterviewerRoleResponse.parse(publicAccount(updated)));
+});
+
+router.put("/auth/interviewers/:interviewerId/custom-role", requireCoordinator, async (req, res): Promise<void> => {
+  const params = AssignCustomRoleParams.safeParse(req.params);
+  const parsed = AssignCustomRoleBody.safeParse(req.body);
+  if (!params.success || !parsed.success) {
+    res.status(400).json({ error: "Interviewer and custom role assignment are required." });
+    return;
+  }
+  const interviewerId = params.data.interviewerId;
+  const selfId = (req as Request & { interviewerId?: string }).interviewerId;
+  if (selfId === interviewerId) {
+    res.status(400).json({ error: "You cannot change your own role assignment." });
+    return;
+  }
+  const teamId = normalizeRoleTeamId(await requestTeamId(req));
+  const [account] = await db.select().from(interviewerAccountsTable)
+    .where(eq(interviewerAccountsTable.id, interviewerId)).limit(1);
+  if (!account || normalizeRoleTeamId(account.teamId) !== teamId) {
+    res.status(404).json({ error: "Interviewer not found for this team." });
+    return;
+  }
+  if (account.role === "coordinator" || account.role === "admin") {
+    res.status(400).json({ error: "Admin accounts must keep their built-in role." });
+    return;
+  }
+  if (parsed.data.customRoleId !== null) {
+    const role = await findAssignedTeamRole(parsed.data.customRoleId, teamId);
+    if (!role) {
+      res.status(404).json({ error: "Role not found for this team." });
+      return;
+    }
+  }
+  const [updated] = await db.update(interviewerAccountsTable)
+    .set({ customRoleId: parsed.data.customRoleId, updatedAt: new Date() })
+    .where(and(eq(interviewerAccountsTable.id, interviewerId), teamFilter(interviewerAccountsTable.teamId, teamId)))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Interviewer not found for this team." });
+    return;
+  }
+  res.json(AssignCustomRoleResponse.parse(publicAccount(updated)));
 });
 
 function isUniqueViolation(error: unknown): boolean {
@@ -1501,6 +1649,12 @@ router.get("/auth/session", async (req, res): Promise<void> => {
     return;
   }
   const teamId = accountTeamId(account);
+  const customRole = account.customRoleId
+    ? await findAssignedTeamRole(account.customRoleId, teamId)
+    : null;
+  const permissions = account.customRoleId
+    ? (customRole?.permissions ?? [])
+    : permissionsForBuiltInRole(account.role);
   let teamName: string | undefined;
   try {
     const { getTeamById } = await import("../lib/teams");
@@ -1508,7 +1662,16 @@ router.get("/auth/session", async (req, res): Promise<void> => {
   } catch {
     teamName = undefined;
   }
-  const base = GetSessionResponse.parse({ authenticated: true, label: account.displayName, interviewerId: account.id, role: account.role, isSiteOwner: account.isSiteOwner === true });
+  const base = GetSessionResponse.parse({
+    authenticated: true,
+    label: account.displayName,
+    interviewerId: account.id,
+    role: account.role,
+    isSiteOwner: account.isSiteOwner === true,
+    permissions,
+    ...(account.customRoleId ? { customRoleId: account.customRoleId } : {}),
+    ...(customRole ? { customRoleName: customRole.name } : {}),
+  });
   res.json({ ...base, teamId, ...(teamName ? { teamName } : {}) });
 });
 

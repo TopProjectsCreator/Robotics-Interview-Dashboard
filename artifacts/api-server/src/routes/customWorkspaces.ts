@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
-import { UpdateCustomWorkspaceTabsBody, UpdateCustomWorkspaceTabsResponse } from "@workspace/api-zod";
+import { hasPermission, UpdateCustomWorkspaceTabsBody, UpdateCustomWorkspaceTabsResponse } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { teamAssistantAI } from "../lib/teamAssistantAi";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
@@ -17,6 +17,7 @@ import {
   requireCoordinator,
 } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { permissionsForAccount } from "../lib/teamRoles";
 import { teamSqlCondition } from "../lib/teams";
 import { getAssistantModel } from "../lib/assistantModel";
 import { deleteCustomWorkspace } from "../lib/customWorkspaceDeletion";
@@ -692,7 +693,9 @@ router.get("/custom-workspaces", requireAdmin, async (req, res): Promise<void> =
   const teamId = await requestTeamId(req);
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
-  const canViewInitialRequest = account?.role === "coordinator" || account?.role === "admin";
+  const canViewInitialRequest = account
+    ? hasPermission(await permissionsForAccount(account), "customWorkspaces.manage")
+    : false;
   const result = await pool.query(
     `select "id", "title", "description", "prompt", "capabilities", "status", "access_mode" as "accessMode",
             "allowed_interviewer_ids" as "allowedInterviewerIds",
@@ -1525,9 +1528,17 @@ router.post("/custom-workspaces/:id/publish", requireCoordinator, async (req, re
     res.status(404).json({ error: "Workspace not found." });
     return;
   }
+  const customRolePermissions = (req as Request & { customRolePermissions?: string[] }).customRolePermissions;
+  const canManageAccess = !customRolePermissions ||
+    hasPermission(customRolePermissions, "customWorkspaces.access");
   const accessSettings = current.upgradeTargetId
     ? null
-    : await saveableAccessSettings(req.body, teamId);
+    : canManageAccess
+      ? await saveableAccessSettings(req.body, teamId)
+      : {
+          accessMode: current.accessMode,
+          allowedInterviewerIds: Array.isArray(current.allowedInterviewerIds) ? current.allowedInterviewerIds : [],
+        };
   if (!current.upgradeTargetId && !accessSettings) {
     res.status(400).json({ error: "Choose a valid access mode and current team members." });
     return;

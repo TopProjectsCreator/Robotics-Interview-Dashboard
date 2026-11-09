@@ -138,6 +138,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "interview_queue",
     "interview_whiteboards",
     "interviewer_accounts",
+    "team_roles",
     "maildrop_inboxes",
     "personal_notepad",
     "onshape_mcp_connections",
@@ -623,6 +624,16 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     // team's access-code hash. All statements are idempotent.
     `create table if not exists "teams" ("id" text primary key, "name" text not null, "normalized_name" text not null unique, "code_hash" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create unique index if not exists "teams_normalized_name_unique" on "teams" ("normalized_name")`,
+    `create table if not exists "team_roles" (
+       "id" text primary key,
+       "team_id" text not null,
+       "name" text not null check (length("name") between 1 and 60),
+       "permissions" jsonb not null default '[]'::jsonb,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "team_roles_name_unique" on "team_roles" ("team_id", lower("name"))`,
+    `create index if not exists "team_roles_team_idx" on "team_roles" ("team_id")`,
     `alter table "teams" add column if not exists "logo_path" text`,
     `alter table "teams" add column if not exists "primary_color" text`,
     `alter table "applicants" add column if not exists "team_id" text`,
@@ -650,6 +661,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `alter table "interview_queue" add column if not exists "team_id" text`,
     `alter table "interview_whiteboards" add column if not exists "team_id" text`,
     `alter table "interviewer_accounts" add column if not exists "team_id" text`,
+    `alter table "interviewer_accounts" add column if not exists "custom_role_id" text`,
     `alter table "page_visits" add column if not exists "team_id" text`,
     `alter table "parts_catalog_items" add column if not exists "team_id" text`,
     `alter table "parts_inventory" add column if not exists "team_id" text`,

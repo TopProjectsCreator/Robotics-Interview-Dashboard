@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { ArrowLeft, Check, Code2, Copy, LoaderCircle, MoveDown, MoveUp, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
+import { hasPermission } from "@workspace/api-zod";
 import { getStoredAuthToken } from "../authSession";
 import {
   AlertDialog,
@@ -478,7 +479,11 @@ function builderRunTargetsWorkspace(run: BuilderRun | null, workspaceId: string)
 export function CustomWorkspacesPage() {
   const { resolvedTheme } = useTheme();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canManage = session.data?.role === "coordinator";
+  const isAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
+  const canManage = isAdmin ||
+    hasPermission(session.data?.permissions, "customWorkspaces.manage");
+  const canManageAccess = isAdmin ||
+    hasPermission(session.data?.permissions, "customWorkspaces.access");
   const [items, setItems] = useState<Workspace[]>([]);
   const [selected, setSelected] = useState<Workspace | null>(null);
   const [workspaceSearch, setWorkspaceSearch] = useState("");
@@ -668,13 +673,13 @@ export function CustomWorkspacesPage() {
     setAllowedInterviewerIds(active?.allowedInterviewerIds ?? []);
   }, [active?.id, active?.accessMode, JSON.stringify(active?.allowedInterviewerIds ?? [])]);
   useEffect(() => {
-    if (!canManage) return;
+    if (!canManageAccess) return;
     setTeamMembersLoading(true);
     void request<{ members: TeamMember[] }>(`${API}/team-members`)
       .then((result) => setTeamMembers(result.members))
       .catch((err) => setError(err instanceof Error ? err.message : "Could not load team members."))
       .finally(() => setTeamMembersLoading(false));
-  }, [canManage]);
+  }, [canManageAccess]);
   useEffect(() => {
     setPreviewVersion(null);
     setPreviewVersionWorkspaceId(null);
@@ -989,7 +994,7 @@ export function CustomWorkspacesPage() {
     try {
       const result = await request<{ workspace: Workspace }>(`${API}/${active.id}/publish`, {
         method: "POST",
-        body: JSON.stringify({ accessMode, allowedInterviewerIds }),
+        body: JSON.stringify(canManageAccess ? { accessMode, allowedInterviewerIds } : {}),
       });
       setPublishAgentSteps([{ id: "published", label: "Publish workspace", detail: "Published.", status: "done" }]);
       await refresh();
@@ -1001,7 +1006,7 @@ export function CustomWorkspacesPage() {
     }
   };
   const saveAccess = async () => {
-    if (!active) return;
+    if (!active || !canManageAccess) return;
     if (active.status === "draft") return;
     setBusy(true);
     setError("");
@@ -1226,7 +1231,7 @@ export function CustomWorkspacesPage() {
       <section className="space-y-4">
         <div className="rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-4 shadow-sm">
           <label htmlFor="workspace-prompt" className="text-sm font-semibold text-[hsl(var(--foreground))]">What should this workspace do?</label>
-          {!canManage && <p className="mt-2 rounded-lg bg-[hsl(var(--muted))] p-2.5 text-xs text-[hsl(var(--foreground))]">Only coordinators can create, revise, publish, or change access for custom apps.</p>}
+          {!canManage && <p className="mt-2 rounded-lg bg-[hsl(var(--muted))] p-2.5 text-xs text-[hsl(var(--foreground))]">{canManageAccess ? "You can change app access, but creating, revising, and publishing requires custom workspace management permission." : "Custom workspace management permission is required to create, revise, or publish apps."}</p>}
           <textarea id="workspace-prompt" disabled={!canManage} value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={6} maxLength={8000} placeholder="Example: Build a parts catalog for our robot. Track part names, suppliers, prices, and stock; let the team search and add records." className="mt-2 w-full resize-y rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 text-base md:text-sm text-[hsl(var(--foreground))] outline-none focus:ring-2 focus:ring-[#16869a] disabled:opacity-60" />
           <label className="mt-4 grid gap-1.5 text-xs font-semibold text-[hsl(var(--foreground))]">
             <span>AI model</span>
@@ -1281,10 +1286,10 @@ export function CustomWorkspacesPage() {
             <h2 className="truncate font-semibold text-[hsl(var(--foreground))]">{active?.title ?? "Preview"}</h2>
             <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">{currentPreviewVersion ? `Previewing saved version · ${currentPreviewVersion.message}` : active?.upgradeTargetId ? "Sidebar tab upgrade draft · the published app remains unchanged until you publish." : active ? `${active.status === "published" ? "Published" : "Draft"} · ${active.capabilities.join(" · ") || "No capabilities"}` : "Generate an app to see it here."}</p>
           </div>
-          {active && canManage && <div className="flex flex-wrap items-end gap-2">
+          {active && canManageAccess && <div className="flex flex-wrap items-end gap-2">
             <label className="grid gap-1 text-xs text-[hsl(var(--foreground))]">
               <span>Who can use this app?</span>
-              <select aria-label="Who can use this app?" value={accessMode} disabled={busy} onChange={(event) => setAccessMode(event.target.value as AccessMode)} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-base md:text-sm text-[hsl(var(--foreground))]">
+              <select aria-label="Who can use this app?" value={accessMode} disabled={busy || !canManageAccess} onChange={(event) => setAccessMode(event.target.value as AccessMode)} className="rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1.5 text-base md:text-sm text-[hsl(var(--foreground))]">
                 <option value="team">Everyone on the team</option>
                 <option value="owner">Only the creator</option>
                 <option value="selected">Choose teammates</option>
@@ -1480,7 +1485,7 @@ export function CustomWorkspacesPage() {
               <pre className="max-h-64 overflow-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3 font-mono text-[11px] leading-relaxed text-[hsl(var(--foreground))]"><code>{visibleSourceFiles.find((file) => file.path === selectedSourcePath)?.content ?? ""}</code></pre>
             </div>}
         </section>}
-        {active && canManage && accessMode === "selected" && <div className="border-b border-[hsl(var(--border))] p-4">
+        {active && canManageAccess && accessMode === "selected" && <div className="border-b border-[hsl(var(--border))] p-4">
           <fieldset disabled={busy}>
             <legend className="text-sm font-semibold text-[hsl(var(--foreground))]">Choose teammates</legend>
             <p className="mt-1 text-xs text-[#60757c] dark:text-[#b3c3cb]">Only selected accounts can open this app or use its data and AI tools.</p>

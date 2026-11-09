@@ -11,6 +11,11 @@ import { getRedirectConfig, getRedirectLocation } from "./lib/primaryRedirect";
 import { sitemapHandler } from "./routes/sitemap";
 import { attachAdminSession } from "./middlewares/adminAuth";
 import { isDatabaseConnectionError } from "./lib/databaseErrors";
+import { and, eq } from "drizzle-orm";
+import { db, interviewerAccountsTable, teamRolesTable, DEFAULT_TEAM_ID } from "@workspace/db";
+import { isAdminRole } from "./lib/roles";
+import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted } from "./lib/routePermissions";
+import { normalizePermissions, permissionsForBuiltInRole } from "@workspace/api-zod";
 
 const app: Express = express();
 
@@ -149,6 +154,67 @@ app.use("/api/parts/catalog/identify-image", express.json({ limit: "4.1mb" }));
 app.use("/api/assistant/questions", express.json({ limit: "8mb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Team capabilities are evaluated centrally before every API handler,
+// including direct requests and routes that use different legacy middleware.
+// Built-in defaults preserve existing access; unknown accounts and routes fail closed.
+app.use("/api", async (req, res, next) => {
+  if (isUnauthenticatedOrSelfServiceRoute(req.method, req.originalUrl)) {
+    next();
+    return;
+  }
+  const interviewerId = (req as typeof req & { interviewerId?: string }).interviewerId;
+  if (!interviewerId) {
+    next();
+    return;
+  }
+  try {
+    const [account] = await db.select({
+      role: interviewerAccountsTable.role,
+      customRoleId: interviewerAccountsTable.customRoleId,
+      teamId: interviewerAccountsTable.teamId,
+    }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId)).limit(1);
+    if (!account) {
+      res.status(403).json({ error: "This action is not available for your account." });
+      return;
+    }
+    if (isAdminRole(account.role)) {
+      next();
+      return;
+    }
+    let permissions: string[];
+    let isCustomRole = false;
+    if (account.customRoleId) {
+      const teamId = account.teamId?.trim() || DEFAULT_TEAM_ID;
+      const [role] = await db.select({ permissions: teamRolesTable.permissions })
+        .from(teamRolesTable)
+        .where(and(eq(teamRolesTable.id, account.customRoleId), eq(teamRolesTable.teamId, teamId)))
+        .limit(1);
+      if (!role) {
+        res.status(403).json({ error: "This action is not available for your role." });
+        return;
+      }
+      permissions = normalizePermissions(role.permissions);
+      isCustomRole = true;
+    } else {
+      permissions = permissionsForBuiltInRole(account.role);
+    }
+    if (!routePermissionIsGranted(permissions, req.method, req.originalUrl, req.body)) {
+      res.status(403).json({ error: "This action is not available for your role." });
+      return;
+    }
+    const permissionRequest = req as typeof req & { customRolePermissions?: string[]; effectivePermissions?: string[]; isCustomRole?: boolean };
+    permissionRequest.effectivePermissions = permissions;
+    if (isCustomRole) {
+      permissionRequest.customRolePermissions = permissions;
+      permissionRequest.isCustomRole = true;
+    }
+    next();
+  } catch (error) {
+    req.log.error({ err: error }, "Custom role permission lookup failed");
+    res.status(503).json({ error: "Permissions are temporarily unavailable." });
+  }
+});
 
 app.use("/api", router);
 

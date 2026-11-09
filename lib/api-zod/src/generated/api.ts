@@ -123,6 +123,9 @@ export const LoginResponse = zod.object({
   "teamId": zod.string().optional().describe('Team this session belongs to'),
   "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
   "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
+  "customRoleId": zod.string().optional(),
+  "customRoleName": zod.string().optional(),
+  "permissions": zod.array(zod.string()).optional().describe('Effective team capabilities; unknown values are ignored'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -197,8 +200,75 @@ export const GetSessionResponse = zod.object({
   "teamId": zod.string().optional().describe('Team this session belongs to'),
   "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
   "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
+  "customRoleId": zod.string().optional(),
+  "customRoleName": zod.string().optional(),
+  "permissions": zod.array(zod.string()).optional().describe('Effective team capabilities; unknown values are ignored'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
+
+
+/**
+ * @summary List custom roles for the signed-in team
+ */
+export const ListTeamRolesResponse = zod.object({
+  "roles": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "permissions": zod.array(zod.string())
+}))
+})
+
+
+/**
+ * @summary Create a custom role for the signed-in team
+ */
+export const createTeamRoleBodyNameMax = 60;
+
+
+
+export const CreateTeamRoleBody = zod.object({
+  "name": zod.string().min(1).max(createTeamRoleBodyNameMax),
+  "permissions": zod.array(zod.enum(['interview.view', 'chat.view', 'parts.view', 'cad.view', 'code.view', 'applicants.view', 'applicants.search', 'applicants.edit', 'applicants.manage', 'queue.view', 'queue.manage', 'attendance.view', 'attendance.manage', 'display.view', 'display.manage', 'dashboard.view', 'dashboard.manage', 'snapshots.view', 'snapshots.manage', 'chat.send', 'chat.moderate', 'chat.manage', 'broadcasts.view', 'broadcasts.send', 'broadcasts.manage', 'personal.notepad.read', 'personal.notepad.write', 'assistant.view', 'assistant.use', 'assistant.manage', 'parts.edit', 'parts.manage', 'cad.edit', 'cad.manage', 'code.edit', 'code.manage', 'collaboration.view', 'collaboration.edit', 'collaboration.manage', 'customWorkspaces.view', 'customWorkspaces.manage', 'customWorkspaces.access', 'customWorkspaces.data', 'team.branding.manage', 'team.mailbox.manage', 'team.nameRules.manage', 'featureRequests.view', 'featureRequests.create', 'events.view', 'presence.view', 'presence.heartbeat', 'presence.manage']))
+})
+
+export const CreateTeamRoleResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "permissions": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Edit a custom role for the signed-in team
+ */
+export const UpdateTeamRoleParams = zod.object({
+  "roleId": zod.coerce.string()
+})
+
+export const updateTeamRoleBodyOneNameMax = 60;
+
+
+
+export const UpdateTeamRoleBody = zod.object({
+  "name": zod.string().min(1).max(updateTeamRoleBodyOneNameMax),
+  "permissions": zod.array(zod.enum(['interview.view', 'chat.view', 'parts.view', 'cad.view', 'code.view', 'applicants.view', 'applicants.search', 'applicants.edit', 'applicants.manage', 'queue.view', 'queue.manage', 'attendance.view', 'attendance.manage', 'display.view', 'display.manage', 'dashboard.view', 'dashboard.manage', 'snapshots.view', 'snapshots.manage', 'chat.send', 'chat.moderate', 'chat.manage', 'broadcasts.view', 'broadcasts.send', 'broadcasts.manage', 'personal.notepad.read', 'personal.notepad.write', 'assistant.view', 'assistant.use', 'assistant.manage', 'parts.edit', 'parts.manage', 'cad.edit', 'cad.manage', 'code.edit', 'code.manage', 'collaboration.view', 'collaboration.edit', 'collaboration.manage', 'customWorkspaces.view', 'customWorkspaces.manage', 'customWorkspaces.access', 'customWorkspaces.data', 'team.branding.manage', 'team.mailbox.manage', 'team.nameRules.manage', 'featureRequests.view', 'featureRequests.create', 'events.view', 'presence.view', 'presence.heartbeat', 'presence.manage']))
+})
+
+export const UpdateTeamRoleResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "permissions": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Delete a custom role and clear its assignments
+ */
+export const DeleteTeamRoleParams = zod.object({
+  "roleId": zod.coerce.string()
+})
+
+export const DeleteTeamRoleResponse = zod.void()
 
 
 /**
@@ -341,7 +411,8 @@ export const ListInterviewersResponse = zod.object({
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
   "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
-  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts'),
+  "customRoleId": zod.string().nullish()
 }))
 })
 
@@ -366,7 +437,8 @@ export const CreateInterviewerResponse = zod.object({
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
   "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
-  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts'),
+  "customRoleId": zod.string().nullish()
 })
 
 
@@ -389,7 +461,8 @@ export const SetupInterviewerPasswordResponse = zod.object({
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
   "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
-  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts'),
+  "customRoleId": zod.string().nullish()
 })
 
 
@@ -492,6 +565,9 @@ export const LoginWithPasskeyResponse = zod.object({
   "teamId": zod.string().optional().describe('Team this session belongs to'),
   "teamName": zod.string().optional().describe('Display name of the team this session belongs to'),
   "isSiteOwner": zod.boolean().optional().describe('True when this account is the site owner (sees every team\'s feature requests and site stats)'),
+  "customRoleId": zod.string().optional(),
+  "customRoleName": zod.string().optional(),
+  "permissions": zod.array(zod.string()).optional().describe('Effective team capabilities; unknown values are ignored'),
   "token": zod.string().optional().describe('Session token for embedded clients that cannot use third-party cookies')
 })
 
@@ -517,7 +593,8 @@ export const UpdateInterviewerNameResponse = zod.object({
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
   "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
-  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts'),
+  "customRoleId": zod.string().nullish()
 })
 
 
@@ -537,7 +614,29 @@ export const UpdateInterviewerRoleResponse = zod.object({
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
   "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
-  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts'),
+  "customRoleId": zod.string().nullish()
+})
+
+
+/**
+ * @summary Assign or clear a custom role for a team account
+ */
+export const AssignCustomRoleParams = zod.object({
+  "interviewerId": zod.coerce.string()
+})
+
+export const AssignCustomRoleBody = zod.object({
+  "customRoleId": zod.string().nullable()
+})
+
+export const AssignCustomRoleResponse = zod.object({
+  "id": zod.string(),
+  "displayName": zod.string(),
+  "hasPassword": zod.boolean(),
+  "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts'),
+  "customRoleId": zod.string().nullish()
 })
 
 
@@ -563,7 +662,8 @@ export const UpdateInterviewerPasswordResponse = zod.object({
   "displayName": zod.string(),
   "hasPassword": zod.boolean(),
   "hasPasskey": zod.boolean().optional().describe('True when this account has at least one passkey registered'),
-  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts')
+  "role": zod.string().describe('coordinator (admin) has full access; treasurer adds a read-only applicant roster; interviewer is limited to chat and parts'),
+  "customRoleId": zod.string().nullish()
 })
 
 

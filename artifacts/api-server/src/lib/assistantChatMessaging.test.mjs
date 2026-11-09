@@ -10,7 +10,11 @@ registerHooks({
       return nextResolve(specifier, context);
     } catch (error) {
       if (specifier.startsWith(".") && !specifier.endsWith(".ts") && !specifier.endsWith(".js")) {
-        return nextResolve(`${specifier}.ts`, context);
+        try {
+          return nextResolve(`${specifier}.ts`, context);
+        } catch {
+          return nextResolve(`${specifier}/index.ts`, context);
+        }
       }
       throw error;
     }

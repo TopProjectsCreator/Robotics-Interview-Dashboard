@@ -11,6 +11,7 @@ import {
   interviewWhiteboardsTable,
   type DbInstance,
 } from "@workspace/db";
+import { hasPermission } from "@workspace/api-zod";
 import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import {
   interviewerIdFromSession,
@@ -19,6 +20,7 @@ import {
 } from "../middlewares/adminAuth";
 import { logger } from "./logger";
 import { teamFilter, findAccountAnywhere } from "./teams";
+import { permissionsForAccount } from "./teamRoles";
 
 const MAX_WHITEBOARD_DATA_BYTES = 1_500_000;
 const WHITEBOARD_PATH = /^\/api\/whiteboards\/([^/]+)\/collab$/;
@@ -238,14 +240,28 @@ function schedulePersist(room: CollaborationRoom): void {
   }, 180);
 }
 
-async function authenticateUpgrade(request: IncomingMessage, url: URL): Promise<{ interviewerId: string; displayName: string; teamId: string; instance: "primary" | "secondary" } | null> {
+async function authenticateUpgrade(request: IncomingMessage, url: URL): Promise<{
+  interviewerId: string;
+  displayName: string;
+  teamId: string;
+  role: string;
+  customRoleId: string | null;
+  instance: "primary" | "secondary";
+} | null> {
   const session = sessionFromUpgrade(request, url);
   if (!session || await isRevokedAdminSession(session)) return null;
   const interviewerId = interviewerIdFromSession(session);
   if (!interviewerId) return null;
   const found = await findAccountAnywhere(interviewerId);
   if (!found?.account.passwordHash) return null;
-  return { interviewerId: found.account.id, displayName: found.account.displayName, teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID, instance: found.instance };
+  return {
+    interviewerId: found.account.id,
+    displayName: found.account.displayName,
+    teamId: found.account.teamId?.trim() ? found.account.teamId : DEFAULT_TEAM_ID,
+    role: found.account.role,
+    customRoleId: found.account.customRoleId ?? null,
+    instance: found.instance,
+  };
 }
 
 async function openCollaboration(
@@ -253,6 +269,7 @@ async function openCollaboration(
   identity: { interviewerId: string; displayName: string; teamId: string },
   whiteboard: WhiteboardRow,
   teamId?: string | null,
+  canEdit = true,
 ): Promise<void> {
   const whiteboardId = whiteboard.id;
   const room = roomFor(whiteboardId, whiteboard.data, teamId ?? identity.teamId ?? whiteboard.teamId);
@@ -310,6 +327,10 @@ async function openCollaboration(
       return;
     }
     if (payload.type !== "scene") return;
+    if (!canEdit) {
+      send(socket, { type: "error", message: "This whiteboard is read-only for your role." });
+      return;
+    }
     const data = normalizeWhiteboardData(payload.data);
     const clientRevision = typeof payload.clientRevision === "number" ? payload.clientRevision : 0;
     if (!data) {
@@ -388,9 +409,15 @@ export function setupWhiteboardCollaboration(server: Server): void {
     }
     const whiteboardId = decodeURIComponent(match[1]);
     void authenticateUpgrade(request, url)
-      .then((identity) => runWithInstance(identity?.instance ?? activeTeamDatabaseInstance(), () => {
+      .then((identity) => runWithInstance(identity?.instance ?? activeTeamDatabaseInstance(), async () => {
         if (!identity) {
           socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+        const permissions = await permissionsForAccount(identity);
+        if (!hasPermission(permissions, "collaboration.view")) {
+          socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
           socket.destroy();
           return;
         }
@@ -404,7 +431,13 @@ export function setupWhiteboardCollaboration(server: Server): void {
               return;
             }
             websocketServer.handleUpgrade(request, socket, head, (clientSocket) => {
-              void openCollaboration(clientSocket, identity, whiteboard, identity.teamId).catch((error) => {
+              void openCollaboration(
+                clientSocket,
+                identity,
+                whiteboard,
+                identity.teamId,
+                hasPermission(permissions, "collaboration.edit"),
+              ).catch((error) => {
                 logger.error({ err: error, whiteboardId }, "Whiteboard collaboration connection failed");
                 clientSocket.close(1011, "Collaboration unavailable");
               });

@@ -230,6 +230,11 @@ export function requireStaff(
       res.status(401).json({ error: "Interviewer session is invalid" });
       return;
     }
+    const customRolePermissions = (req as Request & { customRolePermissions?: string[] }).customRolePermissions;
+    if (customRolePermissions) {
+      next();
+      return;
+    }
     db.select({ role: interviewerAccountsTable.role })
       .from(interviewerAccountsTable)
       .where(eq(interviewerAccountsTable.id, interviewerId))
@@ -298,6 +303,14 @@ export function requireCoordinator(
       res.status(401).json({ error: "Interviewer session is invalid" });
       return;
     }
+    const path = (typeof req.originalUrl === "string" ? req.originalUrl : req.path ?? "")
+      .split("?", 1)[0].replace(/^\/api(?=\/|$)/, "");
+    const adminOnly = /^\/(?:auth\/(?:roles|interviewers\/[^/]+\/(?:custom-role|role|password)|interviewers\/passwords|interviewers\/[^/]+$|teams\/)|workspaces\/visibility)/.test(path);
+    const customRolePermissions = (req as Request & { customRolePermissions?: string[] }).customRolePermissions;
+    if (customRolePermissions && !adminOnly) {
+      next();
+      return;
+    }
     db.select({ role: interviewerAccountsTable.role })
       .from(interviewerAccountsTable)
       .where(eq(interviewerAccountsTable.id, interviewerId))
@@ -329,6 +342,11 @@ export function requireInboxAdmin(
     const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
     if (!interviewerId) {
       res.status(401).json({ error: "Interviewer session is invalid" });
+      return;
+    }
+    const customRolePermissions = (req as Request & { customRolePermissions?: string[] }).customRolePermissions;
+    if (customRolePermissions?.includes("team.mailbox.manage")) {
+      next();
       return;
     }
     db.select({ role: interviewerAccountsTable.role })

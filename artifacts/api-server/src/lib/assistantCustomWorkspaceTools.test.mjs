@@ -9,7 +9,11 @@ registerHooks({
       return nextResolve(specifier, context);
     } catch (error) {
       if (specifier.startsWith(".") && !specifier.endsWith(".ts") && !specifier.endsWith(".js")) {
-        return nextResolve(`${specifier}.ts`, context);
+        try {
+          return nextResolve(`${specifier}.ts`, context);
+        } catch {
+          return nextResolve(`${specifier}/index.ts`, context);
+        }
       }
       throw error;
     }
@@ -183,7 +187,8 @@ test("catalog exposes standard data actions and only enabled actions for accessi
   assert.ok(names.includes(workspaceAssistantToolName("workspace-selected", "find_by_status")));
   assert.equal(names.some((name) => name.includes("workspace-private")), false);
   assert.deepEqual(await listAssistantCustomWorkspaceTools("member", "team-a"), []);
-  assert.deepEqual(await listAssistantCustomWorkspaceTools("admin", "team-a"), []);
+  const adminTools = await listAssistantCustomWorkspaceTools("admin", "team-a");
+  assert.equal(adminTools.length, 8, "the admin alias keeps Admin permissions but remains limited to accessible workspaces");
   assert.deepEqual(await listAssistantCustomWorkspaceTools("other-team", "team-a"), []);
 });
 
