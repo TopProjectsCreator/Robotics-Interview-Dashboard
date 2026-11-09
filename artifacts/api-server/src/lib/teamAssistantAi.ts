@@ -7,6 +7,7 @@ import {
   invokeAssistantProvider,
   type ChatRequest,
 } from "./assistantProviderAdapters";
+import { trackAssistantProviderRequest } from "./assistantUsage";
 
 type CompletionCreate = typeof openai.chat.completions.create;
 
@@ -17,18 +18,29 @@ type CompletionCreate = typeof openai.chat.completions.create;
  */
 export function teamAssistantAI(teamId: string): typeof openai {
   const create: CompletionCreate = (async (request, options) => {
+    const requestedModel = typeof request.model === "string" ? request.model : "unknown";
     const provider = await getTeamAssistantProvider(teamId);
-    if (!provider) return openai.chat.completions.create(request, options);
+    return await trackAssistantProviderRequest(provider?.modelId ?? requestedModel, options?.signal ?? undefined, async () => {
+      if (!provider) {
+        const providerRequest = request.stream
+          ? {
+            ...request,
+            stream_options: { ...request.stream_options, include_usage: true },
+          }
+          : request;
+        return openai.chat.completions.create(providerRequest, options);
+      }
 
-    if (provider.protocol === "openai-compatible" && provider.endpointUrl) {
-      provider.endpointUrl = await validateCompatibleEndpoint(provider.endpointUrl);
-    }
-    const compatibleRequest = {
-      ...(request as unknown as ChatRequest),
-      model: provider.modelId,
-    };
-    return await invokeAssistantProvider(provider, provider.model, compatibleRequest, {
-      signal: options?.signal ?? undefined,
+      if (provider.protocol === "openai-compatible" && provider.endpointUrl) {
+        provider.endpointUrl = await validateCompatibleEndpoint(provider.endpointUrl);
+      }
+      const compatibleRequest = {
+        ...(request as unknown as ChatRequest),
+        model: provider.modelId,
+      };
+      return await invokeAssistantProvider(provider, provider.model, compatibleRequest, {
+        signal: options?.signal ?? undefined,
+      }) as Awaited<ReturnType<CompletionCreate>>;
     }) as Awaited<ReturnType<CompletionCreate>>;
   }) as CompletionCreate;
   return {

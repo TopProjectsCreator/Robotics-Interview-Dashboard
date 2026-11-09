@@ -3188,6 +3188,79 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantConfig"
+  /assistant/usage:
+    get:
+      operationId: getAssistantUsage
+      tags: [assistant]
+      summary: Get team assistant usage for a date range
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: startDate
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+        - name: endDate
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+      responses:
+        "200":
+          description: Team-scoped aggregate usage without prompt contents
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantUsageReport"
+        "400":
+          description: Invalid date range
+        "403":
+          description: Admin access required
+  /assistant/tool-policy:
+    get:
+      operationId: getAssistantToolPolicy
+      tags: [assistant]
+      summary: Read team-wide and role-specific assistant tool restrictions
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Saved team tool restrictions and role choices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantToolPolicy"
+        "403":
+          description: Admin access required
+    put:
+      operationId: updateAssistantToolPolicy
+      tags: [assistant]
+      summary: Save team-wide and role-specific assistant tool restrictions
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssistantToolPolicyInput"
+      responses:
+        "200":
+          description: Saved assistant tool restrictions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantToolPolicy"
+        "400":
+          description: Invalid tool or role selection
+        "403":
+          description: Admin access required
   /assistant/conversations:
     get:
       operationId: listAssistantConversations
@@ -9374,6 +9447,95 @@ components:
           description: "Vision model used for image input"
         locked:
           type: boolean
+    AssistantUsageMetrics:
+      type: object
+      required: [prompts, completedPrompts, failedPrompts, cancelledPrompts, runningPrompts, providerRequests, successfulRequests, failedRequests, cancelledRequests, runningRequests, inputTokens, outputTokens, totalTokens, usageReportedRequests, usageUnavailableRequests]
+      properties:
+        prompts: { type: integer, minimum: 0 }
+        completedPrompts: { type: integer, minimum: 0 }
+        failedPrompts: { type: integer, minimum: 0 }
+        cancelledPrompts: { type: integer, minimum: 0 }
+        runningPrompts: { type: integer, minimum: 0 }
+        providerRequests: { type: integer, minimum: 0 }
+        successfulRequests: { type: integer, minimum: 0 }
+        failedRequests: { type: integer, minimum: 0 }
+        cancelledRequests: { type: integer, minimum: 0 }
+        runningRequests: { type: integer, minimum: 0 }
+        inputTokens: { type: ["integer", "null"], minimum: 0 }
+        outputTokens: { type: ["integer", "null"], minimum: 0 }
+        totalTokens: { type: ["integer", "null"], minimum: 0 }
+        usageReportedRequests: { type: integer, minimum: 0 }
+        usageUnavailableRequests: { type: integer, minimum: 0 }
+    AssistantUsageUser:
+      type: object
+      required: [accountId, displayName, role, metrics]
+      properties:
+        accountId: { type: string }
+        displayName: { type: string }
+        role: { type: string }
+        metrics:
+          $ref: "#/components/schemas/AssistantUsageMetrics"
+    AssistantUsageTool:
+      type: object
+      required: [name, invocations]
+      properties:
+        name: { type: string }
+        invocations: { type: integer, minimum: 0 }
+    AssistantUsageReport:
+      type: object
+      required: [startDate, endDate, totals, users, tools]
+      properties:
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        totals:
+          $ref: "#/components/schemas/AssistantUsageMetrics"
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantUsageUser"
+        tools:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantUsageTool"
+    AssistantToolPolicyRole:
+      type: object
+      required: [key, label]
+      properties:
+        key: { type: string }
+        label: { type: string }
+    AssistantToolPolicy:
+      type: object
+      required: [teamDisabledTools, roleDisabledTools, roles, updatedAt]
+      properties:
+        teamDisabledTools:
+          type: array
+          items: { type: string }
+        roleDisabledTools:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        roles:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantToolPolicyRole"
+        updatedAt: { type: ["string", "null"], format: date-time }
+    AssistantToolPolicyInput:
+      type: object
+      required: [teamDisabledTools, roleDisabledTools]
+      properties:
+        teamDisabledTools:
+          type: array
+          maxItems: 300
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 64 }
+        roleDisabledTools:
+          type: object
+          additionalProperties:
+            type: array
+            maxItems: 300
+            uniqueItems: true
+            items: { type: string, minLength: 1, maxLength: 64 }
           description: "Whether the team admin has locked model selection to the default"
     AssistantModel:
       type: object

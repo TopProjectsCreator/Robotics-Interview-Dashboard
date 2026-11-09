@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
 import { assistantBuilderRunsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
+import { assistantToolPoliciesTable, teamRolesTable } from "@workspace/db/schema";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import { hasPermission } from "@workspace/api-zod";
 import { permissionsForAccount } from "../lib/teamRoles";
@@ -90,6 +91,11 @@ import {
   CreateAssistantConversationBody,
   CreateAssistantConversationResponse,
   GetAssistantConfigResponse,
+  GetAssistantUsageQueryParams,
+  GetAssistantUsageResponse,
+  GetAssistantToolPolicyResponse,
+  UpdateAssistantToolPolicyBody,
+  UpdateAssistantToolPolicyResponse,
   ListAssistantSkillsResponse,
   CreateAssistantSkillBody,
   CreateAssistantSkillResponse,
@@ -332,8 +338,22 @@ import {
 import {
   filterDisabledAssistantTools,
   isAssistantToolDisabled,
+  assistantRolePolicyKey,
+  combineAssistantToolRestrictions,
+  normalizeAssistantToolPolicy,
   parseDisabledAssistantTools,
 } from "../lib/assistantToolPolicy";
+import {
+  enterAssistantUsageContext,
+  finishAssistantUsagePrompt,
+  recordAssistantToolInvocation,
+  runAssistantUsagePrompt,
+  startAssistantUsagePrompt,
+} from "../lib/assistantUsage";
+import {
+  aggregateAssistantUsage,
+  parseAssistantUsageDateRange,
+} from "../lib/assistantUsageReporting";
 import {
   assistantTaskRunIdempotencyKey,
   nextAssistantTaskOccurrence,
@@ -487,6 +507,13 @@ async function enqueueCustomWorkspaceBuilderPrompt(input: {
     queued = await write();
   }
   if (!queued) return;
+  const recordPrompt = () => startAssistantUsagePrompt({
+    promptId: promptRunId,
+    teamId: input.teamId,
+    accountId: input.accountId,
+  }, "queued");
+  if (input.instance) await runWithInstance(input.instance, recordPrompt);
+  else await recordPrompt();
 }
 
 const ASSISTANT_PROMPT_STALE_MS = 60_000;
@@ -563,6 +590,13 @@ async function setAssistantPromptRunFailure(runId: string, instance: DbInstance,
       accountId: assistantPromptRunsTable.accountId,
       payload: assistantPromptRunsTable.payload,
     }).from(assistantPromptRunsTable).where(eq(assistantPromptRunsTable.id, runId)).limit(1);
+    if (run) {
+      await finishAssistantUsagePrompt({
+        promptId: runId,
+        teamId: run.teamId,
+        accountId: run.accountId,
+      }, "failed").catch(() => undefined);
+    }
     await db.update(assistantPromptRunsTable).set({
       status: "failed",
       error: message,
@@ -869,8 +903,18 @@ async function recoverStaleAssistantPromptRuns(instance: DbInstance): Promise<vo
           eq(assistantPromptRunsTable.status, "running"),
           lt(assistantPromptRunsTable.updatedAt, staleBefore),
         )));
+        await finishAssistantUsagePrompt({
+          promptId: staleRun.id,
+          teamId: staleRun.teamId,
+          accountId: staleRun.accountId,
+        }, "failed").catch(() => undefined);
         continue;
       }
+      await finishAssistantUsagePrompt({
+        promptId: staleRun.id,
+        teamId: staleRun.teamId,
+        accountId: staleRun.accountId,
+      }, "failed").catch(() => undefined);
 
       const [builderRun] = await runWithInstance(instance, () => db.select().from(assistantBuilderRunsTable).where(and(
         eq(assistantBuilderRunsTable.id, builderRunId),
@@ -1878,6 +1922,31 @@ const ASSISTANT_TOOLS = [
 const ALL_ASSISTANT_TOOL_NAMES = new Set(
   [...ASSISTANT_TOOLS.map((tool) => tool.function.name), ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME],
 );
+
+async function storedAssistantToolPolicy(teamId: string) {
+  const [row] = await db.select().from(assistantToolPoliciesTable)
+    .where(eq(assistantToolPoliciesTable.teamId, teamId))
+    .limit(1);
+  return normalizeAssistantToolPolicy({
+    teamDisabledTools: row?.teamDisabledTools ?? [],
+    roleDisabledTools: row?.roleDisabledTools ?? {},
+  }, ALL_ASSISTANT_TOOL_NAMES);
+}
+
+async function disabledAssistantToolsForAccount(
+  teamId: string,
+  account: { role: string; customRoleId?: string | null },
+  requestDisabled: unknown,
+): Promise<Set<string>> {
+  const policy = await storedAssistantToolPolicy(teamId);
+  return combineAssistantToolRestrictions(
+    requestDisabled,
+    policy,
+    assistantRolePolicyKey(account.role, account.customRoleId),
+    ALL_ASSISTANT_TOOL_NAMES,
+  );
+}
+
 const APPROVED_ASSISTANT_SKILL_ACTIONS = new Set(
   [...ALL_ASSISTANT_TOOL_NAMES].filter((name) => name !== ASSISTANT_GITHUB_REPOSITORY_TOOL_NAME),
 );
@@ -2383,6 +2452,7 @@ async function runAssistantTools(
       tool: name ?? "assistant_tool",
       input: compactPayload(call.function.arguments || "{}"),
     });
+    if (name) await recordAssistantToolInvocation(name);
     if (name === ASSISTANT_MCP_CONNECTION_REQUEST_TOOL.function.name) {
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       if (!allowMcpConnectionRequest || mcpOnly || connectionRequests.length > 0) {
@@ -6918,7 +6988,7 @@ async function deliverScheduledChat(row: typeof scheduledChatMessagesTable.$infe
     if (/@ai\b/i.test(row.message)) {
       try {
         const question = row.message.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
-        const result = await generateAssistantAnswer({
+        const result = await runAssistantAnswerWithUsage({
           teamId: team,
           question,
           authorLabel: row.author,
@@ -7279,7 +7349,7 @@ const ASSISTANT_AUTOMATION_PROMPT = [
  * POST /assistant/ask and the scheduled-chat dispatcher, which has no HTTP
  * request of its own (it passes a server logger and an empty session hash).
  */
-async function generateAssistantAnswer(options: {
+type GenerateAssistantAnswerOptions = {
   teamId: string;
   question: string;
   applicantIds?: string[];
@@ -7298,10 +7368,18 @@ async function generateAssistantAnswer(options: {
   requestViewer?: ChannelViewer | null;
   scheduledAllowedToolNames?: string[];
   onScheduledSideEffect?: () => void;
-}): Promise<{ answer: string; activities: AssistantActivity[]; model: string }> {
+  usagePromptId?: string;
+  usageSource?: string;
+};
+
+async function generateAssistantAnswer(options: GenerateAssistantAnswerOptions): Promise<{ answer: string; activities: AssistantActivity[]; model: string }> {
   const { teamId, question, authorLabel, sessionHash, log } = options;
   const viewer = options.requestViewer ?? null;
-  const disabledTools = parseDisabledAssistantTools(options.disabledTools, ALL_ASSISTANT_TOOL_NAMES);
+  const policyAccount = options.accountId ? await accountById(options.accountId) : undefined;
+  const disabledTools = await disabledAssistantToolsForAccount(teamId, {
+    role: viewer?.role ?? policyAccount?.role ?? (options.mcpOnly ? "interviewer" : "coordinator"),
+    customRoleId: policyAccount?.customRoleId,
+  }, options.disabledTools);
   const applicableSkills = options.mcpOnly ? [] : findRelevantAssistantSkills(
     question,
     await getEnabledAssistantSkills(teamId?.trim() ? teamId : DEFAULT_TEAM_ID),
@@ -7763,6 +7841,22 @@ async function generateAssistantAnswer(options: {
   }
 }
 
+async function runAssistantAnswerWithUsage(options: GenerateAssistantAnswerOptions): Promise<{ answer: string; activities: AssistantActivity[]; model: string }> {
+  const accountId = options.accountId;
+  if (!accountId) {
+    throw new AssistantAnswerError(401, "Authentication required");
+  }
+  const promptId = options.usagePromptId ?? randomUUID();
+  return runAssistantUsagePrompt({
+    promptId,
+    teamId: options.teamId,
+    accountId,
+  }, () => generateAssistantAnswer(options), {
+    promptId,
+    source: options.usageSource ?? "interactive",
+  });
+}
+
 type ClaimedAssistantTask = {
   id: string;
   teamId: string;
@@ -7918,7 +8012,7 @@ async function executeScheduledAssistantTask(task: ClaimedAssistantTask, instanc
     let result: Awaited<ReturnType<typeof generateAssistantAnswer>> | undefined;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       try {
-        result = await runWithInstance(instance, () => generateAssistantAnswer({
+        result = await runWithInstance(instance, () => runAssistantAnswerWithUsage({
           teamId: task.teamId,
           question,
           authorLabel: owner.displayName,
@@ -7926,6 +8020,8 @@ async function executeScheduledAssistantTask(task: ClaimedAssistantTask, instanc
           conversationOwnerId: owner.id,
           mcpOnly: owner.role !== "coordinator",
           disabledTools: disabled,
+          usagePromptId: task.runId,
+          usageSource: "scheduled",
           scheduledAllowedToolNames: task.allowedTools,
           requestViewer: { id: owner.id, role: owner.role, displayName: owner.displayName },
           sessionHash: "",
@@ -8036,7 +8132,13 @@ router.post("/assistant/scheduled-tasks/actions", requireAdmin, async (req, res)
     cancel: "cancel_scheduled_assistant_task",
   } as const;
   const toolName = toolByAction[parsed.data.action];
-  const disabledTools = parseDisabledAssistantTools(parsed.data.disabledTools, ALL_ASSISTANT_TOOL_NAMES);
+  const teamId = await requestTeamId(req);
+  const actionAccount = await accountById(accountId);
+  if (!actionAccount) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const disabledTools = await disabledAssistantToolsForAccount(teamId, actionAccount, parsed.data.disabledTools);
   const enabledToolNames = new Set(assistantToolsForRequest(disabledTools).map((tool) => tool.function.name));
   if (!enabledToolNames.has(toolName)) {
     res.status(403).json({ error: `The ${parsed.data.action} recurring-task tool is disabled.` });
@@ -8054,7 +8156,7 @@ router.post("/assistant/scheduled-tasks/actions", requireAdmin, async (req, res)
   }
   const result = await runAssistantWorkspaceTool(toolName, args, {
     accountId,
-    teamId: await requestTeamId(req),
+    teamId,
     authorName: "",
     disabledTools: [...disabledTools],
     allowedToolNames: [toolName],
@@ -8099,7 +8201,7 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
   }
   const teamId = await requestTeamId(req);
   try {
-    const result = await generateAssistantAnswer({
+    const result = await runAssistantAnswerWithUsage({
       teamId,
       question: parsed.data.question,
       applicantIds: account.role === "coordinator" ? parsed.data.applicantIds ?? undefined : undefined,
@@ -8194,6 +8296,11 @@ router.post("/assistant/custom-workspace-builder/runs", requireCoordinator, asyn
     res.status(503).json({ error: "The builder could not be queued. Try again." });
     return;
   }
+  await startAssistantUsagePrompt({
+    promptId: promptRunId,
+    teamId,
+    accountId: account.id,
+  }, "queued");
   req.log.info({ builderRunId, promptRunId, teamId }, "Custom workspace builder queued on the server");
   res.status(201).json(GetLatestAssistantBuilderRunResponse.parse({
     run: assistantBuilderRunResponse(createdRun),
@@ -8657,6 +8764,11 @@ router.post("/assistant/conversations/:conversationId/queue", requireAdmin, asyn
     res.status(503).json({ error: "The prompt could not be queued. Try again." });
     return;
   }
+  await startAssistantUsagePrompt({
+    promptId: id,
+    teamId,
+    accountId: account.id,
+  }, "queued");
   res.status(201).json(QueueAssistantPromptResponse.parse(assistantPromptRunResponse(run)));
 });
 
@@ -8771,9 +8883,8 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     });
     if (connection) continuationConnectedEndpointUrl = connection.endpointUrl;
   }
-    const disabledTools = parseDisabledAssistantTools(
+    const disabledTools = await disabledAssistantToolsForAccount(teamId, account,
     (parsed.data as unknown as Record<string, unknown>).disabledTools,
-    ALL_ASSISTANT_TOOL_NAMES,
   );
   const applicableSkills = mcpOnly ? [] : findRelevantAssistantSkills(
     parsed.data.question,
@@ -9090,6 +9201,9 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         .catch((error) => req.log.warn({ err: error }, "Builder run heartbeat could not be saved"));
     }, BUILDER_RUN_HEARTBEAT_MS);
   }
+  const usageContext = { promptId: promptRunId, teamId, accountId: account.id };
+  await startAssistantUsagePrompt(usageContext, delegatedRun ? "queued" : "interactive");
+  enterAssistantUsageContext(usageContext);
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -9595,6 +9709,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       promptAbort.abort();
       throw new Error("The assistant prompt was stopped before it could finish.");
     }
+    await finishAssistantUsagePrompt(usageContext, "completed");
     send({ done: true, answer, activities, model });
     res.end();
   } catch (error) {
@@ -9605,6 +9720,9 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
       ? error.message
       : limited ? "The assistant is busy right now. Try again in a moment." : "Assistant is unavailable. Try again.";
     const cancelled = promptAbort.signal.aborted;
+    await finishAssistantUsagePrompt(usageContext, cancelled ? "cancelled" : "failed").catch((saveError) =>
+      req.log.warn({ err: saveError }, "Assistant usage outcome could not be saved"),
+    );
     if (cancelled) {
       await db.update(assistantPromptRunsTable).set({
         status: "cancelled",
@@ -10050,6 +10168,184 @@ router.put("/assistant/model-policy", requireCoordinator, async (req, res): Prom
       error: error instanceof Error ? error.message : "The model policy could not be saved.",
     });
   }
+});
+
+router.get("/assistant/usage", requireCoordinator, async (req, res): Promise<void> => {
+  const parsed = GetAssistantUsageQueryParams.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Choose a valid start and end date." });
+    return;
+  }
+  const startDate = parsed.data.startDate;
+  const endDate = parsed.data.endDate;
+  const range = parseAssistantUsageDateRange(startDate, endDate);
+  if (!range) {
+    res.status(400).json({ error: "The date range must be valid and no longer than one year." });
+    return;
+  }
+  const { start, endExclusive } = range;
+
+  type PromptRow = { id: string; account_id: string; status: string };
+  type RequestRow = {
+    account_id: string; status: string; count: string | number;
+    input_tokens: string | number | null; output_tokens: string | number | null; total_tokens: string | number | null;
+    usage_reported: string | number; usage_unavailable: string | number;
+  };
+  const teamId = await requestTeamId(req);
+  const prompts = await pool.query<PromptRow>(
+    `select "id", "account_id", "status"
+       from "assistant_usage_prompts"
+      where "team_id" = $1 and "created_at" >= $2 and "created_at" < $3`,
+    [teamId, start, endExclusive],
+  );
+  const promptIds = prompts.rows.map((row) => row.id);
+  const requestRows = promptIds.length ? await pool.query<RequestRow>(
+    `select "account_id", "status", count(*)::int as "count",
+            sum("input_tokens") as "input_tokens", sum("output_tokens") as "output_tokens",
+            sum("total_tokens") as "total_tokens",
+            count(*) filter (where "usage_reported")::int as "usage_reported",
+            count(*) filter (where not "usage_reported")::int as "usage_unavailable"
+       from "assistant_usage_requests"
+      where "team_id" = $1 and "prompt_id" = any($2::text[])
+      group by "account_id", "status"`,
+    [teamId, promptIds],
+  ) : { rows: [] as RequestRow[] };
+  const toolRows = promptIds.length ? await pool.query<{ name: string; invocations: string | number }>(
+    `select "tool_name" as "name", count(*)::int as "invocations"
+       from "assistant_usage_tools"
+      where "team_id" = $1 and "prompt_id" = any($2::text[])
+      group by "tool_name" order by count(*) desc, "tool_name" asc`,
+    [teamId, promptIds],
+  ) : { rows: [] as { name: string; invocations: string | number }[] };
+  const accountRows = promptIds.length ? await pool.query<{
+    id: string; display_name: string | null; role: string | null; custom_role_name: string | null;
+  }>(
+    `select distinct p."account_id" as "id", a."display_name", a."role", r."name" as "custom_role_name"
+       from "assistant_usage_prompts" p
+       left join "interviewer_accounts" a on a."id" = p."account_id" and a."team_id" = p."team_id"
+       left join "team_roles" r on r."id" = a."custom_role_id" and r."team_id" = p."team_id"
+      where p."team_id" = $1 and p."id" = any($2::text[])`,
+    [teamId, promptIds],
+  ) : { rows: [] as { id: string; display_name: string | null; role: string | null; custom_role_name: string | null }[] };
+
+  const { totals, byAccount } = aggregateAssistantUsage(
+    prompts.rows.map((row) => ({ accountId: row.account_id, status: row.status })),
+    requestRows.rows.map((row) => ({
+      accountId: row.account_id,
+      status: row.status,
+      count: row.count,
+      inputTokens: row.input_tokens,
+      outputTokens: row.output_tokens,
+      totalTokens: row.total_tokens,
+      usageReported: row.usage_reported,
+      usageUnavailable: row.usage_unavailable,
+    })),
+  );
+  const accountById = new Map(accountRows.rows.map((row) => [row.id, row]));
+  const users = [...byAccount.entries()].map(([accountId, metrics]) => {
+    const account = accountById.get(accountId);
+    return {
+      accountId,
+      displayName: account?.display_name ?? "Former team member",
+      role: account?.custom_role_name ?? account?.role ?? "unknown",
+      metrics,
+    };
+  }).sort((left, right) => left.displayName.localeCompare(right.displayName));
+  res.json(GetAssistantUsageResponse.parse({
+    startDate,
+    endDate,
+    totals,
+    users,
+    tools: toolRows.rows.map((row) => ({ name: row.name, invocations: Number(row.invocations) })),
+  }));
+});
+
+router.get("/assistant/tool-policy", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const [row] = await db.select().from(assistantToolPoliciesTable)
+    .where(eq(assistantToolPoliciesTable.teamId, teamId))
+    .limit(1);
+  const roles = await db.select({ id: teamRolesTable.id, name: teamRolesTable.name })
+    .from(teamRolesTable).where(eq(teamRolesTable.teamId, teamId)).orderBy(asc(teamRolesTable.name));
+  const roleOptions = [
+    { key: "builtin:coordinator", label: "Admins" },
+    { key: "builtin:admin", label: "Legacy admins" },
+    { key: "builtin:treasurer", label: "Treasurers" },
+    { key: "builtin:interviewer", label: "Team members" },
+    ...roles.map((role) => ({ key: `custom:${role.id}`, label: role.name })),
+  ];
+  const policy = normalizeAssistantToolPolicy({
+    teamDisabledTools: row?.teamDisabledTools ?? [],
+    roleDisabledTools: row?.roleDisabledTools ?? {},
+  }, ALL_ASSISTANT_TOOL_NAMES);
+  const validRoleKeys = new Set(roleOptions.map((role) => role.key));
+  res.json(GetAssistantToolPolicyResponse.parse({
+    ...policy,
+    roleDisabledTools: Object.fromEntries(
+      Object.entries(policy.roleDisabledTools).filter(([key]) => validRoleKeys.has(key)),
+    ),
+    roles: roleOptions,
+    updatedAt: row?.updatedAt ?? null,
+  }));
+});
+
+router.put("/assistant/tool-policy", requireCoordinator, async (req, res): Promise<void> => {
+  const body = UpdateAssistantToolPolicyBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const submitted = body.data;
+  const policy = normalizeAssistantToolPolicy(submitted, ALL_ASSISTANT_TOOL_NAMES);
+  if (policy.teamDisabledTools.length !== submitted.teamDisabledTools.length ||
+      Object.entries(submitted.roleDisabledTools).some(([key, tools]) =>
+        (policy.roleDisabledTools[key] ?? []).length !== tools.length,
+      )) {
+    res.status(400).json({ error: "Select only supported assistant tools." });
+    return;
+  }
+  const roleKeys = Object.keys(submitted.roleDisabledTools);
+  if (roleKeys.some((key) => !/^(?:builtin:(?:coordinator|admin|treasurer|interviewer)|custom:[A-Za-z0-9_-]{1,128})$/.test(key))) {
+    res.status(400).json({ error: "Select a valid team role." });
+    return;
+  }
+  const customRoleIds = roleKeys.filter((key) => key.startsWith("custom:")).map((key) => key.slice("custom:".length));
+  if (customRoleIds.length) {
+    const existingRoles = await db.select({ id: teamRolesTable.id }).from(teamRolesTable).where(and(
+      eq(teamRolesTable.teamId, teamId),
+      inArray(teamRolesTable.id, customRoleIds),
+    ));
+    if (new Set(existingRoles.map((role) => role.id)).size !== new Set(customRoleIds).size) {
+      res.status(400).json({ error: "One or more custom roles no longer exist in this team." });
+      return;
+    }
+  }
+  const [saved] = await db.insert(assistantToolPoliciesTable).values({
+    teamId,
+    teamDisabledTools: policy.teamDisabledTools,
+    roleDisabledTools: policy.roleDisabledTools,
+  }).onConflictDoUpdate({
+    target: assistantToolPoliciesTable.teamId,
+    set: {
+      teamDisabledTools: policy.teamDisabledTools,
+      roleDisabledTools: policy.roleDisabledTools,
+      updatedAt: new Date(),
+    },
+  }).returning();
+  const roles = await db.select({ id: teamRolesTable.id, name: teamRolesTable.name })
+    .from(teamRolesTable).where(eq(teamRolesTable.teamId, teamId)).orderBy(asc(teamRolesTable.name));
+  res.json(UpdateAssistantToolPolicyResponse.parse({
+    ...policy,
+    roles: [
+      { key: "builtin:coordinator", label: "Admins" },
+      { key: "builtin:admin", label: "Legacy admins" },
+      { key: "builtin:treasurer", label: "Treasurers" },
+      { key: "builtin:interviewer", label: "Team members" },
+      ...roles.map((role) => ({ key: `custom:${role.id}`, label: role.name })),
+    ],
+    updatedAt: saved?.updatedAt ?? new Date(),
+  }));
 });
 
 router.get("/assistant/config", requireAdmin, async (req, res): Promise<void> => {

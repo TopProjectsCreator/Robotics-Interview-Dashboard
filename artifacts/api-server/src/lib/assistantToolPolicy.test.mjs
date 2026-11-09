@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test from "node:test";
 
@@ -16,8 +17,11 @@ registerHooks({
 });
 
 const {
+  assistantRolePolicyKey,
+  combineAssistantToolRestrictions,
   filterDisabledAssistantTools,
   isAssistantToolDisabled,
+  normalizeAssistantToolPolicy,
   parseDisabledAssistantTools,
 } = await import("./assistantToolPolicy.ts");
 
@@ -71,4 +75,41 @@ test("legacy tool aliases remain blocked by their canonical disabled selection",
   const disabled = parseDisabledAssistantTools(["python_exec", "web_search"], new Set(["python_exec", "web_search"]));
   assert.equal(isAssistantToolDisabled("python", disabled), true);
   assert.equal(isAssistantToolDisabled("fetch_url", disabled), true);
+});
+
+test("team, built-in role, and custom role restrictions are cumulative and cannot be overridden by requests", () => {
+  const knownTools = new Set(["search_applicants", "delete_applicant", "generate_image"]);
+  const policy = normalizeAssistantToolPolicy({
+    teamDisabledTools: ["generate_image"],
+    roleDisabledTools: {
+      "builtin:interviewer": ["delete_applicant"],
+      "custom:robotics-lead": ["search_applicants", "not_a_tool"],
+    },
+  }, knownTools);
+
+  const builtInDisabled = combineAssistantToolRestrictions(
+    ["delete_applicant"],
+    policy,
+    assistantRolePolicyKey("interviewer"),
+    knownTools,
+  );
+  assert.deepEqual([...builtInDisabled].sort(), ["delete_applicant", "generate_image"]);
+
+  const customDisabled = combineAssistantToolRestrictions(
+    [],
+    policy,
+    assistantRolePolicyKey("custom", "robotics-lead"),
+    knownTools,
+  );
+  assert.deepEqual([...customDisabled].sort(), ["generate_image", "search_applicants"]);
+  assert.equal(customDisabled.has("not_a_tool"), false);
+});
+
+test("usage and tool-policy routes are protected by the built-in admin gate", () => {
+  const routes = readFileSync(new URL("../routes/robotics.ts", import.meta.url), "utf8");
+  const auth = readFileSync(new URL("../middlewares/adminAuth.ts", import.meta.url), "utf8");
+  assert.match(routes, /router\.get\("\/assistant\/usage", requireCoordinator/);
+  assert.match(routes, /router\.get\("\/assistant\/tool-policy", requireCoordinator/);
+  assert.match(routes, /router\.put\("\/assistant\/tool-policy", requireCoordinator/);
+  assert.ok(auth.includes("assistant\\/(?:usage|tool-policy)"));
 });

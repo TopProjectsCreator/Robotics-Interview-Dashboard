@@ -3423,8 +3423,101 @@ export interface AssistantConfig {
   textModel: string;
   /** Vision model used for image input */
   visionModel: string;
-  /** Whether the team admin has locked model selection to the default */
   locked: boolean;
+}
+
+export interface AssistantUsageMetrics {
+  /** @minimum 0 */
+  prompts: number;
+  /** @minimum 0 */
+  completedPrompts: number;
+  /** @minimum 0 */
+  failedPrompts: number;
+  /** @minimum 0 */
+  cancelledPrompts: number;
+  /** @minimum 0 */
+  runningPrompts: number;
+  /** @minimum 0 */
+  providerRequests: number;
+  /** @minimum 0 */
+  successfulRequests: number;
+  /** @minimum 0 */
+  failedRequests: number;
+  /** @minimum 0 */
+  cancelledRequests: number;
+  /** @minimum 0 */
+  runningRequests: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  inputTokens: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  outputTokens: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  totalTokens: number | null;
+  /** @minimum 0 */
+  usageReportedRequests: number;
+  /** @minimum 0 */
+  usageUnavailableRequests: number;
+}
+
+export interface AssistantUsageUser {
+  accountId: string;
+  displayName: string;
+  role: string;
+  metrics: AssistantUsageMetrics;
+}
+
+export interface AssistantUsageTool {
+  name: string;
+  /** @minimum 0 */
+  invocations: number;
+}
+
+export interface AssistantUsageReport {
+  startDate: string;
+  endDate: string;
+  totals: AssistantUsageMetrics;
+  users: AssistantUsageUser[];
+  tools: AssistantUsageTool[];
+}
+
+export interface AssistantToolPolicyRole {
+  key: string;
+  label: string;
+}
+
+export type AssistantToolPolicyRoleDisabledTools = {[key: string]: string[]};
+
+export interface AssistantToolPolicy {
+  teamDisabledTools: string[];
+  roleDisabledTools: AssistantToolPolicyRoleDisabledTools;
+  roles: AssistantToolPolicyRole[];
+  /** @nullable */
+  updatedAt: string | null;
+}
+
+/**
+ * Whether the team admin has locked model selection to the default
+ */
+export type AssistantToolPolicyInputRoleDisabledTools = {[key: string]: string[]};
+
+export interface AssistantToolPolicyInput {
+  /**
+     * @maxItems 300
+     * @items.minLength 1
+     * @items.maxLength 64
+     */
+  teamDisabledTools: string[];
+  /** Whether the team admin has locked model selection to the default */
+  roleDisabledTools: AssistantToolPolicyInputRoleDisabledTools;
 }
 
 export type AssistantModelThinkingLevelsItem = typeof AssistantModelThinkingLevelsItem[keyof typeof AssistantModelThinkingLevelsItem];
@@ -4381,6 +4474,17 @@ export type SearchModelsByProviderParams = {
  * @maxLength 120
  */
 search?: string;
+};
+
+export type GetAssistantUsageParams = {
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+startDate: string;
+/**
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+endDate: string;
 };
 
 export type GetAssistantConversationMessagesParams = {

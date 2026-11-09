@@ -128,6 +128,56 @@ export const teamAssistantProvidersTable = pgTable("team_assistant_providers", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const assistantUsagePromptsTable = pgTable("assistant_usage_prompts", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  accountId: text("account_id").notNull(),
+  source: text("source").notNull().default("interactive"),
+  status: text("status").notNull().default("running"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (table) => [
+  index("assistant_usage_prompts_team_created_idx").on(table.teamId, table.createdAt),
+  index("assistant_usage_prompts_team_account_created_idx").on(table.teamId, table.accountId, table.createdAt),
+]);
+
+export const assistantUsageRequestsTable = pgTable("assistant_usage_requests", {
+  id: text("id").primaryKey(),
+  promptId: text("prompt_id").notNull().references(() => assistantUsagePromptsTable.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull(),
+  accountId: text("account_id").notNull(),
+  model: text("model").notNull(),
+  status: text("status").notNull().default("running"),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  totalTokens: integer("total_tokens"),
+  usageReported: boolean("usage_reported").notNull().default(false),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (table) => [
+  index("assistant_usage_requests_team_started_idx").on(table.teamId, table.startedAt),
+  index("assistant_usage_requests_team_prompt_idx").on(table.teamId, table.promptId),
+]);
+
+export const assistantUsageToolsTable = pgTable("assistant_usage_tools", {
+  id: text("id").primaryKey(),
+  promptId: text("prompt_id").notNull().references(() => assistantUsagePromptsTable.id, { onDelete: "cascade" }),
+  teamId: text("team_id").notNull(),
+  accountId: text("account_id").notNull(),
+  toolName: text("tool_name").notNull(),
+  invokedAt: timestamp("invoked_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("assistant_usage_tools_team_invoked_idx").on(table.teamId, table.invokedAt),
+  index("assistant_usage_tools_team_account_invoked_idx").on(table.teamId, table.accountId, table.invokedAt),
+]);
+
+export const assistantToolPoliciesTable = pgTable("assistant_tool_policies", {
+  teamId: text("team_id").primaryKey(),
+  teamDisabledTools: jsonb("team_disabled_tools").$type<string[]>().notNull().default([]),
+  roleDisabledTools: jsonb("role_disabled_tools").$type<Record<string, string[]>>().notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
 export const assistantScheduledTasksTable = pgTable("assistant_scheduled_tasks", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull(),

@@ -4319,7 +4319,175 @@ export const ClearAssistantHistoryResponse = zod.void()
 export const GetAssistantConfigResponse = zod.object({
   "textModel": zod.string().describe('Chat model answering assistant questions'),
   "visionModel": zod.string().describe('Vision model used for image input'),
-  "locked": zod.boolean().describe('Whether the team admin has locked model selection to the default')
+  "locked": zod.boolean()
+})
+
+
+/**
+ * @summary Get team assistant usage for a date range
+ */
+export const getAssistantUsageQueryStartDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getAssistantUsageQueryEndDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetAssistantUsageQueryParams = zod.object({
+  "startDate": zod.coerce.string().regex(getAssistantUsageQueryStartDateRegExp),
+  "endDate": zod.coerce.string().regex(getAssistantUsageQueryEndDateRegExp)
+})
+
+export const getAssistantUsageResponseTotalsPromptsMin = 0;
+
+export const getAssistantUsageResponseTotalsCompletedPromptsMin = 0;
+
+export const getAssistantUsageResponseTotalsFailedPromptsMin = 0;
+
+export const getAssistantUsageResponseTotalsCancelledPromptsMin = 0;
+
+export const getAssistantUsageResponseTotalsRunningPromptsMin = 0;
+
+export const getAssistantUsageResponseTotalsProviderRequestsMin = 0;
+
+export const getAssistantUsageResponseTotalsSuccessfulRequestsMin = 0;
+
+export const getAssistantUsageResponseTotalsFailedRequestsMin = 0;
+
+export const getAssistantUsageResponseTotalsCancelledRequestsMin = 0;
+
+export const getAssistantUsageResponseTotalsRunningRequestsMin = 0;
+
+export const getAssistantUsageResponseTotalsInputTokensMin = 0;
+
+export const getAssistantUsageResponseTotalsOutputTokensMin = 0;
+
+export const getAssistantUsageResponseTotalsTotalTokensMin = 0;
+
+export const getAssistantUsageResponseTotalsUsageReportedRequestsMin = 0;
+
+export const getAssistantUsageResponseTotalsUsageUnavailableRequestsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsPromptsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsCompletedPromptsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsFailedPromptsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsCancelledPromptsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsRunningPromptsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsProviderRequestsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsSuccessfulRequestsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsFailedRequestsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsCancelledRequestsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsRunningRequestsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsInputTokensMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsOutputTokensMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsTotalTokensMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsUsageReportedRequestsMin = 0;
+
+export const getAssistantUsageResponseUsersItemMetricsUsageUnavailableRequestsMin = 0;
+
+export const getAssistantUsageResponseToolsItemInvocationsMin = 0;
+
+
+
+export const GetAssistantUsageResponse = zod.object({
+  "startDate": zod.coerce.date(),
+  "endDate": zod.coerce.date(),
+  "totals": zod.object({
+  "prompts": zod.number().int().min(getAssistantUsageResponseTotalsPromptsMin),
+  "completedPrompts": zod.number().int().min(getAssistantUsageResponseTotalsCompletedPromptsMin),
+  "failedPrompts": zod.number().int().min(getAssistantUsageResponseTotalsFailedPromptsMin),
+  "cancelledPrompts": zod.number().int().min(getAssistantUsageResponseTotalsCancelledPromptsMin),
+  "runningPrompts": zod.number().int().min(getAssistantUsageResponseTotalsRunningPromptsMin),
+  "providerRequests": zod.number().int().min(getAssistantUsageResponseTotalsProviderRequestsMin),
+  "successfulRequests": zod.number().int().min(getAssistantUsageResponseTotalsSuccessfulRequestsMin),
+  "failedRequests": zod.number().int().min(getAssistantUsageResponseTotalsFailedRequestsMin),
+  "cancelledRequests": zod.number().int().min(getAssistantUsageResponseTotalsCancelledRequestsMin),
+  "runningRequests": zod.number().int().min(getAssistantUsageResponseTotalsRunningRequestsMin),
+  "inputTokens": zod.number().int().min(getAssistantUsageResponseTotalsInputTokensMin).nullable(),
+  "outputTokens": zod.number().int().min(getAssistantUsageResponseTotalsOutputTokensMin).nullable(),
+  "totalTokens": zod.number().int().min(getAssistantUsageResponseTotalsTotalTokensMin).nullable(),
+  "usageReportedRequests": zod.number().int().min(getAssistantUsageResponseTotalsUsageReportedRequestsMin),
+  "usageUnavailableRequests": zod.number().int().min(getAssistantUsageResponseTotalsUsageUnavailableRequestsMin)
+}),
+  "users": zod.array(zod.object({
+  "accountId": zod.string(),
+  "displayName": zod.string(),
+  "role": zod.string(),
+  "metrics": zod.object({
+  "prompts": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsPromptsMin),
+  "completedPrompts": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsCompletedPromptsMin),
+  "failedPrompts": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsFailedPromptsMin),
+  "cancelledPrompts": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsCancelledPromptsMin),
+  "runningPrompts": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsRunningPromptsMin),
+  "providerRequests": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsProviderRequestsMin),
+  "successfulRequests": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsSuccessfulRequestsMin),
+  "failedRequests": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsFailedRequestsMin),
+  "cancelledRequests": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsCancelledRequestsMin),
+  "runningRequests": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsRunningRequestsMin),
+  "inputTokens": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsInputTokensMin).nullable(),
+  "outputTokens": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsOutputTokensMin).nullable(),
+  "totalTokens": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsTotalTokensMin).nullable(),
+  "usageReportedRequests": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsUsageReportedRequestsMin),
+  "usageUnavailableRequests": zod.number().int().min(getAssistantUsageResponseUsersItemMetricsUsageUnavailableRequestsMin)
+})
+})),
+  "tools": zod.array(zod.object({
+  "name": zod.string(),
+  "invocations": zod.number().int().min(getAssistantUsageResponseToolsItemInvocationsMin)
+}))
+})
+
+
+/**
+ * @summary Read team-wide and role-specific assistant tool restrictions
+ */
+export const GetAssistantToolPolicyResponse = zod.object({
+  "teamDisabledTools": zod.array(zod.string()),
+  "roleDisabledTools": zod.record(zod.string(), zod.array(zod.string())),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string()
+})),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Save team-wide and role-specific assistant tool restrictions
+ */
+export const updateAssistantToolPolicyBodyTeamDisabledToolsItemMax = 64;
+
+export const updateAssistantToolPolicyBodyTeamDisabledToolsMax = 300;
+
+export const updateAssistantToolPolicyBodyRoleDisabledToolsItemMax = 64;
+
+export const updateAssistantToolPolicyBodyRoleDisabledToolsMaxOne = 300;
+
+
+
+export const UpdateAssistantToolPolicyBody = zod.object({
+  "teamDisabledTools": zod.array(zod.string().min(1).max(updateAssistantToolPolicyBodyTeamDisabledToolsItemMax)).max(updateAssistantToolPolicyBodyTeamDisabledToolsMax),
+  "roleDisabledTools": zod.record(zod.string(), zod.array(zod.string().min(1).max(updateAssistantToolPolicyBodyRoleDisabledToolsItemMax)).max(updateAssistantToolPolicyBodyRoleDisabledToolsMaxOne)).describe('Whether the team admin has locked model selection to the default')
+})
+
+export const UpdateAssistantToolPolicyResponse = zod.object({
+  "teamDisabledTools": zod.array(zod.string()),
+  "roleDisabledTools": zod.record(zod.string(), zod.array(zod.string())),
+  "roles": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string()
+})),
+  "updatedAt": zod.coerce.date().nullable()
 })
 
 

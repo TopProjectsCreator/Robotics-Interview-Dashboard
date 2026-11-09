@@ -4,6 +4,46 @@ const DYNAMIC_ASSISTANT_TOOL_PATTERNS = [
   /^cw_[a-f0-9]{16}_[a-z][a-z0-9_]{0,31}$/,
 ];
 
+export type AssistantToolPolicy = {
+  teamDisabledTools: string[];
+  roleDisabledTools: Record<string, string[]>;
+};
+
+export function assistantRolePolicyKey(role: string, customRoleId?: string | null): string {
+  return customRoleId ? `custom:${customRoleId}` : `builtin:${role}`;
+}
+
+export function normalizeAssistantToolPolicy(
+  value: unknown,
+  knownTools: ReadonlySet<string>,
+): AssistantToolPolicy {
+  const row = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+  const teamDisabledTools = [...parseDisabledAssistantTools(row.teamDisabledTools, knownTools)].sort();
+  const roleDisabledTools: Record<string, string[]> = {};
+  if (row.roleDisabledTools && typeof row.roleDisabledTools === "object" && !Array.isArray(row.roleDisabledTools)) {
+    for (const [key, tools] of Object.entries(row.roleDisabledTools as Record<string, unknown>)) {
+      if (!/^(?:builtin:(?:coordinator|admin|treasurer|interviewer)|custom:[A-Za-z0-9_-]{1,128})$/.test(key)) continue;
+      const normalized = [...parseDisabledAssistantTools(tools, knownTools)].sort();
+      if (normalized.length) roleDisabledTools[key] = normalized;
+    }
+  }
+  return { teamDisabledTools, roleDisabledTools };
+}
+
+export function combineAssistantToolRestrictions(
+  requestDisabled: unknown,
+  policy: AssistantToolPolicy | undefined,
+  roleKey: string,
+  knownTools: ReadonlySet<string>,
+): Set<string> {
+  const combined = parseDisabledAssistantTools(requestDisabled, knownTools);
+  for (const name of policy?.teamDisabledTools ?? []) combined.add(name);
+  for (const name of policy?.roleDisabledTools[roleKey] ?? []) combined.add(name);
+  return combined;
+}
+
 export function parseDisabledAssistantTools(value: unknown, knownTools: ReadonlySet<string>): Set<string> {
   if (!Array.isArray(value)) return new Set();
   const disabled = new Set<string>();

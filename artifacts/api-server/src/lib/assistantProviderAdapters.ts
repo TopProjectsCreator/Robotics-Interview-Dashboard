@@ -301,9 +301,9 @@ function normalizedResponsesResult(result: Record<string, any>): Record<string, 
       finish_reason: toolCalls.length ? "tool_calls" : "stop",
     }],
     usage: result.usage ? {
-      prompt_tokens: result.usage.input_tokens ?? 0,
-      completion_tokens: result.usage.output_tokens ?? 0,
-      total_tokens: (result.usage.input_tokens ?? 0) + (result.usage.output_tokens ?? 0),
+      prompt_tokens: result.usage.input_tokens,
+      completion_tokens: result.usage.output_tokens,
+      total_tokens: result.usage.total_tokens,
     } : undefined,
   };
 }
@@ -389,9 +389,9 @@ function normalizedAnthropicResult(result: Record<string, any>): Record<string, 
       finish_reason: toolCalls.length ? "tool_calls" : result.stop_reason ?? "stop",
     }],
     usage: result.usage ? {
-      prompt_tokens: result.usage.input_tokens ?? 0,
-      completion_tokens: result.usage.output_tokens ?? 0,
-      total_tokens: (result.usage.input_tokens ?? 0) + (result.usage.output_tokens ?? 0),
+      prompt_tokens: result.usage.input_tokens,
+      completion_tokens: result.usage.output_tokens,
+      total_tokens: result.usage.total_tokens,
     } : undefined,
   };
 }
@@ -509,9 +509,9 @@ function normalizedGeminiResult(result: Record<string, any>): Record<string, any
       finish_reason: toolCalls.length ? "tool_calls" : candidate.finishReason?.toLowerCase() ?? "stop",
     }],
     usage: result.usageMetadata ? {
-      prompt_tokens: result.usageMetadata.promptTokenCount ?? 0,
-      completion_tokens: result.usageMetadata.candidatesTokenCount ?? 0,
-      total_tokens: result.usageMetadata.totalTokenCount ?? 0,
+      prompt_tokens: result.usageMetadata.promptTokenCount,
+      completion_tokens: result.usageMetadata.candidatesTokenCount,
+      total_tokens: result.usageMetadata.totalTokenCount,
     } : undefined,
   };
 }
@@ -532,6 +532,12 @@ function parseResponseFormat(request: ChatRequest): Record<string, any> | undefi
 
 function openAiRequest(request: ChatRequest, modelId: string, stream: boolean): Record<string, any> {
   const body: Record<string, any> = { ...request, model: modelId, messages: normalizeOpenAiMessages(request.messages), stream };
+  if (stream) {
+    body.stream_options = {
+      ...(request.stream_options && typeof request.stream_options === "object" ? request.stream_options : {}),
+      include_usage: true,
+    };
+  }
   delete body.response_format;
   delete body.max_tokens;
   delete body.max_completion_tokens;
@@ -652,7 +658,18 @@ async function* responseStream(response: Response): AsyncGenerator<Record<string
     } else if (type === "response.function_call_arguments.delta") {
       yield { id: value.response_id ?? "response", object: "chat.completion.chunk", choices: [{ index: 0, delta: { tool_calls: [{ index, function: { arguments: value.delta ?? "" } }] }, finish_reason: null }] };
     } else if (type === "response.completed") {
-      yield { id: value.response?.id ?? "response", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] };
+      yield {
+        id: value.response?.id ?? "response",
+        object: "chat.completion.chunk",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        ...(value.response?.usage ? {
+          usage: {
+            prompt_tokens: value.response.usage.input_tokens,
+            completion_tokens: value.response.usage.output_tokens,
+            total_tokens: value.response.usage.total_tokens,
+          },
+        } : {}),
+      };
     } else if (value.choices) {
       yield openAiStreamChunk(value);
     }
@@ -669,13 +686,25 @@ async function* anthropicStream(response: Response): AsyncGenerator<Record<strin
       const index = typeof value.index === "number" ? value.index : 0;
       toolIndexes.set(index, nextToolIndex);
       yield { id: "anthropic-stream", object: "chat.completion.chunk", choices: [{ index: 0, delta: { tool_calls: [{ index: nextToolIndex++, id: value.content_block.id, type: "function", function: { name: value.content_block.name, arguments: "" } }] }, finish_reason: null }] };
+    } else if (event.event === "message_start" && value.message?.usage) {
+      yield {
+        id: value.message.id ?? "anthropic-stream",
+        object: "chat.completion.chunk",
+        choices: [{ index: 0, delta: {}, finish_reason: null }],
+        usage: { input_tokens: value.message.usage.input_tokens },
+      };
     } else if (event.event === "content_block_delta" && value.delta?.type === "text_delta") {
       yield { id: "anthropic-stream", object: "chat.completion.chunk", choices: [{ index: 0, delta: { content: value.delta.text ?? "" }, finish_reason: null }] };
     } else if (event.event === "content_block_delta" && value.delta?.type === "input_json_delta") {
       const index = typeof value.index === "number" ? value.index : 0;
       yield { id: "anthropic-stream", object: "chat.completion.chunk", choices: [{ index: 0, delta: { tool_calls: [{ index: toolIndexes.get(index) ?? 0, function: { arguments: value.delta.partial_json ?? "" } }] }, finish_reason: null }] };
     } else if (event.event === "message_delta") {
-      yield { id: "anthropic-stream", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: value.delta?.stop_reason ?? "stop" }] };
+      yield {
+        id: "anthropic-stream",
+        object: "chat.completion.chunk",
+        choices: [{ index: 0, delta: {}, finish_reason: value.delta?.stop_reason ?? "stop" }],
+        ...(value.usage ? { usage: { output_tokens: value.usage.output_tokens } } : {}),
+      };
     }
   }
 }
@@ -696,7 +725,7 @@ async function* geminiStream(response: Response): AsyncGenerator<Record<string, 
         index: index++,
       }));
     }
-    if (Object.keys(delta).length || value.candidates?.[0]?.finishReason) {
+    if (Object.keys(delta).length || value.candidates?.[0]?.finishReason || result.usage) {
       yield {
         id: value.responseId ?? "gemini-stream",
         object: "chat.completion.chunk",
@@ -705,6 +734,7 @@ async function* geminiStream(response: Response): AsyncGenerator<Record<string, 
           delta,
           finish_reason: value.candidates?.[0]?.finishReason?.toLowerCase() ?? null,
         }],
+        ...(result.usage ? { usage: result.usage } : {}),
       };
     }
   }

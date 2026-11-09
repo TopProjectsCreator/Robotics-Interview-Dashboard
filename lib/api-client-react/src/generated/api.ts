@@ -60,6 +60,9 @@ import type {
   AssistantSkillInput,
   AssistantSkillList,
   AssistantSkillUpdate,
+  AssistantToolPolicy,
+  AssistantToolPolicyInput,
+  AssistantUsageReport,
   AuthSession,
   Board,
   BoardCreateInput,
@@ -164,6 +167,7 @@ import type {
   GenerateImageInput,
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
+  GetAssistantUsageParams,
   GetBroadcastCommandsParams,
   GetChatNotificationEventsParams,
   GetDisplayStateParams,
@@ -11642,6 +11646,238 @@ export function useGetAssistantConfig<TData = Awaited<ReturnType<typeof getAssis
 
 
 
+
+export const getGetAssistantUsageUrl = (params: GetAssistantUsageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/assistant/usage?${stringifiedParams}` : `/api/assistant/usage`
+}
+
+/**
+ * @summary Get team assistant usage for a date range
+ */
+export const getAssistantUsage = async (params: GetAssistantUsageParams, options?: Parameters<typeof customFetch>[1]): Promise<AssistantUsageReport> => {
+
+  return customFetch<AssistantUsageReport>(getGetAssistantUsageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantUsageQueryKey = (params?: GetAssistantUsageParams,) => {
+    return [
+    `/api/assistant/usage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetAssistantUsageQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantUsage>>, TError = ErrorType<void>>(params: GetAssistantUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantUsageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantUsage>>> = ({ signal }) => getAssistantUsage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantUsage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantUsage>>>
+export type GetAssistantUsageQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get team assistant usage for a date range
+ */
+
+export function useGetAssistantUsage<TData = Awaited<ReturnType<typeof getAssistantUsage>>, TError = ErrorType<void>>(
+ params: GetAssistantUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantUsageQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAssistantToolPolicyUrl = () => {
+
+
+
+
+  return `/api/assistant/tool-policy`
+}
+
+/**
+ * @summary Read team-wide and role-specific assistant tool restrictions
+ */
+export const getAssistantToolPolicy = async ( options?: Parameters<typeof customFetch>[1]): Promise<AssistantToolPolicy> => {
+
+  return customFetch<AssistantToolPolicy>(getGetAssistantToolPolicyUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAssistantToolPolicyQueryKey = () => {
+    return [
+    `/api/assistant/tool-policy`
+    ] as const;
+    }
+
+
+export const getGetAssistantToolPolicyQueryOptions = <TData = Awaited<ReturnType<typeof getAssistantToolPolicy>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantToolPolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAssistantToolPolicyQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAssistantToolPolicy>>> = ({ signal }) => getAssistantToolPolicy({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAssistantToolPolicy>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAssistantToolPolicyQueryResult = NonNullable<Awaited<ReturnType<typeof getAssistantToolPolicy>>>
+export type GetAssistantToolPolicyQueryError = ErrorType<void>
+
+
+/**
+ * @summary Read team-wide and role-specific assistant tool restrictions
+ */
+
+export function useGetAssistantToolPolicy<TData = Awaited<ReturnType<typeof getAssistantToolPolicy>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAssistantToolPolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAssistantToolPolicyQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAssistantToolPolicyUrl = () => {
+
+
+
+
+  return `/api/assistant/tool-policy`
+}
+
+/**
+ * @summary Save team-wide and role-specific assistant tool restrictions
+ */
+export const updateAssistantToolPolicy = async (assistantToolPolicyInput: AssistantToolPolicyInput, options?: Parameters<typeof customFetch>[1]): Promise<AssistantToolPolicy> => {
+
+  return customFetch<AssistantToolPolicy>(getUpdateAssistantToolPolicyUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(assistantToolPolicyInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateAssistantToolPolicyMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantToolPolicy>>, TError,{data: BodyType<AssistantToolPolicyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAssistantToolPolicy>>, TError,{data: BodyType<AssistantToolPolicyInput>}, TContext> => {
+
+const mutationKey = ['updateAssistantToolPolicy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAssistantToolPolicy>>, {data: BodyType<AssistantToolPolicyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateAssistantToolPolicy(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAssistantToolPolicyMutationResult = NonNullable<Awaited<ReturnType<typeof updateAssistantToolPolicy>>>
+    export type UpdateAssistantToolPolicyMutationBody = BodyType<AssistantToolPolicyInput>
+    export type UpdateAssistantToolPolicyMutationError = ErrorType<void>
+
+    /**
+ * @summary Save team-wide and role-specific assistant tool restrictions
+ */
+export const useUpdateAssistantToolPolicy = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAssistantToolPolicy>>, TError,{data: BodyType<AssistantToolPolicyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAssistantToolPolicy>>,
+        TError,
+        {data: BodyType<AssistantToolPolicyInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateAssistantToolPolicyMutationOptions(options));
+    }
 
 export const getListAssistantConversationsUrl = () => {
 

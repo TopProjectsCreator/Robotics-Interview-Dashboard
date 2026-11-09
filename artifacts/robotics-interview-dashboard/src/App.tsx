@@ -148,6 +148,7 @@ import { useRealtimeHealthy } from "./realtimeHealth";
 import { useAccessibleCustomWorkspaces } from "./lib/customWorkspaces";
 import { CustomWorkspaceOverviewCard, CustomWorkspaceSidebarLinks } from "./components/CustomWorkspaceNavigation";
 import { TeamRoleManagement } from "./components/TeamRoleManagement";
+import { AssistantGovernanceSettings } from "./components/AssistantGovernanceSettings";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
 const authenticatedSessionQueries = new WeakSet<object>();
@@ -1048,6 +1049,7 @@ function SettingsModal({
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>
       <AIProviderSettingsCategory canManageProvider={canManageAssistant && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
+      {isAdmin && session.data?.teamId && <AssistantGovernanceSettings teamId={session.data.teamId} />}
       {canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>

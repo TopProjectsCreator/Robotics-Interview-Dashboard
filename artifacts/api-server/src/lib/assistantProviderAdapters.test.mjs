@@ -38,6 +38,7 @@ test("OpenAI Chat Completions uses the team credential and selected model", asyn
       id: "chat-1",
       model: model.id,
       choices: [{ index: 0, message: { role: "assistant", content: "hello" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 },
     });
   });
   try {
@@ -49,6 +50,7 @@ test("OpenAI Chat Completions uses the team credential and selected model", asyn
     assert.equal(captured.headers.get("authorization"), "Bearer private-key-value");
     assert.equal(captured.body.model, model.id);
     assert.equal(response.choices[0].message.content, "hello");
+    assert.deepEqual(response.usage, { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 });
   } finally {
     fetchMock.mock.restore();
   }
@@ -99,6 +101,9 @@ test("OpenAI Responses converts the native output back to the assistant chat con
     assert.equal(captured.body.input[0].role, "user");
     assert.deepEqual(captured.body.text, { format: { type: "json_object" } });
     assert.equal(response.choices[0].message.content, "from responses");
+    assert.equal(response.usage.prompt_tokens, 4);
+    assert.equal(response.usage.completion_tokens, 3);
+    assert.equal(response.usage.total_tokens, undefined);
   } finally {
     fetchMock.mock.restore();
   }
@@ -113,6 +118,7 @@ test("Anthropic Messages maps tools and system content into the native protocol"
       model: model.id,
       stop_reason: "tool_use",
       content: [{ type: "tool_use", id: "call-1", name: "lookup", input: { q: "x" } }],
+      usage: { input_tokens: 6, output_tokens: 2 },
     });
   });
   try {
@@ -126,6 +132,9 @@ test("Anthropic Messages maps tools and system content into the native protocol"
     assert.equal(captured.body.system, "rules");
     assert.equal(captured.body.tools[0].name, "lookup");
     assert.equal(response.choices[0].message.tool_calls[0].function.name, "lookup");
+    assert.equal(response.usage.prompt_tokens, 6);
+    assert.equal(response.usage.completion_tokens, 2);
+    assert.equal(response.usage.total_tokens, undefined);
   } finally {
     fetchMock.mock.restore();
   }
@@ -147,6 +156,7 @@ test("Gemini maps generate-content and returns normalized tool and image data", 
           ],
         },
       }],
+      usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 4 },
     });
   });
   try {
@@ -160,6 +170,9 @@ test("Gemini maps generate-content and returns normalized tool and image data", 
     assert.equal(captured.body.contents[0].parts[0].text, "hello");
     assert.equal(response.choices[0].message.tool_calls[0].function.name, "lookup");
     assert.equal(response.choices[0].message.images[0].image_url.url, "data:image/png;base64,aW1hZ2U=");
+    assert.equal(response.usage.prompt_tokens, 8);
+    assert.equal(response.usage.completion_tokens, 4);
+    assert.equal(response.usage.total_tokens, undefined);
   } finally {
     fetchMock.mock.restore();
   }
@@ -201,14 +214,15 @@ test("native OpenAI Responses and Anthropic streams normalize into chat deltas",
       provider: provider("openai-responses"),
       body: [
         `event: response.output_text.delta\ndata: ${JSON.stringify({ type: "response.output_text.delta", delta: "response" })}\n\n`,
-        `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed" })}\n\n`,
+        `event: response.completed\ndata: ${JSON.stringify({ type: "response.completed", response: { usage: { input_tokens: 10, output_tokens: 4 } } })}\n\n`,
       ].join(""),
     },
     {
       provider: provider("anthropic-messages"),
       body: [
+        `event: message_start\ndata: ${JSON.stringify({ type: "message_start", message: { id: "msg-stream", usage: { input_tokens: 12 } } })}\n\n`,
         `event: content_block_delta\ndata: ${JSON.stringify({ type: "content_block_delta", delta: { type: "text_delta", text: "anthropic" } })}\n\n`,
-        `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" } })}\n\n`,
+        `event: message_delta\ndata: ${JSON.stringify({ type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } })}\n\n`,
       ].join(""),
     },
   ];
@@ -225,6 +239,18 @@ test("native OpenAI Responses and Anthropic streams normalize into chat deltas",
       const chunks = [];
       for await (const chunk of stream) chunks.push(chunk);
       expectStreamDelta(chunks, fixture.provider.protocol === "openai-responses" ? "response" : "anthropic");
+      const usageChunks = chunks.flatMap((chunk) => chunk.usage ? [chunk.usage] : []);
+      assert.ok(usageChunks.length);
+      assert.equal(
+        usageChunks.find((usage) => usage.prompt_tokens != null || usage.input_tokens != null)?.prompt_tokens ??
+          usageChunks.find((usage) => usage.input_tokens != null)?.input_tokens,
+        fixture.provider.protocol === "openai-responses" ? 10 : 12,
+      );
+      assert.equal(
+        usageChunks.find((usage) => usage.completion_tokens != null || usage.output_tokens != null)?.completion_tokens ??
+          usageChunks.find((usage) => usage.output_tokens != null)?.output_tokens,
+        fixture.provider.protocol === "openai-responses" ? 4 : 5,
+      );
     } finally {
       fetchMock.mock.restore();
     }
@@ -232,7 +258,10 @@ test("native OpenAI Responses and Anthropic streams normalize into chat deltas",
 });
 
 function expectStreamDelta(chunks, expected) {
-  assert.equal(chunks[0].choices[0].delta.content, expected);
+  const delta = chunks.flatMap((chunk) => chunk.choices ?? [])
+    .map((choice) => choice.delta?.content)
+    .find((content) => typeof content === "string");
+  assert.equal(delta, expected);
 }
 
 test("unsupported image and audio combinations fail before contacting a provider", async () => {
