@@ -722,10 +722,67 @@ export const GetDashboardSummaryResponse = zod.object({
 
 
 /**
+ * Admin-only. Returns aggregate usage for built-in and custom workspaces in the signed-in team. No account, session, IP, or app-content data is returned.
+ * @summary Get team workspace usage aggregates for a bounded date range
+ */
+export const getWorkspaceUsageQueryFromRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getWorkspaceUsageQueryToRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+
+
+export const GetWorkspaceUsageQueryParams = zod.object({
+  "from": zod.coerce.string().regex(getWorkspaceUsageQueryFromRegExp),
+  "to": zod.coerce.string().regex(getWorkspaceUsageQueryToRegExp)
+})
+
+export const getWorkspaceUsageResponseTotalActiveSecondsMin = 0;
+
+export const getWorkspaceUsageResponseTotalVisitsMin = 0;
+
+export const getWorkspaceUsageResponseDistinctSessionsMin = 0;
+
+export const getWorkspaceUsageResponseWorkspacesItemNameMax = 120;
+
+export const getWorkspaceUsageResponseWorkspacesItemActiveSecondsMin = 0;
+
+export const getWorkspaceUsageResponseWorkspacesItemVisitsMin = 0;
+
+export const getWorkspaceUsageResponseWorkspacesItemDistinctSessionsMin = 0;
+
+export const getWorkspaceUsageResponseDailyItemActiveSecondsMin = 0;
+
+
+
+export const GetWorkspaceUsageResponse = zod.object({
+  "from": zod.coerce.date(),
+  "to": zod.coerce.date(),
+  "totalActiveSeconds": zod.number().int().min(getWorkspaceUsageResponseTotalActiveSecondsMin),
+  "totalVisits": zod.number().int().min(getWorkspaceUsageResponseTotalVisitsMin),
+  "distinctSessions": zod.number().int().min(getWorkspaceUsageResponseDistinctSessionsMin),
+  "workspaces": zod.array(zod.object({
+  "id": zod.string(),
+  "type": zod.enum(['builtIn', 'custom']),
+  "name": zod.string().max(getWorkspaceUsageResponseWorkspacesItemNameMax),
+  "activeSeconds": zod.number().int().min(getWorkspaceUsageResponseWorkspacesItemActiveSecondsMin),
+  "visits": zod.number().int().min(getWorkspaceUsageResponseWorkspacesItemVisitsMin),
+  "distinctSessions": zod.number().int().min(getWorkspaceUsageResponseWorkspacesItemDistinctSessionsMin)
+})),
+  "daily": zod.array(zod.object({
+  "date": zod.coerce.date(),
+  "activeSeconds": zod.number().int().min(getWorkspaceUsageResponseDailyItemActiveSecondsMin)
+}))
+})
+
+
+/**
  * @summary Record coordinator presence heartbeat
  */
+export const postPresenceHeartbeatBodyPageMax = 512;
+
+
+
 export const PostPresenceHeartbeatBody = zod.object({
-  "page": zod.string().optional(),
+  "page": zod.string().max(postPresenceHeartbeatBodyPageMax).optional(),
+  "visible": zod.boolean().optional().describe('Whether an authenticated workspace is active in a visible tab.'),
   "notifyPermission": zod.string().optional().describe('Browser Notification permission: granted, denied, default, or unsupported')
 })
 

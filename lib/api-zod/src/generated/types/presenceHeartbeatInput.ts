@@ -7,7 +7,10 @@
  */
 
 export interface PresenceHeartbeatInput {
+  /** @maxLength 512 */
   page?: string;
+  /** Whether an authenticated workspace is active in a visible tab. */
+  visible?: boolean;
   /** Browser Notification permission: granted, denied, default, or unsupported */
   notifyPermission?: string;
 }

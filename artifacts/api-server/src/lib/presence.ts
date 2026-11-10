@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { db, pageVisitsTable } from "@workspace/db";
+import { closeWorkspaceUsageVisit } from "./workspaceUsageTracking";
 
 export type GeoInfo = { city: string; region: string; country: string };
 
@@ -92,6 +93,11 @@ export async function closeOpenVisits(sessionHash: string): Promise<void> {
       .where(and(eq(pageVisitsTable.sessionHash, sessionHash), isNull(pageVisitsTable.exitedAt)));
   } catch {
     // Best-effort.
+  }
+  try {
+    await closeWorkspaceUsageVisit(sessionHash);
+  } catch {
+    // Workspace usage cleanup is also best-effort.
   }
 }
 

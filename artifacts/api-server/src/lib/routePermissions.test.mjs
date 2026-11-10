@@ -20,6 +20,8 @@ test("route policy separates read, ordinary writes, and management actions", () 
   assert.equal(permissionForRoute("POST", "/api/queue/chat/channels"), "chat.manage");
   assert.equal(routePermissionIsGranted(["chat.manage"], "POST", "/api/queue/chat/channels"), true);
   assert.equal(routePermissionIsGranted(["chat.send"], "POST", "/api/queue/chat/channels"), false);
+  assert.equal(permissionForRoute("GET", "/api/dashboard/workspace-usage"), "dashboard.view");
+  assert.equal(routePermissionIsGranted(["dashboard.view"], "GET", "/api/dashboard/workspace-usage"), true);
 });
 
 test("unknown routes and unrecognized permissions deny access", () => {

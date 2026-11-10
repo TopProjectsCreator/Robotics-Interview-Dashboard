@@ -1236,9 +1236,52 @@ export interface PresenceEntry {
 }
 
 export interface PresenceHeartbeatInput {
+  /** @maxLength 512 */
   page?: string;
+  /** Whether an authenticated workspace is active in a visible tab. */
+  visible?: boolean;
   /** Browser Notification permission: granted, denied, default, or unsupported */
   notifyPermission?: string;
+}
+
+export type WorkspaceUsageItemType = typeof WorkspaceUsageItemType[keyof typeof WorkspaceUsageItemType];
+
+
+export const WorkspaceUsageItemType = {
+  builtIn: 'builtIn',
+  custom: 'custom',
+} as const;
+
+export interface WorkspaceUsageItem {
+  id: string;
+  type: WorkspaceUsageItemType;
+  /** @maxLength 120 */
+  name: string;
+  /** @minimum 0 */
+  activeSeconds: number;
+  /** @minimum 0 */
+  visits: number;
+  /** @minimum 0 */
+  distinctSessions: number;
+}
+
+export interface WorkspaceUsageDay {
+  date: string;
+  /** @minimum 0 */
+  activeSeconds: number;
+}
+
+export interface WorkspaceUsageSummary {
+  from: string;
+  to: string;
+  /** @minimum 0 */
+  totalActiveSeconds: number;
+  /** @minimum 0 */
+  totalVisits: number;
+  /** @minimum 0 */
+  distinctSessions: number;
+  workspaces: WorkspaceUsageItem[];
+  daily: WorkspaceUsageDay[];
 }
 
 export interface PresenceList {
@@ -4365,6 +4408,19 @@ export type ListInterviewersParams = {
  * Team access code used to scope the list to one team before sign-in. Ignored for signed-in callers, who always get their own team. Omitting it without a session is rejected with 401.
  */
 eventPassword?: string;
+};
+
+export type GetWorkspaceUsageParams = {
+/**
+ * UTC calendar date in YYYY-MM-DD form
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+from: string;
+/**
+ * UTC calendar date in YYYY-MM-DD form
+ * @pattern ^\d{4}-\d{2}-\d{2}$
+ */
+to: string;
 };
 
 export type GetPresenceStatsParams = {

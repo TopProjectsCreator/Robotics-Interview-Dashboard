@@ -147,6 +147,7 @@ import {
 import { useRealtimeHealthy } from "./realtimeHealth";
 import { useAccessibleCustomWorkspaces } from "./lib/customWorkspaces";
 import { CustomWorkspaceOverviewCard, CustomWorkspaceSidebarLinks } from "./components/CustomWorkspaceNavigation";
+import WorkspaceUsageDashboard from "./components/WorkspaceUsageDashboard";
 import { TeamRoleManagement } from "./components/TeamRoleManagement";
 import { AssistantGovernanceSettings } from "./components/AssistantGovernanceSettings";
 const sessionQueryKey = getGetSessionQueryKey();
@@ -2388,26 +2389,33 @@ function usePresenceHeartbeat(enabled: boolean, page: string) {
     if (!enabled) return;
     let stopped = false;
     let timer: ReturnType<typeof setInterval> | undefined;
-    const beat = () => {
+    const sendBeat = (visible: boolean, keepalive = false) => {
       fetch(`${import.meta.env.BASE_URL}api/presence/heartbeat`, {
         method: "POST",
         credentials: "include",
+        keepalive,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page: pageRef.current, notifyPermission: browserNotifyPermission() }),
+        body: JSON.stringify({
+          page: pageRef.current,
+          visible,
+          notifyPermission: browserNotifyPermission(),
+        }),
       }).catch(() => undefined);
     };
+    const beat = () => sendBeat(document.visibilityState === "visible");
     beat();
     timer = setInterval(() => {
       if (!stopped && document.visibilityState === "visible") beat();
     }, 30000);
-    const onVisible = () => {
-      if (document.visibilityState === "visible") beat();
-    };
-    document.addEventListener("visibilitychange", onVisible);
+    const onVisibilityChange = () => sendBeat(document.visibilityState === "visible", true);
+    const onPageHide = () => sendBeat(false, true);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pagehide", onPageHide);
     return () => {
       stopped = true;
       if (timer !== undefined) clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pagehide", onPageHide);
     };
   }, [enabled, page]);
 }
@@ -3950,7 +3958,7 @@ function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
     sessionUserId,
   );
   const customWorkspaces = demoMode ? DEMO_CUSTOM_WORKSPACES : customWorkspacesQuery.data ?? [];
-  const isCoordinator = !demoMode && sessionRole === "coordinator";
+  const isCoordinator = !demoMode && (sessionRole === "coordinator" || sessionRole === "admin");
   const canManageCustomWorkspaces = !demoMode && canSessionUsePermission(session.data, "customWorkspaces.manage");
   const canSee = (key: WorkspaceKey) => demoMode
     ? key !== "interview"
@@ -4226,6 +4234,7 @@ function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
           />
         ))}
       </div>
+      {isCoordinator && <div className="mt-7"><WorkspaceUsageDashboard /></div>}
       </div>
     </div>
   );

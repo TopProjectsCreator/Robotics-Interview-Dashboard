@@ -37,6 +37,7 @@ export function permissionForRoute(method: string, rawPath: string): PermissionI
   }
 
   if (path.startsWith("/dashboard/summary")) return "dashboard.view";
+  if (path === "/dashboard/workspace-usage") return "dashboard.view";
   if (path.startsWith("/dashboard/charts")) return read ? "dashboard.view" : "dashboard.manage";
   if (path.startsWith("/snapshots")) return read ? "snapshots.view" : "snapshots.manage";
 

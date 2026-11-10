@@ -23,6 +23,7 @@ export * from "./assistant";
 export * from "./broadcasts";
 export * from "./presence";
 export * from "./visits";
+export * from "./workspaceUsage";
 export * from "./sessions";
 export * from "./dashboard";
 export * from "./snapshots";

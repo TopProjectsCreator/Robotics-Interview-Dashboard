@@ -111,5 +111,6 @@ test("usage and tool-policy routes are protected by the built-in admin gate", ()
   assert.match(routes, /router\.get\("\/assistant\/usage", requireCoordinator/);
   assert.match(routes, /router\.get\("\/assistant\/tool-policy", requireCoordinator/);
   assert.match(routes, /router\.put\("\/assistant\/tool-policy", requireCoordinator/);
-  assert.ok(auth.includes("assistant\\/(?:usage|tool-policy)"));
+  assert.ok(auth.includes("dashboard\\/workspace-usage"));
+  assert.ok(auth.includes("assistant\\/(?:usage|tool-policy|integration-policy)"));
 });

@@ -176,6 +176,7 @@ import type {
   GetInterviewChatParams,
   GetInterviewWhiteboardByIdParams,
   GetPresenceStatsParams,
+  GetWorkspaceUsageParams,
   HealthStatus,
   ImportHistory,
   ImportInput,
@@ -295,6 +296,7 @@ import type {
   UploadPartsRobotPreviewFileParams,
   UploadResponse,
   UploadTeamLogo,
+  WorkspaceUsageSummary,
   WorkspaceVisibility,
   WorkspaceVisibilityInput
 } from './api.schemas';
@@ -3174,6 +3176,91 @@ export function useGetDashboardSummary<TData = Awaited<ReturnType<typeof getDash
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetDashboardSummaryQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetWorkspaceUsageUrl = (params: GetWorkspaceUsageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/dashboard/workspace-usage?${stringifiedParams}` : `/api/dashboard/workspace-usage`
+}
+
+/**
+ * Admin-only. Returns aggregate usage for built-in and custom workspaces in the signed-in team. No account, session, IP, or app-content data is returned.
+ * @summary Get team workspace usage aggregates for a bounded date range
+ */
+export const getWorkspaceUsage = async (params: GetWorkspaceUsageParams, options?: Parameters<typeof customFetch>[1]): Promise<WorkspaceUsageSummary> => {
+
+  return customFetch<WorkspaceUsageSummary>(getGetWorkspaceUsageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetWorkspaceUsageQueryKey = (params?: GetWorkspaceUsageParams,) => {
+    return [
+    `/api/dashboard/workspace-usage`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetWorkspaceUsageQueryOptions = <TData = Awaited<ReturnType<typeof getWorkspaceUsage>>, TError = ErrorType<ErrorResponse>>(params: GetWorkspaceUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetWorkspaceUsageQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getWorkspaceUsage>>> = ({ signal }) => getWorkspaceUsage(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceUsage>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetWorkspaceUsageQueryResult = NonNullable<Awaited<ReturnType<typeof getWorkspaceUsage>>>
+export type GetWorkspaceUsageQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get team workspace usage aggregates for a bounded date range
+ */
+
+export function useGetWorkspaceUsage<TData = Awaited<ReturnType<typeof getWorkspaceUsage>>, TError = ErrorType<ErrorResponse>>(
+ params: GetWorkspaceUsageParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getWorkspaceUsage>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetWorkspaceUsageQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

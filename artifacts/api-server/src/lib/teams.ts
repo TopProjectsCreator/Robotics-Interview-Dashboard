@@ -3,6 +3,8 @@ import { eq, isNull, or } from "drizzle-orm";
 import { primaryDb, secondaryDb, teamsTable, interviewerAccountsTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
 import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import { isDatabaseConnectionError } from "./databaseErrors";
+import { teamSqlCondition } from "./teamSqlCondition.ts";
+export { teamSqlCondition };
 
 /**
  * Team isolation helpers. Tenant rows with a nullable `team_id` use NULL for
@@ -154,16 +156,6 @@ export function teamFilter(column: any, teamId: string) {
     return or(eq(column, DEFAULT_TEAM_ID), isNull(column));
   }
   return eq(column, teamId);
-}
-
-/**
- * Raw-SQL equivalent of {@link teamFilter} for routes that query via `pool`.
- * `columnSql` is the qualified column (e.g. `c."team_id"`), `placeholder` the
- * `$n` placeholder holding the team id. Appends the team value to the query's
- * values array at the call site.
- */
-export function teamSqlCondition(columnSql: string, placeholder: string): string {
-  return `(${columnSql} = ${placeholder} or (${placeholder} = 'default' and ${columnSql} is null))`;
 }
 
 /**
