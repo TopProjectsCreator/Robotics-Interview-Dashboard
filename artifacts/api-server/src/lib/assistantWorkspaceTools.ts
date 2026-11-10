@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { hasPermission } from "@workspace/api-zod";
 import { teamAssistantAI } from "./teamAssistantAi";
-import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
+import { DEFAULT_TEAM_ID, pool, runWithInstance } from "@workspace/db";
+import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import { applyCodeFileContent } from "./codeCollaboration";
 import {
   validateWorkspaceToolDeclarations,
@@ -82,6 +83,11 @@ const pendingCustomWorkspaceDeletions = new Map<string, {
  * agents edit the same draft at once.
  */
 const workspaceWriteChains = new Map<string, Promise<void>>();
+const activeWorkspaceSubagentControllers = new Map<string, {
+  builderRunId: string;
+  leaseToken: string;
+  controller: AbortController;
+}>();
 
 export async function withWorkspaceWriteLock<T>(workspaceId: string, task: () => Promise<T>): Promise<T> {
   const prior = workspaceWriteChains.get(workspaceId) ?? Promise.resolve();
@@ -376,17 +382,18 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "spawn_workspace_subagent",
-    "Spawn a separate AI subagent to work directly on this team's saved draft for a focused task such as accessibility, security, functionality, or responsive behavior. Use automatically when parallel expertise helps. It can list, read, create, and edit draft files; review its edits and continue the required critique and verification process. Subagents never seed mock data: they build real behavior and use clear empty states.",
+    "Spawn a separate AI subagent for a focused task. You, the main builder model, choose executionMode: foreground waits for its report and may edit the draft; background returns immediately and runs read-only so it cannot overwrite your edits. Use background for independent analysis, then collect_workspace_subagent_results before finishing. Subagents never seed mock data.",
     {
       workspaceId: { type: "string", minLength: 1 },
       specialty: { type: "string", enum: ["accessibility", "security", "functionality", "responsive_design", "implementation_plan", "custom"] },
       objective: { type: "string", minLength: 1, maxLength: 2000 },
+      executionMode: { type: "string", enum: ["foreground", "background"], description: "Choose whether this subagent blocks for its report or runs read-only in the background. Defaults to foreground." },
     },
     ["workspaceId", "specialty", "objective"],
   ),
   tool(
     "spawn_workspace_subagent_team",
-    "Spawn up to 4 subagents in parallel on one draft, each with a specialty, objective, and optional file ownership scope (array of path prefixes). Scopes must be disjoint; each agent can only write inside its scope. Use for independent workstreams (e.g. accessibility + functionality + responsive design). Returns one report per agent.",
+    "Spawn up to 4 subagents in parallel on one draft. As the main builder model, choose executionMode separately for each agent: foreground waits and can edit only its disjoint fileScope; background returns immediately and is read-only. Collect background results before finishing.",
     {
       workspaceId: { type: "string", minLength: 1 },
       subagents: {
@@ -398,7 +405,8 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
           properties: {
             specialty: { type: "string", enum: ["accessibility", "security", "functionality", "responsive_design", "implementation_plan", "custom"] },
             objective: { type: "string", minLength: 1, maxLength: 2000 },
-            fileScope: { type: "array", items: { type: "string", maxLength: 80 }, maxItems: 8, description: "Path prefixes this agent may write (e.g. ['assets/']). Empty = no write scope beyond reading." },
+            executionMode: { type: "string", enum: ["foreground", "background"], description: "Defaults to foreground. Background agents are read-only." },
+            fileScope: { type: "array", items: { type: "string", maxLength: 80 }, maxItems: 8, description: "Required for foreground writes; path prefixes must not overlap. Omit for read-only work." },
           },
           required: ["specialty", "objective"],
           additionalProperties: false,
@@ -406,6 +414,14 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
       },
     },
     ["workspaceId", "subagents"],
+  ),
+  tool(
+    "collect_workspace_subagent_results",
+    "Wait for this builder run's background subagents to finish and return their persisted status and reports. Call before finalizing whenever background agents were spawned; failed reports must be acknowledged and addressed.",
+    {
+      workspaceId: { type: "string", minLength: 1 },
+    },
+    ["workspaceId"],
   ),
   tool(
     "ask_user",
@@ -552,7 +568,22 @@ type ToolContext = {
   confirmationText?: string;
   askCoordinator?: (questions: AssistantQuestion[]) => Promise<Record<string, unknown>>;
   subagentFileScope?: string[];
+  subagentReadOnly?: boolean;
+  subagentAbortSignal?: AbortSignal;
 };
+
+async function hasActiveBackgroundSubagents(context: ToolContext, workspaceId: string): Promise<boolean> {
+  if (!context.builderRunId) return false;
+  const active = await pool.query(
+    `select "id" from "assistant_builder_subagents"
+      where "team_id" = $1 and "coordinator_id" = $2 and "builder_run_id" = $3
+        and "workspace_id" = $4 and "execution_mode" = 'background'
+        and "status" in ('queued', 'running')
+      limit 1`,
+    [context.teamId, context.accountId, context.builderRunId, workspaceId],
+  );
+  return Boolean(active.rowCount);
+}
 
 export type AssistantQuestion = {
   id: string;
@@ -663,7 +694,7 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "spawn_workspace_subagent_team" || name === "ask_user" || name === "preview_custom_workspace" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files" || name === "list_custom_workspaces" || name === "delete_custom_workspace" || name === "suggest_custom_workspace_tools") {
+  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "spawn_workspace_subagent_team" || name === "collect_workspace_subagent_results" || name === "ask_user" || name === "preview_custom_workspace" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files" || name === "list_custom_workspaces" || name === "delete_custom_workspace" || name === "suggest_custom_workspace_tools") {
     if (!(await canManageCustomWorkspaces(context))) {
       return { content: "This account does not have permission to manage custom workspaces.", detail: "access denied" };
     }
@@ -1461,6 +1492,12 @@ export async function runAssistantWorkspaceTool(
     if (!workspaceId || round < 1 || round > 5) {
       return { content: "A workspace id and critique round from 1 to 5 are required.", detail: "invalid critique request" };
     }
+    if (await hasActiveBackgroundSubagents(context, workspaceId)) {
+      return {
+        content: "Background subagents are still active. Collect and reconcile their results before starting critique.",
+        detail: "background subagents still active",
+      };
+    }
     const draft = await pool.query<{ title: string; prompt: string; html: string; critique_rounds: number; verified_critique_rounds: number }>(
       `select "title", "prompt", "html", "critique_rounds", "verified_critique_rounds" from "custom_workspaces"
         where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
@@ -1545,6 +1582,15 @@ export async function runAssistantWorkspaceTool(
   if (name === "verify_custom_workspace_fixes") {
     const workspaceId = textArg(args, "workspaceId", 128);
     const round = typeof args.round === "number" ? Math.floor(args.round) : 0;
+    if (!workspaceId || round < 1 || round > 5) {
+      return { content: "A workspace id and verification round from 1 to 5 are required.", detail: "invalid verification request" };
+    }
+    if (await hasActiveBackgroundSubagents(context, workspaceId)) {
+      return {
+        content: "Background subagents are still active. Collect and reconcile their results before verifying critique fixes.",
+        detail: "background subagents still active",
+      };
+    }
     const state = await pool.query<{
       title: string;
       prompt: string;
@@ -1651,6 +1697,7 @@ export async function runAssistantWorkspaceTool(
     objective: string,
     fileScope: string[] | undefined,
     draft: { title: string; prompt: string; html: string },
+    readOnly = false,
   ): Promise<{ specialty: string; objective: string; report: string; edits: string[] }> => {
     const files = await pool.query<{ path: string; content: string }>(
       `select "path", "content" from "custom_workspace_files"
@@ -1665,12 +1712,16 @@ export async function runAssistantWorkspaceTool(
         .map((file) => ({ path: file.path, content: file.content.slice(0, 45_000) })),
     }).slice(0, 150_000);
     const subagentTools = ASSISTANT_WORKSPACE_TOOLS.filter((candidate) =>
-      ["list_custom_workspace_files", "read_custom_workspace_file", "create_custom_workspace_file", "write_custom_workspace_file", "patch_custom_workspace_file", "delete_custom_workspace_file", "rename_custom_workspace_file", "preview_custom_workspace", "ask_user"]
+      (readOnly
+        ? ["list_custom_workspace_files", "read_custom_workspace_file", "preview_custom_workspace"]
+        : ["list_custom_workspace_files", "read_custom_workspace_file", "create_custom_workspace_file", "write_custom_workspace_file", "patch_custom_workspace_file", "delete_custom_workspace_file", "rename_custom_workspace_file", "preview_custom_workspace", "ask_user"])
         .includes(candidate.function.name),
     );
     const scopeNote = fileScope && fileScope.length
       ? ` You own these file scopes only and may write only inside them: ${fileScope.join(", ")}. Read freely; never write outside your scope.`
-      : " You may write any file in this draft.";
+      : readOnly
+        ? " This is a read-only review. Do not attempt to change files."
+        : " You may write any file in this draft.";
     const messages: Parameters<typeof openai.chat.completions.create>[0]["messages"] = [
       {
         role: "system",
@@ -1681,7 +1732,11 @@ export async function runAssistantWorkspaceTool(
     let report = "";
     const edits: string[] = [];
     const subagentToolNames = new Set(subagentTools.map((candidate) => candidate.function.name));
-    const scopedContext: ToolContext = fileScope && fileScope.length ? { ...context, subagentFileScope: fileScope } : context;
+    const scopedContext: ToolContext = {
+      ...context,
+      ...(fileScope && fileScope.length ? { subagentFileScope: fileScope } : {}),
+      ...(readOnly ? { subagentReadOnly: true } : {}),
+    };
     for (let turn = 0; turn < 12; turn += 1) {
       const completion = await teamAssistantAI(context.teamId).chat.completions.create({
         model: await getAssistantModel(context.teamId),
@@ -1689,7 +1744,7 @@ export async function runAssistantWorkspaceTool(
         messages,
         tools: subagentTools,
         tool_choice: "auto",
-      });
+      }, context.subagentAbortSignal ? { signal: context.subagentAbortSignal } : undefined);
       const message = completion.choices[0]?.message;
       const toolCalls = message?.tool_calls?.filter((call) => "function" in call) ?? [];
       if (!toolCalls.length) {
@@ -1726,14 +1781,19 @@ export async function runAssistantWorkspaceTool(
   if (name === "spawn_workspace_subagent" || name === "spawn_workspace_subagent_team") {
     const specialties = new Set(["accessibility", "security", "functionality", "responsive_design", "implementation_plan", "custom"]);
     const workspaceId = textArg(args, "workspaceId", 128);
-    const requests: { specialty: string; objective: string; fileScope: string[] | undefined }[] = [];
+    const requests: { specialty: string; objective: string; fileScope: string[] | undefined; executionMode: "foreground" | "background" }[] = [];
     if (name === "spawn_workspace_subagent") {
       const objective = textArg(args, "objective", 2000);
       const specialty = textArg(args, "specialty", 64);
       if (!workspaceId || !objective || !specialties.has(specialty)) {
         return { content: "A draft, supported subagent specialty, and objective are required.", detail: "invalid subagent request" };
       }
-      requests.push({ specialty, objective, fileScope: undefined });
+      requests.push({
+        specialty,
+        objective,
+        fileScope: undefined,
+        executionMode: args.executionMode === "background" ? "background" : "foreground",
+      });
     } else {
       if (!workspaceId || !Array.isArray(args.subagents) || args.subagents.length < 1 || args.subagents.length > 4) {
         return { content: "Provide 1 to 4 subagents with a specialty and objective.", detail: "invalid subagent team request" };
@@ -1749,10 +1809,11 @@ export async function runAssistantWorkspaceTool(
         if (!specialties.has(specialty) || !objective) {
           return { content: "Each subagent needs a supported specialty and objective.", detail: "invalid subagent team request" };
         }
+        const executionMode = item.executionMode === "background" ? "background" : "foreground";
         const fileScope = Array.isArray(item.fileScope)
           ? item.fileScope.filter((value): value is string => typeof value === "string" && value.trim().length > 0).map((value) => value.slice(0, 80)).slice(0, 8)
           : undefined;
-        if (fileScope) {
+        if (executionMode === "foreground" && fileScope?.length) {
           for (const scope of scopes) {
             const overlap = scope.some((a) => fileScope.some((b) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)));
             if (overlap) {
@@ -1761,7 +1822,7 @@ export async function runAssistantWorkspaceTool(
           }
           scopes.push(fileScope);
         }
-        requests.push({ specialty, objective, fileScope });
+        requests.push({ specialty, objective, fileScope, executionMode });
       }
     }
     const draft = await pool.query<{ title: string; prompt: string; html: string }>(
@@ -1772,20 +1833,122 @@ export async function runAssistantWorkspaceTool(
       [workspaceId, context.teamId, context.accountId],
     );
     if (!draft.rowCount) return { content: "That draft was not found in your team.", detail: "custom workspace not found" };
-    const results = await Promise.all(requests.map((request) =>
-      runWorkspaceSubagent(workspaceId, request.specialty, request.objective, request.fileScope, draft.rows[0]),
+    if (context.builderRunId) {
+      const activeJobs = await pool.query(
+        `select "id" from "assistant_builder_subagents"
+          where "team_id" = $1 and "coordinator_id" = $2 and "builder_run_id" = $3
+            and "workspace_id" = $4 and "status" in ('queued', 'running')
+          limit 4`,
+        [context.teamId, context.accountId, context.builderRunId, workspaceId],
+      );
+      if ((activeJobs.rowCount ?? activeJobs.rows.length) + requests.length > 4) {
+        return {
+          content: "This builder already has four active subagents. Collect their results before spawning more.",
+          detail: "subagent concurrency limit reached",
+        };
+      }
+    }
+    const spawned: Record<string, unknown>[] = [];
+    const foreground = requests.filter((request) => request.executionMode === "foreground");
+    for (const request of requests.filter((item) => item.executionMode === "background")) {
+      if (!context.builderRunId) {
+        return { content: "Background mode is available only inside a durable custom workspace builder run.", detail: "background run unavailable" };
+      }
+      const parent = (await pool.query(
+        `select "id" from "assistant_builder_runs"
+          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+            and "coordinator_id" = $3 and "status" = 'running'
+            and ("error" is null or "error" <> $4)
+          limit 1`,
+        [context.builderRunId, context.teamId, context.accountId, "Pause requested by the coordinator while current work stops."],
+      )).rows[0];
+      if (!parent) return { content: "This builder run is no longer active; no background subagent was started.", detail: "builder run inactive" };
+      const id = randomUUID();
+      await pool.query(
+        `insert into "assistant_builder_subagents"
+          ("id", "team_id", "coordinator_id", "builder_run_id", "workspace_id", "specialty", "objective",
+           "execution_mode", "file_scope", "status")
+         values ($1, $2, $3, $4, $5, $6, $7, 'background', '[]'::jsonb, 'queued')`,
+        [id, context.teamId, context.accountId, context.builderRunId, workspaceId, request.specialty, request.objective],
+      );
+      spawned.push({
+        id,
+        specialty: request.specialty,
+        objective: request.objective,
+        executionMode: "background",
+        status: "queued",
+        fileScope: [],
+        report: null,
+      });
+    }
+    const foregroundResults = await Promise.all(foreground.map((request) =>
+      runWorkspaceSubagent(
+        workspaceId,
+        request.specialty,
+        request.objective,
+        request.fileScope,
+        draft.rows[0],
+        context.subagentReadOnly || (name === "spawn_workspace_subagent_team" && !request.fileScope?.length),
+      ),
     ));
+    spawned.push(...foregroundResults.map((result, index) => ({
+      ...result,
+      executionMode: "foreground",
+      status: "completed",
+      fileScope: foreground[index]?.fileScope ?? [],
+    })));
     if (name === "spawn_workspace_subagent") {
-      const [single] = results;
+      const [single] = spawned;
       return {
         content: JSON.stringify(single),
-        detail: `spawned ${single.specialty} subagent${single.edits.length ? `; ${single.edits.length} file operations` : ""}`,
+        detail: single.executionMode === "background"
+          ? `queued ${String(single.specialty)} subagent`
+          : `spawned ${String(single.specialty)} subagent${Array.isArray(single.edits) && single.edits.length ? `; ${single.edits.length} file operations` : ""}`,
       };
     }
-    const totalEdits = results.reduce((total, result) => total + result.edits.length, 0);
     return {
-      content: JSON.stringify({ subagents: results }),
-      detail: `spawned ${results.length} subagent(s) in parallel${totalEdits ? `; ${totalEdits} file operations` : ""}`,
+      content: JSON.stringify({ subagents: spawned }),
+      detail: `spawned ${spawned.length} subagent(s); ${spawned.filter((item) => item.executionMode === "background").length} running in the background`,
+    };
+  }
+
+  if (name === "collect_workspace_subagent_results") {
+    const workspaceId = textArg(args, "workspaceId", 128);
+    if (!context.builderRunId || !workspaceId) {
+      return { content: "Background subagent results are available only in this builder run.", detail: "builder run unavailable" };
+    }
+    const deadline = Date.now() + 30 * 60 * 1000;
+    let jobs: Record<string, unknown>[] = [];
+    while (Date.now() < deadline) {
+      const result = await pool.query(
+        `select "id", "specialty", "objective", "execution_mode" as "executionMode", "status",
+                "file_scope" as "fileScope", "report", "error", "created_at" as "createdAt",
+                "updated_at" as "updatedAt"
+           from "assistant_builder_subagents"
+          where "team_id" = $1 and "coordinator_id" = $2 and "builder_run_id" = $3 and "workspace_id" = $4
+          order by "created_at", "id"`,
+        [context.teamId, context.accountId, context.builderRunId, workspaceId],
+      );
+      jobs = result.rows;
+      if (!jobs.some((job) => job.status === "queued" || job.status === "running")) break;
+      const parent = (await pool.query(
+        `select "status", "error" from "assistant_builder_runs"
+          where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")} and "coordinator_id" = $3
+          limit 1`,
+        [context.builderRunId, context.teamId, context.accountId],
+      )).rows[0];
+      if (!parent || ["paused", "cancelled", "failed"].includes(String(parent.status)) ||
+        parent.error === "Pause requested by the coordinator while current work stops.") {
+        return { content: JSON.stringify({ subagents: jobs, waiting: false, cancelled: true }), detail: "background work stopped with the builder" };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    }
+    if (jobs.some((job) => job.status === "queued" || job.status === "running")) {
+      return { content: JSON.stringify({ subagents: jobs, waiting: true }), detail: "background work is still running; collect again before finishing" };
+    }
+    return {
+      content: JSON.stringify({ subagents: jobs, waiting: false }),
+      detail: `collected ${jobs.length} background subagent report(s)`,
     };
   }
 
@@ -1914,7 +2077,10 @@ export async function runAssistantWorkspaceTool(
     }
     const path = cleanCodePath(textArg(args, "path", 255));
     if (!path) return { content: "Use a valid relative source path.", detail: "invalid file path" };
-    const isMutationTool = name !== "read_custom_workspace_file";
+    const isMutationTool = name !== "read_custom_workspace_file" && name !== "list_custom_workspace_files";
+    if (isMutationTool && context.subagentReadOnly) {
+      return { content: "This background subagent is read-only. Report findings without changing draft files.", detail: "read-only scope denied" };
+    }
     if (isMutationTool && context.subagentFileScope && !pathInScope(path, context.subagentFileScope)) {
       return { content: `${path} is outside this subagent's file scope (${context.subagentFileScope.join(", ")}). Edit only inside your scope.`, detail: "file scope denied" };
     }
@@ -2167,4 +2333,153 @@ export async function runAssistantWorkspaceTool(
   }
 
   return { content: `Unknown workspace tool: ${name}`, detail: "unknown tool" };
+}
+
+export async function cancelWorkspaceSubagentsForBuilderRun(
+  builderRunId: string,
+  teamId: string,
+  coordinatorId: string,
+  reason: string,
+): Promise<void> {
+  await pool.query(
+    `update "assistant_builder_subagents"
+        set "status" = 'failed', "lease_token" = null, "error" = $4, "updated_at" = now()
+      where "builder_run_id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
+        and "coordinator_id" = $3 and "status" in ('queued', 'running')`,
+    [builderRunId, teamId, coordinatorId, reason],
+  );
+  for (const [jobId, active] of activeWorkspaceSubagentControllers) {
+    if (active.builderRunId === builderRunId) {
+      active.controller.abort(new Error(reason));
+      activeWorkspaceSubagentControllers.delete(jobId);
+    }
+  }
+}
+
+/**
+ * Claim and run one durable read-only subagent job. Queued jobs survive server
+ * restarts; stale leases are safely requeued because background agents cannot edit.
+ */
+export async function dispatchQueuedWorkspaceSubagentJob(): Promise<void> {
+  await runWithInstance(activeTeamDatabaseInstance(), async () => {
+  await pool.query(
+    `update "assistant_builder_subagents"
+        set "status" = case when "attempts" >= 3 then 'failed' else 'queued' end,
+            "lease_token" = null,
+            "error" = case when "attempts" >= 3
+              then 'The subagent exceeded the retry limit after server interruptions.'
+              else 'The server restarted while this read-only subagent was running; its saved task was requeued.'
+            end,
+            "updated_at" = now()
+      where "status" = 'running' and "updated_at" < now() - interval '90 seconds'`,
+  );
+  await pool.query(
+    `update "assistant_builder_subagents" as job
+        set "status" = 'failed', "lease_token" = null, "error" = 'The parent builder was paused or stopped.', "updated_at" = now()
+      where job."status" = 'queued' and exists (
+        select 1 from "assistant_builder_runs" as parent
+         where parent."id" = job."builder_run_id"
+           and parent."team_id" = job."team_id"
+           and parent."coordinator_id" = job."coordinator_id"
+           and (parent."status" <> 'running' or parent."error" = 'Pause requested by the coordinator while current work stops.')
+      )`,
+  );
+  const leaseToken = randomUUID();
+  const claimed = await pool.query<{
+    id: string;
+    team_id: string;
+    coordinator_id: string;
+    builder_run_id: string;
+    workspace_id: string;
+    specialty: string;
+    objective: string;
+    lease_token: string;
+  }>(
+    `with candidate as (
+       select job."id"
+         from "assistant_builder_subagents" as job
+         join "assistant_builder_runs" as parent
+           on parent."id" = job."builder_run_id"
+          and parent."team_id" = job."team_id"
+          and parent."coordinator_id" = job."coordinator_id"
+        where job."status" = 'queued'
+          and parent."status" = 'running'
+          and (parent."error" is null or parent."error" <> 'Pause requested by the coordinator while current work stops.')
+        order by job."created_at", job."id"
+        for update of job skip locked
+        limit 1
+     )
+     update "assistant_builder_subagents" as job
+        set "status" = 'running', "attempts" = job."attempts" + 1,
+            "lease_token" = $1, "error" = null, "updated_at" = now()
+       from candidate
+      where job."id" = candidate."id"
+      returning job."id", job."team_id", job."coordinator_id", job."builder_run_id",
+                job."workspace_id", job."specialty", job."objective", job."lease_token"`,
+    [leaseToken],
+  );
+  const job = claimed.rows[0];
+  if (!job) return;
+  const controller = new AbortController();
+  activeWorkspaceSubagentControllers.set(job.id, {
+    builderRunId: job.builder_run_id,
+    leaseToken: job.lease_token,
+    controller,
+  });
+  const heartbeat = setInterval(() => {
+    void pool.query(
+      `update "assistant_builder_subagents" set "updated_at" = now()
+        where "id" = $1 and "status" = 'running' and "lease_token" = $2`,
+      [job.id, job.lease_token],
+    ).then((result) => {
+      if (!result.rowCount) {
+        controller.abort(new Error("The parent builder stopped or this subagent lease expired."));
+      }
+    }).catch(() => undefined);
+  }, 10_000);
+  heartbeat.unref?.();
+  try {
+    const result = await runAssistantWorkspaceTool("spawn_workspace_subagent", {
+      workspaceId: job.workspace_id,
+      specialty: job.specialty,
+      objective: job.objective,
+      executionMode: "foreground",
+    }, {
+      accountId: job.coordinator_id,
+      teamId: job.team_id,
+      authorName: "Custom workspace builder",
+      role: "coordinator",
+      builderRunId: job.builder_run_id,
+      subagentReadOnly: true,
+      subagentAbortSignal: controller.signal,
+    });
+    let report = result.content.slice(0, 6000);
+    try {
+      const parsed = JSON.parse(result.content) as { report?: unknown };
+      if (typeof parsed.report === "string") report = parsed.report.slice(0, 6000);
+    } catch {
+      if (result.detail === "access denied" || result.detail === "custom workspace not found") {
+        throw new Error(result.content.slice(0, 1000));
+      }
+    }
+    await pool.query(
+      `update "assistant_builder_subagents"
+          set "status" = 'completed', "lease_token" = null, "report" = $2, "error" = null, "updated_at" = now()
+        where "id" = $1 and "status" = 'running' and "lease_token" = $3`,
+      [job.id, report, job.lease_token],
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message.slice(0, 1000) : "The background subagent failed.";
+    await pool.query(
+      `update "assistant_builder_subagents"
+          set "status" = 'failed', "lease_token" = null, "error" = $2, "updated_at" = now()
+        where "id" = $1 and "status" = 'running' and "lease_token" = $3`,
+      [job.id, message, job.lease_token],
+    ).catch(() => undefined);
+  } finally {
+    clearInterval(heartbeat);
+    const active = activeWorkspaceSubagentControllers.get(job.id);
+    if (active?.leaseToken === job.lease_token) activeWorkspaceSubagentControllers.delete(job.id);
+  }
+  });
 }

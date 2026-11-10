@@ -111,6 +111,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "assistant_tool_policies",
     "assistant_integration_policies",
     "assistant_builder_runs",
+    "assistant_builder_subagents",
     "assistant_skills",
     "assistant_model_policies",
     "assistant_model_policy_history",
@@ -250,6 +251,31 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
        on "assistant_builder_runs" ("team_id", "coordinator_id", "created_at")`,
     `create index if not exists "assistant_builder_runs_question_idx"
        on "assistant_builder_runs" ("team_id", "coordinator_id", "question_id")`,
+    `create table if not exists "assistant_builder_subagents" (
+       "id" text primary key,
+       "team_id" text not null,
+       "coordinator_id" text not null,
+       "builder_run_id" text not null,
+       "workspace_id" text not null,
+       "specialty" text not null,
+       "objective" text not null,
+       "execution_mode" text not null check ("execution_mode" in ('foreground', 'background')),
+       "file_scope" jsonb not null default '[]'::jsonb,
+       "status" text not null check ("status" in ('queued', 'running', 'completed', 'failed')),
+       "attempts" integer not null default 0,
+       "lease_token" text,
+       "report" text,
+       "error" text,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `alter table "assistant_builder_subagents"
+       add column if not exists "attempts" integer not null default 0,
+       add column if not exists "lease_token" text`,
+    `create index if not exists "assistant_builder_subagents_run_idx"
+       on "assistant_builder_subagents" ("team_id", "builder_run_id", "created_at")`,
+    `create index if not exists "assistant_builder_subagents_queue_idx"
+       on "assistant_builder_subagents" ("status", "created_at")`,
     `create table if not exists "custom_workspaces" (
        "id" text primary key,
        "team_id" text,

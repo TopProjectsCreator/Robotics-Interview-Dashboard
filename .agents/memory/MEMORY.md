@@ -48,7 +48,7 @@
 - [App-level MCP connections](app-level-mcp-connections.md) — keep provider credentials and MCP tools scoped to the signed-in account and active team; don't widen unrelated assistant permissions.
 - [Robotics logo mark](robotics-logo-mark.md) — use the exact production favicon image everywhere; do not redraw the icon or substitute Lucide.
 - [TipTap no-op updates](tiptap-noop-updates.md) — initialization can emit an update with unchanged HTML; only mark content dirty when it differs from the saved value.
-- [AI-built workspaces](ai-built-workspaces.md) — generate arbitrary team workspaces from scratch and isolate their data inside the existing Supabase database.
+- [AI-built workspaces](ai-built-workspaces.md) — isolate custom apps by team; the main builder model selects scoped foreground or read-only background subagents.
 - [Public demo isolation](demo-mode-isolation.md) — disabled queries can still expose cached team data or be manually refetched; guard consumers and side effects too.
 - [Sitemap page scope](sitemap-page-scope.md) — the sitemap lists frontend pages only; API endpoints live in the OpenAPI spec and must not be re-added.
 - [Robolyst product source](robolyst-product-source.md) — use robolyst.org for FTC management and scouting details; robolyst.com is only a tagline page.

@@ -71,6 +71,7 @@ function builderRunFixture(
     question: null,
     answers: {},
     activities: [],
+    subagents: [],
     result: "Builder run complete.",
     error: null,
     createdAt: "2026-10-01T00:00:00.000Z",
@@ -543,6 +544,83 @@ describe("custom workspace builder controls", () => {
     if (path === "/api/custom-workspaces/custom-app-1/versions") return Response.json({ versions: [] });
     return null;
   };
+
+  it("shows persisted background subagent states and reports without coordinator mode controls", async () => {
+    const run = builderRunFixture("run-agents", "running", "Build a custom workspace app for the team.", {
+      subagents: [
+        {
+          id: "agent-running",
+          specialty: "accessibility",
+          objective: "Review keyboard navigation.",
+          executionMode: "background",
+          status: "running",
+          fileScope: [],
+          report: null,
+          error: null,
+          createdAt: "2026-11-09T10:00:00.000Z",
+          updatedAt: "2026-11-09T10:01:00.000Z",
+        },
+        {
+          id: "agent-finished",
+          specialty: "security",
+          objective: "Review data handling.",
+          executionMode: "background",
+          status: "completed",
+          fileScope: [],
+          report: "Saved records are scoped to the current workspace.",
+          error: null,
+          createdAt: "2026-11-09T10:00:00.000Z",
+          updatedAt: "2026-11-09T10:02:00.000Z",
+        },
+        {
+          id: "agent-queued",
+          specialty: "functionality",
+          objective: "Review the saved workflows.",
+          executionMode: "background",
+          status: "queued",
+          fileScope: [],
+          report: null,
+          error: null,
+          createdAt: "2026-11-09T10:00:00.000Z",
+          updatedAt: "2026-11-09T10:00:00.000Z",
+        },
+        {
+          id: "agent-failed",
+          specialty: "responsive_design",
+          objective: "Check the narrow layout.",
+          executionMode: "background",
+          status: "failed",
+          fileScope: [],
+          report: null,
+          error: "The preview service timed out.",
+          createdAt: "2026-11-09T10:00:00.000Z",
+          updatedAt: "2026-11-09T10:03:00.000Z",
+        },
+      ],
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      const shared = respondToManagerLoad(path);
+      if (shared) return shared;
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+
+    expect(await screen.findByTestId("builder-subagents")).toBeInTheDocument();
+    expect(screen.getByTestId("builder-subagent-status-agent-running")).toHaveTextContent("running");
+    expect(screen.getByTestId("builder-subagent-status-agent-finished")).toHaveTextContent("completed");
+    expect(screen.getByTestId("builder-subagent-status-agent-queued")).toHaveTextContent("queued");
+    expect(screen.getByTestId("builder-subagent-status-agent-failed")).toHaveTextContent("failed");
+    fireEvent.click(screen.getByTestId("builder-subagent-report-agent-finished"));
+    expect(screen.getByText("Saved records are scoped to the current workspace.")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("builder-subagent-report-agent-failed"));
+    expect(screen.getByText("The preview service timed out.")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/subagent execution mode/i)).not.toBeInTheDocument();
+  });
 
   it("pauses a run and lets the coordinator continue from its saved draft", async () => {
     const queuedPrompts: string[] = [];

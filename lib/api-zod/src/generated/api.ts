@@ -3670,6 +3670,18 @@ export const QueueCustomWorkspaceBuilderRunResponse = zod.object({
   "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
   "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })),
+  "subagents": zod.array(zod.object({
+  "id": zod.string(),
+  "specialty": zod.string(),
+  "objective": zod.string(),
+  "executionMode": zod.enum(['foreground', 'background']),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "fileScope": zod.array(zod.string()),
+  "report": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
@@ -3705,6 +3717,18 @@ export const ControlAssistantBuilderRunResponse = zod.object({
   "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
   "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })),
+  "subagents": zod.array(zod.object({
+  "id": zod.string(),
+  "specialty": zod.string(),
+  "objective": zod.string(),
+  "executionMode": zod.enum(['foreground', 'background']),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "fileScope": zod.array(zod.string()),
+  "report": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
@@ -3736,6 +3760,18 @@ export const GetAssistantBuilderRunResponse = zod.object({
   "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
   "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
 })),
+  "subagents": zod.array(zod.object({
+  "id": zod.string(),
+  "specialty": zod.string(),
+  "objective": zod.string(),
+  "executionMode": zod.enum(['foreground', 'background']),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "fileScope": zod.array(zod.string()),
+  "report": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),
   "createdAt": zod.coerce.date(),
@@ -3762,6 +3798,18 @@ export const GetLatestAssistantBuilderRunResponse = zod.object({
   "detail": zod.string(),
   "input": zod.string().optional().describe('Redacted, size-limited tool input for coordinator review.'),
   "output": zod.string().optional().describe('Size-limited tool result for coordinator review.')
+})),
+  "subagents": zod.array(zod.object({
+  "id": zod.string(),
+  "specialty": zod.string(),
+  "objective": zod.string(),
+  "executionMode": zod.enum(['foreground', 'background']),
+  "status": zod.enum(['queued', 'running', 'completed', 'failed']),
+  "fileScope": zod.array(zod.string()),
+  "report": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
 })),
   "result": zod.string().nullable(),
   "error": zod.string().nullable(),

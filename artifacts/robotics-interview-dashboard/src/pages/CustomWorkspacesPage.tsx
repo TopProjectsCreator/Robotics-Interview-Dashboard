@@ -468,6 +468,7 @@ export const BUILDER_ACTIVITY_GENERIC_FALLBACK_TOOLS = [
   "suggest_custom_workspace_tools",
   "spawn_workspace_subagent",
   "spawn_workspace_subagent_team",
+  "collect_workspace_subagent_results",
   "ask_user",
 ] as const;
 
@@ -1381,6 +1382,33 @@ export function CustomWorkspacesPage() {
             </span>
             <span className="text-[#60757c] dark:text-[#b3c3cb]">Last updated {new Date(builderRun.updatedAt).toLocaleString()}</span>
           </div>}
+          {!!builderRun?.subagents?.length && <section className="mt-3 rounded-xl border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-3" aria-label="Delegated subagent work" data-testid="builder-subagents">
+            <h4 className="text-xs font-semibold text-[hsl(var(--foreground))]">Delegated agent work</h4>
+            <ul className="mt-2 space-y-2">
+              {builderRun.subagents.map((subagent) => {
+                const statusClass = subagent.status === "completed"
+                  ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200"
+                  : subagent.status === "failed"
+                    ? "bg-red-50 text-red-800 dark:bg-red-950/40 dark:text-red-200"
+                    : "bg-[hsl(var(--muted))] text-[hsl(var(--foreground))]";
+                return <li key={subagent.id} className="rounded-lg border border-[hsl(var(--border))] p-2 text-xs text-[hsl(var(--foreground))]" data-testid={`builder-subagent-${subagent.id}`}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <b className="capitalize">{subagent.specialty.replaceAll("_", " ")}</b>
+                    <span className={`rounded-full px-2 py-0.5 font-semibold ${statusClass}`} data-testid={`builder-subagent-status-${subagent.id}`}>
+                      {subagent.status}
+                    </span>
+                    <span className="text-[hsl(var(--muted-foreground))]">{subagent.executionMode}</span>
+                  </div>
+                  <p className="mt-1 text-[hsl(var(--muted-foreground))]">{subagent.objective}</p>
+                  {(subagent.report || subagent.error) && <details className="mt-2" data-testid={`builder-subagent-report-${subagent.id}`}>
+                    <summary className="cursor-pointer font-medium text-[#16869a] dark:text-[#55c3d1]">View report</summary>
+                    {subagent.report && <p className="mt-1 whitespace-pre-wrap break-words">{subagent.report}</p>}
+                    {subagent.error && <p className="mt-1 whitespace-pre-wrap break-words text-red-800 dark:text-red-200">{subagent.error}</p>}
+                  </details>}
+                </li>;
+              })}
+            </ul>
+          </section>}
           {builderRun && canManage && <div className="mt-3 flex flex-wrap gap-2">
             {["queued", "running"].includes(builderRun.status) && !builderRun.error?.startsWith("Pause requested by the coordinator") && <button
               type="button"

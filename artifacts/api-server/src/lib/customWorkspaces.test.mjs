@@ -196,6 +196,7 @@ async function createHarness(t) {
     verificationRejectOnce: false,
     subagentWriteOnce: false,
     automaticIconGeneration: false,
+    backgroundSubagents: [],
   };
   const savedWorkspaceFiles = new Map(workspaces.map((workspace) => [
     workspace.id,
@@ -227,8 +228,102 @@ async function createHarness(t) {
       };
 
       if (statement.startsWith("select") && statement.includes('from "assistant_builder_runs"')) {
+        if (statement.includes('"coordinator_id" = $3')) {
+          const [runId, teamId, coordinatorId] = values;
+          ensureTeamScope('"team_id"', "$2", teamId);
+          return {
+            rows: runId === "builder-run-b" && teamId === "team-b" && coordinatorId === "coordinator-b"
+              ? [{ id: runId }]
+              : [],
+            rowCount: runId === "builder-run-b" && teamId === "team-b" && coordinatorId === "coordinator-b" ? 1 : 0,
+          };
+        }
         ensureTeamScope('"team_id"', "$1", values[0]);
         return { rows: [], rowCount: 0 };
+      }
+      if (statement.startsWith('insert into "assistant_builder_subagents"')) {
+        const [id, teamId, coordinatorId, builderRunId, workspaceId, specialty, objective] = values;
+        calls.backgroundSubagents.push({
+          id, teamId, coordinatorId, builderRunId, workspaceId, specialty, objective,
+          executionMode: "background", fileScope: [], status: "queued", attempts: 0,
+        });
+        return { rows: [], rowCount: 1 };
+      }
+      if (statement.startsWith('update "assistant_builder_subagents"') && statement.includes('"attempts" >= 3')) {
+        let rowCount = 0;
+        for (const job of calls.backgroundSubagents) {
+          if (job.status === "running" && job.staleAfterRestart) {
+            job.status = job.attempts >= 3 ? "failed" : "queued";
+            job.error = job.attempts >= 3
+              ? "The subagent exceeded the retry limit after server interruptions."
+              : "The server restarted while this read-only subagent was running; its saved task was requeued.";
+            job.leaseToken = null;
+            job.staleAfterRestart = false;
+            rowCount += 1;
+          }
+        }
+        return { rows: [], rowCount };
+      }
+      if (statement.startsWith("with candidate as") && statement.includes('update "assistant_builder_subagents"')) {
+        const job = calls.backgroundSubagents.find((item) => item.status === "queued");
+        if (!job) return { rows: [], rowCount: 0 };
+        job.status = "running";
+        job.leaseToken = values[0];
+        job.attempts += 1;
+        return {
+          rows: [{
+            id: job.id,
+            team_id: job.teamId,
+            coordinator_id: job.coordinatorId,
+            builder_run_id: job.builderRunId,
+            workspace_id: job.workspaceId,
+            specialty: job.specialty,
+            objective: job.objective,
+            lease_token: job.leaseToken,
+          }],
+          rowCount: 1,
+        };
+      }
+      if (statement.startsWith('update "assistant_builder_subagents"') && statement.includes('"report" = $2')) {
+        const job = calls.backgroundSubagents.find((item) => item.id === values[0]);
+        if (job?.status === "running" && job.leaseToken === values[2]) {
+          job.status = "completed";
+          job.report = values[1];
+          job.leaseToken = null;
+        }
+        return { rows: [], rowCount: job?.status === "completed" ? 1 : 0 };
+      }
+      if (statement.startsWith('update "assistant_builder_subagents"') && statement.includes('"error" = $2')) {
+        const job = calls.backgroundSubagents.find((item) => item.id === values[0]);
+        if (job?.status === "running" && job.leaseToken === values[2]) {
+          job.status = "failed";
+          job.error = values[1];
+          job.leaseToken = null;
+        }
+        return { rows: [], rowCount: job?.status === "failed" ? 1 : 0 };
+      }
+      if (statement.startsWith('update "assistant_builder_subagents"') && statement.includes('"status" = \'failed\'')) {
+        const [builderRunId, teamId, coordinatorId, reason] = values;
+        let rowCount = 0;
+        for (const job of calls.backgroundSubagents) {
+          if (job.builderRunId === builderRunId && job.teamId === teamId &&
+            job.coordinatorId === coordinatorId && ["queued", "running"].includes(job.status)) {
+            job.status = "failed";
+            job.error = reason;
+            job.leaseToken = null;
+            rowCount += 1;
+          }
+        }
+        return { rows: [], rowCount };
+      }
+      if (statement.startsWith("select") && statement.includes('from "assistant_builder_subagents"')) {
+        const [teamId, coordinatorId, builderRunId, workspaceId] = values;
+        const rows = calls.backgroundSubagents.filter((job) =>
+          job.teamId === teamId && job.coordinatorId === coordinatorId &&
+          job.builderRunId === builderRunId && job.workspaceId === workspaceId &&
+          ["queued", "running"].includes(job.status),
+        ).map((job) => ({ id: job.id }));
+        return { rows, rowCount: rows.length };
       }
 
       if (statement.startsWith('delete from "custom_workspaces"')) {
@@ -662,7 +757,14 @@ async function createHarness(t) {
     next();
   };
 
-  mock.module("@workspace/db", { namedExports: { DEFAULT_TEAM_ID: "default", pool } });
+  mock.module("@workspace/db", {
+    namedExports: {
+      DEFAULT_TEAM_ID: "default",
+      pool,
+      runWithInstance: (_instance, task) => task(),
+      hasSecondary: () => false,
+    },
+  });
   mock.module("./assistantModel", {
     namedExports: {
       getAssistantModel: async () => "minimax/minimax-m3.1-flash:free",
@@ -1917,7 +2019,11 @@ test("assistant-created custom apps remain drafts owned by the current team", as
     { id: DEFAULT_ASSISTANT_MODEL, isFree: true },
     { id: "provider/other", isFree: true },
   ]), "provider/other");
-  const { runAssistantWorkspaceTool } = await import(`./assistantWorkspaceTools.ts?test=${++importId}`);
+  const {
+    runAssistantWorkspaceTool,
+    dispatchQueuedWorkspaceSubagentJob,
+    cancelWorkspaceSubagentsForBuilderRun,
+  } = await import(`./assistantWorkspaceTools.ts?test=${++importId}`);
   const args = {
     title: "Assistant-created app",
     description: "A private draft",
@@ -2038,6 +2144,147 @@ test("assistant-created custom apps remain drafts owned by the current team", as
     "Added a focused accessibility review.",
     "the subagent must save its own file edit in the authorized draft",
   );
+  const queuedBackground = await runAssistantWorkspaceTool("spawn_workspace_subagent", {
+    workspaceId: createdWorkspace.id,
+    specialty: "security",
+    objective: "Review authorization and data-flow risks.",
+    executionMode: "background",
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    builderRunId: "builder-run-b",
+  });
+  const queuedBackgroundJob = JSON.parse(queuedBackground.content);
+  assert.equal(queuedBackgroundJob.status, "queued");
+  assert.equal(queuedBackgroundJob.executionMode, "background");
+  assert.deepEqual(harness.calls.backgroundSubagents[0], {
+    id: queuedBackgroundJob.id,
+    teamId: "team-b",
+    coordinatorId: "coordinator-b",
+    builderRunId: "builder-run-b",
+    workspaceId: createdWorkspace.id,
+    specialty: "security",
+    objective: "Review authorization and data-flow risks.",
+    executionMode: "background",
+    fileScope: [],
+    status: "queued",
+    attempts: 0,
+  });
+  const prematureCritique = await runAssistantWorkspaceTool("critique_custom_workspace", {
+    workspaceId: createdWorkspace.id,
+    round: 1,
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    builderRunId: "builder-run-b",
+  });
+  assert.equal(prematureCritique.detail, "background subagents still active");
+  const overlappingForeground = await runAssistantWorkspaceTool("spawn_workspace_subagent_team", {
+    workspaceId: createdWorkspace.id,
+    subagents: [
+      { specialty: "functionality", objective: "Review file one.", fileScope: ["src"] },
+      { specialty: "accessibility", objective: "Review nested file.", fileScope: ["src/components"] },
+    ],
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    builderRunId: "builder-run-b",
+  });
+  assert.equal(overlappingForeground.detail, "overlapping file scopes");
+  const queuedTeam = await runAssistantWorkspaceTool("spawn_workspace_subagent_team", {
+    workspaceId: createdWorkspace.id,
+    subagents: [
+      { specialty: "functionality", objective: "Review the main workflows.", executionMode: "background" },
+      { specialty: "responsive_design", objective: "Check narrow viewport behavior.", executionMode: "background" },
+    ],
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    builderRunId: "builder-run-b",
+  });
+  assert.equal(JSON.parse(queuedTeam.content).subagents.length, 2);
+  assert.equal(harness.calls.backgroundSubagents.length, 3);
+  await Promise.all(Array.from({ length: 3 }, () => dispatchQueuedWorkspaceSubagentJob()));
+  assert.deepEqual(
+    harness.calls.backgroundSubagents.map((job) => job.status),
+    ["completed", "completed", "completed"],
+    "parallel queued workers should each claim a distinct durable job",
+  );
+  assert.ok(harness.calls.backgroundSubagents.every((job) => /Created subagent-review\.md/.test(job.report)));
+
+  const staleRequest = await runAssistantWorkspaceTool("spawn_workspace_subagent", {
+    workspaceId: createdWorkspace.id,
+    specialty: "accessibility",
+    objective: "Recheck keyboard navigation after a server restart.",
+    executionMode: "background",
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    builderRunId: "builder-run-b",
+  });
+  const staleJob = harness.calls.backgroundSubagents.find((job) => job.id === JSON.parse(staleRequest.content).id);
+  staleJob.status = "running";
+  staleJob.attempts = 1;
+  staleJob.leaseToken = "lost-worker-lease";
+  staleJob.staleAfterRestart = true;
+  await dispatchQueuedWorkspaceSubagentJob();
+  assert.equal(staleJob.status, "completed", "stale read-only work should be requeued after a restart");
+  assert.equal(staleJob.attempts, 2);
+
+  const failedRequest = await runAssistantWorkspaceTool("spawn_workspace_subagent", {
+    workspaceId: createdWorkspace.id,
+    specialty: "security",
+    objective: "Review access boundaries.",
+    executionMode: "background",
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    builderRunId: "builder-run-b",
+  });
+  const failedJob = harness.calls.backgroundSubagents.find((job) => job.id === JSON.parse(failedRequest.content).id);
+  failedJob.workspaceId = "deleted-draft";
+  await dispatchQueuedWorkspaceSubagentJob();
+  assert.equal(failedJob.status, "failed");
+  assert.match(failedJob.error, /not found/i);
+
+  const readonlyAttempt = await runAssistantWorkspaceTool("write_custom_workspace_file", {
+    workspaceId: createdWorkspace.id,
+    path: "index.html",
+    content: "<main>Should not be written</main>",
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    subagentReadOnly: true,
+  });
+  assert.equal(readonlyAttempt.detail, "read-only scope denied");
+  assert.notEqual(createdWorkspace.html, "<main>Should not be written</main>");
+  const cancelRequest = await runAssistantWorkspaceTool("spawn_workspace_subagent", {
+    workspaceId: createdWorkspace.id,
+    specialty: "security",
+    objective: "Check authorization boundaries.",
+    executionMode: "background",
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    builderRunId: "builder-run-b",
+  });
+  const cancelJob = harness.calls.backgroundSubagents.find((job) => job.id === JSON.parse(cancelRequest.content).id);
+  await cancelWorkspaceSubagentsForBuilderRun(
+    "builder-run-b",
+    "team-b",
+    "coordinator-b",
+    "The parent builder was paused or stopped.",
+  );
+  assert.equal(cancelJob.status, "failed");
+  assert.equal(cancelJob.error, "The parent builder was paused or stopped.");
 
   const queryCount = harness.calls.queries.length;
   const invalid = await runAssistantWorkspaceTool(

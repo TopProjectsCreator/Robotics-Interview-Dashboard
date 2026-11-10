@@ -9,6 +9,7 @@ import type { AssistantActivity } from './assistantActivity';
 import type { AssistantBuilderRunAnswers } from './assistantBuilderRunAnswers';
 import type { AssistantBuilderRunQuestion } from './assistantBuilderRunQuestion';
 import type { AssistantBuilderRunStatus } from './assistantBuilderRunStatus';
+import type { AssistantBuilderSubagent } from './assistantBuilderSubagent';
 
 export interface AssistantBuilderRun {
   id: string;
@@ -18,6 +19,7 @@ export interface AssistantBuilderRun {
   question: AssistantBuilderRunQuestion;
   answers: AssistantBuilderRunAnswers;
   activities: AssistantActivity[];
+  subagents: AssistantBuilderSubagent[];
   /** @nullable */
   result: string | null;
   /** @nullable */

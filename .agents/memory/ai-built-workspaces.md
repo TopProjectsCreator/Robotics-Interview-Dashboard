@@ -45,11 +45,11 @@ Custom workspace artwork must be generated automatically for new apps and backfi
 
 **How to apply:** Generate missing artwork as a bounded background agent task when accessible workspaces are discovered. Skip valid assets and preserve the app's content and published status.
 
-Custom workspace builds reuse the coordinator's existing /assistant MCP connections and relevant enabled team skills; do not build a second connection or skill store. Subagents may directly edit files in their assigned draft using the same team/workspace authorization checks; the primary agent coordinates work and verifies results.
+Custom workspace builds reuse the coordinator's existing /assistant MCP connections and relevant enabled team skills; do not build a second connection or skill store. The main builder model chooses foreground or background execution for each subagent; coordinators do not choose. Foreground agents may edit only disjoint file scopes, while background agents are read-only.
 
-**Why:** The user asked the in-app builder to reuse /assistant's MCP and skill setup and automatically spawn subagents when they help, and clarified that subagents must be able to edit.
+**Why:** The user asked the in-app builder to reuse /assistant's MCP and skill setup and automatically spawn subagents when they help, and clarified that the main model—not the coordinator—chooses whether each agent blocks or continues in the background.
 
-**How to apply:** Keep MCP calls scoped to the signed-in coordinator and team, preserve confirmation before connecting a new MCP, and give each subagent only the assigned draft's file tools plus a bounded objective.
+**How to apply:** Keep MCP calls scoped to the signed-in coordinator and team, preserve confirmation before connecting a new MCP, and give each subagent only the assigned draft's file tools plus a bounded objective. Enforce foreground file scopes server-side and expose persisted background reports without adding a coordinator mode selector.
 
 Assistant-visible workspace actions must be saved, version-aware declarations mapped only to existing server-mediated workspace data operations. Builder suggestions are review-only and stay disabled until a coordinator enables them; never execute generated workspace JavaScript to implement assistant actions.
 

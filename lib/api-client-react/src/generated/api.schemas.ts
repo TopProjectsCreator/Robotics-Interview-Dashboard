@@ -3288,6 +3288,39 @@ export type AssistantBuilderRunQuestion = {
 
 export type AssistantBuilderRunAnswers = { [key: string]: unknown };
 
+export type AssistantBuilderSubagentExecutionMode = typeof AssistantBuilderSubagentExecutionMode[keyof typeof AssistantBuilderSubagentExecutionMode];
+
+
+export const AssistantBuilderSubagentExecutionMode = {
+  foreground: 'foreground',
+  background: 'background',
+} as const;
+
+export type AssistantBuilderSubagentStatus = typeof AssistantBuilderSubagentStatus[keyof typeof AssistantBuilderSubagentStatus];
+
+
+export const AssistantBuilderSubagentStatus = {
+  queued: 'queued',
+  running: 'running',
+  completed: 'completed',
+  failed: 'failed',
+} as const;
+
+export interface AssistantBuilderSubagent {
+  id: string;
+  specialty: string;
+  objective: string;
+  executionMode: AssistantBuilderSubagentExecutionMode;
+  status: AssistantBuilderSubagentStatus;
+  fileScope: string[];
+  /** @nullable */
+  report: string | null;
+  /** @nullable */
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface AssistantBuilderRun {
   id: string;
   status: AssistantBuilderRunStatus;
@@ -3296,6 +3329,7 @@ export interface AssistantBuilderRun {
   question: AssistantBuilderRunQuestion;
   answers: AssistantBuilderRunAnswers;
   activities: AssistantActivity[];
+  subagents: AssistantBuilderSubagent[];
   /** @nullable */
   result: string | null;
   /** @nullable */

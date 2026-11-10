@@ -72,6 +72,28 @@ export const assistantBuilderRunsTable = pgTable("assistant_builder_runs", {
   index("assistant_builder_runs_question_idx").on(table.teamId, table.coordinatorId, table.questionId),
 ]);
 
+export const assistantBuilderSubagentsTable = pgTable("assistant_builder_subagents", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  coordinatorId: text("coordinator_id").notNull(),
+  builderRunId: text("builder_run_id").notNull(),
+  workspaceId: text("workspace_id").notNull(),
+  specialty: text("specialty").notNull(),
+  objective: text("objective").notNull(),
+  executionMode: text("execution_mode").notNull(),
+  fileScope: jsonb("file_scope").$type<string[]>().notNull().default([]),
+  status: text("status").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  leaseToken: text("lease_token"),
+  report: text("report"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("assistant_builder_subagents_run_idx").on(table.teamId, table.builderRunId, table.createdAt),
+  index("assistant_builder_subagents_queue_idx").on(table.status, table.createdAt),
+]);
+
 export const assistantSkillsTable = pgTable("assistant_skills", {
   id: text("id").primaryKey(),
   teamId: text("team_id").notNull(),

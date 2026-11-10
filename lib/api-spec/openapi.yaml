@@ -9331,7 +9331,7 @@ components:
                   additionalProperties: true
     AssistantBuilderRun:
       type: object
-      required: [id, status, prompt, question, answers, activities, result, error, createdAt, updatedAt]
+      required: [id, status, prompt, question, answers, activities, subagents, result, error, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -9358,7 +9358,41 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AssistantActivity"
+        subagents:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistantBuilderSubagent"
         result:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AssistantBuilderSubagent:
+      type: object
+      required: [id, specialty, objective, executionMode, status, fileScope, report, error, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        specialty:
+          type: string
+        objective:
+          type: string
+        executionMode:
+          type: string
+          enum: [foreground, background]
+        status:
+          type: string
+          enum: [queued, running, completed, failed]
+        fileScope:
+          type: array
+          items:
+            type: string
+        report:
           type: ["string", "null"]
         error:
           type: ["string", "null"]

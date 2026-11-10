@@ -63,6 +63,31 @@ test("server prompts preserve saved answers and target the existing draft", () =
   assert.match(continuation, /assets\/icon\.svg/);
 });
 
+test("the builder model selects subagent execution mode and reconciles durable results", async () => {
+  const source = await readFile(routePath, "utf8");
+  const toolSource = await readFile(fileURLToPath(new URL("./assistantWorkspaceTools.ts", import.meta.url)), "utf8");
+  const pageSource = await readFile(builderPagePath, "utf8");
+  const recovery = customWorkspaceRecoveryPrompt(
+    "Build a custom workspace app for the team.",
+    "builder-run-456",
+  );
+
+  assert.match(recovery, /main builder model chooses foreground or background/);
+  assert.match(recovery, /never ask the coordinator to choose/);
+  assert.match(toolSource, /executionMode.*foreground.*background/);
+  assert.match(toolSource, /subagentReadOnly/);
+  assert.match(toolSource, /collect_workspace_subagent_results/);
+  assert.match(toolSource, /runWithInstance\(activeTeamDatabaseInstance\(\)/);
+  assert.match(source, /await waitForBuilderSubagents\(builderRunId, teamId, account\.id/);
+  assert.match(source, /backgroundSubagentFailures\.length/);
+  assert.match(source, /cancelWorkspaceSubagentsForBuilderRun\(/);
+  assert.match(source, /let holdBuilderDeltas = Boolean\(builderRunId\)/);
+  assert.match(source, /assistantBuilderSubagentsTable/);
+  assert.match(pageSource, /builder-subagents/);
+  assert.match(pageSource, /subagent\.report/);
+  assert.doesNotMatch(pageSource, /label="Subagent execution mode"/i);
+});
+
 test("only custom workspace build and revision prompts enter the builder queue", () => {
   assert.equal(isCustomWorkspaceBuilderPrompt("Build a custom workspace app for the team. Requirements: planner"), true);
   assert.equal(isCustomWorkspaceBuilderPrompt("Revise custom workspace draft draft-1. Continue reviews."), true);
