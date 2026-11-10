@@ -1424,6 +1424,86 @@ describe("custom workspace visual publish review", () => {
     }
   });
 
+  it("renders and submits number, date, email, URL, Likert, ranking, and matching questions", async () => {
+    let submittedAnswers: Record<string, unknown> | undefined;
+    const question = {
+      id: "structured-question",
+      questions: [
+        { id: "count", type: "number", title: "How many stations?", min: 1, max: 12, required: true },
+        { id: "date", type: "date", title: "What is the event date?", required: true },
+        { id: "email", type: "email", title: "Contact email?", required: true },
+        { id: "url", type: "url", title: "Team website?", required: true },
+        { id: "scale", type: "likert", title: "How ready is the team?", options: ["Not ready", "Somewhat ready", "Ready"], required: true },
+        { id: "priority", type: "ranking", title: "Rank these priorities", options: ["Safety", "Speed", "Cost"], required: true },
+        { id: "pairs", type: "matching", title: "Match the roles", leftItems: ["Build", "Drive"], rightItems: ["Robot", "Field"], required: true },
+      ],
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") {
+        return Response.json(submittedAnswers ? { run: builderRunFixture("structured-run", "completed", "Build workspace", {
+          answers: submittedAnswers,
+          result: "Draft complete.",
+        }) } : { run: null });
+      }
+      if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
+      if (path === "/api/assistant/questions/structured-question/answer") {
+        submittedAnswers = JSON.parse(String(init?.body)).answers;
+        return Response.json({ submitted: true });
+      }
+      if (path === "/api/assistant/custom-workspace-builder/runs" && init?.method === "POST") {
+        const { question: prompt } = JSON.parse(String(init.body));
+        return Response.json({
+          run: builderRunFixture("structured-run", "waiting_for_answer", prompt, { question, result: null }),
+        }, { status: 201 });
+      }
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomWorkspacesPage />);
+    fireEvent.change(await screen.findByLabelText("What should this workspace do?"), {
+      target: { value: "Collect event details and role assignments" },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Generate draft" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
+    expect(await screen.findByTestId("agent-question-form")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("input-question-count"), { target: { value: "6" } });
+    fireEvent.change(screen.getByTestId("input-question-date"), { target: { value: "2026-11-10" } });
+    fireEvent.change(screen.getByTestId("input-question-email"), { target: { value: "coach@example.org" } });
+    fireEvent.change(screen.getByTestId("input-question-url"), { target: { value: "https://example.org/team" } });
+    fireEvent.click(screen.getByLabelText("Somewhat ready"));
+
+    const ranking = screen.getByTestId("ranking-question-priority");
+    const firstRank = ranking.querySelectorAll("li")[0];
+    const lastRank = ranking.querySelectorAll("li")[2];
+    fireEvent.dragStart(firstRank);
+    fireEvent.dragOver(lastRank);
+    fireEvent.drop(lastRank);
+    fireEvent.click(screen.getByRole("button", { name: "Move Speed down" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm this order" }));
+
+    fireEvent.change(screen.getByLabelText("Match Build"), { target: { value: "Robot" } });
+    fireEvent.change(screen.getByLabelText("Match Drive"), { target: { value: "Field" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
+
+    await waitFor(() => expect(submittedAnswers).toEqual({
+      count: { value: 6 },
+      date: { value: "2026-11-10" },
+      email: { value: "coach@example.org" },
+      url: { value: "https://example.org/team" },
+      scale: { value: "Somewhat ready" },
+      priority: { value: ["Cost", "Speed", "Safety"] },
+      pairs: { value: { Build: "Robot", Drive: "Field" } },
+    }));
+  });
+
   it("sends the catalog-backed MiniMax default with a new workspace request", async () => {
     let submittedModel = "";
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -1465,7 +1545,13 @@ describe("custom workspace visual publish review", () => {
   it("reloads an interrupted question, saves its answer, and shows the recovered result", async () => {
     const question = {
       id: "persisted-question-1",
-      questions: [{ id: "purpose", type: "text", title: "What should the workspace track?", required: true }],
+      questions: [
+        { id: "purpose", type: "text", title: "What should the workspace track?", required: true },
+        { id: "eventDate", type: "date", title: "What is the event date?", required: true },
+        { id: "matchCount", type: "number", title: "How many matches?", min: 1, max: 20, required: true },
+        { id: "priority", type: "ranking", title: "Rank the priorities", options: ["Safety", "Speed", "Cost"], required: true },
+        { id: "roles", type: "matching", title: "Match the roles", leftItems: ["Build", "Drive"], rightItems: ["Robot", "Field"], required: true },
+      ],
     };
     const savedPrompt = "Build a custom workspace app for the team. Requirements: Tryout day schedule.";
     let answer: Record<string, unknown> | null = null;
@@ -1514,10 +1600,20 @@ describe("custom workspace visual publish review", () => {
     fireEvent.change(screen.getByTestId("input-question-purpose"), {
       target: { value: "Interview time slots and room assignments" },
     });
+    fireEvent.change(screen.getByTestId("input-question-eventDate"), { target: { value: "2026-11-10" } });
+    fireEvent.change(screen.getByTestId("input-question-matchCount"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Move Speed up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm this order" }));
+    fireEvent.change(screen.getByLabelText("Match Build"), { target: { value: "Robot" } });
+    fireEvent.change(screen.getByLabelText("Match Drive"), { target: { value: "Field" } });
     fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
 
     await waitFor(() => expect(answer).toEqual({
       purpose: { value: "Interview time slots and room assignments" },
+      eventDate: { value: "2026-11-10" },
+      matchCount: { value: 8 },
+      priority: { value: ["Speed", "Safety", "Cost"] },
+      roles: { value: { Build: "Robot", Drive: "Field" } },
     }));
     expect(await screen.findByTestId("builder-run-result")).toHaveTextContent(
       "The tryout schedule draft is ready for review.",

@@ -425,7 +425,7 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
   ),
   tool(
     "ask_user",
-    "Ask the coordinator for information that blocks correct progress. Batch related questions in one call and use the richest suitable fields: text, single/multiple choice, yes/no, or file uploads. Users can preview and remove files before submitting. Wait for answers before continuing.",
+    "Ask the coordinator for information that blocks correct progress. Batch related questions in one call and choose the clearest type: text, single/multiple choice, yes/no, number, date, email, URL, Likert scale, ranking, matching pairs, or file upload. Number supports optional min/max; Likert uses 2–10 ordered labels in options; ranking uses 2–8 options and asks the coordinator to order all of them; matching uses 2–8 unique leftItems and the same number of unique rightItems, with each right item matched once. File uploads can be previewed and removed. Wait for answers before continuing.",
     {
       questions: {
         type: "array",
@@ -435,11 +435,19 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
           type: "object",
           properties: {
             id: { type: "string", minLength: 1, maxLength: 48 },
-            type: { type: "string", enum: ["text", "singleSelect", "multiSelect", "boolean", "fileUpload"] },
+            type: {
+              type: "string",
+              enum: ["text", "singleSelect", "multiSelect", "boolean", "number", "date", "email", "url", "likert", "ranking", "matching", "fileUpload"],
+              description: "Use number with optional min/max; date for YYYY-MM-DD; email and url for validated addresses; likert with 2–10 labels in options; ranking with 2–8 options; matching with 2–8 unique leftItems and rightItems.",
+            },
             title: { type: "string", minLength: 1, maxLength: 160 },
             required: { type: "boolean" },
             placeholder: { type: "string", maxLength: 240 },
-            options: { type: "array", items: { type: "string", maxLength: 120 }, maxItems: 8 },
+            options: { type: "array", items: { type: "string", maxLength: 120 }, maxItems: 10 },
+            min: { type: "number" },
+            max: { type: "number" },
+            leftItems: { type: "array", items: { type: "string", minLength: 1, maxLength: 120 }, minItems: 2, maxItems: 8 },
+            rightItems: { type: "array", items: { type: "string", minLength: 1, maxLength: 120 }, minItems: 2, maxItems: 8 },
             accept: { type: "string", maxLength: 200 },
             maxFiles: { type: "integer", minimum: 1, maximum: 5 },
           },
@@ -587,11 +595,15 @@ async function hasActiveBackgroundSubagents(context: ToolContext, workspaceId: s
 
 export type AssistantQuestion = {
   id: string;
-  type: "text" | "singleSelect" | "multiSelect" | "boolean" | "fileUpload";
+  type: "text" | "singleSelect" | "multiSelect" | "boolean" | "number" | "date" | "email" | "url" | "likert" | "ranking" | "matching" | "fileUpload";
   title: string;
   required?: boolean;
   placeholder?: string;
   options?: string[];
+  min?: number;
+  max?: number;
+  leftItems?: string[];
+  rightItems?: string[];
   accept?: string;
   maxFiles?: number;
 };
@@ -1957,6 +1969,7 @@ export async function runAssistantWorkspaceTool(
       return { content: "Question prompts are unavailable in this run.", detail: "question tool unavailable" };
     }
     const questions: AssistantQuestion[] = [];
+    const questionIds = new Set<string>();
     for (const candidate of args.questions) {
       if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
         return { content: "Each question must be a structured question object.", detail: "invalid question" };
@@ -1965,20 +1978,70 @@ export async function runAssistantWorkspaceTool(
       const id = typeof item.id === "string" ? item.id.trim().slice(0, 48) : "";
       const title = typeof item.title === "string" ? item.title.trim().slice(0, 160) : "";
       const type = typeof item.type === "string" ? item.type : "";
-      if (!id || !title || !["text", "singleSelect", "multiSelect", "boolean", "fileUpload"].includes(type)) {
+      const supportedTypes = ["text", "singleSelect", "multiSelect", "boolean", "number", "date", "email", "url", "likert", "ranking", "matching", "fileUpload"];
+      if (!id || questionIds.has(id) || !title || !supportedTypes.includes(type)) {
         return { content: "Each question needs an id, title, and supported type.", detail: "invalid question" };
       }
+      questionIds.add(id);
+      const requiredOptionsLimit = type === "likert" ? 10 : type === "ranking" || type === "singleSelect" || type === "multiSelect" ? 8 : undefined;
+      const rawOptions = item.options;
+      if (requiredOptionsLimit !== undefined && (
+        !Array.isArray(rawOptions) ||
+        rawOptions.length < 2 ||
+        rawOptions.length > requiredOptionsLimit ||
+        rawOptions.some((value) => typeof value !== "string" || !value.trim())
+      )) {
+        return {
+          content: type === "likert"
+            ? "Likert questions need two to ten non-empty scale labels."
+            : type === "ranking"
+              ? "Ranking questions need two to eight non-empty options."
+              : "Choice questions need two to eight non-empty options.",
+          detail: "invalid question options",
+        };
+      }
       const options = Array.isArray(item.options)
-        ? item.options.filter((value): value is string => typeof value === "string").map((value) => value.trim().slice(0, 120)).filter(Boolean).slice(0, 8)
+        ? item.options.filter((value): value is string => typeof value === "string").map((value) => value.trim().slice(0, 120)).filter(Boolean).slice(0, 10)
         : undefined;
-      if ((type === "singleSelect" || type === "multiSelect") && (options?.length ?? 0) < 2) {
-        return { content: "Choice questions need at least two options.", detail: "invalid question options" };
+      if (requiredOptionsLimit !== undefined && new Set(options).size !== options?.length) {
+        return { content: "Question options must be unique.", detail: "duplicate question options" };
+      }
+      const validMatchingItems = (value: unknown): value is string[] =>
+        Array.isArray(value) && value.length >= 2 && value.length <= 8 &&
+        value.every((entry) => typeof entry === "string" && Boolean(entry.trim()));
+      if (type === "matching" && (!validMatchingItems(item.leftItems) || !validMatchingItems(item.rightItems))) {
+        return { content: "Matching questions need two to eight non-empty items on each side.", detail: "invalid matching items" };
+      }
+      const leftItems = Array.isArray(item.leftItems)
+        ? item.leftItems.filter((value): value is string => typeof value === "string").map((value) => value.trim().slice(0, 120)).filter(Boolean).slice(0, 8)
+        : undefined;
+      const rightItems = Array.isArray(item.rightItems)
+        ? item.rightItems.filter((value): value is string => typeof value === "string").map((value) => value.trim().slice(0, 120)).filter(Boolean).slice(0, 8)
+        : undefined;
+      if (type === "matching" && (
+        (leftItems?.length ?? 0) < 2 ||
+        leftItems?.length !== rightItems?.length ||
+        new Set(leftItems).size !== leftItems?.length ||
+        new Set(rightItems).size !== rightItems?.length
+      )) {
+        return { content: "Matching questions need two to eight unique items on each side, with equal counts.", detail: "invalid matching items" };
+      }
+      if (
+        (item.min !== undefined && (typeof item.min !== "number" || !Number.isFinite(item.min))) ||
+        (item.max !== undefined && (typeof item.max !== "number" || !Number.isFinite(item.max))) ||
+        (typeof item.min === "number" && typeof item.max === "number" && item.min > item.max)
+      ) {
+        return { content: "Number question bounds must be finite and minimum cannot exceed maximum.", detail: "invalid number bounds" };
       }
       questions.push({
         id, title, type: type as AssistantQuestion["type"],
         ...(item.required === true ? { required: true } : {}),
         ...(typeof item.placeholder === "string" ? { placeholder: item.placeholder.slice(0, 240) } : {}),
         ...(options ? { options } : {}),
+        ...(typeof item.min === "number" ? { min: item.min } : {}),
+        ...(typeof item.max === "number" ? { max: item.max } : {}),
+        ...(leftItems ? { leftItems } : {}),
+        ...(rightItems ? { rightItems } : {}),
         ...(typeof item.accept === "string" ? { accept: item.accept.slice(0, 200) } : {}),
         ...(typeof item.maxFiles === "number" ? { maxFiles: Math.min(5, Math.max(1, Math.floor(item.maxFiles))) } : {}),
       });

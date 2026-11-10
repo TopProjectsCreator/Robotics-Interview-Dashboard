@@ -2064,6 +2064,42 @@ test("assistant-created custom apps remain drafts owned by the current team", as
     }),
   });
   assert.equal(JSON.parse(userAnswers.content).answers.questionCount, 2);
+  let expandedQuestions = [];
+  const expandedQuestionRun = await runAssistantWorkspaceTool("ask_user", {
+    questions: [
+      { id: "count", type: "number", title: "How many?", min: 1, max: 8 },
+      { id: "day", type: "date", title: "Which day?" },
+      { id: "email", type: "email", title: "Contact email?" },
+      { id: "url", type: "url", title: "Team website?" },
+      { id: "scale", type: "likert", title: "How ready?", options: ["Low", "Medium", "High"] },
+      { id: "rank", type: "ranking", title: "Order priorities", options: ["Safety", "Speed", "Cost"] },
+      { id: "pair", type: "matching", title: "Match roles", leftItems: ["Build", "Drive"], rightItems: ["Robot", "Field"] },
+    ],
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    askCoordinator: async (questions) => {
+      expandedQuestions = questions;
+      return { received: questions.length };
+    },
+  });
+  assert.equal(JSON.parse(expandedQuestionRun.content).answers.received, 7);
+  assert.deepEqual(expandedQuestions[0], {
+    id: "count", title: "How many?", type: "number", min: 1, max: 8,
+  });
+  assert.deepEqual(expandedQuestions.at(-1), {
+    id: "pair", title: "Match roles", type: "matching", leftItems: ["Build", "Drive"], rightItems: ["Robot", "Field"],
+  });
+  const invalidQuestion = await runAssistantWorkspaceTool("ask_user", {
+    questions: [{ id: "pair", type: "matching", title: "Match roles", leftItems: ["Build", "Drive"], rightItems: ["Robot"] }],
+  }, {
+    accountId: "coordinator-b",
+    authorName: "Team B coordinator",
+    teamId: "team-b",
+    askCoordinator: async () => ({}),
+  });
+  assert.equal(invalidQuestion.detail, "invalid matching items");
   const initialVersion = harness.versions.find((version) => version.workspaceId === createdWorkspace.id);
   assert.deepEqual(initialVersion.sourceFiles, [
     { path: "index.html", content: "<main>Tracker</main>" },

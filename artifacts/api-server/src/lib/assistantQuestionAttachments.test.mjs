@@ -143,3 +143,74 @@ test("bounds Office archive expansion before parsing", async () => {
     (error) => error instanceof AssistantQuestionAttachmentError && /expands beyond/.test(error.message),
   );
 });
+
+test("normalizes structured builder answers into validated readable values", async () => {
+  const questions = [
+    { id: "seats", type: "number", title: "Seat count", required: true, min: 1, max: 12 },
+    { id: "start", type: "date", title: "Start date", required: true },
+    { id: "contact", type: "email", title: "Contact email", required: true },
+    { id: "site", type: "url", title: "Team site", required: true },
+    { id: "confidence", type: "likert", title: "Confidence", required: true, options: ["Low", "Medium", "High"] },
+    { id: "priority", type: "ranking", title: "Priority", required: true, options: ["Safety", "Speed", "Cost"] },
+    { id: "pairs", type: "matching", title: "Match roles", required: true, leftItems: ["Build", "Drive"], rightItems: ["Robot", "Field"] },
+  ];
+  const answers = await prepareAssistantQuestionAnswers(questions, {
+    seats: { value: 4 },
+    start: { value: "2026-11-10" },
+    contact: { value: "team@example.org" },
+    site: { value: "https://example.org/robotics" },
+    confidence: { value: "Medium" },
+    priority: { value: ["Safety", "Cost", "Speed"] },
+    pairs: { value: { Build: "Robot", Drive: "Field" } },
+    unrecognized: { value: "discarded" },
+  });
+
+  assert.deepEqual(answers, {
+    seats: { value: 4 },
+    start: { value: "2026-11-10" },
+    contact: { value: "team@example.org" },
+    site: { value: "https://example.org/robotics" },
+    confidence: { value: "Medium" },
+    priority: { value: ["Safety", "Cost", "Speed"] },
+    pairs: { value: { Build: "Robot", Drive: "Field" } },
+  });
+});
+
+test("rejects missing, out-of-range, and malformed structured answers", async () => {
+  const questions = [
+    { id: "seats", type: "number", title: "Seat count", required: true, min: 1, max: 12 },
+    { id: "start", type: "date", title: "Start date", required: true },
+    { id: "contact", type: "email", title: "Contact email", required: true },
+    { id: "site", type: "url", title: "Team site", required: true },
+    { id: "priority", type: "ranking", title: "Priority", required: true, options: ["Safety", "Speed", "Cost"] },
+    { id: "pairs", type: "matching", title: "Match roles", required: true, leftItems: ["Build", "Drive"], rightItems: ["Robot", "Field"] },
+  ];
+  for (const [id, value] of [
+    ["seats", 13],
+    ["start", "2026-02-30"],
+    ["contact", "not-an-email"],
+    ["site", "javascript:alert(1)"],
+    ["priority", ["Safety", "Safety", "Cost"]],
+    ["pairs", { Build: "Robot", Drive: "Robot" }],
+  ]) {
+    const invalidAnswers = Object.fromEntries(questions.map((question) => [question.id, {
+      value: question.id === id ? value : question.type === "number" ? 3 :
+        question.type === "date" ? "2026-11-10" :
+          question.type === "email" ? "team@example.org" :
+            question.type === "url" ? "https://example.org" :
+              question.type === "ranking" ? ["Safety", "Speed", "Cost"] : { Build: "Robot", Drive: "Field" },
+    }]));
+    await assert.rejects(
+      prepareAssistantQuestionAnswers(questions, invalidAnswers),
+      (error) => error instanceof AssistantQuestionAttachmentError,
+    );
+  }
+  await assert.rejects(
+    prepareAssistantQuestionAnswers(questions, {}),
+    (error) => error instanceof AssistantQuestionAttachmentError && /Seat count/.test(error.message),
+  );
+  const optionalBlank = await prepareAssistantQuestionAnswers([
+    { id: "count", type: "number", title: "Optional count" },
+  ], { count: { value: null } });
+  assert.deepEqual(optionalBlank, { count: { value: null } });
+});

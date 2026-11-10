@@ -10,6 +10,11 @@ export type AssistantFileQuestion = {
   title?: string;
   required?: boolean;
   maxFiles?: number;
+  options?: string[];
+  min?: number;
+  max?: number;
+  leftItems?: string[];
+  rightItems?: string[];
 };
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -177,14 +182,143 @@ export async function prepareAssistantQuestionAnswers(
   questions: AssistantFileQuestion[],
   rawAnswers: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const answers = { ...rawAnswers };
+  const answers: Record<string, unknown> = {};
   let totalBytes = 0;
   let totalExpandedDocumentBytes = 0;
   let totalFiles = 0;
   for (const question of questions) {
-    if (question.type !== "fileUpload") continue;
     const questionTitle = question.title?.trim() || question.id;
-    const answer = answers[question.id];
+    const answer = rawAnswers[question.id];
+    if (question.type !== "fileUpload") {
+      const answerObject = record(answer);
+      const value = answerObject?.value;
+      const missing = value === undefined || value === null || value === "" ||
+        (typeof value === "string" && value.trim() === "");
+      if (question.required && missing) {
+        throw new AssistantQuestionAttachmentError(`Provide an answer for “${questionTitle}” before submitting.`);
+      }
+      if (answerObject?.comment !== undefined &&
+        (typeof answerObject.comment !== "string" || answerObject.comment.length > 2000)) {
+        throw new AssistantQuestionAttachmentError(`Additional details for “${questionTitle}” were not submitted correctly.`);
+      }
+
+      let normalized: unknown = value;
+      const options = question.options ?? [];
+      switch (question.type) {
+        case "text":
+          if (value !== undefined && value !== null && typeof value !== "string") {
+            throw new AssistantQuestionAttachmentError(`The answer for “${questionTitle}” must be text.`);
+          }
+          break;
+        case "singleSelect":
+          if (value !== undefined && value !== null && value !== "" &&
+            (typeof value !== "string" || !options.includes(value))) {
+            throw new AssistantQuestionAttachmentError(`Choose one of the listed options for “${questionTitle}”.`);
+          }
+          break;
+        case "multiSelect":
+          if (value !== undefined && value !== null && (
+            !Array.isArray(value) ||
+            value.some((item) => typeof item !== "string" || !options.includes(item)) ||
+            new Set(value).size !== value.length
+          )) {
+            throw new AssistantQuestionAttachmentError(`Choose only unique listed options for “${questionTitle}”.`);
+          }
+          if (question.required && (!Array.isArray(value) || value.length === 0)) {
+            throw new AssistantQuestionAttachmentError(`Choose at least one option for “${questionTitle}”.`);
+          }
+          normalized = value ?? [];
+          break;
+        case "boolean":
+          if (value !== undefined && value !== null && value !== "" && value !== "yes" && value !== "no") {
+            throw new AssistantQuestionAttachmentError(`Choose Yes or No for “${questionTitle}”.`);
+          }
+          break;
+        case "number":
+          if (missing) {
+            normalized = null;
+            break;
+          }
+          if (typeof value !== "number" || !Number.isFinite(value) ||
+            (question.min !== undefined && value < question.min) ||
+            (question.max !== undefined && value > question.max)) {
+            throw new AssistantQuestionAttachmentError(`Enter a valid number${question.min !== undefined || question.max !== undefined
+              ? ` between ${question.min ?? "any value"} and ${question.max ?? "any value"}`
+              : ""} for “${questionTitle}”.`);
+          }
+          break;
+        case "date": {
+          if (missing) break;
+          if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+            throw new AssistantQuestionAttachmentError(`Enter a valid date for “${questionTitle}”.`);
+          }
+          const parsed = new Date(`${value}T00:00:00.000Z`);
+          if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+            throw new AssistantQuestionAttachmentError(`Enter a valid date for “${questionTitle}”.`);
+          }
+          break;
+        }
+        case "email":
+          if (missing) break;
+          if (typeof value !== "string" || value.length > 254 ||
+            !/^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(value)) {
+            throw new AssistantQuestionAttachmentError(`Enter a valid email address for “${questionTitle}”.`);
+          }
+          break;
+        case "url":
+          if (missing) break;
+          try {
+            const parsed = new URL(String(value));
+            if (!["http:", "https:"].includes(parsed.protocol) || typeof value !== "string") throw new Error();
+          } catch {
+            throw new AssistantQuestionAttachmentError(`Enter a valid http or https URL for “${questionTitle}”.`);
+          }
+          break;
+        case "likert":
+          if (!missing && (typeof value !== "string" || !options.includes(value))) {
+            throw new AssistantQuestionAttachmentError(`Choose one of the scale labels for “${questionTitle}”.`);
+          }
+          normalized = missing ? null : value;
+          break;
+        case "ranking":
+          if (!missing && (
+            !Array.isArray(value) ||
+            value.length !== options.length ||
+            value.some((item) => typeof item !== "string" || !options.includes(item)) ||
+            new Set(value).size !== options.length
+          )) {
+            throw new AssistantQuestionAttachmentError(`Put every option in order for “${questionTitle}”.`);
+          }
+          normalized = missing ? null : value;
+          break;
+        case "matching": {
+          const leftItems = question.leftItems ?? [];
+          const rightItems = question.rightItems ?? [];
+          const matching = record(value);
+          if (!missing && (
+            !matching ||
+            Object.keys(matching).length !== leftItems.length ||
+            leftItems.some((item) => typeof matching[item] !== "string" || !rightItems.includes(matching[item] as string)) ||
+            new Set(Object.values(matching)).size !== rightItems.length
+          )) {
+            throw new AssistantQuestionAttachmentError(`Match every item exactly once for “${questionTitle}”.`);
+          }
+          if (!missing && matching) {
+            normalized = Object.fromEntries(leftItems.map((item) => [item, matching[item]]));
+          } else {
+            normalized = null;
+          }
+          break;
+        }
+        default:
+          throw new AssistantQuestionAttachmentError(`The question type for “${questionTitle}” is not supported.`);
+      }
+      answers[question.id] = {
+        value: normalized ?? (question.type === "text" || question.type === "singleSelect" || question.type === "boolean" ? "" : null),
+        ...(typeof answerObject?.comment === "string" && answerObject.comment ? { comment: answerObject.comment } : {}),
+      };
+      continue;
+    }
     const uploads = answer === undefined || answer === null ? [] : answer;
     if (!Array.isArray(uploads)) {
       throw new AssistantQuestionAttachmentError(`Attachments for “${questionTitle}” were not submitted correctly.`);

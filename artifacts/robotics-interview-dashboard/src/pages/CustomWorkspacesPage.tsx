@@ -54,7 +54,20 @@ type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; 
 type PublishAgentStep = { id: string; label: string; detail?: string; input?: string; output?: string; tool?: string; status: "running" | "done" | "failed" };
 type AgentQuestion = {
   id: string;
-  questions: { id: string; type: "text" | "singleSelect" | "multiSelect" | "boolean" | "fileUpload"; title: string; required?: boolean; placeholder?: string; options?: string[]; accept?: string; maxFiles?: number }[];
+  questions: {
+    id: string;
+    type: "text" | "singleSelect" | "multiSelect" | "boolean" | "number" | "date" | "email" | "url" | "likert" | "ranking" | "matching" | "fileUpload";
+    title: string;
+    required?: boolean;
+    placeholder?: string;
+    options?: string[];
+    min?: number;
+    max?: number;
+    leftItems?: string[];
+    rightItems?: string[];
+    accept?: string;
+    maxFiles?: number;
+  }[];
 };
 type BuilderRunFromApi = NonNullable<AssistantBuilderRunResponse["run"]>;
 type BuilderRun = Omit<BuilderRunFromApi, "question"> & { question: AgentQuestion | null };
@@ -97,6 +110,7 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
   const [fileSelectionIssues, setFileSelectionIssues] = useState<Record<string, string>>({});
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [draggedRanking, setDraggedRanking] = useState<{ questionId: string; option: string } | null>(null);
   const previewUrls = useRef(new Set<string>());
   useEffect(() => () => previewUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   const selectedFiles = Object.values(files).flat();
@@ -134,11 +148,56 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
             throw new Error(`${file.name} is not a supported attachment.`);
           }));
         } else {
-          const value = item.type === "multiSelect"
-            ? (Array.isArray(values[item.id]) ? values[item.id] : [])
-            : values[item.id] ?? "";
-          if (item.required && item.type === "multiSelect" && (value as unknown[]).length === 0) {
-            throw new Error(`Choose at least one option for “${item.title}”.`);
+          let value: unknown = values[item.id];
+          if (item.type === "multiSelect") value = Array.isArray(value) ? value : [];
+          if (item.type === "number") {
+            const rawNumber = String(value ?? "").trim();
+            value = rawNumber === "" ? null : Number(rawNumber);
+            if (value !== null && (!Number.isFinite(value) ||
+              (item.min !== undefined && (value as number) < item.min) ||
+              (item.max !== undefined && (value as number) > item.max))) {
+              throw new Error(`Enter a valid number${item.min !== undefined || item.max !== undefined
+                ? ` between ${item.min ?? "any value"} and ${item.max ?? "any value"}`
+                : ""} for “${item.title}”.`);
+            }
+          }
+          if (item.type === "email" && value && (typeof value !== "string" || !/^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/.test(value))) {
+            throw new Error(`Enter a valid email address for “${item.title}”.`);
+          }
+          if (item.type === "url" && value) {
+            try {
+              const parsed = new URL(String(value));
+              if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+            } catch {
+              throw new Error(`Enter a valid http or https URL for “${item.title}”.`);
+            }
+          }
+          if (item.type === "ranking" && value !== undefined &&
+            (!Array.isArray(value) || value.length !== item.options?.length || new Set(value).size !== item.options?.length)) {
+            throw new Error(`Put every option in order for “${item.title}”.`);
+          }
+          if (item.type === "matching" && value !== undefined) {
+            const mapping = value as Record<string, unknown>;
+            const leftItems = item.leftItems ?? [];
+            const rightItems = item.rightItems ?? [];
+            if (!mapping || typeof mapping !== "object" || leftItems.some((left) => typeof mapping[left] !== "string") ||
+              new Set(Object.values(mapping)).size !== rightItems.length) {
+              throw new Error(`Match every item exactly once for “${item.title}”.`);
+            }
+          }
+          const unanswered = value === undefined || value === null || value === "" ||
+            (Array.isArray(value) && value.length === 0) ||
+            (item.type === "matching" && value && Object.values(value as Record<string, unknown>).some((entry) => !entry));
+          if (item.required && unanswered) {
+            if (item.type === "multiSelect") throw new Error(`Choose at least one option for “${item.title}”.`);
+            if (item.type === "ranking") throw new Error(`Confirm the order for “${item.title}”.`);
+            if (item.type === "matching") throw new Error(`Match every item for “${item.title}”.`);
+            throw new Error(`Provide an answer for “${item.title}”.`);
+          }
+          if (item.type === "number" && value === null) {
+            // Keep optional empty numbers explicit and JSON-safe.
+          } else if (value === undefined) {
+            value = item.type === "multiSelect" ? [] : item.type === "ranking" || item.type === "matching" ? null : "";
           }
           answers[item.id] = {
             value,
@@ -158,9 +217,88 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
     {question.questions.map((item) => <fieldset key={item.id} className="space-y-2" data-testid={`agent-question-${item.id}`}>
       <legend className="text-sm font-medium text-[hsl(var(--foreground))]">{item.title}{item.required && <span aria-label="required"> *</span>}</legend>
       {item.type === "text" && <textarea required={item.required} value={String(values[item.id] ?? "")} onChange={(event) => setValues((old) => ({ ...old, [item.id]: event.target.value }))} placeholder={item.placeholder} rows={3} className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-base md:text-sm text-[hsl(var(--foreground))]" data-testid={`input-question-${item.id}`} />}
+      {(item.type === "number" || item.type === "date" || item.type === "email" || item.type === "url") && <input
+        type={item.type}
+        required={item.required}
+        min={item.type === "number" ? item.min : undefined}
+        max={item.type === "number" ? item.max : undefined}
+        step={item.type === "number" ? "any" : undefined}
+        value={String(values[item.id] ?? "")}
+        onChange={(event) => setValues((old) => ({ ...old, [item.id]: event.target.value }))}
+        placeholder={item.placeholder}
+        className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-base md:text-sm text-[hsl(var(--foreground))]"
+        data-testid={`input-question-${item.id}`}
+      />}
       {item.type === "singleSelect" && <div className="grid gap-2 sm:grid-cols-2">{item.options?.map((option) => <label key={option} className="flex gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-sm"><input type="radio" name={item.id} required={item.required} checked={values[item.id] === option} onChange={() => setValues((old) => ({ ...old, [item.id]: option }))} />{option}</label>)}</div>}
       {item.type === "multiSelect" && <div className="grid gap-2 sm:grid-cols-2">{item.options?.map((option) => <label key={option} className="flex gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-sm"><input type="checkbox" checked={(values[item.id] as string[] | undefined)?.includes(option) ?? false} onChange={(event) => setValues((old) => { const current = (old[item.id] as string[] | undefined) ?? []; return { ...old, [item.id]: event.target.checked ? [...current, option] : current.filter((value) => value !== option) }; })} />{option}</label>)}</div>}
       {item.type === "boolean" && <div className="flex gap-4">{[["yes", "Yes"], ["no", "No"]].map(([value, label]) => <label key={value} className="flex items-center gap-2 text-sm"><input type="radio" name={item.id} required={item.required} checked={values[item.id] === value} onChange={() => setValues((old) => ({ ...old, [item.id]: value }))} />{label}</label>)}</div>}
+      {item.type === "likert" && <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3" role="radiogroup" aria-label={item.title} data-testid={`likert-question-${item.id}`}>
+        {(item.options ?? []).map((option) => <label key={option} className="flex min-h-11 items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-sm text-[hsl(var(--foreground))]">
+          <input type="radio" name={item.id} required={item.required} checked={values[item.id] === option} onChange={() => setValues((old) => ({ ...old, [item.id]: option }))} />
+          <span>{option}</span>
+        </label>)}
+      </div>}
+      {item.type === "ranking" && <div className="space-y-2" data-testid={`ranking-question-${item.id}`}>
+        <p className="text-xs text-[hsl(var(--muted-foreground))]">Drag items to reorder, or use the move buttons. First is highest priority.</p>
+        <ol className="space-y-2">
+          {(() => {
+            const options = (Array.isArray(values[item.id]) ? values[item.id] as string[] : item.options ?? []);
+            const move = (from: number, to: number) => {
+              if (to < 0 || to >= options.length) return;
+              const reordered = [...options];
+              const [moved] = reordered.splice(from, 1);
+              reordered.splice(to, 0, moved);
+              setValues((old) => ({ ...old, [item.id]: reordered }));
+            };
+            return options.map((option, index) => <li
+              key={option}
+              draggable
+              onDragStart={() => setDraggedRanking({ questionId: item.id, option })}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault();
+                if (draggedRanking?.questionId === item.id) {
+                  const from = options.indexOf(draggedRanking.option);
+                  if (from >= 0) move(from, index);
+                }
+                setDraggedRanking(null);
+              }}
+              onDragEnd={() => setDraggedRanking(null)}
+              className="flex min-w-0 items-center gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-sm text-[hsl(var(--foreground))]"
+            >
+              <span aria-hidden="true" className="select-none text-[hsl(var(--muted-foreground))]">⋮⋮</span>
+              <span className="min-w-0 flex-1">{index + 1}. {option}</span>
+              <button type="button" disabled={index === 0} onClick={() => move(index, index - 1)} aria-label={`Move ${option} up`} className="rounded border border-[hsl(var(--border))] px-2 py-1 disabled:opacity-40">↑</button>
+              <button type="button" disabled={index === options.length - 1} onClick={() => move(index, index + 1)} aria-label={`Move ${option} down`} className="rounded border border-[hsl(var(--border))] px-2 py-1 disabled:opacity-40">↓</button>
+            </li>);
+          })()}
+        </ol>
+        <button type="button" onClick={() => setValues((old) => ({ ...old, [item.id]: Array.isArray(old[item.id]) ? old[item.id] : [...(item.options ?? [])] }))} className="rounded border border-[hsl(var(--border))] px-3 py-2 text-xs font-medium text-[hsl(var(--foreground))]">
+          Confirm this order
+        </button>
+      </div>}
+      {item.type === "matching" && <div className="space-y-2" data-testid={`matching-question-${item.id}`}>
+        {(item.leftItems ?? []).map((left) => {
+          const mapping = (values[item.id] && typeof values[item.id] === "object" ? values[item.id] : {}) as Record<string, string>;
+          const usedElsewhere = Object.entries(mapping).filter(([key]) => key !== left).map(([, value]) => value);
+          return <label key={left} className="grid min-w-0 gap-2 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-3 text-sm text-[hsl(var(--foreground))] sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] sm:items-center">
+            <span className="break-words">{left}</span>
+            <select
+              aria-label={`Match ${left}`}
+              required={item.required}
+              value={mapping[left] ?? ""}
+              onChange={(event) => setValues((old) => ({
+                ...old,
+                [item.id]: { ...((old[item.id] as Record<string, string> | undefined) ?? {}), [left]: event.target.value },
+              }))}
+              className="w-full min-w-0 rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--background))] p-2 text-base md:text-sm text-[hsl(var(--foreground))]"
+            >
+              <option value="">Choose a match</option>
+              {(item.rightItems ?? []).map((right) => <option key={right} value={right} disabled={usedElsewhere.includes(right)}>{right}</option>)}
+            </select>
+          </label>;
+        })}
+      </div>}
       {(item.type === "singleSelect" || item.type === "multiSelect") && <textarea value={comments[item.id] ?? ""} onChange={(event) => setComments((old) => ({ ...old, [item.id]: event.target.value }))} rows={2} placeholder="Additional details (optional)" className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-base md:text-sm" />}
       {item.type === "fileUpload" && <>
         <input type="file" accept={item.accept ?? ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.html,.htm,.css,.js,.ts,image/*"} multiple={(item.maxFiles ?? 1) > 1} required={item.required && !(files[item.id]?.length)} onChange={(event) => {
