@@ -447,7 +447,7 @@ function builderActivityLabel(activity: BuilderRun["activities"][number]): strin
   return tool;
 }
 
-const builderActivityIcons: Record<string, { Icon: LucideIcon; name: string }> = {
+export const builderActivityIcons: Record<string, { Icon: LucideIcon; name: string }> = {
   create_custom_workspace: { Icon: PanelsTopLeft, name: "workspace-create" },
   list_custom_workspaces: { Icon: Files, name: "workspace-list" },
   delete_custom_workspace: { Icon: Trash2, name: "workspace-delete" },
@@ -463,6 +463,13 @@ const builderActivityIcons: Record<string, { Icon: LucideIcon; name: string }> =
   verify_custom_workspace_fixes: { Icon: ClipboardCheck, name: "review" },
   assistant_progress: { Icon: MessageSquareText, name: "progress" },
 };
+
+export const BUILDER_ACTIVITY_GENERIC_FALLBACK_TOOLS = [
+  "suggest_custom_workspace_tools",
+  "spawn_workspace_subagent",
+  "spawn_workspace_subagent_team",
+  "ask_user",
+] as const;
 
 function builderActivityIcon(tool?: string): { Icon: LucideIcon; name: string } {
   return builderActivityIcons[tool ?? ""] ?? { Icon: Wrench, name: "fallback" };

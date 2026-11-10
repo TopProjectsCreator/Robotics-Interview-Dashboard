@@ -1,7 +1,30 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import assistantWorkspaceToolsSource from "../../../api-server/src/lib/assistantWorkspaceTools.ts?raw";
 
-import { CustomWorkspacesPage } from "./CustomWorkspacesPage";
+import {
+  BUILDER_ACTIVITY_GENERIC_FALLBACK_TOOLS,
+  builderActivityIcons,
+  CustomWorkspacesPage,
+} from "./CustomWorkspacesPage";
+
+function customWorkspaceBuilderToolCatalog(): string[] {
+  const source = assistantWorkspaceToolsSource;
+  const catalogStart = source.indexOf("export const ASSISTANT_WORKSPACE_TOOLS = [");
+  const catalogEnd = source.indexOf("] as const;", catalogStart);
+  if (catalogStart < 0 || catalogEnd < 0) {
+    throw new Error("Could not locate the assistant workspace tool catalog.");
+  }
+
+  const names = [...source.slice(catalogStart, catalogEnd).matchAll(/\btool\s*\(\s*"([^"]+)"/g)]
+    .map((match) => match[1]);
+  const firstBuilderTool = names.indexOf("list_custom_workspaces");
+  const lastBuilderTool = names.indexOf("preview_custom_workspace");
+  if (firstBuilderTool < 0 || lastBuilderTool < firstBuilderTool) {
+    throw new Error("Could not locate the custom-workspace builder tools in the assistant catalog.");
+  }
+  return names.slice(firstBuilderTool, lastBuilderTool + 1);
+}
 
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
@@ -72,6 +95,31 @@ afterEach(() => {
   } else {
     Reflect.deleteProperty(navigator, "clipboard");
   }
+});
+
+describe("custom workspace builder activity icons", () => {
+  it("gives every server builder tool a specific icon or an explicit generic fallback", () => {
+    const catalogTools = customWorkspaceBuilderToolCatalog();
+    const catalogToolSet = new Set(catalogTools);
+    const specificIconTools = Object.keys(builderActivityIcons).filter((tool) => tool !== "assistant_progress");
+    const specificIconToolSet = new Set<string>(specificIconTools);
+    const genericFallbackTools = [...BUILDER_ACTIVITY_GENERIC_FALLBACK_TOOLS];
+    const genericFallbackToolSet = new Set<string>(genericFallbackTools);
+    const missingIconDecisions = catalogTools.filter((tool) =>
+      !specificIconToolSet.has(tool) && !genericFallbackToolSet.has(tool));
+    const overlappingDecisions = genericFallbackTools.filter((tool) => specificIconToolSet.has(tool));
+    const unlistedFallbacks = genericFallbackTools.filter((tool) => !catalogToolSet.has(tool));
+    const iconsForUnknownTools = specificIconTools.filter((tool) => !catalogToolSet.has(tool));
+
+    expect(
+      missingIconDecisions,
+      `Every custom-workspace builder action needs a specific icon or an explicit generic fallback. Missing: ${missingIconDecisions.join(", ")}`,
+    ).toEqual([]);
+    expect(overlappingDecisions, "A builder action cannot be both specifically mapped and listed as a generic fallback.").toEqual([]);
+    expect(unlistedFallbacks, "Generic fallback entries must exist in the server builder tool catalog.").toEqual([]);
+    expect(iconsForUnknownTools, "Specific builder icons must correspond to a server tool.").toEqual([]);
+    expect(builderActivityIcons).toHaveProperty("assistant_progress");
+  });
 });
 
 describe("custom workspace access settings", () => {
