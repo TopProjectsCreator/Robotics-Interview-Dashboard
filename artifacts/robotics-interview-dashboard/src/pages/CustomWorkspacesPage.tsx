@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, Check, Code2, Copy, LoaderCircle, MoveDown, MoveUp, Pause, Plus, Rocket, Sparkles, Square, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ClipboardCheck, Code2, Copy, Eye, FilePenLine, FilePlus, FileSearch, Files, FileSymlink, LoaderCircle, MessageSquareText, MoveDown, MoveUp, PanelsTopLeft, Pause, Plus, Rocket, Sparkles, Square, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { hasPermission } from "@workspace/api-zod";
@@ -51,7 +51,7 @@ type WorkspaceAssistantTool = {
 };
 type BuilderModel = { id: string; name?: string };
 type BridgeRequest = { channel: "workspace-bridge"; id: string; method: string; payload?: unknown };
-type PublishAgentStep = { id: string; label: string; detail?: string; input?: string; output?: string; status: "running" | "done" | "failed" };
+type PublishAgentStep = { id: string; label: string; detail?: string; input?: string; output?: string; tool?: string; status: "running" | "done" | "failed" };
 type AgentQuestion = {
   id: string;
   questions: { id: string; type: "text" | "singleSelect" | "multiSelect" | "boolean" | "fileUpload"; title: string; required?: boolean; placeholder?: string; options?: string[]; accept?: string; maxFiles?: number }[];
@@ -447,6 +447,27 @@ function builderActivityLabel(activity: BuilderRun["activities"][number]): strin
   return tool;
 }
 
+const builderActivityIcons: Record<string, { Icon: LucideIcon; name: string }> = {
+  create_custom_workspace: { Icon: PanelsTopLeft, name: "workspace-create" },
+  list_custom_workspaces: { Icon: Files, name: "workspace-list" },
+  delete_custom_workspace: { Icon: Trash2, name: "workspace-delete" },
+  list_custom_workspace_files: { Icon: Files, name: "file-list" },
+  read_custom_workspace_file: { Icon: FileSearch, name: "file-read" },
+  create_custom_workspace_file: { Icon: FilePlus, name: "file-create" },
+  write_custom_workspace_file: { Icon: FilePenLine, name: "file-edit" },
+  patch_custom_workspace_file: { Icon: FilePenLine, name: "file-edit" },
+  delete_custom_workspace_file: { Icon: Trash2, name: "file-delete" },
+  rename_custom_workspace_file: { Icon: FileSymlink, name: "file-rename" },
+  preview_custom_workspace: { Icon: Eye, name: "preview" },
+  critique_custom_workspace: { Icon: ClipboardCheck, name: "review" },
+  verify_custom_workspace_fixes: { Icon: ClipboardCheck, name: "review" },
+  assistant_progress: { Icon: MessageSquareText, name: "progress" },
+};
+
+function builderActivityIcon(tool?: string): { Icon: LucideIcon; name: string } {
+  return builderActivityIcons[tool ?? ""] ?? { Icon: Wrench, name: "fallback" };
+}
+
 function builderRunSteps(run: BuilderRun): PublishAgentStep[] {
   const activities = run.activities;
   return activities.map((activity, index) => ({
@@ -455,6 +476,7 @@ function builderRunSteps(run: BuilderRun): PublishAgentStep[] {
     detail: activity.detail,
     input: activity.input,
     output: activity.output,
+    tool: activity.tool,
     status: "done",
   }));
 }
@@ -633,6 +655,7 @@ export function CustomWorkspacesPage() {
           detail: activity.detail,
           input: activity.input,
           output: activity.output,
+          tool: activity.tool,
           status: "done" as const,
         })));
         if (savedSteps.length) setPublishAgentSteps((steps) => mergeBuilderRunSteps(steps, savedSteps));
@@ -1373,16 +1396,27 @@ export function CustomWorkspacesPage() {
           </div>}
           {builderRun?.error && <p className="mt-2 text-xs text-amber-800 dark:text-amber-200">{builderRun.error}</p>}
           <ol className="mt-2 space-y-2">
-            {publishAgentSteps.map((step) => <li key={step.id} className="flex items-start gap-2 text-xs text-[hsl(var(--foreground))]">
-              <span aria-hidden="true" className={`mt-1 h-2 w-2 shrink-0 rounded-full ${step.status === "done" ? "bg-emerald-500" : step.status === "failed" ? "bg-red-500" : "animate-pulse bg-[#16869a]"}`} />
-              <span className="min-w-0 flex-1"><b>{step.label}</b>{step.detail && <span className="ml-1 text-[#60757c] dark:text-[#b3c3cb]">{step.detail}</span>}
-                {(step.input || step.output) && <details className="mt-1" open>
-                  <summary className="cursor-pointer text-[11px] font-medium text-[#16869a]">Tool call details</summary>
-                  {step.input && <><span className="mt-1 block font-semibold">Input</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[hsl(var(--muted))] p-2">{step.input}</pre></>}
-                  {step.output && <><span className="mt-1 block font-semibold">Result</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[hsl(var(--muted))] p-2">{step.output}</pre></>}
-                </details>}
-              </span>
-            </li>)}
+            {publishAgentSteps.map((step) => {
+              const { Icon, name } = builderActivityIcon(step.tool);
+              return <li key={step.id} className="flex items-start gap-2 text-xs text-[hsl(var(--foreground))]">
+                <span
+                  className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center ${step.status === "done" ? "text-emerald-700 dark:text-emerald-300" : step.status === "failed" ? "text-red-700 dark:text-red-300" : "animate-pulse text-[#16869a] dark:text-[#55c3d1]"}`}
+                  data-testid={`builder-activity-status-${step.id}`}
+                  data-status={step.status}
+                  data-tool={step.tool ?? ""}
+                >
+                  <Icon aria-hidden="true" data-icon={name} size={15} strokeWidth={2.25} />
+                  <span className="sr-only">{step.status === "done" ? "Completed" : step.status === "failed" ? "Failed" : "In progress"}</span>
+                </span>
+                <span className="min-w-0 flex-1"><b>{step.label}</b>{step.detail && <span className="ml-1 text-[#60757c] dark:text-[#b3c3cb]">{step.detail}</span>}
+                  {(step.input || step.output) && <details className="mt-1" open>
+                    <summary className="cursor-pointer text-[11px] font-medium text-[#16869a]">Tool call details</summary>
+                    {step.input && <><span className="mt-1 block font-semibold">Input</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[hsl(var(--muted))] p-2">{step.input}</pre></>}
+                    {step.output && <><span className="mt-1 block font-semibold">Result</span><pre className="max-h-32 overflow-auto whitespace-pre-wrap break-words rounded bg-[hsl(var(--muted))] p-2">{step.output}</pre></>}
+                  </details>}
+                </span>
+              </li>;
+            })}
           </ol>
           {agentQuestion && !["paused", "cancelled"].includes(builderRun?.status ?? "") && <AgentQuestionCard question={agentQuestion} onSubmit={async (answers) => {
             await request(`/api/assistant/questions/${encodeURIComponent(agentQuestion.id)}/answer`, {

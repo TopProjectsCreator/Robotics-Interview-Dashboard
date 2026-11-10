@@ -1028,6 +1028,18 @@ describe("custom workspace visual publish review", () => {
               { tool: "create_custom_workspace", detail: "created custom workspace draft", input: "{\"title\":\"Parts tracker\"}", output: "{\"id\":\"new-workspace\"}" },
               { tool: "create_custom_workspace_file", detail: "created index.html", input: "{\"path\":\"index.html\"}", output: "Created index.html." },
               { tool: "assistant_progress", detail: "Reviewed the tool results and prepared the next action." },
+              { tool: "list_custom_workspace_files", detail: "Listed workspace files." },
+              { tool: "read_custom_workspace_file", detail: "Read index.html." },
+              { tool: "write_custom_workspace_file", detail: "Updated index.html." },
+              { tool: "patch_custom_workspace_file", detail: "Patched styles.css." },
+              { tool: "delete_custom_workspace_file", detail: "Deleted unused.css." },
+              { tool: "rename_custom_workspace_file", detail: "Renamed app.js." },
+              { tool: "preview_custom_workspace", detail: "Previewed draft." },
+              { tool: "critique_custom_workspace", detail: "Review round 1.", input: "{\"round\":1}" },
+              { tool: "verify_custom_workspace_fixes", detail: "Verified round 1.", input: "{\"round\":1}" },
+              { tool: "list_custom_workspaces", detail: "Listed team workspaces." },
+              { tool: "delete_custom_workspace", detail: "Deleted a workspace." },
+              { tool: "custom_unknown_action", detail: "Ran an unrecognized action." },
             ],
           }),
         }, { status: 201 });
@@ -1060,7 +1072,69 @@ describe("custom workspace visual publish review", () => {
     expect(screen.getByText("Created index.html.")).toBeInTheDocument();
     expect(screen.getByText("Progress update")).toBeInTheDocument();
     expect(screen.getByText("Reviewed the tool results and prepared the next action.")).toBeInTheDocument();
+    const expectedIcons = [
+      ["run-generated-run-0", "workspace-create"],
+      ["run-generated-run-1", "file-create"],
+      ["run-generated-run-2", "progress"],
+      ["run-generated-run-3", "file-list"],
+      ["run-generated-run-4", "file-read"],
+      ["run-generated-run-5", "file-edit"],
+      ["run-generated-run-6", "file-edit"],
+      ["run-generated-run-7", "file-delete"],
+      ["run-generated-run-8", "file-rename"],
+      ["run-generated-run-9", "preview"],
+      ["run-generated-run-10", "review"],
+      ["run-generated-run-11", "review"],
+      ["run-generated-run-12", "workspace-list"],
+      ["run-generated-run-13", "workspace-delete"],
+      ["run-generated-run-14", "fallback"],
+    ];
+    for (const [stepId, iconName] of expectedIcons) {
+      const status = screen.getByTestId(`builder-activity-status-${stepId}`);
+      expect(status).toHaveAttribute("data-status", "done");
+      expect(status).toHaveTextContent("Completed");
+      expect(status.querySelector("svg")).toHaveAttribute("data-icon", iconName);
+      expect(status.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+      expect(status).toHaveClass("text-emerald-700", "dark:text-emerald-300");
+    }
+    expect(screen.getByTestId("publish-agent-activity")).toHaveTextContent("Review round 1 · critique custom workspace");
+    expect(screen.getByTestId("publish-agent-activity")).toHaveTextContent("Ran an unrecognized action.");
     expect(screen.getByText("Review progress and tool calls are shown here. Private internal reasoning is not displayed. Publishing is available after all five review rounds are independently verified.")).toBeInTheDocument();
+  });
+
+  it("keeps running and failed status colors and accessible status text on activity icons", async () => {
+    let rejectQueuedRun!: (reason: Error) => void;
+    const queuedRun = new Promise<Response>((_resolve, reject) => { rejectQueuedRun = reject; });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs/latest") return Response.json({ run: null });
+      if (path === "/api/assistant/models") return Response.json({ items: [{ id: "model-selected", name: "Selected model" }] });
+      if (path === "/api/assistant/config") return Response.json({ textModel: "model-selected" });
+      if (path === "/api/assistant/history") return Response.json({ items: [] });
+      if (path === "/api/custom-workspaces/team-members") return Response.json({ members: [] });
+      if (path === "/api/custom-workspaces") return Response.json({ workspaces: [] });
+      if (path === "/api/assistant/custom-workspace-builder/runs") return queuedRun;
+      throw new Error(`Unexpected request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomWorkspacesPage />);
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Workspace builder model" })).toHaveValue("model-selected"));
+    fireEvent.change(await screen.findByLabelText("What should this workspace do?"), {
+      target: { value: "Build a team planner" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Generate draft" }));
+
+    const status = await screen.findByTestId("builder-activity-status-generate");
+    expect(status).toHaveAttribute("data-status", "running");
+    expect(status).toHaveTextContent("In progress");
+    expect(status).toHaveClass("animate-pulse", "text-[#16869a]", "dark:text-[#55c3d1]");
+    expect(status.querySelector("svg")).toHaveAttribute("data-icon", "fallback");
+
+    rejectQueuedRun(new Error("Builder request failed."));
+    await waitFor(() => expect(status).toHaveAttribute("data-status", "failed"));
+    expect(status).toHaveTextContent("Failed");
+    expect(status).toHaveClass("text-red-700", "dark:text-red-300");
   });
 
   it("clears the previous workspace preview and source files when the selected draft has no entry file", async () => {
