@@ -11,7 +11,8 @@ export interface Broadcast {
   message: string;
   /** message = coordinator popup; audio-test/audio-engine/audio-reset/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say) */
   kind: string;
-  targetIp: string;
+  /** Account id of the addressed person, or "" for everyone online */
+  targetUserId: string;
   createdAt: string;
   expiresAt: string;
 }

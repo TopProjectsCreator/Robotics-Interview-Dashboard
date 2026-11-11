@@ -17,7 +17,7 @@
 - [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and explicit free/image metadata for fallback; gate reasoning controls per model.
 - [Assistant policy modality compatibility](assistant-model-policy-modality.md) — a locked text default may use a policy-permitted image model for server-side vision requests; list restrictions still apply.
 - [Strict AI response schemas](chat-productivity-response-schema.md) — JSON-object mode can omit dynamic per-channel keys; require every conversation in one strict schema.
-- [Productivity score window](chat-productivity-score-window.md) — score only the latest 30 minutes and store that exact window for display.
+- [Productivity score window](chat-productivity-score-window.md) — automatic reviews score 30 minutes; selected-range reviews score only the chosen period.
 - [Dashboard build memory](dashboard-build-memory.md) — production Vite builds compete with language servers and workflows for shared container memory.
 - [Parasolid preview limits](parasolid-preview-limits.md) — local X_T/X_B previews cover a subset; preserve private-file downloads for unsupported models.
 - [OCCT single-branch intersections](occt-single-branch-intersections.md) — preserve native domains; use unique direct-edge anchors and strict source-sample support witnesses.

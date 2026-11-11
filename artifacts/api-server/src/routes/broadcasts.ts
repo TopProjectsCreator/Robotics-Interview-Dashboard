@@ -8,7 +8,7 @@ import {
   PostBroadcastBody,
   PostBroadcastResponse,
 } from "@workspace/api-zod";
-import { requireStaff, requestAdminSession, requestTeamId } from "../middlewares/adminAuth";
+import { authenticatedInterviewerId, requireStaff, requestAdminSession, requestTeamId } from "../middlewares/adminAuth";
 import { presenceSessionHash } from "./presence";
 import { getClientIp } from "../lib/presence";
 import { pushRealtimeHint } from "../lib/realtime";
@@ -26,7 +26,7 @@ function broadcastResponse(row: typeof broadcastsTable.$inferSelect) {
     id: row.id,
     message: row.message,
     kind: row.kind,
-    targetIp: row.targetIp,
+    targetUserId: row.targetUserId,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
   };
@@ -45,7 +45,7 @@ router.post("/broadcasts", requireStaff, async (req, res): Promise<void> => {
   }
   const requestedKind = String((parsed.data as Record<string, unknown>).kind ?? "message").trim();
   const kind = (COMMAND_KINDS as readonly string[]).includes(requestedKind) ? requestedKind : "message";
-  const targetIp = String(parsed.data.targetIp ?? "").trim().slice(0, 45);
+  const targetUserId = String((parsed.data as Record<string, unknown>).targetUserId ?? "").trim().slice(0, 64);
   const ttl = typeof parsed.data.ttlMinutes === "number"
     ? Math.min(MAX_TTL_MINUTES, Math.max(5, Math.floor(parsed.data.ttlMinutes)))
     : DEFAULT_TTL_MINUTES;
@@ -58,7 +58,8 @@ router.post("/broadcasts", requireStaff, async (req, res): Promise<void> => {
         teamId,
         message,
         kind,
-        targetIp,
+        targetIp: "",
+        targetUserId,
         createdBy: presenceSessionHash(requestAdminSession(req)).slice(0, 12),
         expiresAt: new Date(Date.now() + ttl * 60 * 1000),
       })
@@ -81,12 +82,13 @@ router.get("/broadcasts/mine", async (req, res): Promise<void> => {
     const now = new Date();
     const ip = getClientIp(req);
     const teamId = await requestTeamId(req);
+    const accountId = authenticatedInterviewerId(req) ?? "";
     const rows = await db
       .select({
         id: broadcastsTable.id,
         message: broadcastsTable.message,
         kind: broadcastsTable.kind,
-        targetIp: broadcastsTable.targetIp,
+        targetUserId: broadcastsTable.targetUserId,
         createdAt: broadcastsTable.createdAt,
         expiresAt: broadcastsTable.expiresAt,
       })
@@ -102,7 +104,13 @@ router.get("/broadcasts/mine", async (req, res): Promise<void> => {
         and(
           teamFilter(broadcastsTable.teamId, teamId),
           gt(broadcastsTable.expiresAt, now),
-          or(eq(broadcastsTable.targetIp, ""), eq(broadcastsTable.targetIp, ip)),
+          // "" = everyone; otherwise only the addressed account (or, for
+          // rows written before user targeting, the addressed IP).
+          or(
+            and(eq(broadcastsTable.targetUserId, ""), eq(broadcastsTable.targetIp, "")),
+            eq(broadcastsTable.targetUserId, accountId),
+            and(eq(broadcastsTable.targetUserId, ""), eq(broadcastsTable.targetIp, ip)),
+          ),
           isNull(broadcastAcksTable.sessionHash),
         ),
       )
@@ -138,7 +146,7 @@ router.get("/broadcasts/commands", async (req, res): Promise<void> => {
         id: broadcastsTable.id,
         message: broadcastsTable.message,
         kind: broadcastsTable.kind,
-        targetIp: broadcastsTable.targetIp,
+        targetUserId: broadcastsTable.targetUserId,
         createdAt: broadcastsTable.createdAt,
         expiresAt: broadcastsTable.expiresAt,
       })

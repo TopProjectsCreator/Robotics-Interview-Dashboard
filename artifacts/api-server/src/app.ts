@@ -14,7 +14,9 @@ import { isDatabaseConnectionError } from "./lib/databaseErrors";
 import { and, eq } from "drizzle-orm";
 import { db, interviewerAccountsTable, teamRolesTable, DEFAULT_TEAM_ID } from "@workspace/db";
 import { isAdminRole } from "./lib/roles";
-import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted } from "./lib/routePermissions";
+import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted, workspaceGrantedPermissions, workspaceVisibilityFallback } from "./lib/routePermissions";
+import { readWorkspaceVisibility, userCanSeeWorkspace } from "./lib/workspaceAccess";
+import { WORKSPACE_KEYS } from "./lib/workspaceVisibility";
 import { normalizePermissions, permissionsForBuiltInRole } from "@workspace/api-zod";
 
 const app: Express = express();
@@ -210,12 +212,36 @@ app.use("/api", async (req, res, next) => {
     } else {
       permissions = permissionsForBuiltInRole(account.role);
     }
+    let impliedByVisibility: string[] = [];
     if (!routePermissionIsGranted(permissions, req.method, req.originalUrl, req.body)) {
-      res.status(403).json({ error: "This action is not available for your role." });
-      return;
+      // Settings → Workspace access is an explicit per-person grant from an
+      // admin, so it also satisfies the permissions tied to that workspace.
+      // Administration permissions (*.manage) are outside the fallback.
+      const fallback = workspaceVisibilityFallback(req.method, req.originalUrl);
+      let grantedByVisibility = false;
+      if (fallback) {
+        try {
+          const teamId = account.teamId?.trim() || DEFAULT_TEAM_ID;
+          const visibility = await readWorkspaceVisibility(teamId);
+          grantedByVisibility = fallback === "any"
+            ? WORKSPACE_KEYS.some((key) => userCanSeeWorkspace(visibility, interviewerId, account.role, key))
+            : userCanSeeWorkspace(visibility, interviewerId, account.role, fallback);
+          if (grantedByVisibility) {
+            impliedByVisibility = workspaceGrantedPermissions(visibility, interviewerId, account.role);
+          }
+        } catch {
+          grantedByVisibility = false;
+        }
+      }
+      if (!grantedByVisibility) {
+        res.status(403).json({ error: "This action is not available for your role." });
+        return;
+      }
     }
     const permissionRequest = req as typeof req & { customRolePermissions?: string[]; effectivePermissions?: string[]; isCustomRole?: boolean };
-    permissionRequest.effectivePermissions = permissions;
+    permissionRequest.effectivePermissions = impliedByVisibility.length > 0
+      ? [...new Set([...permissions, ...impliedByVisibility])]
+      : permissions;
     if (isCustomRole) {
       permissionRequest.customRolePermissions = permissions;
       permissionRequest.isCustomRole = true;
@@ -264,6 +290,16 @@ function resolvePublicDir(): string | null {
 const publicDir = resolvePublicDir();
 if (publicDir) {
   logger.info({ publicDir }, "Serving frontend build");
+  // Lowercase alias for the public agent briefing. Static file servers match
+  // paths case-sensitively on Linux, so /agents.md used to fall through to
+  // the SPA fallback and render the app shell (404) instead of the
+  // markdown. Serve the canonical file with the right content type instead.
+  app.get("/agents.md", (_req, res, next) => {
+    res.type("text/markdown; charset=utf-8");
+    res.sendFile(path.join(publicDir, "AGENTS.md"), (err) => {
+      if (err) next(err);
+    });
+  });
   app.use(express.static(publicDir, { index: false }));
   // SPA fallback for client-side routes. API routes are mounted above,
   // so only non-API paths reach here.

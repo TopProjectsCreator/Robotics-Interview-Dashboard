@@ -23,7 +23,7 @@ import {
    useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam,
+  useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam, useListTeamRoles, getListTeamRolesQueryKey, useAssignCustomRole,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -50,7 +50,7 @@ import {
   listApplicants,
   regenerateApplicant,
 } from "@workspace/api-client-react";
-import type { FeatureRequest } from "@workspace/api-client-react";
+import type { FeatureRequest, InterviewerAccount } from "@workspace/api-client-react";
 import { permissionsForBuiltInRole, hasPermission as hasCatalogPermission } from "@workspace/api-zod";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { ChatProductivityMeter } from "./components/ChatProductivityMeter";
@@ -80,6 +80,7 @@ import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTING
 import { useRealtimeSync } from "./useRealtimeSync";
 import { shouldUseChunkedUpload, uploadChunked } from "./lib/chunkedUpload";
 import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
+import { useFaviconUnreadDot } from "./hooks/use-favicon-unread-dot";
 import { confirmAction, DialogHost, notify } from "./lib/dialogs";
 import { browserSupportsPasskeys, loginWithPasskeyFlow, registerPasskeyFlow } from "./lib/passkeyClient";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -133,13 +134,14 @@ import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterview
 import { isDocumentData } from "./components/documentCollaboration";
 import {
   getWorkspaceNavigation,
-  getCrossWorkspaceSections,
   workspaceAreaForPath,
   type WorkspaceKey,
   type WorkspaceNavIcon,
 } from "./workspaceNavigation";
 import {
   useWorkspaceVisibility,
+  useWorkspaceViewSession,
+  sessionWithWorkspaceViews,
   userCanSeeWorkspace,
   visibleWorkspacesForUser,
   WORKSPACE_KEYS,
@@ -684,6 +686,7 @@ function SettingsModal({
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
   const isAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
   const canManageMailbox = isAdmin || canSessionUsePermission(session.data, "team.mailbox.manage");
+  const canSendBroadcast = isAdmin || canSessionUsePermission(session.data, "broadcasts.send");
   const canManageBranding = isAdmin || canSessionUsePermission(session.data, "team.branding.manage");
   const canManageNameRules = isAdmin || canSessionUsePermission(session.data, "team.nameRules.manage");
   const canManageAssistant = isAdmin || canSessionUsePermission(session.data, "assistant.manage");
@@ -851,6 +854,22 @@ function SettingsModal({
   const updateInterviewerPassword = useUpdateInterviewerPassword();
   const resetAllInterviewerPasswords = useResetAllInterviewerPasswords();
   const updateInterviewerRole = useUpdateInterviewerRole();
+  const assignCustomRole = useAssignCustomRole();
+  const teamRolesQuery = useListTeamRoles({
+    query: {
+      queryKey: [...getListTeamRolesQueryKey(), session.data?.teamId ?? "team"],
+      enabled: isAdmin && Boolean(session.data?.teamId),
+      retry: false,
+    },
+  });
+  const teamRoles = teamRolesQuery.data?.roles ?? [];
+  const [roleBusyId, setRoleBusyId] = useState("");
+  const [roleNotice, setRoleNotice] = useState("");
+  const [roleError, setRoleError] = useState("");
+  const roleLabelFor = (account: InterviewerAccount) => {
+    if (account.customRoleId) return teamRoles.find((role) => role.id === account.customRoleId)?.name ?? "Custom role";
+    return account.role === "coordinator" || account.role === "admin" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member";
+  };
   const deleteInterviewer = useDeleteInterviewer();
   const updateInterviewerName = useUpdateInterviewerName();
   const renameInterviewer = (id: string, displayName: string) => {
@@ -877,14 +896,40 @@ function SettingsModal({
       },
     });
   };
-  const changeInterviewerRole = (id: string, role: "coordinator" | "treasurer" | "interviewer") => {
-    updateInterviewerRole.mutate({ interviewerId: id, data: { role } }, {
-      onSuccess: () => {
-        setPasswordNotice("Access updated.");
-        setPasswordError("");
-        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
-      },
-      onError: () => { setPasswordError("Could not update access. Try again."); },
+  // One role per person: built-in (Team member, Treasurer, Admin) or a
+  // custom role built by an admin. Picking a built-in role clears any
+  // assigned custom role; picking a custom role keeps the built-in fallback.
+  const changeAccountRole = (account: InterviewerAccount, value: string) => {
+    const builtIn = value === "coordinator" || value === "treasurer" || value === "interviewer" ? value : null;
+    const fail = () => { setRoleBusyId(""); setRoleError("Could not update role. Try again."); };
+    const finish = (message: string) => {
+      setRoleBusyId("");
+      setRoleNotice(message);
+      setRoleError("");
+      qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+      void qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
+    };
+    setRoleBusyId(account.id);
+    setRoleError("");
+    if (builtIn) {
+      const currentBuiltIn = account.role === "coordinator" || account.role === "admin" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer";
+      const clearCustomThenFinish = () => {
+        if (!account.customRoleId) { finish("Role updated."); return; }
+        assignCustomRole.mutate({ interviewerId: account.id, data: { customRoleId: null } }, {
+          onSuccess: () => finish("Role updated."),
+          onError: fail,
+        });
+      };
+      if (currentBuiltIn === builtIn) { clearCustomThenFinish(); return; }
+      updateInterviewerRole.mutate({ interviewerId: account.id, data: { role: builtIn } }, {
+        onSuccess: clearCustomThenFinish,
+        onError: fail,
+      });
+      return;
+    }
+    assignCustomRole.mutate({ interviewerId: account.id, data: { customRoleId: value } }, {
+      onSuccess: () => finish("Role updated."),
+      onError: fail,
     });
   };
   const removeInterviewerAccount = (id: string, displayName: string) => {
@@ -1053,6 +1098,11 @@ function SettingsModal({
       </div>
       <AIProviderSettingsCategory canManageProvider={canManageAssistant && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
       {isAdmin && session.data?.teamId && <AssistantGovernanceSettings teamId={session.data.teamId} />}
+      {isAdmin && <div className={divider} data-testid="settings-live-now">
+        <p className={sectionLabel}>Live now</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>
+        <div className="mt-2"><PresencePanel /></div>
+      </div>}
       {canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>
@@ -1146,11 +1196,6 @@ function SettingsModal({
       <div className={divider}><p className={sectionLabel}>Applicants list</p>
         <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
       </div>
-      {isAdmin && <TeamRoleManagement
-        teamId={session.data?.teamId}
-        accounts={interviewerAccounts.data?.items ?? []}
-        accountsLoading={interviewerAccounts.isLoading}
-      />}
       <div className={divider}><p className={sectionLabel}>Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
         <SettingRow title="Instant updates" detail="Pushes changes to the team in about a second. Periodic refresh stays on as a backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
@@ -1159,13 +1204,13 @@ function SettingsModal({
       <div className={divider}><p className={sectionLabel}>Notifications</p>
        <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts and chat mentions pop up in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — enable to catch broadcasts and chat mentions"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f] dark:text-[#6fce8f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#102c3c] dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Enable</button>}</SettingRow>
       </div>
-      <div className={divider}><p className={sectionLabel}>Team passwords</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Type the new password next to a person and press <strong className="text-[#385762] dark:text-[#c8d8e0]">Enter</strong>. Add the team access code once per visit.</p>
+      <div className={divider} data-testid="settings-team-members"><p className={sectionLabel}>Team members</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Passwords, names, and roles for the team. Type the new password next to a person and press <strong className="text-[#385762] dark:text-[#c8d8e0]">Enter</strong>. Add the team access code once per visit. Team member, Treasurer, and Admin are built in — the Role menu lists them alongside any custom roles.</p>
         <label className="mt-3 block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-[#63747c] dark:text-[#a9bcc6]">Team access code</span><input ref={eventPasscodeRef} type="password" autoComplete="current-password" value={passwordAdminCode} onChange={e => setPasswordAdminCode(e.target.value)} onKeyDown={e => { if (e.key !== "Enter") return; e.preventDefault(); const first = document.querySelector("[data-testid^='input-settings-password-']"); if (first instanceof HTMLElement) first.focus(); }} placeholder="Used once per visit" data-testid="input-settings-event-passcode" className={field} /></label>
         <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa] dark:divide-[#243743] dark:border-[#2a3f4c] dark:bg-[#10202a]">
           {interviewerAccounts.isLoading && <p className="px-3 py-3 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading interviewer accounts…</p>}
           {interviewerAccounts.data?.items.map(account => <div key={account.id} className="space-y-2 px-3 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{account.displayName}</p><p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={account.role === "coordinator" ? "blue" : "neutral"}>{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member"}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{account.displayName}</p><p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={isAdminAccountRole(account.role) ? "blue" : account.customRoleId ? "teal" : "neutral"}>{roleLabelFor(account)}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
             <form onSubmit={e => { e.preventDefault(); void changeInterviewerPassword(account.id, passwordDrafts[account.id] ?? ""); }} className="flex flex-wrap gap-2">
               <input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="Type new password, press Enter" data-testid={`input-settings-password-${account.id}`} className={`${field} h-9 min-w-[160px] flex-1 text-base md:text-xs`} />
               <button type="submit" disabled={passwordBusy} data-testid={`button-settings-set-password-${account.id}`} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]">Save</button>
@@ -1183,12 +1228,25 @@ function SettingsModal({
               />
               <button type="submit" disabled={updateInterviewerName.isPending} data-testid={`button-settings-rename-${account.id}`} className="rounded-lg border border-[#cbd9da] bg-white px-3 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]">Rename</button>
             </form>
-            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "treasurer", label: "Treasurer" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={async () => { if (await confirmAction({ title: `Remove ${account.displayName} from the team?`, detail: "They will be signed out immediately.", danger: true, confirmLabel: "Remove" })) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button>}</div>
+            {isAdmin && <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Role:</span><select aria-label={`Role for ${account.displayName}`} data-testid={`select-settings-role-${account.id}`} value={account.customRoleId ?? (account.role === "coordinator" || account.role === "admin" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer")} disabled={roleBusyId === account.id || session.data?.interviewerId === account.id || teamRolesQuery.isLoading} title={session.data?.interviewerId === account.id ? "You cannot change your own role" : undefined} onChange={(event) => changeAccountRole(account, event.target.value)} className={`${field} h-9 w-44 text-xs`}>
+              <optgroup label="Built-in roles">
+                <option value="interviewer">Team member</option>
+                <option value="treasurer">Treasurer</option>
+                <option value="coordinator">Admin</option>
+              </optgroup>
+              {(teamRoles.length > 0 || (account.customRoleId && !teamRoles.some((role) => role.id === account.customRoleId))) && <optgroup label="Custom roles" disabled={isAdminAccountRole(account.role)}>
+                {account.customRoleId && !teamRoles.some((role) => role.id === account.customRoleId) && <option value={account.customRoleId}>{roleLabelFor(account)}</option>}
+                {teamRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+              </optgroup>}
+            </select>{session.data?.interviewerId !== account.id && <button type="button" onClick={async () => { if (await confirmAction({ title: `Remove ${account.displayName} from the team?`, detail: "They will be signed out immediately.", danger: true, confirmLabel: "Remove" })) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button>}</div>}
           </div>)}
         </div>
         <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className={`${dangerButton} mt-3 flex w-full items-center justify-center gap-2 px-3 py-2.5`}><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all team passwords"}</button>
         {passwordNotice && <p className="mt-2 text-xs font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="settings-password-success">{passwordNotice}</p>}
         {passwordError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="settings-password-error">{passwordError}</p>}
+        {roleNotice && <p className="mt-2 text-xs font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="role-notice">{roleNotice}</p>}
+        {roleError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="role-error">{roleError}</p>}
+        {isAdmin && <TeamRoleManagement teamId={session.data?.teamId} />}
       </div>
       <div className={divider}><p className={sectionLabel}>Workspace access</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Choose which person can open each workspace. Saved on the server per person — the dashboard, counts, and Workspace numbers follow each person's own access. Admins can always open everything.</p>
@@ -1199,8 +1257,8 @@ function SettingsModal({
                 <th scope="col" className="px-3 py-2 font-semibold">Workspace</th>
                 {workspaceAccessAccounts.map(account => (
                   <th key={account.id} scope="col" data-testid={`workspace-access-account-${account.id}`} className="px-2 py-2 text-center font-semibold">
-                    <span className="block max-w-[90px] truncate" title={`${account.displayName} (${account.role})`}>{account.displayName}</span>
-                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal opacity-70">{isAdminAccountRole(account.role) ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team"}</span>
+                    <span className="block max-w-[90px] truncate" title={`${account.displayName} (${roleLabelFor(account)})`}>{account.displayName}</span>
+                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal opacity-70">{roleLabelFor(account)}</span>
                   </th>
                 ))}
               </tr>
@@ -2442,20 +2500,20 @@ function formatDuration(totalSeconds: number): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
-function PresenceIpModal({ ip, onClose }: { ip: string; onClose: () => void }) {
-  const { overlayProps, panelProps } = useModalOverlay({ label: `Usage for ${ip}`, onClose });
+function PresenceUserModal({ userId, name, onClose }: { userId: string; name: string; onClose: () => void }) {
+  const { overlayProps, panelProps } = useModalOverlay({ label: `Usage for ${name}`, onClose });
   const stats = useGetPresenceStats(
-    { ip },
-    { query: { queryKey: getGetPresenceStatsQueryKey({ ip }), enabled: Boolean(ip) } },
+    { userId },
+    { query: { queryKey: getGetPresenceStatsQueryKey({ userId }), enabled: Boolean(userId) } },
   );
   const maxSeconds = Math.max(...(stats.data?.pages.map((p) => p.seconds) ?? [1]), 1);
   return (
     <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={onClose} data-testid="presence-stats-modal">
-      <div {...panelProps} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Usage for ${ip}`} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
+      <div {...panelProps} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Usage for ${name}`} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Session history</p>
-            <h2 className="mono mt-1 break-all text-lg font-semibold text-[#182232]">{ip}</h2>
+            <h2 className="mt-1 break-words text-lg font-semibold text-[#182232]">{name}</h2>
           </div>
           <button onClick={onClose} aria-label="Close usage details" className="rounded-lg p-1.5 text-[#718189] hover:bg-[#edf1f1]"><X size={16} /></button>
         </div>
@@ -2481,7 +2539,7 @@ function PresenceIpModal({ ip, onClose }: { ip: string; onClose: () => void }) {
                 <span className="flex items-center gap-1.5 rounded-full bg-[#fbe4e1] px-2.5 py-1 text-[#a34d46]"><BellOff size={12} /> {stats.data.notifyDenied} off</span>
                 {(stats.data.notifyUnknown ?? 0) > 0 && <span className="rounded-full bg-[#eef3f2] px-2.5 py-1 text-[#63747c]">{stats.data.notifyUnknown} unknown</span>}
               </div>
-              {stats.data.notifyGranted === 0 && <p className="mt-2 text-[11px] leading-5 text-[#8a999d]">Nobody on this IP accepted pushes — broadcasts only appear as in-app popups. Ask them to tap the bell in the top bar.</p>}
+              {stats.data.notifyGranted === 0 && <p className="mt-2 text-[11px] leading-5 text-[#8a999d]">{name} has not accepted pushes on any online session — broadcasts only appear as in-app popups. Ask them to tap the bell in the top bar.</p>}
             </div>
             <p className="mono mt-4 text-[10px] uppercase tracking-[.16em] text-[#16869a]">Pages visited most</p>
             {stats.data.pages.length > 0 ? (
@@ -2515,18 +2573,21 @@ function BroadcastCard() {
     query: { queryKey: getGetPresenceQueryKey() },
   });
   const [message, setMessage] = useState("");
-  const [targetIp, setTargetIp] = useState("");
+  const [targetUserId, setTargetUserId] = useState("");
   const [sentNote, setSentNote] = useState("");
-  const onlineIps = [...new Set((presence.data?.entries ?? []).map((entry) => entry.ip))].sort();
+  // One option per person, keyed by account id — unattributable legacy
+  // sessions can't be targeted, so they are left out.
+  const onlinePeople = [...new Map((presence.data?.entries ?? []).filter((entry) => entry.userId).map((entry) => [entry.userId, entry.name] as const)).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  const nameFor = (userId: string) => onlinePeople.find(([id]) => id === userId)?.[1] ?? "that person";
   const submit = (event: React.FormEvent) => {
     event.preventDefault();
     const text = message.trim();
     if (!text || send.isPending) return;
     setSentNote("");
-    send.mutate({ data: { message: text, targetIp: targetIp || undefined, ttlMinutes: 60 } }, {
+    send.mutate({ data: { message: text, targetUserId: targetUserId || undefined, ttlMinutes: 60 } }, {
       onSuccess: (created) => {
         setMessage("");
-        setSentNote(created.targetIp ? `Sent to ${created.targetIp} — pops up there within seconds.` : "Sent to everyone online — pops up within seconds.");
+        setSentNote(created.targetUserId ? `Sent to ${nameFor(created.targetUserId)} — pops up there within seconds.` : "Sent to everyone online — pops up within seconds.");
         queryClient.invalidateQueries({ queryKey: getGetMyBroadcastsQueryKey() });
       },
       onError: () => setSentNote("Send failed. Try again."),
@@ -2535,17 +2596,17 @@ function BroadcastCard() {
   return (
     <Section title="Broadcast" kicker="Message the other admin">
       <form onSubmit={submit} className="mt-1 space-y-2">
-        <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} maxLength={500} placeholder="Maksim — check the chat…" data-testid="input-broadcast-message" aria-label="Broadcast message" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-base md:text-sm outline-none focus:border-[#16869a]" />
+        <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} maxLength={500} placeholder="Maksim — check the chat…" data-testid="input-broadcast-message" aria-label="Broadcast message" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-base md:text-sm outline-none focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a]" />
         <div className="flex gap-2">
-          <select value={targetIp} onChange={(event) => setTargetIp(event.target.value)} data-testid="select-broadcast-target" aria-label="Broadcast target" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs outline-none focus:border-[#16869a]">
+          <select value={targetUserId} onChange={(event) => setTargetUserId(event.target.value)} data-testid="select-broadcast-target" aria-label="Broadcast target" className="h-10 min-w-0 flex-1 rounded-lg border border-[#d5e0e0] bg-white px-2 text-base md:text-xs outline-none focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2]">
             <option value="">Everyone online</option>
-            {onlineIps.map((ip) => <option key={ip} value={ip}>{ip}</option>)}
+            {onlinePeople.map(([userId, name]) => <option key={userId} value={userId}>{name}</option>)}
           </select>
           <button disabled={send.isPending || !message.trim()} data-testid="button-broadcast-send" className="flex h-10 shrink-0 items-center gap-2 rounded-xl bg-[#16869a] px-4 text-sm font-semibold text-white disabled:opacity-50"><Send size={15} /> {send.isPending ? "Sending…" : "Send"}</button>
         </div>
       </form>
-      {sentNote && <p className="mt-2 text-xs text-[#718189]" data-testid="broadcast-sent-note">{sentNote}</p>}
-      <p className="mt-2 text-[11px] leading-5 text-[#7c8c91]">Admins with browser notifications on also get a push, even in another tab.</p>
+      {sentNote && <p className="mt-2 text-xs text-[#718189] dark:text-[#93a8b2]" data-testid="broadcast-sent-note">{sentNote}</p>}
+      <p className="mt-2 text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Admins with browser notifications on also get a push, even in another tab.</p>
     </Section>
   );
 }
@@ -2557,14 +2618,14 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
   });
   const kick = useKickPresence();
   const queryClient = useQueryClient();
-  const [selectedIp, setSelectedIp] = useState<string | null>(null);
-  const [kickTarget, setKickTarget] = useState<string | null>(null);
-  const { overlayProps, panelProps } = useModalOverlay({ label: `Kick ${kickTarget ?? "session"}`, onClose: () => setKickTarget(null), enabled: Boolean(kickTarget) });
-  if (presence.isLoading) return <Section title="Live now" kicker="Who is online"><Skeleton className="h-14" /></Section>;
-  if (presence.isError || !presence.data) return <Section title="Live now" kicker="Who is online"><p className="text-sm text-[#7c8c91]">Presence unavailable. <button onClick={() => presence.refetch()} className="font-semibold text-[#16869a]">Retry</button></p></Section>;
+  const [selectedUser, setSelectedUser] = useState<{ userId: string; name: string } | null>(null);
+  const [kickTarget, setKickTarget] = useState<{ userId: string; name: string } | null>(null);
+  const { overlayProps, panelProps } = useModalOverlay({ label: `Kick ${kickTarget?.name ?? "person"}`, onClose: () => setKickTarget(null), enabled: Boolean(kickTarget) });
+  if (presence.isLoading) return <Skeleton className="h-14" />;
+  if (presence.isError || !presence.data) return <p className="text-sm text-[#7c8c91]">Presence unavailable. <button onClick={() => presence.refetch()} className="font-semibold text-[#16869a]">Retry</button></p>;
   const entries = presence.data.entries;
   return (
-    <Section title="Live now" kicker="Who is online (2-minute window)" >
+    <div>
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 animate-pulse rounded-full bg-[#28a47f]" />
         <p className="text-sm font-semibold" data-testid="presence-count">
@@ -2573,11 +2634,18 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
       </div>
       {entries.length > 0 ? (
         <div className="mt-3 space-y-2">
-          {entries.map((entry) => (
-            <div key={`${entry.ip}-${entry.lastSeenAt}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#e3ebeb] bg-white px-3 py-2 text-xs" data-testid="presence-entry">
-              <button onClick={() => setSelectedIp(entry.ip)} title={`View usage for ${entry.ip}`} data-testid={`presence-ip-${entry.ip}`} className="mono rounded font-semibold text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">
-                {entry.ip}
-              </button>
+          {entries.map((entry) => {
+            const attributable = Boolean(entry.userId);
+            const entryKey = entry.userId || `unknown-${entry.lastSeenAt}`;
+            return (
+            <div key={`${entryKey}-${entry.lastSeenAt}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#e3ebeb] bg-white px-3 py-2 text-xs dark:border-[#31495a] dark:bg-[#0f1e27]" data-testid="presence-entry">
+              {attributable ? (
+                <button onClick={() => setSelectedUser({ userId: entry.userId, name: entry.name })} title={`View usage for ${entry.name}`} data-testid={`presence-user-${entry.userId}`} className="rounded font-semibold text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">
+                  {entry.name}
+                </button>
+              ) : (
+                <span className="font-semibold text-[#718189]" title="This session cannot be attributed to a team account">{entry.name}</span>
+              )}
               <span className="rounded-full bg-[#e3f4f2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#12737d]">
                 {presencePageLabel(entry.page)}
               </span>
@@ -2585,11 +2653,11 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
                 {[entry.city, entry.region, entry.country].filter(Boolean).join(", ") || "location unknown"}
               </span>
               {entry.notifyPermission === "granted" ? (
-                <span title="Browser notifications on — broadcasts push to this session" data-testid={`presence-notify-on-${entry.ip}`} className="flex items-center gap-1 rounded-full bg-[#dff3ec] px-2 py-0.5 text-[10px] font-bold text-[#1d7a5f]">
+                <span title="Browser notifications on — broadcasts push to this session" data-testid={`presence-notify-on-${entryKey}`} className="flex items-center gap-1 rounded-full bg-[#dff3ec] px-2 py-0.5 text-[10px] font-bold text-[#1d7a5f]">
                   <Bell size={11} /> Push on
                 </span>
               ) : entry.notifyPermission === "denied" ? (
-                <span title="Browser notifications blocked for this session" data-testid={`presence-notify-off-${entry.ip}`} className="flex items-center gap-1 rounded-full bg-[#fbe4e1] px-2 py-0.5 text-[10px] font-bold text-[#a34d46]">
+                <span title="Browser notifications blocked for this session" data-testid={`presence-notify-off-${entryKey}`} className="flex items-center gap-1 rounded-full bg-[#fbe4e1] px-2 py-0.5 text-[10px] font-bold text-[#a34d46]">
                   <BellOff size={11} /> Push off
                 </span>
               ) : entry.notifyPermission === "default" ? (
@@ -2601,32 +2669,33 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
                 <span className="rounded-full bg-[#e3f4f2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#12737d]">
                   This device
                 </span>
-              ) : (
-                <button onClick={() => setKickTarget(entry.ip)} title={`Kick ${entry.ip}`} aria-label={`Kick session ${entry.ip}`} data-testid={`button-kick-${entry.ip}`} className="ml-auto rounded-full border border-[#e8c4c0] bg-white px-2.5 py-1 text-[10px] font-bold text-[#b34a42] transition hover:bg-[#fff1ef]">
+              ) : attributable ? (
+                <button onClick={() => setKickTarget({ userId: entry.userId, name: entry.name })} title={`Kick ${entry.name}`} aria-label={`Kick ${entry.name}`} data-testid={`button-kick-${entry.userId}`} className="ml-auto rounded-full border border-[#e8c4c0] bg-white px-2.5 py-1 text-[10px] font-bold text-[#b34a42] transition hover:bg-[#fff1ef]">
                   Kick
                 </button>
-              )}
+              ) : null}
               <span className="mono text-[#8a999d]">{timeAgoShort(entry.lastSeenAt)}</span>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <p className="mt-3 text-sm text-[#7c8c91]">No active sessions seen recently.</p>
       )}
-      {selectedIp && <PresenceIpModal ip={selectedIp} onClose={() => setSelectedIp(null)} />}
+      {selectedUser && <PresenceUserModal userId={selectedUser.userId} name={selectedUser.name} onClose={() => setSelectedUser(null)} />}
       {kickTarget && (
         <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setKickTarget(null)} data-testid="kick-confirm">
-          <div {...panelProps} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Kick ${kickTarget}`} className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Kick {kickTarget}?</h2>
+          <div {...panelProps} onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-label={`Kick ${kickTarget.name}`} className="w-full max-w-sm rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl">
+            <h2 className="text-lg font-semibold tracking-[-.02em] text-[#182232]">Kick {kickTarget.name}?</h2>
             <p className="mt-2 text-sm leading-6 text-[#52666e]">They will be logged out and removed from Live now. They must log in again to return.</p>
             <div className="mt-5 flex justify-end gap-2">
               <button onClick={() => setKickTarget(null)} className="rounded-xl border border-[#d5e0e0] px-4 py-2.5 text-sm font-semibold text-[#52666e] hover:bg-[#f1f6f5]">Cancel</button>
               <button
                 onClick={() => {
-                  const ip = kickTarget;
+                  const target = kickTarget;
                   setKickTarget(null);
                   kick.mutate(
-                    { data: { ip } },
+                    { data: { userId: target.userId } },
                     {
                       onSuccess: () => queryClient.invalidateQueries({ queryKey: getGetPresenceQueryKey() }),
                     },
@@ -2642,7 +2711,7 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
           </div>
         </div>
       )}
-    </Section>
+    </div>
   );
 }
 
@@ -3385,6 +3454,28 @@ function Shell({
     viewingChannel: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("channel")?.trim() || null,
     enabled: !demoMode && session.data?.authenticated === true,
   });
+  // Global unread signal for the favicon badge: any peer, team-channel, or
+  // invite-only channel summary flagged unread draws a red dot on the icon.
+  // The query shares its key with the chat panel, so realtime invalidation
+  // and polling behave exactly as they do there.
+  const chatConversations = useGetChatConversations({
+    query: {
+      queryKey: getGetChatConversationsQueryKey(),
+      refetchInterval: streamHealthy ? false : 5000,
+      enabled: !demoMode && session.data?.authenticated === true,
+    },
+  });
+  const hasUnreadChat = useMemo(() => {
+    if (demoMode) return false;
+    const data = chatConversations.data;
+    if (!data) return false;
+    return (
+      Boolean(data.shared?.isUnread) ||
+      (data.items ?? []).some((item) => item.isUnread) ||
+      (data.channels ?? []).some((channel) => channel.isUnread)
+    );
+  }, [chatConversations.data, demoMode]);
+  useFaviconUnreadDot(hasUnreadChat);
   const qc = useQueryClient();
   useEffect(() => {
     if (!mobileNav) return;
@@ -3466,7 +3557,6 @@ function Shell({
     }
   }, [demoMode, broadcasts.data, dismissedBroadcasts]);
   const isCoordinator = !demoMode && session.data?.role === "coordinator";
-  const canViewApplicants = !demoMode && canSessionUsePermission(session.data, "applicants.view");
   const activeTeamName = demoMode
     ? "Demo Robotics"
     : session.data?.teamId === "default"
@@ -3502,14 +3592,16 @@ function Shell({
   const visibility = workspaceVisibility.visibility;
   const visibleWorkspaces = useMemo(() => {
     if (demoMode) return new Set<WorkspaceKey>(["chat", "parts", "cad", "code"]);
-    const set = new Set<WorkspaceKey>();
     // Per-user access: coordinators always see everything (enforced inside
     // userCanSeeWorkspace), everyone else sees exactly their own workspaces.
-    for (const key of visibleWorkspacesForUser(visibility, sessionUserId, sessionRole)) {
-      if (canSessionUsePermission(session.data, `${key}.view`)) set.add(key);
-    }
-    return set;
-  }, [demoMode, visibility, sessionUserId, sessionRole, session.data]);
+    // The matrix is the grant, so no second permission veto here.
+    return new Set<WorkspaceKey>(visibleWorkspacesForUser(visibility, sessionUserId, sessionRole));
+  }, [demoMode, visibility, sessionUserId, sessionRole]);
+  const sessionWithViews = useMemo(
+    () => sessionWithWorkspaceViews(session.data, visibleWorkspaces),
+    [session.data, visibleWorkspaces],
+  );
+  const canViewApplicants = !demoMode && canSessionUsePermission(sessionWithViews, "applicants.view");
   const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
   const isDashboardPath = demoMode ? demoView === "overview" : shellPath === "/dashboard";
   const isInterviewPath = !demoMode && (
@@ -3596,20 +3688,16 @@ function Shell({
     cad: Boxes,
     code: SquareTerminal,
   };
-  const regularNav = [
-    ...getWorkspaceNavigation(workspaceArea, visibleWorkspaces),
-    // Treasurers keep the read-only applicant roster, which is granted
-    // separately from the rest of the Interview workspace.
-    ...(canViewApplicants ? getCrossWorkspaceSections(visibleWorkspaces) : []),
-  ].filter((item) => {
+  const regularNav = getWorkspaceNavigation(workspaceArea, visibleWorkspaces, canViewApplicants)
+    .filter((item) => {
     if (item.href.includes("assistant") && !assistantAccessible) return false;
     const path = item.href.split(/[?#]/, 1)[0] ?? "";
-    if (path.startsWith("/applicants")) return canSessionUsePermission(session.data, "applicants.view");
-    if (path.startsWith("/queue")) return canSessionUsePermission(session.data, "queue.view");
-    if (path.startsWith("/attendance") || path.startsWith("/seating")) return canSessionUsePermission(session.data, "attendance.view");
-    if (path.startsWith("/display") || path.startsWith("/big-screen")) return canSessionUsePermission(session.data, "display.view");
+    if (path.startsWith("/applicants")) return canSessionUsePermission(sessionWithViews, "applicants.view");
+    if (path.startsWith("/queue")) return canSessionUsePermission(sessionWithViews, "queue.view");
+    if (path.startsWith("/attendance") || path.startsWith("/seating")) return canSessionUsePermission(sessionWithViews, "attendance.view");
+    if (path.startsWith("/display") || path.startsWith("/big-screen")) return canSessionUsePermission(sessionWithViews, "display.view");
     return true;
-  })
+    })
     .map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
   const demoNav = [
     { href: "/demo?view=overview", label: "Overview", icon: LayoutDashboard, kind: "section" as const, workspace: "chat" as WorkspaceKey, demoView: "overview" as DemoView },
@@ -3854,9 +3942,10 @@ function CustomChartView({ data, chart, colorIndex, xAxisLabel, yAxisLabel }: { 
 
 function CustomCharts() {
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewDashboard = canSessionUsePermission(session.data, "dashboard.view");
+  const viewSession = useWorkspaceViewSession(session.data);
+  const canViewDashboard = canSessionUsePermission(viewSession, "dashboard.view");
   const canManageDashboard = canSessionUsePermission(session.data, "dashboard.manage");
-  const canViewApplicants = canSessionUsePermission(session.data, "applicants.view");
+  const canViewApplicants = canSessionUsePermission(viewSession, "applicants.view");
   const [xAxis, setXAxis] = useState<CustomChartXAxis>("grade");
   const [yAxis, setYAxis] = useState<CustomChartYAxis>("count");
   const [chart, setChart] = useState<CustomChartType>("pie");
@@ -3964,8 +4053,7 @@ function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
   const canManageCustomWorkspaces = !demoMode && canSessionUsePermission(session.data, "customWorkspaces.manage");
   const canSee = (key: WorkspaceKey) => demoMode
     ? key !== "interview"
-    : userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key) &&
-      canSessionUsePermission(session.data, `${key}.view`);
+    : userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key);
   // Per-user workspace list in canonical order: numbering and the count below
   // are relative to what this person can open, so the same workspace can be
   // Workspace 01 for one person and Workspace 03 for another.
@@ -4356,7 +4444,79 @@ function InterviewOverview() {
   if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, team." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, team." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Team decisions" kicker="What your interviewers actually said"><Bars data={decisionMix} max={Math.max(...decisionMix.map(x => x.value), 1)} color="teal" xAxisLabel="Decision" yAxisLabel="Applicants" />{!decisionMix.length && <p className="mt-3 text-xs text-[#7c8c91]">No decisions recorded yet. The interview decision on the queue card lands here and on the applicant lanes.</p>}</Section><Section title="Roster lanes" kicker="Where applicants sit right now"><Bars data={laneMix} max={Math.max(...laneMix.map(x => x.value), 1)} color="blue" xAxisLabel="Lane" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><div className="lg:col-span-2"><CustomCharts /></div><div className="space-y-5"><PresencePanel /><BroadcastCard /></div></div></div>;
+  return (
+    <div className="fade-up">
+      <PageHeading
+        eyebrow="Live overview / 08:42 local"
+        title="Good morning, team."
+        detail="The room is calm. Here is the signal across the applicant field."
+        action={
+          <Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm">
+            <Monitor size={16} /> Launch big screen
+          </Link>
+        }
+      />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} />
+        <StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" />
+        <StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} />
+        <StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" />
+      </div>
+      <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
+        <Section title="Score distribution" kicker="AI signal across the current intake">
+          <Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" />
+        </Section>
+        <Section title="Recommendation signal" kicker="Review the edges first">
+          <Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" />
+        </Section>
+      </div>
+      <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
+        <Section title="Team decisions" kicker="What your interviewers actually said">
+          <Bars data={decisionMix} max={Math.max(...decisionMix.map(x => x.value), 1)} color="teal" xAxisLabel="Decision" yAxisLabel="Applicants" />
+          {!decisionMix.length && <p className="mt-3 text-xs text-[#7c8c91]">No decisions recorded yet. The interview decision on the queue card lands here and on the applicant lanes.</p>}
+        </Section>
+        <Section title="Roster lanes" kicker="Where applicants sit right now">
+          <Bars data={laneMix} max={Math.max(...laneMix.map(x => x.value), 1)} color="blue" xAxisLabel="Lane" yAxisLabel="Applicants" />
+        </Section>
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <Section title="Grade mix">
+          <Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" />
+        </Section>
+        <Section title="Commitment signal">
+          <Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" />
+        </Section>
+        <Section title="Queue pulse" kicker="Individual applicant progression">
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p>
+              <p className="mt-2 text-sm text-[#718189]">applicants cleared</p>
+            </div>
+            <div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}>
+              <div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">
+                {Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%
+              </div>
+            </div>
+          </div>
+          <Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">
+            Open interview queue <ChevronRight size={15} />
+          </Link>
+        </Section>
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
+        <Section title="Gender mix" kicker="M / F across the current intake">
+          <Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" />
+        </Section>
+        <Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant">
+          <Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" />
+        </Section>
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2"><CustomCharts /></div>
+        <div className="space-y-5"><BroadcastCard /></div>
+      </div>
+    </div>
+  );
 }
 function Bars({ data, max, color, xAxisLabel, yAxisLabel }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green"; xAxisLabel?: string; yAxisLabel?: string }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div>{(xAxisLabel || yAxisLabel) && <div className="mb-3 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel ?? "Value"}</span><span>X · {xAxisLabel ?? "Category"}</span></div>}<div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div></div>; }
 
@@ -4414,9 +4574,10 @@ function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
 function Applicants() {
   const { settings } = useWorkspaceSettings();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const viewSession = useWorkspaceViewSession(session.data);
   const canManageApplicants = canSessionUsePermission(session.data, "applicants.manage");
   const canManageSnapshots = canSessionUsePermission(session.data, "snapshots.manage");
-  const canSearchApplicants = canSessionUsePermission(session.data, "applicants.search");
+  const canSearchApplicants = canSessionUsePermission(viewSession, "applicants.search");
   const [, setLocation] = useLocation();
   const searchParams = useSearch();
   const [search, setSearch] = useState("");
@@ -4972,7 +5133,8 @@ type AttendancePatch = { attendance: string; lateArrivalTime?: string | null; ma
 function DisplayTextCard() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
   const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewDisplay = canSessionUsePermission(roleSession.data, "display.view");
+  const viewSession = useWorkspaceViewSession(roleSession.data);
+  const canViewDisplay = canSessionUsePermission(viewSession, "display.view");
   const canManageDisplay = canSessionUsePermission(roleSession.data, "display.manage");
   const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), enabled: canViewDisplay, refetchInterval: streamHealthy ? false : (5000 )} });
   const live = useGetDisplayState(undefined, { query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
@@ -7648,11 +7810,12 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewQueue = canSessionUsePermission(session.data, "queue.view");
+  const viewSession = useWorkspaceViewSession(session.data);
+  const canViewQueue = canSessionUsePermission(viewSession, "queue.view");
   const canManageQueue = canSessionUsePermission(session.data, "queue.manage");
-  const canViewApplicants = canSessionUsePermission(session.data, "applicants.view");
+  const canViewApplicants = canSessionUsePermission(viewSession, "applicants.view");
   const canEditApplicants = canSessionUsePermission(session.data, "applicants.edit");
-  const canViewChat = canSessionUsePermission(session.data, "chat.view");
+  const canViewChat = canSessionUsePermission(viewSession, "chat.view");
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), enabled: canViewQueue, refetchInterval: streamHealthy ? false : (refreshMs )} });
   const advance = useAdvanceQueue();
   const callback = useCallbackQueue();
@@ -8217,8 +8380,8 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "restore_snapshot") return { label: "Restored version", Icon: RefreshCw };
   if (tool === "list_conversations") return { label: "Listed previous chats", Icon: History };
   if (tool === "read_conversation") return { label: "Read previous chat", Icon: History };
-  if (tool === "kick_presence") return { label: "Kicked IP", Icon: LogOut };
-  if (tool === "presence_stats") return { label: "Checked IP stats", Icon: UsersRound };
+  if (tool === "kick_presence") return { label: "Kicked a person", Icon: LogOut };
+  if (tool === "presence_stats") return { label: "Checked usage", Icon: UsersRound };
   if (tool === "list_presence") return { label: "Checked who is online", Icon: UsersRound };
   if (tool === "list_collaboration_artifacts") return { label: "Listed shared artifacts", Icon: Search };
   if (tool === "read_collaboration_artifact") return { label: "Read artifact", Icon: Search };
@@ -9910,7 +10073,8 @@ function seatDot(attendance: string | null | undefined): string {
 function SeatingChart({ applicants }: { applicants: Applicant[] }) { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
   const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewAttendance = canSessionUsePermission(roleSession.data, "attendance.view");
+  const viewSession = useWorkspaceViewSession(roleSession.data);
+  const canViewAttendance = canSessionUsePermission(viewSession, "attendance.view");
   const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
   const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), enabled: canViewAttendance, refetchInterval: streamHealthy ? false : (5000 )} });
   const updateSettings = useUpdateSeatingSettings();
@@ -9999,9 +10163,10 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) { const strea
 function AttendancePage() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
   const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewAttendance = canSessionUsePermission(roleSession.data, "attendance.view");
+  const viewSession = useWorkspaceViewSession(roleSession.data);
+  const canViewAttendance = canSessionUsePermission(viewSession, "attendance.view");
   const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
-  const canViewApplicants = canSessionUsePermission(roleSession.data, "applicants.view");
+  const canViewApplicants = canSessionUsePermission(viewSession, "applicants.view");
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const boardParams = useMemo(() => ({ sort: "queue" }), []);

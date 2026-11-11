@@ -8,5 +8,7 @@
 
 export interface PresenceKickResult {
   kicked: number;
-  ip: string;
+  userId: string;
+  /** Display name of the kicked person */
+  name?: string;
 }

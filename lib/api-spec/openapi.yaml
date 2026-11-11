@@ -1019,25 +1019,25 @@ paths:
     get:
       operationId: getPresenceStats
       tags: [presence]
-      summary: Per-IP usage stats from page-visit history
+      summary: Per-user usage stats from page-visit history
       parameters:
-        - name: ip
+        - name: userId
           in: query
           required: true
           schema:
             type: string
       responses:
         "200":
-          description: Usage stats for one IP
+          description: Usage stats for one user
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PresenceIpStats"
+                $ref: "#/components/schemas/PresenceUserStats"
   /presence/kick:
     post:
       operationId: kickPresence
       tags: [presence]
-      summary: Kick all sessions from an IP (revoke + remove presence)
+      summary: Kick all sessions of a user (revoke + remove presence)
       requestBody:
         required: true
         content:
@@ -1651,6 +1651,24 @@ paths:
       responses:
         "200":
           description: Current team-wide setting and the latest assessment for this conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatProductivityStatus"
+  /queue/chat/productivity/review:
+    post:
+      operationId: reviewChatProductivityRange
+      tags: [queue]
+      summary: Re-assess chat productivity over a selected time range
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatProductivityRangeInput"
+      responses:
+        "200":
+          description: One-time assessment for the selected conversation and time range
           content:
             application/json:
               schema:
@@ -6867,7 +6885,8 @@ components:
     PresenceEntry:
       type: object
       required:
-        - ip
+        - userId
+        - name
         - city
         - region
         - country
@@ -6875,8 +6894,12 @@ components:
         - lastSeenAt
         - isCurrent
       properties:
-        ip:
+        userId:
           type: string
+          description: Account id of the signed-in person ("" for a legacy session that cannot be attributed to one)
+        name:
+          type: string
+          description: Display name of the signed-in person
         city:
           type: string
         region:
@@ -6984,10 +7007,11 @@ components:
       properties:
         onlineCount:
           type: integer
-    PresenceIpStats:
+    PresenceUserStats:
       type: object
       required:
-        - ip
+        - userId
+        - name
         - totalSeconds
         - sessionCount
         - visitCount
@@ -6998,8 +7022,11 @@ components:
         - notifyDenied
         - notifyUnknown
       properties:
-        ip:
+        userId:
           type: string
+        name:
+          type: string
+          description: Display name of the person these stats belong to
         totalSeconds:
           type: integer
         sessionCount:
@@ -7026,34 +7053,38 @@ components:
                 type: integer
         notifyGranted:
           type: integer
-          description: "Online sessions from this IP with browser notifications granted"
+          description: "Online sessions from this person with browser notifications granted"
         notifyDenied:
           type: integer
-          description: "Online sessions from this IP with browser notifications denied or dismissed"
+          description: "Online sessions from this person with browser notifications denied or dismissed"
         notifyUnknown:
           type: integer
-          description: "Online sessions from this IP with unknown or unsupported notification state"
+          description: "Online sessions from this person with unknown or unsupported notification state"
     PresenceKickInput:
       type: object
-      required: [ip]
+      required: [userId]
       properties:
-        ip:
+        userId:
           type: string
+          description: Account id of the person to kick, from a presence or list_presence result
     PresenceKickResult:
       type: object
-      required: [kicked, ip]
+      required: [kicked, userId]
       properties:
         kicked:
           type: integer
-        ip:
+        userId:
           type: string
+        name:
+          type: string
+          description: Display name of the kicked person
     Broadcast:
       type: object
       required:
         - id
         - message
         - kind
-        - targetIp
+        - targetUserId
         - createdAt
         - expiresAt
       properties:
@@ -7064,8 +7095,9 @@ components:
         kind:
           type: string
           description: "message = coordinator popup; audio-test/audio-engine/audio-reset/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say)"
-        targetIp:
+        targetUserId:
           type: string
+          description: Account id of the addressed person, or "" for everyone online
         createdAt:
           type: string
         expiresAt:
@@ -7089,8 +7121,9 @@ components:
         kind:
           type: string
           description: "message (default) or a big-screen command: audio-test, audio-engine, audio-reset, audio-say"
-        targetIp:
+        targetUserId:
           type: string
+          description: Account id of the person to address, "" for everyone online
         ttlMinutes:
           type: integer
     BroadcastAck:
@@ -8215,6 +8248,19 @@ components:
           anyOf:
             - $ref: "#/components/schemas/ChatProductivitySnapshot"
             - type: "null"
+    ChatProductivityRangeInput:
+      type: object
+      required: [scope, range]
+      properties:
+        scope:
+          type: string
+          enum: [shared, channel]
+        channelId:
+          type: string
+          description: Invite-only channel id; the caller must be a member or have chat management permission.
+        range:
+          type: string
+          enum: [1h, 1d, 3d, 5d, 7d, 30d]
     ChatProductivitySettingsInput:
       type: object
       required: [enabled, acknowledgeNotice]

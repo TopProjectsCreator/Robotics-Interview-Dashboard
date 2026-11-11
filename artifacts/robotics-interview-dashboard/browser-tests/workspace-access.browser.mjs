@@ -61,8 +61,8 @@ async function verifyWorkspaceAccessOrdering(page) {
       { id: "admin-sam", name: "Sam Admin", role: "Admin" },
       { id: "treasurer-megan", name: "Megan Treasurer", role: "Treasurer" },
       { id: "treasurer-zoe", name: "Zoe Treasurer", role: "Treasurer" },
-      { id: "member-alex", name: "Alex Team", role: "Team" },
-      { id: "member-zara", name: "Zara Team", role: "Team" },
+      { id: "member-alex", name: "Alex Team", role: "Team member" },
+      { id: "member-zara", name: "Zara Team", role: "Team member" },
     ],
     "workspace access columns should sort by role, then display name",
   );

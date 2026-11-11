@@ -7,5 +7,5 @@
  */
 
 export type GetPresenceStatsParams = {
-ip: string;
+userId: string;
 };

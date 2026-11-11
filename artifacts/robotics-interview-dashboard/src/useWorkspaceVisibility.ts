@@ -6,6 +6,7 @@ import {
   useUpdateWorkspaceVisibility,
   type WorkspaceVisibility,
 } from "@workspace/api-client-react";
+import { permissionsForBuiltInRole, type PermissionId } from "@workspace/api-zod";
 
 export const WORKSPACE_LABELS: Record<keyof WorkspaceVisibility, string> = {
   interview: "Interview",
@@ -33,6 +34,72 @@ export const WORKSPACE_ROLE_ORDER: string[] = [
 ];
 
 export const WORKSPACE_KEYS = Object.keys(WORKSPACE_LABELS) as (keyof WorkspaceVisibility)[];
+
+/**
+ * The permissions a Settings → Workspace access grant implies for that
+ * workspace, mirroring the server's visibility fallback. The matrix is an
+ * explicit per-person grant ("which person can open each workspace"), so a
+ * granted team member or treasurer must pass the page-level permission
+ * checks too — otherwise the nav says the workspace is open while every
+ * page inside it points at an empty roster. Deliberately excludes
+ * administration (*.manage, imports, deletes): use a custom role for that.
+ */
+export const WORKSPACE_VIEW_PERMISSIONS: Record<keyof WorkspaceVisibility, PermissionId[]> = {
+  interview: ["applicants.view", "applicants.search", "queue.view", "attendance.view", "display.view", "dashboard.view"],
+  chat: ["chat.view", "chat.send", "chat.moderate"],
+  parts: ["parts.view", "parts.edit"],
+  cad: ["cad.view", "cad.edit"],
+  code: ["code.view", "code.edit"],
+};
+
+type WorkspaceSessionLike = {
+  role?: string | null;
+  customRoleId?: string | null;
+  permissions?: readonly string[] | null;
+} | null | undefined;
+
+/**
+ * Session with the view permissions implied by the workspaces the viewer may
+ * open. Fails closed for a custom role with no permission list at all (the
+ * same rule as the plain permission check).
+ */
+export function sessionWithWorkspaceViews<T extends WorkspaceSessionLike>(
+  session: T,
+  visible: ReadonlySet<keyof WorkspaceVisibility>,
+): T {
+  if (!session) return session;
+  if (session.customRoleId && !Array.isArray(session.permissions)) return session;
+  const base = Array.isArray(session.permissions)
+    ? session.permissions
+    : permissionsForBuiltInRole(session.role ?? undefined);
+  const merged = new Set<string>(base);
+  for (const key of WORKSPACE_KEYS) {
+    if (!visible.has(key)) continue;
+    for (const permission of WORKSPACE_VIEW_PERMISSIONS[key]) merged.add(permission);
+  }
+  return { ...session, permissions: [...merged] } as T;
+}
+
+type WorkspaceViewSessionLike = {
+  authenticated?: boolean | null;
+  interviewerId?: string | null;
+  role?: string | null;
+  customRoleId?: string | null;
+  permissions?: readonly string[] | null;
+} | null | undefined;
+
+/**
+ * useGetSession data plus the view permissions implied by the viewer's workspace
+ * grants, ready for canSessionUsePermission. The underlying visibility query is
+ * shared (same key) with the shell, so this costs no extra request.
+ */
+export function useWorkspaceViewSession<T extends WorkspaceViewSessionLike>(sessionData: T): T {
+  const role = sessionData?.role ?? "interviewer";
+  const userId = sessionData?.interviewerId ?? undefined;
+  const enabled = sessionData?.authenticated === true;
+  const { visible } = useWorkspaceVisibility(enabled, role, userId);
+  return sessionWithWorkspaceViews(sessionData, visible);
+}
 
 /**
  * The caller's workspaces are always resolvable, even while the visibility

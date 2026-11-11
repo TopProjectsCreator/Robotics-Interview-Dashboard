@@ -7,5 +7,6 @@
  */
 
 export interface PresenceKickInput {
-  ip: string;
+  /** Account id of the person to kick, from a presence or list_presence result */
+  userId: string;
 }
