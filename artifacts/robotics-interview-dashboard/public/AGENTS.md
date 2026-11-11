@@ -258,8 +258,9 @@ Every workspace and public surface, what it does, and how far it goes.
 - **Broadcasts:** admins message the whole team (or a targeted viewer) with in-app
   popups, optionally mirrored as OS notifications; delivery to everyone online or a
   specific person; short-lived by default.
-- **Presence:** "Live now" pills show who is online, their page and rough region, with
-  coordinator kick and per-person drill-down (visits, sessions, first/last seen).
+- **Presence:** "Live now" pills in admin settings show who is online by name, their
+  page and rough region, with coordinator kick and per-person drill-down (visits,
+  sessions, first/last seen).
 
 ### 04.9 — Overview, settings & the shell
 

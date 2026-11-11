@@ -50,11 +50,6 @@ const PARTS_LINKS: WorkspaceNavItem[] = [
   { href: "/parts/assistant", label: "Parts assistant", iconKey: "assistant", kind: "section", workspace: "parts" },
 ];
 
-/** Sections that live inside a workspace but are shared with other areas. */
-const SECTION_LINKS: WorkspaceNavItem[] = [
-  { href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section", workspace: "interview" },
-];
-
 export function workspaceAreaForPath(location: string): WorkspaceArea {
   const path = location.split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
 
@@ -88,6 +83,7 @@ export function getWorkspaceLinks(): WorkspaceNavItem[] {
 export function getWorkspaceNavigation(
   area: WorkspaceArea,
   visible?: ReadonlySet<WorkspaceKey>,
+  canViewApplicants = false,
 ): WorkspaceNavItem[] {
   const workspaces = visible
     ? WORKSPACE_LINKS.filter((item) => visible.has(item.workspace))
@@ -97,17 +93,16 @@ export function getWorkspaceNavigation(
   if (area === "overview") return workspaces;
   const isVisible = (item: WorkspaceNavItem) => !visible || visible.has(item.workspace);
   if (area === "interview") {
-    return [...workspaces, ...INTERVIEW_LINKS.filter(isVisible)];
+    return [
+      ...workspaces,
+      ...INTERVIEW_LINKS.filter((item) =>
+        isVisible(item) || (canViewApplicants && item.href === "/applicants"),
+      ),
+    ];
   }
   if (area === "chat") return [...workspaces, ...CHAT_LINKS.filter(isVisible)];
   if (area === "parts") return [...workspaces, ...PARTS_LINKS.filter(isVisible)];
   if (area === "cad") return workspaces;
   if (area === "code") return workspaces;
   return workspaces;
-}
-
-/** Sections a role may reach that are not the workspace they are currently in. */
-export function getCrossWorkspaceSections(visible?: ReadonlySet<WorkspaceKey>): WorkspaceNavItem[] {
-  const isVisible = (item: WorkspaceNavItem) => !visible || visible.has(item.workspace);
-  return SECTION_LINKS.filter(isVisible);
 }

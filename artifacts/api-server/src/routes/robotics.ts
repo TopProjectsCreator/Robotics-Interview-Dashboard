@@ -205,14 +205,14 @@ import { runPythonCode } from "../lib/python";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, ne, or } from "drizzle-orm";
 import { authenticatedInterviewerId, createInterviewerSession, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
-import { accountById } from "../lib/interviewerAccounts";
+import { accountById, normalizeInterviewerName } from "../lib/interviewerAccounts";
 import { isAdminRole } from "../lib/roles";
 import { checkAiMentionAllowed, checkDuplicatePost, checkPostAllowed, recordPost } from "../lib/spamGuard";
 import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
 import { teamFilter, teamSqlCondition } from "../lib/teams";
 import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
-import { presenceSessionHash } from "./presence";
-import { getIpStats } from "../lib/presence";
+import { presenceSessionHash, accountNamesById } from "./presence";
+import { getAccountStats } from "../lib/presence";
 import {
   beginOnshapeAuthorization,
   callOnshapeMcpTool,
@@ -1910,17 +1910,47 @@ const ASSISTANT_READ_CONVERSATION_TOOL = {
   },
 };
 
+/**
+ * Resolve a `user` argument (person's name, or the account id shown by
+ * list_presence) to one team account. Returns either the account or an
+ * error message the model can act on.
+ */
+async function resolvePresenceUser(
+  input: string,
+  teamId: string,
+): Promise<{ account: { id: string; displayName: string } } | { error: string }> {
+  const query = input.trim().slice(0, 120);
+  if (!query) return { error: "No user given — pass the person's name or account id from list_presence." };
+  const byId = await db
+    .select({ id: interviewerAccountsTable.id, displayName: interviewerAccountsTable.displayName })
+    .from(interviewerAccountsTable)
+    .where(and(eq(interviewerAccountsTable.id, query), teamFilter(interviewerAccountsTable.teamId, teamId)))
+    .limit(1);
+  if (byId[0]) return { account: byId[0] };
+  const normalized = normalizeInterviewerName(query);
+  const matches = await db
+    .select({ id: interviewerAccountsTable.id, displayName: interviewerAccountsTable.displayName })
+    .from(interviewerAccountsTable)
+    .where(and(eq(interviewerAccountsTable.normalizedName, normalized), teamFilter(interviewerAccountsTable.teamId, teamId)))
+    .limit(5);
+  if (matches.length === 1) return { account: matches[0] };
+  if (matches.length > 1) {
+    return { error: `More than one person matches "${query}". Pass their account id from list_presence instead.` };
+  }
+  return { error: `Nobody on this team matches "${query}". Call list_presence to see who is online.` };
+}
+
 const ASSISTANT_PRESENCE_STATS_TOOL = {
   type: "function" as const,
   function: {
     name: "presence_stats",
-    description: "Drill into one IP from list_presence: total time on site, session count, visit count, first/last seen, and per-page breakdown (visits + seconds each). Use when the admin asks how long someone was around, which pages they use most, or wants a closer look at an unfamiliar IP. No side effects.",
+    description: "Drill into one person from list_presence: total time on site, session count, visit count, first/last seen, and per-page breakdown (visits + seconds each). Use when the admin asks how long someone was around, which pages they use most, or wants a closer look at a person. No side effects.",
     parameters: {
       type: "object",
       properties: {
-        ip: { type: "string", description: "IP address from a list_presence result" },
+        user: { type: "string", description: "Name or account id of the person, from a list_presence result" },
       },
-      required: ["ip"],
+      required: ["user"],
     },
   },
 };
@@ -1929,13 +1959,13 @@ const ASSISTANT_KICK_PRESENCE_TOOL = {
   type: "function" as const,
   function: {
     name: "kick_presence",
-    description: "Kick all sessions from an IP: revokes their login and removes their presence heartbeat so they drop off the Live now panel and must log in again. Requires admin confirmation in the human's message (e.g. the user said 'kick 1.2.3.4' or 'yes kick them'). Never kick your own IP. Use only when explicitly asked to remove someone.",
+    description: "Kick all sessions of one person: revokes their login and removes their presence heartbeat so they drop off the Live now panel and must log in again. Requires admin confirmation in the human's message (e.g. the user said 'kick Maksim' or 'yes kick them'). Never kick yourself. Use only when explicitly asked to remove someone.",
     parameters: {
       type: "object",
       properties: {
-        ip: { type: "string", description: "IP address to kick, from a list_presence result" },
+        user: { type: "string", description: "Name or account id of the person to kick, from a list_presence result. Never your own account." },
       },
-      required: ["ip"],
+      required: ["user"],
     },
   },
 };
@@ -1944,7 +1974,7 @@ const ASSISTANT_LIST_PRESENCE_TOOL = {
   type: "function" as const,
   function: {
     name: "list_presence",
-    description: "Show who is currently online in the admin workspace: session count plus each session's IP address, city/region/country, and last-seen time, with your own session marked. Use for security questions like 'who else is online', 'is someone else logged in', or checking for unfamiliar IPs/locations. No side effects.",
+    description: "Show who is currently online in the admin workspace: session count plus each session's name, city/region/country, and last-seen time, with your own session marked. Use for security questions like 'who else is online', 'is someone else logged in', or checking for unfamiliar people/locations. No side effects.",
     parameters: {
       type: "object",
       properties: {},
@@ -3333,61 +3363,99 @@ async function runAssistantTools(
       toolMessages.push({ role: "tool", content: toolContent, tool_call_id: call.id });
       activities.push({ tool: name ?? "workspace_tool", detail: result.detail });
     } else if (name === "kick_presence") {
-      const ip = String((args as Record<string, unknown>).ip ?? "").trim().slice(0, 45);
-      if (!ip) continue;
-      const { eq } = await import("drizzle-orm");
-      const { db: kickDb, presenceHeartbeatsTable: kickTable } = await import("@workspace/db");
-      const victims = await kickDb.select({ sessionHash: kickTable.sessionHash }).from(kickTable).where(eq(kickTable.ip, ip));
+      // Accept the current `user` argument; `ip` is accepted only so an
+      // older caller gets a clear error instead of a silent failure.
+      const rawArgs = args as Record<string, unknown>;
+      const rawTarget = String(rawArgs.user ?? rawArgs.ip ?? "").trim();
+      if (!rawTarget) continue;
+      const finish = (content: string, detail: string) => {
+        outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+        toolMessages.push({ role: "tool", content, tool_call_id: call.id });
+        activities.push({ tool: "kick_presence", detail });
+      };
+      if (typeof rawArgs.user !== "string" && typeof rawArgs.ip === "string") {
+        finish("Kick takes a person's name or account id now (from list_presence), not an IP address. Ask again with the person's name.", "needs a name");
+        continue;
+      }
+      const resolution = await resolvePresenceUser(rawTarget, team);
+      if ("error" in resolution) {
+        finish(resolution.error, "no match");
+        continue;
+      }
+      const target = resolution.account;
+      if (onshapeAccountId && onshapeAccountId === target.id) {
+        finish(`Cannot kick yourself (${target.displayName}).`, "cannot kick self");
+        continue;
+      }
+      const { db: kickDb, presenceHeartbeatsTable: kickTable, revokedSessionsTable: kickRevoke } = await import("@workspace/db");
+      const victims = await kickDb.select({ sessionHash: kickTable.sessionHash }).from(kickTable).where(and(eq(kickTable.accountId, target.id), teamFilter(kickTable.teamId, team)));
       const hashes = victims.map((r) => r.sessionHash).filter((h) => h && h !== currentSessionHash);
       if (hashes.length === 0) {
-        const selfOnly = victims.some((r) => r.sessionHash === currentSessionHash);
-        outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
-        toolMessages.push({ role: "tool", content: selfOnly ? `Cannot kick your own IP ${ip}.` : `No online session found for IP ${ip}.`, tool_call_id: call.id });
-        activities.push({ tool: "kick_presence", detail: selfOnly ? "cannot kick self" : `no session for ${ip}` });
+        finish(`No online session found for ${target.displayName}.`, `no session for ${target.displayName}`);
         continue;
       }
       for (const h of hashes) {
-        await kickDb.insert((await import("@workspace/db")).revokedSessionsTable).values({ tokenHash: h, expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000) }).onConflictDoNothing();
+        await kickDb.insert(kickRevoke).values({ tokenHash: h, expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000) }).onConflictDoNothing();
         await kickDb.delete(kickTable).where(eq(kickTable.sessionHash, h));
         const { closeOpenVisits } = await import("../lib/presence");
         await closeOpenVisits(h);
       }
-      activities.push({ tool: "kick_presence", detail: `kicked ${hashes.length} session(s) at ${ip}` });
+      activities.push({ tool: "kick_presence", detail: `kicked ${hashes.length} session(s) for ${target.displayName}` });
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
-      toolMessages.push({ role: "tool", content: `Kicked ${hashes.length} session(s) at ${ip} — they must log in again and are removed from Live now.`, tool_call_id: call.id });
+      toolMessages.push({ role: "tool", content: `Kicked ${hashes.length} session(s) for ${target.displayName} — they must log in again and are removed from Live now.`, tool_call_id: call.id });
     } else if (name === "presence_stats") {
-      const ip = String((args as Record<string, unknown>).ip ?? "").trim().slice(0, 45);
-      if (!ip) continue;
-      const stats = await getIpStats(ip);
+      // Accept the current `user` argument; `ip` gets a clear error.
+      const rawArgs = args as Record<string, unknown>;
+      const rawTarget = String(rawArgs.user ?? rawArgs.ip ?? "").trim();
+      if (!rawTarget) continue;
+      const finish = (content: string, detail: string) => {
+        outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+        toolMessages.push({ role: "tool", content, tool_call_id: call.id });
+        activities.push({ tool: "presence_stats", detail });
+      };
+      if (typeof rawArgs.user !== "string" && typeof rawArgs.ip === "string") {
+        finish("presence_stats takes a person's name or account id now (from list_presence), not an IP address. Ask again with the person's name.", "needs a name");
+        continue;
+      }
+      const resolution = await resolvePresenceUser(rawTarget, team);
+      if ("error" in resolution) {
+        finish(resolution.error, "no match");
+        continue;
+      }
+      const target = resolution.account;
+      const stats = await getAccountStats(target.id, team);
       const fmt = (seconds: number): string => {
         if (seconds < 60) return `${seconds}s`;
         const m = Math.floor(seconds / 60);
         if (m < 60) return `${m}m ${seconds % 60}s`;
         return `${Math.floor(m / 60)}h ${m % 60}m`;
       };
-      activities.push({ tool: "presence_stats", detail: `${ip}: ${fmt(stats.totalSeconds)} total` });
+      activities.push({ tool: "presence_stats", detail: `${target.displayName}: ${fmt(stats.totalSeconds)} total` });
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({
         role: "tool",
         content: stats.visitCount > 0
-          ? `Usage for IP ${stats.ip}: ${fmt(stats.totalSeconds)} total on site across ${stats.sessionCount} session(s) and ${stats.visitCount} page visit(s), first seen ${stats.firstSeenAt ?? "unknown"}, last seen ${stats.lastSeenAt ?? "unknown"}. Pages by time:\n${stats.pages.map((p) => `- ${p.page || "(unknown)"}: ${p.visits} visit(s), ${fmt(p.seconds)}`).join("\n")}`
-          : `No recorded visits for IP ${stats.ip}.`,
+          ? `Usage for ${target.displayName}: ${fmt(stats.totalSeconds)} total on site across ${stats.sessionCount} session(s) and ${stats.visitCount} page visit(s), first seen ${stats.firstSeenAt ?? "unknown"}, last seen ${stats.lastSeenAt ?? "unknown"}. Pages by time:\n${stats.pages.map((p) => `- ${p.page || "(unknown)"}: ${p.visits} visit(s), ${fmt(p.seconds)}`).join("\n")}`
+          : `No recorded visits for ${target.displayName}.`,
         tool_call_id: call.id,
       });
     } else if (name === "list_presence") {
       const rows = await db
         .select()
         .from(presenceHeartbeatsTable)
-        .where(gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - 120 * 1000)))
+        .where(and(gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - 120 * 1000)), teamFilter(presenceHeartbeatsTable.teamId, team)))
         .orderBy(desc(presenceHeartbeatsTable.updatedAt));
+      const names = await accountNamesById(rows.map((row) => row.accountId), team);
       const place = (row: typeof rows[number]): string =>
         [row.city, row.region, row.country].filter(Boolean).join(", ") || "location unknown";
+      const displayName = (row: typeof rows[number]): string =>
+        (row.accountId && names.get(row.accountId)) || "Unknown user";
       activities.push({ tool: "list_presence", detail: `${rows.length} online` });
       outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
       toolMessages.push({
         role: "tool",
         content: rows.length > 0
-          ? `${rows.length} admin session(s) online (seen in the last 2 minutes):\n${rows.map((row) => `- IP ${row.ip} · ${place(row)} · on ${row.page || "unknown page"} · last seen ${row.updatedAt.toISOString()}${row.sessionHash === currentSessionHash ? " (this is YOUR session)" : ""}`).join("\n")}`
+          ? `${rows.length} admin session(s) online (seen in the last 2 minutes):\n${rows.map((row) => `- ${displayName(row)}${row.accountId ? ` (account id ${row.accountId})` : " (session not attributable to a person)"} · ${place(row)} · on ${row.page || "unknown page"} · last seen ${row.updatedAt.toISOString()}${row.sessionHash === currentSessionHash ? " (this is YOUR session)" : ""}`).join("\n")}`
           : "Nobody else is online right now — only this session has a recent heartbeat. (Sessions appear after ~30s of dashboard activity.)",
         tool_call_id: call.id,
       });

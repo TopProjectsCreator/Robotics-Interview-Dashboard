@@ -121,4 +121,22 @@ describe("workspace navigation", () => {
       getWorkspaceNavigation("parts", withoutParts).map(({ label }) => label),
     ).not.toContain("Parts assistant");
   });
+
+  it("keeps applicant navigation in Interview, including roster-only access", () => {
+    const visible = new Set<WorkspaceKey>(["chat", "interview"]);
+    expect(
+      getWorkspaceNavigation("chat", visible, true).filter(({ href }) => href === "/applicants"),
+    ).toHaveLength(0);
+    expect(
+      getWorkspaceNavigation("interview", visible, true).filter(({ href }) => href === "/applicants"),
+    ).toHaveLength(1);
+
+    const rosterOnly = new Set<WorkspaceKey>(["chat"]);
+    expect(
+      getWorkspaceNavigation("interview", rosterOnly, true).map(({ label }) => label),
+    ).toEqual(["Chat", "Applicants"]);
+    expect(
+      getWorkspaceNavigation("interview", rosterOnly, false).map(({ label }) => label),
+    ).toEqual(["Chat"]);
+  });
 });

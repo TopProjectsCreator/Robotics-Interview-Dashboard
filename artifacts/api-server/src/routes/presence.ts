@@ -31,7 +31,7 @@ export function presenceSessionHash(session: string | undefined): string {
 }
 
 /** Look up display names for a batch of account ids (team-scoped best effort). */
-async function accountNamesById(ids: Iterable<string>, teamId: string): Promise<Map<string, string>> {
+export async function accountNamesById(ids: Iterable<string>, teamId: string): Promise<Map<string, string>> {
   const unique = [...new Set([...ids].filter(Boolean))];
   if (unique.length === 0) return new Map();
   try {
