@@ -35,7 +35,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     return jsonResponse(status);
   }
   if (url.pathname.endsWith("/queue/chat/productivity/settings") && method === "PUT") {
-    status = { ...status, enabled: body?.enabled === true };
+    status = { ...status, enabled: body?.enabled === true, lastError: null };
     return jsonResponse({ enabled: status.enabled, updatedAt: "2026-11-10T20:00:00.000Z" });
   }
   return jsonResponse({ error: "Not found" }, 404);
@@ -109,5 +109,21 @@ describe("ChatProductivityMeter", () => {
     expect(screen.getByText("Planning and coordination")).toBeInTheDocument();
     expect(screen.queryByTestId("button-disable-chat-productivity")).not.toBeInTheDocument();
     expect(screen.queryByTestId("button-enable-chat-productivity")).not.toBeInTheDocument();
+  });
+
+  it("lets a coordinator retry a failed review without changing the opt-in setting", async () => {
+    status = { enabled: true, canManage: true, lastError: "The latest AI review failed. Another review is scheduled.", latest: null };
+    renderMeter({ scope: "shared" });
+    fireEvent.click(await screen.findByTestId("button-chat-productivity"));
+    expect(await screen.findByTestId("button-retry-chat-productivity")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("button-retry-chat-productivity"));
+
+    await waitFor(() => expect(requests.some((request) => request.method === "PUT")).toBe(true));
+    expect(requests.find((request) => request.method === "PUT")?.body).toEqual({
+      enabled: true,
+      acknowledgeNotice: true,
+    });
+    await waitFor(() => expect(screen.queryByTestId("button-retry-chat-productivity")).not.toBeInTheDocument());
   });
 });

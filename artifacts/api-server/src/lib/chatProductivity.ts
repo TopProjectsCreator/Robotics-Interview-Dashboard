@@ -52,6 +52,29 @@ function safeErrorText(error: unknown): string {
   return error instanceof Error ? error.name.slice(0, 100) : "Unknown AI review error";
 }
 
+class ProductivityReviewError extends Error {
+  readonly stage: string;
+  readonly causeName: string;
+  readonly status?: number;
+  readonly code?: string;
+
+  constructor(stage: string, cause: unknown) {
+    super("Scheduled productivity review failed.");
+    this.name = "ProductivityReviewError";
+    this.stage = stage;
+    this.causeName = safeErrorText(cause);
+    if (cause && typeof cause === "object") {
+      const metadata = cause as { status?: unknown; code?: unknown };
+      if (typeof metadata.status === "number" && Number.isInteger(metadata.status) && metadata.status >= 400 && metadata.status <= 599) {
+        this.status = metadata.status;
+      }
+      if (typeof metadata.code === "string" && /^[a-z0-9_-]{1,40}$/i.test(metadata.code)) {
+        this.code = metadata.code;
+      }
+    }
+  }
+}
+
 function teamMessageFilter(teamId: string) {
   return or(
     eq(interviewChatMessagesTable.teamId, teamId),
@@ -228,39 +251,50 @@ async function persistResults(
 }
 
 async function reviewTeam(teamId: string): Promise<void> {
-  const { modelId, contextLength, reasoningOptions } = await resolveModelSettings(teamId);
-  const { definitions, conversations } = await loadConversations(teamId);
-  const input = buildProductivityInput(
-    conversations,
-    inputBudgetBytes(contextLength),
-  );
-  const hasActivity = [...input.includedMessages.values()].some((messages) => messages.length > 0);
+  let stage = "resolve model settings";
+  try {
+    const { modelId, contextLength, reasoningOptions } = await resolveModelSettings(teamId);
+    stage = "load shared conversation history";
+    const { definitions, conversations } = await loadConversations(teamId);
+    stage = "prepare context-bounded input";
+    const input = buildProductivityInput(
+      conversations,
+      inputBudgetBytes(contextLength),
+    );
+    const hasActivity = [...input.includedMessages.values()].some((messages) => messages.length > 0);
 
-  if (!hasActivity) {
-    const emptyResults = Object.fromEntries(definitions.map((definition) => [
-      definition.key,
-      noActivityAssessment(),
-    ]));
-    await persistResults(teamId, modelId, definitions, input.includedMessages, emptyResults);
-    return;
+    if (!hasActivity) {
+      const emptyResults = Object.fromEntries(definitions.map((definition) => [
+        definition.key,
+        noActivityAssessment(),
+      ]));
+      stage = "save empty assessments";
+      await persistResults(teamId, modelId, definitions, input.includedMessages, emptyResults);
+      return;
+    }
+
+    stage = "request AI assessment";
+    const completion = await teamAssistantAI(teamId).chat.completions.create({
+      model: modelId,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: JSON.stringify(input.payload) },
+      ],
+      response_format: { type: "json_object" },
+      ...reasoningOptions,
+    });
+    const text = completion.choices?.[0]?.message?.content;
+    if (typeof text !== "string") throw new Error("The AI provider returned no productivity report.");
+    stage = "validate AI response";
+    const results = parseProductivityResults(
+      text,
+      definitions.map((definition) => definition.key),
+    );
+    stage = "save per-conversation assessments";
+    await persistResults(teamId, modelId, definitions, input.includedMessages, results);
+  } catch (error) {
+    throw new ProductivityReviewError(stage, error);
   }
-
-  const completion = await teamAssistantAI(teamId).chat.completions.create({
-    model: modelId,
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: JSON.stringify(input.payload) },
-    ],
-    response_format: { type: "json_object" },
-    ...reasoningOptions,
-  });
-  const text = completion.choices?.[0]?.message?.content;
-  if (typeof text !== "string") throw new Error("The AI provider returned no productivity report.");
-  const results = parseProductivityResults(
-    text,
-    definitions.map((definition) => definition.key),
-  );
-  await persistResults(teamId, modelId, definitions, input.includedMessages, results);
 }
 
 async function claimDueReview(teamId: string): Promise<boolean> {
@@ -293,7 +327,13 @@ export async function dispatchDueChatProductivityReviews(): Promise<void> {
             updatedAt: new Date(),
           })
           .where(eq(chatProductivitySettingsTable.teamId, teamId));
-        logger.error({ teamId, err: safeErrorText(error) }, "Scheduled team productivity review failed");
+        logger.error({
+          teamId,
+          stage: error instanceof ProductivityReviewError ? error.stage : "claim review",
+          errorType: error instanceof ProductivityReviewError ? error.causeName : safeErrorText(error),
+          ...(error instanceof ProductivityReviewError && error.status ? { providerStatus: error.status } : {}),
+          ...(error instanceof ProductivityReviewError && error.code ? { providerCode: error.code } : {}),
+        }, "Scheduled team productivity review failed");
       }
     } catch (error) {
       logger.error({ teamId, err: safeErrorText(error) }, "Could not claim scheduled team productivity review");

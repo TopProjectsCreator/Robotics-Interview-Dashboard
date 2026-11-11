@@ -272,6 +272,18 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
                     {updateSettings.isPending ? <LoaderCircle size={15} className="animate-spin" /> : status.enabled ? <PauseCircle size={15} /> : <PlayCircle size={15} />}
                     {updateSettings.isPending ? "Saving…" : status.enabled ? "Turn off AI reviews" : "Enable 30-minute AI reviews"}
                   </button>
+                  {status.enabled && status.lastError && (
+                    <button
+                      type="button"
+                      disabled={updateSettings.isPending}
+                      onClick={() => void saveEnabled(true).catch(() => {})}
+                      data-testid="button-retry-chat-productivity"
+                      className="ml-2 inline-flex items-center gap-2 rounded-lg border border-[#b7d5d1] px-3.5 py-2 text-sm font-semibold text-[#12737d] transition hover:border-[#16869a] hover:bg-[#f2fbfa] disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#355663] dark:text-[#8fd7e0] dark:hover:bg-[#172b38]"
+                    >
+                      <Activity size={15} />
+                      Retry review now
+                    </button>
+                  )}
                 </div>
               )}
             </>
