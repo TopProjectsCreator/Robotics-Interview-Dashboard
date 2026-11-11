@@ -485,6 +485,7 @@ export default function PublicDashboard() {
             <Link href="/compare" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-compare">Compare</Link>
             <Link href="/privacy" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-privacy">Privacy</Link>
             <Link href="/terms" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-terms">Terms</Link>
+            <Link href="/AGENTS.md" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]" data-testid="link-footer-agents-md">AGENTS.md</Link>
           </div>
         </footer>
       </div>

@@ -1154,3 +1154,33 @@ to action falls below the fold on a phone. */
     padding-inline: .6rem;
   }
 }
+/* ===== AGENTS.md briefing page ===== */
+.agents-md {
+  --agents-bg: #0d1b28;
+  --agents-panel: #122534;
+  --agents-panel-2: #16293a;
+  --agents-line: #24384b;
+  --agents-text: #dce8ee;
+  --agents-muted: #8aa5b1;
+  --agents-amber: #efc34f;
+  --agents-mint: #7edbd0;
+  background: var(--agents-bg);
+  color: var(--agents-text);
+  scroll-behavior: smooth;
+}
+.agents-md ::selection { background: #efc34f; color: #0d1b28; }
+.agents-md-content h2, .agents-md-content h3 { scroll-margin-top: 5.5rem; }
+.agents-md-scrollbar::-webkit-scrollbar { width: 6px; }
+.agents-md-scrollbar::-webkit-scrollbar-thumb { background: #2b4256; border-radius: 999px; }
+@keyframes agents-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.agents-marquee-track {
+  animation: agents-marquee 46s linear infinite;
+  width: max-content;
+}
+@media (prefers-reduced-motion: reduce) {
+  .agents-marquee-track { animation: none; }
+  .agents-md { scroll-behavior: auto; }
+}

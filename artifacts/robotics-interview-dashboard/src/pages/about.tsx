@@ -226,7 +226,7 @@ export default function AboutPage() {
 
         <footer className="flex flex-col gap-4 border-t border-[#d9e6e1] py-6 font-mono text-[9px] uppercase tracking-[.08em] text-[#586d72] dark:border-[#28464d] dark:text-[#91aaa8] sm:flex-row sm:items-center sm:justify-between">
           <span>Robotics team workspace</span>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2"><Link href="/" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Home</Link><Link href="/privacy" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Privacy</Link><Link href="/terms" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Terms</Link><Link href="/auth" className="inline-flex items-center gap-1.5 hover:text-[#168b94] dark:hover:text-[#7edbd0]">Team sign in <ArrowRight size={12} /></Link></div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2"><Link href="/" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Home</Link><Link href="/privacy" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Privacy</Link><Link href="/terms" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">Terms</Link><Link href="/AGENTS.md" className="hover:text-[#168b94] dark:hover:text-[#7edbd0]">AGENTS.md</Link><Link href="/auth" className="inline-flex items-center gap-1.5 hover:text-[#168b94] dark:hover:text-[#7edbd0]">Team sign in <ArrowRight size={12} /></Link></div>
         </footer>
       </div>
     </main>
