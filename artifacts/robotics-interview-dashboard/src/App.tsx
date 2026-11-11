@@ -10210,7 +10210,7 @@ function Router() {
         <Route path="/pricing" component={Pricing} />
         <Route path="/compare" component={ComparePage} />
         <Route path="/about" component={AboutPage} />
-        <Route path="/AGENTS.md" component={AgentsMdPage} />
+        <Route path="/agents" component={AgentsMdPage} />
         <Route path="/interview-landing" component={Landing} />
         <Route path="/chat-landing" component={ChatLanding} />
         <Route path="/parts-landing" component={PartsLanding} />
