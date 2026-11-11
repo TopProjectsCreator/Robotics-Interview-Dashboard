@@ -1103,6 +1103,11 @@ function SettingsModal({
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>
         <div className="mt-2"><PresencePanel /></div>
       </div>}
+      {canSendBroadcast && <div className={divider} data-testid="settings-broadcast">
+        <p className={sectionLabel}>Broadcast</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Send a popup to everyone online, or to one person by name. It pops up in seconds — and with browser notifications on, even in another tab.</p>
+        <div className="mt-2"><BroadcastCard /></div>
+      </div>}
       {canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>

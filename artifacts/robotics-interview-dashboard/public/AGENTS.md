@@ -255,9 +255,7 @@ Every workspace and public surface, what it does, and how far it goes.
   cancelled / interrupted` states; cadence language like "Every Monday, Wednesday";
   next-run preview; per-run history with output and last-error box; pause/resume/edit
   (prompt, frequency, time, weekdays, timezone)/cancel.
-- **Broadcasts:** admins message the whole team (or a targeted viewer) with in-app
-  popups, optionally mirrored as OS notifications; delivery to everyone online or a
-  specific person; short-lived by default.
+- **Broadcasts:** admins send popups from Workspace settings → Broadcast to the whole team (or one person, picked by name); optionally mirrored as OS notifications; delivery to everyone online or a specific person; short-lived by default.
 - **Presence:** "Live now" pills in admin settings show who is online by name, their
   page and rough region, with coordinator kick and per-person drill-down (visits,
   sessions, first/last seen).
