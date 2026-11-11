@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CHAT_PRODUCTIVITY_RANGE_MS,
   buildProductivityInput,
   buildProductivityResponseFormat,
+  chatProductivityRangeStart,
   noActivityAssessment,
   parseProductivityResults,
 } from "./chatProductivityAnalysis.ts";
@@ -116,6 +118,13 @@ test("limits productivity input to the 30-minute review window", () => {
     includedMessages.get("team")?.map((message) => message.text),
     ["newer update", "inside window"],
   );
+});
+
+test("supports the requested on-demand review ranges", () => {
+  const end = new Date("2026-11-11T10:00:00.000Z");
+  assert.deepEqual(Object.keys(CHAT_PRODUCTIVITY_RANGE_MS), ["1h", "1d", "3d", "5d", "7d", "30d"]);
+  assert.equal(chatProductivityRangeStart("1h", end).toISOString(), "2026-11-11T09:00:00.000Z");
+  assert.equal(chatProductivityRangeStart("30d", end).toISOString(), "2026-10-12T10:00:00.000Z");
 });
 
 test("uses older messages only as context and fills them after scoring messages", () => {

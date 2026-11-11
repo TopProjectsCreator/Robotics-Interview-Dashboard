@@ -3,7 +3,7 @@ import { Router, type IRouter, type Request, type Response as ExpressResponse } 
 import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, chatProductivitySettingsTable, chatProductivitySnapshotsTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { assistantToolPoliciesTable, teamRolesTable } from "@workspace/db/schema";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
-import { dispatchChatProductivityReviewForTeam } from "../lib/chatProductivity";
+import { dispatchChatProductivityReviewForTeam, reviewChatProductivityRange } from "../lib/chatProductivity";
 import { hasPermission } from "@workspace/api-zod";
 import { permissionsForAccount } from "../lib/teamRoles";
 import {
@@ -55,6 +55,8 @@ import {
   AssignSeatResponse,
   GetInterviewChatResponse,
   GetChatProductivityResponse,
+  ReviewChatProductivityRangeBody,
+  ReviewChatProductivityRangeResponse,
   MarkInterviewChatReadBody,
   MarkInterviewChatReadResponse,
   GetChatConversationsResponse,
@@ -6187,7 +6189,6 @@ router.get("/queue/chat/productivity", requireAdmin, async (req, res): Promise<v
     res.status(status).json({ error: conversation.error });
     return;
   }
-
   const [settings] = await db.select().from(chatProductivitySettingsTable)
     .where(eq(chatProductivitySettingsTable.teamId, teamId))
     .limit(1);
@@ -6217,6 +6218,75 @@ router.get("/queue/chat/productivity", requireAdmin, async (req, res): Promise<v
       ? "The latest AI review failed. Another review is scheduled."
       : null,
     latest: latestForConversation,
+  }));
+});
+
+router.post("/queue/chat/productivity/review", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const parsed = ReviewChatProductivityRangeBody.safeParse(req.body);
+  if (!parsed.success || (parsed.data.scope === "channel" && !parsed.data.channelId)) {
+    res.status(400).json({ error: "Provide a valid conversation and productivity time range." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const viewer = channelViewerFor(account);
+  const conversation = await resolveChatConversation(parsed.data.scope, undefined, account.displayName, teamId, {
+    channelId: parsed.data.channelId,
+    viewer,
+  });
+  if ("error" in conversation) {
+    const status = conversation.error.includes("not a member") ? 403
+      : conversation.error.includes("not found") ? 404
+        : 400;
+    res.status(status).json({ error: conversation.error });
+    return;
+  }
+  if (conversation.scope !== "shared" && conversation.scope !== "channel") {
+    res.status(400).json({ error: "Only shared and invite-only conversations have productivity reviews." });
+    return;
+  }
+
+  const [settings] = await db.select().from(chatProductivitySettingsTable)
+    .where(eq(chatProductivitySettingsTable.teamId, teamId))
+    .limit(1);
+  if (!settings?.enabled) {
+    res.status(409).json({ error: "AI productivity reviews must be enabled before selecting a custom time range." });
+    return;
+  }
+
+  const definition = {
+    scope: conversation.scope,
+    key: conversation.scope === "shared" ? "team" : conversation.channelId!,
+    name: conversation.scope === "shared" ? "Team conversation" : conversation.channelName ?? "Channel",
+  };
+  let latest;
+  try {
+    latest = await reviewChatProductivityRange(
+      teamId,
+      definition.scope,
+      definition.key,
+      definition.name,
+      parsed.data.range,
+    );
+  } catch (error) {
+    req.log.error({
+      teamId,
+      range: parsed.data.range,
+      errorType: error instanceof Error ? error.name : "UnknownError",
+    }, "On-demand productivity range review failed");
+    res.status(502).json({ error: "Could not generate a productivity assessment for that range." });
+    return;
+  }
+
+  res.json(ReviewChatProductivityRangeResponse.parse({
+    enabled: settings.enabled,
+    canManage: await viewerCanManageChat(viewer),
+    lastRunAt: settings.lastRunAt?.toISOString() ?? null,
+    lastError: null,
+    latest,
   }));
 });
 

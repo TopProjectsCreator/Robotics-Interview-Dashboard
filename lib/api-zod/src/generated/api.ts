@@ -1854,6 +1854,54 @@ export const GetChatProductivityResponse = zod.object({
 
 
 /**
+ * @summary Re-assess chat productivity over a selected time range
+ */
+export const ReviewChatProductivityRangeBody = zod.object({
+  "scope": zod.enum(['shared', 'channel']),
+  "channelId": zod.string().optional().describe('Invite-only channel id; the caller must be a member or have chat management permission.'),
+  "range": zod.enum(['1h', '1d', '3d', '5d', '7d', '30d'])
+})
+
+export const reviewChatProductivityRangeResponseLatestOneScoreMin = 0;
+export const reviewChatProductivityRangeResponseLatestOneScoreMax = 10;
+
+export const reviewChatProductivityRangeResponseLatestOneBreakdownProjectProgressMin = 0;
+export const reviewChatProductivityRangeResponseLatestOneBreakdownProjectProgressMax = 10;
+
+export const reviewChatProductivityRangeResponseLatestOneBreakdownPlanningCoordinationMin = 0;
+export const reviewChatProductivityRangeResponseLatestOneBreakdownPlanningCoordinationMax = 10;
+
+export const reviewChatProductivityRangeResponseLatestOneBreakdownFocusDisciplineMin = 0;
+export const reviewChatProductivityRangeResponseLatestOneBreakdownFocusDisciplineMax = 10;
+
+
+
+export const ReviewChatProductivityRangeResponse = zod.object({
+  "enabled": zod.boolean(),
+  "canManage": zod.boolean(),
+  "lastRunAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable(),
+  "latest": zod.union([zod.object({
+  "conversationName": zod.string(),
+  "score": zod.number().int().min(reviewChatProductivityRangeResponseLatestOneScoreMin).max(reviewChatProductivityRangeResponseLatestOneScoreMax),
+  "summary": zod.string(),
+  "activities": zod.array(zod.object({
+  "activity": zod.string(),
+  "assessment": zod.enum(['productive', 'low_value', 'potentially_useful', 'no_recorded_progress'])
+})),
+  "breakdown": zod.object({
+  "projectProgress": zod.number().int().min(reviewChatProductivityRangeResponseLatestOneBreakdownProjectProgressMin).max(reviewChatProductivityRangeResponseLatestOneBreakdownProjectProgressMax),
+  "planningCoordination": zod.number().int().min(reviewChatProductivityRangeResponseLatestOneBreakdownPlanningCoordinationMin).max(reviewChatProductivityRangeResponseLatestOneBreakdownPlanningCoordinationMax),
+  "focusDiscipline": zod.number().int().min(reviewChatProductivityRangeResponseLatestOneBreakdownFocusDisciplineMin).max(reviewChatProductivityRangeResponseLatestOneBreakdownFocusDisciplineMax)
+}),
+  "periodStart": zod.coerce.date().nullable(),
+  "periodEnd": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
  * @summary Enable or disable periodic AI analysis of shared chat
  */
 export const UpdateChatProductivitySettingsBody = zod.object({

@@ -105,6 +105,7 @@ import type {
   ChatPoll,
   ChatPollInput,
   ChatPollVoteInput,
+  ChatProductivityRangeInput,
   ChatProductivitySettings,
   ChatProductivitySettingsInput,
   ChatProductivityStatus,
@@ -6102,6 +6103,77 @@ export function useGetChatProductivity<TData = Awaited<ReturnType<typeof getChat
 
 
 
+
+export const getReviewChatProductivityRangeUrl = () => {
+
+
+
+
+  return `/api/queue/chat/productivity/review`
+}
+
+/**
+ * @summary Re-assess chat productivity over a selected time range
+ */
+export const reviewChatProductivityRange = async (chatProductivityRangeInput: ChatProductivityRangeInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatProductivityStatus> => {
+
+  return customFetch<ChatProductivityStatus>(getReviewChatProductivityRangeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatProductivityRangeInput)
+  }
+);}
+
+
+
+
+
+export const getReviewChatProductivityRangeMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewChatProductivityRange>>, TError,{data: BodyType<ChatProductivityRangeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewChatProductivityRange>>, TError,{data: BodyType<ChatProductivityRangeInput>}, TContext> => {
+
+const mutationKey = ['reviewChatProductivityRange'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewChatProductivityRange>>, {data: BodyType<ChatProductivityRangeInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  reviewChatProductivityRange(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewChatProductivityRangeMutationResult = NonNullable<Awaited<ReturnType<typeof reviewChatProductivityRange>>>
+    export type ReviewChatProductivityRangeMutationBody = BodyType<ChatProductivityRangeInput>
+    export type ReviewChatProductivityRangeMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Re-assess chat productivity over a selected time range
+ */
+export const useReviewChatProductivityRange = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewChatProductivityRange>>, TError,{data: BodyType<ChatProductivityRangeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviewChatProductivityRange>>,
+        TError,
+        {data: BodyType<ChatProductivityRangeInput>},
+        TContext
+      > => {
+      return useMutation(getReviewChatProductivityRangeMutationOptions(options));
+    }
 
 export const getUpdateChatProductivitySettingsUrl = () => {
 

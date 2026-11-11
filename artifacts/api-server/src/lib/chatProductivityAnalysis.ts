@@ -27,6 +27,21 @@ const ASSESSMENTS = new Set([
   "no_recorded_progress",
 ]);
 
+export const CHAT_PRODUCTIVITY_RANGE_MS = {
+  "1h": 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "3d": 3 * 24 * 60 * 60 * 1000,
+  "5d": 5 * 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+} as const;
+
+export type ChatProductivityRange = keyof typeof CHAT_PRODUCTIVITY_RANGE_MS;
+
+export function chatProductivityRangeStart(range: ChatProductivityRange, end: Date): Date {
+  return new Date(end.getTime() - CHAT_PRODUCTIVITY_RANGE_MS[range]);
+}
+
 export function buildProductivityResponseFormat(expectedKeys: string[]) {
   if (
     expectedKeys.length === 0 ||
@@ -116,8 +131,8 @@ function truncateUtf8(value: string, maxBytes: number): string {
 }
 
 /**
- * Prioritizes 30-minute score-window messages, then fills remaining budget
- * with older context. Only score-window messages are returned in includedMessages.
+ * Prioritizes score-window messages, then fills remaining budget with older
+ * context. Only score-window messages are returned in includedMessages.
  * The payload contains conversation names and message text only: no authors,
  * direct messages, attachments, reactions, polls, or deleted messages.
  */

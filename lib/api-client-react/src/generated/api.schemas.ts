@@ -2161,6 +2161,33 @@ export interface ChatProductivityStatus {
   latest: ChatProductivitySnapshot | null;
 }
 
+export type ChatProductivityRangeInputScope = typeof ChatProductivityRangeInputScope[keyof typeof ChatProductivityRangeInputScope];
+
+
+export const ChatProductivityRangeInputScope = {
+  shared: 'shared',
+  channel: 'channel',
+} as const;
+
+export type ChatProductivityRangeInputRange = typeof ChatProductivityRangeInputRange[keyof typeof ChatProductivityRangeInputRange];
+
+
+export const ChatProductivityRangeInputRange = {
+  '1h': '1h',
+  '1d': '1d',
+  '3d': '3d',
+  '5d': '5d',
+  '7d': '7d',
+  '30d': '30d',
+} as const;
+
+export interface ChatProductivityRangeInput {
+  scope: ChatProductivityRangeInputScope;
+  /** Invite-only channel id; the caller must be a member or have chat management permission. */
+  channelId?: string;
+  range: ChatProductivityRangeInputRange;
+}
+
 export interface ChatProductivitySettingsInput {
   enabled: boolean;
   /** Must be true when enabling after the coordinator reviews the AI processing notice. */
