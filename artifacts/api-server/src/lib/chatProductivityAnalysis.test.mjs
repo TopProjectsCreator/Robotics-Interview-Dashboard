@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildProductivityInput,
+  buildProductivityResponseFormat,
   noActivityAssessment,
   parseProductivityResults,
 } from "./chatProductivityAnalysis.ts";
@@ -95,14 +96,52 @@ test("requires exactly one valid JSON assessment for every conversation key", ()
   assert.equal(result.team.score, 6);
   assert.equal(result.build.breakdown.planningCoordination, 8);
 
+  const wrappedResponse = JSON.stringify({ channels: { team: validAssessment, build: validAssessment } });
+  assert.equal(parseProductivityResults(wrappedResponse, ["team", "build"]).build.score, 6);
+
+  const namedResponse = JSON.stringify({
+    "Team conversation": validAssessment,
+    "Drive team": validAssessment,
+    overall: { ignored: true },
+  });
+  assert.equal(parseProductivityResults(namedResponse, ["team", "drive-team"], {
+    team: "Team conversation",
+    "drive-team": "Drive team",
+  }).team.score, 6);
+
+  const manyActivities = Array.from({ length: 25 }, (_, index) => ({
+    activity: `Observed activity ${index + 1}`,
+    assessment: "productive",
+  }));
+  assert.equal(parseProductivityResults(JSON.stringify({
+    team: { ...validAssessment, activities: manyActivities },
+  }), ["team"]).team.activities.length, 25);
+  assert.equal(parseProductivityResults(JSON.stringify({
+    team: { ...validAssessment, activities: validAssessment.activities[0] },
+  }), ["team"]).team.activities.length, 1);
+
   assert.throws(
     () => parseProductivityResults(JSON.stringify({ team: validAssessment }), ["team", "build"]),
-    /every shared conversation/,
+    (error) => error.code === "missing_conversation_results",
   );
   assert.throws(
     () => parseProductivityResults("{not-json", ["team"]),
-    /valid JSON/,
+    (error) => error.code === "invalid_json",
   );
+  assert.throws(
+    () => parseProductivityResults(JSON.stringify({ team: { ...validAssessment, score: "six" } }), ["team"]),
+    (error) => error.code === "invalid_assessment_score",
+  );
+});
+
+test("builds a strict response schema requiring every conversation without output caps", () => {
+  const responseFormat = buildProductivityResponseFormat(["team", "channel-id"]);
+  assert.equal(responseFormat.type, "json_schema");
+  assert.equal(responseFormat.json_schema.strict, true);
+  assert.deepEqual(responseFormat.json_schema.schema.required, ["team", "channel-id"]);
+  assert.equal(responseFormat.json_schema.schema.properties["channel-id"].properties.activities.type, "array");
+  assert.equal("maxItems" in responseFormat.json_schema.schema.properties["channel-id"].properties.activities, false);
+  assert.throws(() => buildProductivityResponseFormat(["team", "team"]), /unique and non-empty/);
 });
 
 test("represents an empty history as no recorded progress rather than an inferred score", () => {

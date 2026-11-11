@@ -2155,6 +2155,8 @@ export interface ChatProductivityStatus {
   enabled: boolean;
   canManage: boolean;
   /** @nullable */
+  lastRunAt: string | null;
+  /** @nullable */
   lastError: string | null;
   latest: ChatProductivitySnapshot | null;
 }

@@ -8200,12 +8200,15 @@ components:
           format: date-time
     ChatProductivityStatus:
       type: object
-      required: [enabled, canManage, lastError, latest]
+      required: [enabled, canManage, lastRunAt, lastError, latest]
       properties:
         enabled:
           type: boolean
         canManage:
           type: boolean
+        lastRunAt:
+          type: ["string", "null"]
+          format: date-time
         lastError:
           type: ["string", "null"]
         latest:

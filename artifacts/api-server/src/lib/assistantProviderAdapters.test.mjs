@@ -84,6 +84,42 @@ test("custom OpenAI-compatible endpoints receive only the configured key and rej
   }
 });
 
+test("OpenAI Chat Completions forwards strict per-conversation JSON schemas", async () => {
+  let captured;
+  const fetchMock = mock.method(globalThis, "fetch", async (_url, init) => {
+    captured = JSON.parse(init.body);
+    return Response.json({
+      id: "chat-schema",
+      model: model.id,
+      choices: [{ index: 0, message: { role: "assistant", content: "{}" }, finish_reason: "stop" }],
+    });
+  });
+  try {
+    await invokeAssistantProvider(provider("openai-chat-completions"), model, {
+      model: model.id,
+      messages: [{ role: "user", content: "review" }],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "team_productivity_review",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { team: { type: "object" } },
+            required: ["team"],
+            additionalProperties: false,
+          },
+        },
+      },
+    });
+    assert.equal(captured.response_format.type, "json_schema");
+    assert.equal(captured.response_format.json_schema.strict, true);
+    assert.deepEqual(captured.response_format.json_schema.schema.required, ["team"]);
+  } finally {
+    fetchMock.mock.restore();
+  }
+});
+
 test("OpenAI Responses converts the native output back to the assistant chat contract", async () => {
   let captured;
   const fetchMock = mock.method(globalThis, "fetch", async (url, init) => {
@@ -99,12 +135,26 @@ test("OpenAI Responses converts the native output back to the assistant chat con
     const response = await invokeAssistantProvider(provider("openai-responses"), model, {
       model: model.id,
       messages: [{ role: "user", content: "hello" }],
-      response_format: { type: "json_object" },
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "team_productivity_review",
+          strict: true,
+          schema: { type: "object", properties: { team: { type: "string" } }, required: ["team"] },
+        },
+      },
       reasoning: { effort: "high" },
     });
     assert.equal(captured.url, "https://api.openai.com/v1/responses");
     assert.equal(captured.body.input[0].role, "user");
-    assert.deepEqual(captured.body.text, { format: { type: "json_object" } });
+    assert.deepEqual(captured.body.text, {
+      format: {
+        type: "json_schema",
+        name: "team_productivity_review",
+        strict: true,
+        schema: { type: "object", properties: { team: { type: "string" } }, required: ["team"] },
+      },
+    });
     assert.deepEqual(captured.body.reasoning, { effort: "high" });
     assert.equal("max_output_tokens" in captured.body, false);
     assert.equal(response.choices[0].message.content, "from responses");
@@ -133,11 +183,20 @@ test("Anthropic Messages maps tools and system content into the native protocol"
       model: model.id,
       messages: [{ role: "system", content: "rules" }, { role: "user", content: "search" }],
       tools: [{ type: "function", function: { name: "lookup", description: "Lookup", parameters: { type: "object" } } }],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "team_productivity_review",
+          strict: true,
+          schema: { type: "object", properties: { team: { type: "string" } }, required: ["team"] },
+        },
+      },
     });
     assert.equal(captured.url, "https://api.anthropic.com/v1/messages");
     assert.equal(captured.headers.get("x-api-key"), "private-key-value");
     assert.equal(captured.body.system, "rules");
     assert.equal(captured.body.tools[0].name, "lookup");
+    assert.deepEqual(captured.body.output_config.format.schema.required, ["team"]);
     assert.equal(response.choices[0].message.tool_calls[0].function.name, "lookup");
     assert.equal(response.usage.prompt_tokens, 6);
     assert.equal(response.usage.completion_tokens, 2);
@@ -171,10 +230,29 @@ test("Gemini maps generate-content and returns normalized tool and image data", 
       model: model.id,
       messages: [{ role: "user", content: "hello" }],
       tools: [{ type: "function", function: { name: "lookup", parameters: { type: "object" } } }],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "team_productivity_review",
+          strict: true,
+          schema: {
+            type: "object",
+            properties: { team: { type: "array", items: { type: "string" } } },
+            required: ["team"],
+            additionalProperties: false,
+          },
+        },
+      },
     });
     assert.equal(captured.url, `https://generativelanguage.googleapis.com/v1beta/models/${model.id}:generateContent`);
     assert.equal(captured.headers.get("x-goog-api-key"), "private-key-value");
     assert.equal(captured.body.contents[0].parts[0].text, "hello");
+    assert.equal(captured.body.generationConfig.responseMimeType, "application/json");
+    assert.deepEqual(captured.body.generationConfig.responseSchema, {
+      type: "OBJECT",
+      properties: { team: { type: "ARRAY", items: { type: "STRING" } } },
+      required: ["team"],
+    });
     assert.equal(response.choices[0].message.tool_calls[0].function.name, "lookup");
     assert.equal(response.choices[0].message.images[0].image_url.url, "data:image/png;base64,aW1hZ2U=");
     assert.equal(response.usage.prompt_tokens, 8);

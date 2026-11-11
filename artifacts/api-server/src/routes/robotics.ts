@@ -3,6 +3,7 @@ import { Router, type IRouter, type Request, type Response as ExpressResponse } 
 import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, chatProductivitySettingsTable, chatProductivitySnapshotsTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { assistantToolPoliciesTable, teamRolesTable } from "@workspace/db/schema";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
+import { dispatchChatProductivityReviewForTeam } from "../lib/chatProductivity";
 import { hasPermission } from "@workspace/api-zod";
 import { permissionsForAccount } from "../lib/teamRoles";
 import {
@@ -6211,6 +6212,7 @@ router.get("/queue/chat/productivity", requireAdmin, async (req, res): Promise<v
   res.json(GetChatProductivityResponse.parse({
     enabled: settings?.enabled ?? false,
     canManage,
+    lastRunAt: settings?.lastRunAt?.toISOString() ?? null,
     lastError: settings?.enabled && settings.lastError
       ? "The latest AI review failed. Another review is scheduled."
       : null,
@@ -6263,6 +6265,9 @@ router.put("/queue/chat/productivity/settings", requireAdmin, async (req, res): 
     enabled: parsed.data.enabled,
     updatedAt: now,
   }));
+  if (parsed.data.enabled) {
+    void dispatchChatProductivityReviewForTeam(teamId);
+  }
 });
 
 router.post("/queue/chat/read", requireAdmin, async (req, res): Promise<void> => {

@@ -18,6 +18,7 @@ import { logger } from "./logger";
 import { teamAssistantAI } from "./teamAssistantAi";
 import {
   buildProductivityInput,
+  buildProductivityResponseFormat,
   noActivityAssessment,
   parseProductivityResults,
   type ProductivityConversation,
@@ -35,8 +36,8 @@ const SYSTEM_PROMPT = [
   "Do not identify, rank, or assess individual people. Do not include names or quote personal details.",
   "Assess only evidence in the supplied messages; a quiet channel is not proof of poor effort.",
   "For each conversation, rate observed project progress, planning and coordination, and focus and discipline from 0 to 10.",
-  "Return one JSON object with exactly one top-level key for every supplied conversation key.",
-  "Each value must contain score (integer 0-10), a concise summary, up to 20 activity items, and breakdown with projectProgress, planningCoordination, focusDiscipline (each integer 0-10).",
+  "Return one JSON object using the exact conversation keys as direct top-level keys (for example {\"team\": {...}, \"channel-id\": {...}); copy each key exactly and do not use channel names or a channels wrapper.",
+  "Each value must contain score (integer 0-10), a concise summary, all relevant activity items without an arbitrary item cap, and breakdown with projectProgress, planningCoordination, focusDiscipline (each integer 0-10).",
   "Each activity item must contain activity and assessment; assessment must be productive, low_value, potentially_useful, or no_recorded_progress.",
   "For a conversation with no messages, return score 0, explain that there is no recorded progress, and use zeroes in the breakdown.",
   "Return JSON only. Do not add markdown or any extra keys.",
@@ -280,7 +281,7 @@ async function reviewTeam(teamId: string): Promise<void> {
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: JSON.stringify(input.payload) },
       ],
-      response_format: { type: "json_object" },
+      response_format: buildProductivityResponseFormat(definitions.map((definition) => definition.key)),
       ...reasoningOptions,
     });
     const text = completion.choices?.[0]?.message?.content;
@@ -289,6 +290,7 @@ async function reviewTeam(teamId: string): Promise<void> {
     const results = parseProductivityResults(
       text,
       definitions.map((definition) => definition.key),
+      Object.fromEntries(definitions.map((definition) => [definition.key, definition.name])),
     );
     stage = "save per-conversation assessments";
     await persistResults(teamId, modelId, definitions, input.includedMessages, results);
@@ -310,6 +312,36 @@ async function claimDueReview(teamId: string): Promise<boolean> {
   return claimed.length > 0;
 }
 
+async function runClaimedReview(teamId: string): Promise<void> {
+  try {
+    await reviewTeam(teamId);
+  } catch (error) {
+    await db.update(chatProductivitySettingsTable)
+      .set({
+        lastError: "The latest AI review failed. Another review is scheduled.",
+        updatedAt: new Date(),
+      })
+      .where(eq(chatProductivitySettingsTable.teamId, teamId));
+    logger.error({
+      teamId,
+      stage: error instanceof ProductivityReviewError ? error.stage : "claim review",
+      errorType: error instanceof ProductivityReviewError ? error.causeName : safeErrorText(error),
+      ...(error instanceof ProductivityReviewError && error.status ? { providerStatus: error.status } : {}),
+      ...(error instanceof ProductivityReviewError && error.code ? { providerCode: error.code } : {}),
+    }, "Scheduled team productivity review failed");
+  }
+}
+
+/** Starts an opted-in team's first or explicitly retried review immediately. */
+export async function dispatchChatProductivityReviewForTeam(teamId: string): Promise<void> {
+  try {
+    if (!(await claimDueReview(teamId))) return;
+    await runClaimedReview(teamId);
+  } catch (error) {
+    logger.error({ teamId, err: safeErrorText(error) }, "Could not claim scheduled team productivity review");
+  }
+}
+
 export async function dispatchDueChatProductivityReviews(): Promise<void> {
   const enabledTeams = await db.select({ teamId: chatProductivitySettingsTable.teamId })
     .from(chatProductivitySettingsTable)
@@ -318,23 +350,7 @@ export async function dispatchDueChatProductivityReviews(): Promise<void> {
   for (const { teamId } of enabledTeams) {
     try {
       if (!(await claimDueReview(teamId))) continue;
-      try {
-        await reviewTeam(teamId);
-      } catch (error) {
-        await db.update(chatProductivitySettingsTable)
-          .set({
-            lastError: "The latest AI review failed. Another review is scheduled.",
-            updatedAt: new Date(),
-          })
-          .where(eq(chatProductivitySettingsTable.teamId, teamId));
-        logger.error({
-          teamId,
-          stage: error instanceof ProductivityReviewError ? error.stage : "claim review",
-          errorType: error instanceof ProductivityReviewError ? error.causeName : safeErrorText(error),
-          ...(error instanceof ProductivityReviewError && error.status ? { providerStatus: error.status } : {}),
-          ...(error instanceof ProductivityReviewError && error.code ? { providerCode: error.code } : {}),
-        }, "Scheduled team productivity review failed");
-      }
+      await runClaimedReview(teamId);
     } catch (error) {
       logger.error({ teamId, err: safeErrorText(error) }, "Could not claim scheduled team productivity review");
     }

@@ -11,6 +11,8 @@ export interface ChatProductivityStatus {
   enabled: boolean;
   canManage: boolean;
   /** @nullable */
+  lastRunAt: Date | null;
+  /** @nullable */
   lastError: string | null;
   latest: ChatProductivitySnapshot | null;
 }

@@ -6,6 +6,7 @@ import { ChatProductivityMeter } from "./ChatProductivityMeter";
 type ProductivityStatus = {
   enabled: boolean;
   canManage: boolean;
+  lastRunAt: string | null;
   lastError: string | null;
   latest: null | {
     conversationName: string;
@@ -35,7 +36,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     return jsonResponse(status);
   }
   if (url.pathname.endsWith("/queue/chat/productivity/settings") && method === "PUT") {
-    status = { ...status, enabled: body?.enabled === true, lastError: null };
+    status = { ...status, enabled: body?.enabled === true, lastError: null, lastRunAt: null };
     return jsonResponse({ enabled: status.enabled, updatedAt: "2026-11-10T20:00:00.000Z" });
   }
   return jsonResponse({ error: "Not found" }, 404);
@@ -53,7 +54,7 @@ function renderMeter(props: { scope: "shared" | "channel"; channelId?: string })
 }
 
 beforeEach(() => {
-  status = { enabled: false, canManage: true, lastError: null, latest: null };
+  status = { enabled: false, canManage: true, lastRunAt: null, lastError: null, latest: null };
   requests.length = 0;
   fetchMock.mockClear();
   vi.stubGlobal("fetch", fetchMock);
@@ -82,12 +83,23 @@ describe("ChatProductivityMeter", () => {
       acknowledgeNotice: true,
     });
     expect(await screen.findByTestId("button-disable-chat-productivity")).toBeInTheDocument();
+    expect(await screen.findByText("Review is queued to start shortly.")).toBeInTheDocument();
+  });
+
+  it("shows when an assessment has started instead of leaving the user with a queued state", async () => {
+    status = { enabled: true, canManage: false, lastRunAt: "2026-11-10T19:55:00.000Z", lastError: null, latest: null };
+    renderMeter({ scope: "shared" });
+    fireEvent.click(await screen.findByTestId("button-chat-productivity"));
+
+    expect(await screen.findByTestId("status-chat-productivity-empty")).toHaveTextContent("Review started at");
+    expect(screen.getByTestId("status-chat-productivity-empty")).not.toHaveTextContent("queued");
   });
 
   it("shows the score details but never offers settings to a channel member", async () => {
     status = {
       enabled: true,
       canManage: false,
+      lastRunAt: "2026-11-10T19:55:00.000Z",
       lastError: null,
       latest: {
         conversationName: "Drive team",
@@ -112,10 +124,12 @@ describe("ChatProductivityMeter", () => {
   });
 
   it("lets a coordinator retry a failed review without changing the opt-in setting", async () => {
-    status = { enabled: true, canManage: true, lastError: "The latest AI review failed. Another review is scheduled.", latest: null };
+    status = { enabled: true, canManage: true, lastRunAt: "2026-11-10T19:55:00.000Z", lastError: "The latest AI review failed. Another review is scheduled.", latest: null };
     renderMeter({ scope: "shared" });
     fireEvent.click(await screen.findByTestId("button-chat-productivity"));
     expect(await screen.findByTestId("button-retry-chat-productivity")).toBeInTheDocument();
+    expect(screen.getByTestId("status-chat-productivity-empty")).toHaveTextContent("There is no usable assessment yet.");
+    expect(screen.getByTestId("status-chat-productivity-empty")).not.toHaveTextContent("queued");
 
     fireEvent.click(screen.getByTestId("button-retry-chat-productivity"));
 

@@ -1590,8 +1590,10 @@ router.delete("/auth/teams/:teamId", requireSiteOwner, async (req, res): Promise
     const tables = [
       "applicants", "application_imports", "assistant_conversations",
       "assistant_messages", "broadcasts", "cad_bots", "cad_folders",
-      "cad_models", "chat_custom_emojis", "chat_message_reactions",
+      "cad_models", "chat_channel_members", "chat_channels", "chat_custom_emojis",
+      "chat_message_reactions",
       "chat_poll_votes", "chat_polls", "chat_settings", "team_name_rules", "chunked_uploads",
+      "chat_productivity_settings", "chat_productivity_snapshots",
       "code_files", "code_presence", "code_projects", "code_revisions",
       "dashboard_charts", "data_snapshots", "display_settings",
       "feature_requests", "interview_chat_messages", "interview_queue",

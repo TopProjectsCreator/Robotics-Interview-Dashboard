@@ -26,6 +26,70 @@ const ASSESSMENTS = new Set([
   "no_recorded_progress",
 ]);
 
+export function buildProductivityResponseFormat(expectedKeys: string[]) {
+  if (
+    expectedKeys.length === 0 ||
+    expectedKeys.some((key) => !key.trim()) ||
+    new Set(expectedKeys).size !== expectedKeys.length
+  ) {
+    throw new Error("Productivity response keys must be unique and non-empty.");
+  }
+
+  const scoreSchema = { type: "integer", minimum: 0, maximum: 10 };
+  const assessmentSchema = {
+    type: "object",
+    properties: {
+      score: scoreSchema,
+      summary: { type: "string", minLength: 1 },
+      activities: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            activity: { type: "string", minLength: 1 },
+            assessment: {
+              type: "string",
+              enum: [...ASSESSMENTS],
+            },
+          },
+          required: ["activity", "assessment"],
+          additionalProperties: false,
+        },
+      },
+      breakdown: {
+        type: "object",
+        properties: {
+          projectProgress: scoreSchema,
+          planningCoordination: scoreSchema,
+          focusDiscipline: scoreSchema,
+        },
+        required: ["projectProgress", "planningCoordination", "focusDiscipline"],
+        additionalProperties: false,
+      },
+    },
+    required: ["score", "summary", "activities", "breakdown"],
+    additionalProperties: false,
+  };
+
+  return {
+    type: "json_schema" as const,
+    json_schema: {
+      name: "team_productivity_review",
+      strict: true as const,
+      schema: {
+        type: "object",
+        properties: Object.fromEntries(expectedKeys.map((key) => [key, assessmentSchema])),
+        required: [...expectedKeys],
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+function analysisError(code: string, message: string): Error & { code: string } {
+  return Object.assign(new Error(message), { code });
+}
+
 function timestamp(value: Date | string): string {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) throw new Error("Chat message has an invalid timestamp.");
@@ -129,39 +193,49 @@ function isIntegerInRange(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10;
 }
 
-function parseAssessment(value: unknown): ProductivityAssessment | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+type AssessmentParseResult =
+  | { ok: true; assessment: ProductivityAssessment }
+  | { ok: false; code: string };
+
+function parseAssessment(value: unknown): AssessmentParseResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, code: "invalid_assessment_shape" };
+  }
   const result = value as Record<string, unknown>;
+  if (!isIntegerInRange(result.score)) return { ok: false, code: "invalid_assessment_score" };
   if (
-    !isIntegerInRange(result.score) ||
     typeof result.summary !== "string" ||
-    !result.summary.trim() ||
-    result.summary.length > 500 ||
-    !Array.isArray(result.activities) ||
-    result.activities.length > 20 ||
-    !result.activities.every((activity) => {
-      if (!activity || typeof activity !== "object" || Array.isArray(activity)) return false;
-      const item = activity as Record<string, unknown>;
-      return typeof item.activity === "string" && item.activity.trim().length > 0 &&
-        item.activity.length <= 240 &&
-        typeof item.assessment === "string" && ASSESSMENTS.has(item.assessment);
-    }) ||
-    !result.breakdown ||
-    typeof result.breakdown !== "object" ||
-    Array.isArray(result.breakdown)
-  ) return null;
+    !result.summary.trim()
+  ) return { ok: false, code: "invalid_assessment_summary" };
+  const activities = Array.isArray(result.activities)
+    ? result.activities
+    : result.activities && typeof result.activities === "object"
+      ? [result.activities]
+      : null;
+  if (!activities) {
+    return { ok: false, code: "invalid_assessment_activities" };
+  }
+  if (!activities.every((activity) => {
+    if (!activity || typeof activity !== "object" || Array.isArray(activity)) return false;
+    const item = activity as Record<string, unknown>;
+    return typeof item.activity === "string" && item.activity.trim().length > 0 &&
+      typeof item.assessment === "string" && ASSESSMENTS.has(item.assessment);
+  })) return { ok: false, code: "invalid_assessment_activity_item" };
+  if (!result.breakdown || typeof result.breakdown !== "object" || Array.isArray(result.breakdown)) {
+    return { ok: false, code: "invalid_assessment_breakdown" };
+  }
 
   const breakdown = result.breakdown as Record<string, unknown>;
   if (
     !isIntegerInRange(breakdown.projectProgress) ||
     !isIntegerInRange(breakdown.planningCoordination) ||
     !isIntegerInRange(breakdown.focusDiscipline)
-  ) return null;
+  ) return { ok: false, code: "invalid_assessment_breakdown_scores" };
 
-  return {
+  return { ok: true, assessment: {
     score: result.score,
     summary: result.summary.trim(),
-    activities: result.activities.map((activity) => {
+    activities: activities.map((activity) => {
       const item = activity as Record<string, string>;
       return {
         activity: item.activity.trim(),
@@ -173,36 +247,58 @@ function parseAssessment(value: unknown): ProductivityAssessment | null {
       planningCoordination: breakdown.planningCoordination,
       focusDiscipline: breakdown.focusDiscipline,
     },
-  };
+  } };
 }
 
 /** Validates strict JSON and requires exactly one assessment for every channel. */
 export function parseProductivityResults(
   responseText: string,
   expectedKeys: string[],
+  conversationNames: Record<string, string> = {},
 ): Record<string, ProductivityAssessment> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(responseText);
   } catch {
-    throw new Error("The AI provider did not return valid JSON.");
+    throw analysisError("invalid_json", "The AI provider did not return valid JSON.");
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("The AI provider returned an invalid productivity report.");
+    throw analysisError("invalid_response_shape", "The AI provider returned an invalid productivity report.");
   }
-  const result = parsed as Record<string, unknown>;
-  if (
-    Object.keys(result).length !== expectedKeys.length ||
-    expectedKeys.some((key) => !(key in result))
-  ) {
-    throw new Error("The AI provider did not return one result for every shared conversation.");
+  const topLevel = parsed as Record<string, unknown>;
+  const nestedChannels = topLevel.channels && typeof topLevel.channels === "object" &&
+    !Array.isArray(topLevel.channels)
+    ? topLevel.channels as Record<string, unknown>
+    : {};
+  const result: Record<string, unknown> = { ...nestedChannels, ...topLevel };
+  const responseKeysByName = new Map<string, string | null>();
+  for (const actualKey of Object.keys(result)) {
+    const normalized = actualKey.trim().toLocaleLowerCase();
+    if (responseKeysByName.has(normalized)) responseKeysByName.set(normalized, null);
+    else responseKeysByName.set(normalized, actualKey);
+  }
+  const resultKeyByExpectedKey = new Map<string, string>();
+  for (const key of expectedKeys) {
+    if (Object.hasOwn(result, key)) {
+      resultKeyByExpectedKey.set(key, key);
+      continue;
+    }
+    const name = conversationNames[key]?.trim().toLocaleLowerCase();
+    const alias = name ? responseKeysByName.get(name) : undefined;
+    if (alias) resultKeyByExpectedKey.set(key, alias);
+  }
+  if (resultKeyByExpectedKey.size !== expectedKeys.length) {
+    throw analysisError("missing_conversation_results", "The AI provider did not return one result for every shared conversation.");
   }
 
   const validated: Record<string, ProductivityAssessment> = {};
   for (const key of expectedKeys) {
-    const assessment = parseAssessment(result[key]);
-    if (!assessment) throw new Error(`The AI provider returned an invalid result for ${key}.`);
-    validated[key] = assessment;
+    const resultKey = resultKeyByExpectedKey.get(key)!;
+    const parsedAssessment = parseAssessment(result[resultKey]);
+    if (!parsedAssessment.ok) {
+      throw analysisError(parsedAssessment.code, "The AI provider returned an invalid conversation assessment.");
+    }
+    validated[key] = parsedAssessment.assessment;
   }
   return validated;
 }

@@ -1831,6 +1831,7 @@ export const getChatProductivityResponseLatestOneBreakdownFocusDisciplineMax = 1
 export const GetChatProductivityResponse = zod.object({
   "enabled": zod.boolean(),
   "canManage": zod.boolean(),
+  "lastRunAt": zod.coerce.date().nullable(),
   "lastError": zod.string().nullable(),
   "latest": zod.union([zod.object({
   "conversationName": zod.string(),

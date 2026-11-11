@@ -68,6 +68,13 @@ function formatPeriod(start: string | null, end: string | null): string {
   return `${format(start)} – ${format(end)}`;
 }
 
+function formatStartedAt(value: string): string {
+  return new Date(value).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 export function ChatProductivityMeter({ scope, channelId }: Props) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -227,14 +234,20 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
 
               {status?.lastError && (
                 <p role="status" data-testid="status-chat-productivity-retry" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-                  {status.lastError}
+                  {status.canManage
+                    ? "The latest AI review failed. Retry now or wait for the next scheduled attempt."
+                    : "The latest AI review failed. Another review is scheduled."}
                 </p>
               )}
 
               {!latest && (
                 <p data-testid="status-chat-productivity-empty" className="rounded-lg border border-[#e0e8e7] bg-[#f5f8f7] p-3 text-sm text-[#52666e] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#c2d0d6]">
                   {status?.enabled
-                    ? "The first review is queued. New assessments run every 30 minutes."
+                    ? status.lastError
+                      ? "There is no usable assessment yet."
+                      : status.lastRunAt
+                        ? `Review started at ${formatStartedAt(status.lastRunAt)} and is being prepared.`
+                        : "Review is queued to start shortly."
                     : "A coordinator has not enabled AI productivity reviews."}
                 </p>
               )}

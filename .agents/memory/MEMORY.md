@@ -16,6 +16,7 @@
 - [Dark theme opacity utilities](dark-theme-opacity-utilities.md) — exact dark selectors must include opacity suffixes; a base color token does not match `bg-color/90`.
 - [Kilo model catalog route](kilo-model-catalog-route.md) — use `models.list()` and explicit free/image metadata for fallback; gate reasoning controls per model.
 - [Assistant policy modality compatibility](assistant-model-policy-modality.md) — a locked text default may use a policy-permitted image model for server-side vision requests; list restrictions still apply.
+- [Strict AI response schemas](chat-productivity-response-schema.md) — JSON-object mode can omit dynamic per-channel keys; require every conversation in one strict schema.
 - [Dashboard build memory](dashboard-build-memory.md) — production Vite builds compete with language servers and workflows for shared container memory.
 - [Parasolid preview limits](parasolid-preview-limits.md) — local X_T/X_B previews cover a subset; preserve private-file downloads for unsupported models.
 - [OCCT single-branch intersections](occt-single-branch-intersections.md) — preserve native domains; use unique direct-edge anchors and strict source-sample support witnesses.

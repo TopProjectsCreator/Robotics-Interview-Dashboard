@@ -603,8 +603,24 @@ function anthropicRequest(request: ChatRequest, modelId: string, stream: boolean
   const format = parseResponseFormat(request);
   if (format?.type === "json_object") {
     body.output_config = { format: { type: "json_schema", schema: { type: "object", additionalProperties: true } } };
+  } else if (format?.type === "json_schema") {
+    body.output_config = { format: { type: "json_schema", schema: format.schema } };
   }
   return body;
+}
+
+function geminiResponseSchema(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(geminiResponseSchema);
+  if (!value || typeof value !== "object") return value;
+  const schema = value as Record<string, unknown>;
+  const converted: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(schema)) {
+    if (key === "additionalProperties" || key === "minLength" || key === "minimum" || key === "maximum") continue;
+    converted[key] = key === "type" && typeof item === "string"
+      ? item.toLocaleUpperCase()
+      : geminiResponseSchema(item);
+  }
+  return converted;
 }
 
 function geminiRequest(request: ChatRequest, stream: boolean): Record<string, any> {
@@ -631,6 +647,9 @@ function geminiRequest(request: ChatRequest, stream: boolean): Record<string, an
   const format = parseResponseFormat(request);
   if (format?.type === "json_object" || format?.type === "json_schema") {
     generationConfig.responseMimeType = "application/json";
+  }
+  if (format?.type === "json_schema") {
+    generationConfig.responseSchema = geminiResponseSchema(format.schema);
   }
   if (Object.keys(generationConfig).length) body.generationConfig = generationConfig;
   const tools = geminiTools(request.tools);
