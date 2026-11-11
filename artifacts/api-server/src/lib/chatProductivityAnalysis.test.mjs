@@ -90,6 +90,31 @@ test("round-robins the newest message from each conversation within the input bu
   assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= budget);
 });
 
+test("limits productivity input to the 30-minute review window", () => {
+  const windowStart = new Date("2026-11-11T10:00:00.000Z");
+  const windowEnd = new Date("2026-11-11T10:30:00.000Z");
+  const { payload, includedMessages } = buildProductivityInput([{
+    scope: "shared",
+    key: "team",
+    name: "Team",
+    messages: [
+      { message: "inside window", createdAt: "2026-11-11T10:00:00.000Z" },
+      { message: "newer update", createdAt: "2026-11-11T10:29:00.000Z" },
+      { message: "after review window", createdAt: "2026-11-11T10:31:00.000Z" },
+      { message: "two months old", createdAt: "2026-09-11T10:00:00.000Z" },
+    ],
+  }], 20_000, windowStart, windowEnd);
+
+  assert.deepEqual(
+    payload.channels.team.messages.map((message) => message.text),
+    ["newer update", "inside window"],
+  );
+  assert.deepEqual(
+    includedMessages.get("team")?.map((message) => message.text),
+    ["newer update", "inside window"],
+  );
+});
+
 test("requires exactly one valid JSON assessment for every conversation key", () => {
   const response = JSON.stringify({ team: validAssessment, build: validAssessment });
   const result = parseProductivityResults(response, ["team", "build"]);

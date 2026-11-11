@@ -122,11 +122,18 @@ function truncateUtf8(value: string, maxBytes: number): string {
 export function buildProductivityInput(
   conversations: ProductivityConversation[],
   maxBytes: number,
+  windowStart?: Date,
+  windowEnd?: Date,
 ): { payload: { channels: Record<string, { name: string; messages: { at: string; text: string }[] }> }; includedMessages: Map<string, { at: string; text: string }[]> } {
   const channels: Record<string, { name: string; messages: { at: string; text: string }[] }> = {};
   const ordered = conversations.map((conversation) => ({
     ...conversation,
     messages: [...conversation.messages]
+      .filter((message) => {
+        const createdAt = new Date(message.createdAt).getTime();
+        return (!windowStart || createdAt >= windowStart.getTime()) &&
+          (!windowEnd || createdAt <= windowEnd.getTime());
+      })
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
   })).sort((left, right) => {
     const leftNewest = left.messages[0]?.createdAt;
