@@ -13,6 +13,10 @@ const pool = {
         if (statement.startsWith("select pg_advisory_xact_lock")) return { rows: [] };
         if (statement.startsWith("select") && statement.includes('from "workspace_usage_visits"')) {
           if (statement.includes('"last_heartbeat_at" <')) {
+            assert.ok(
+              statement.includes('where ("team_id" = $1 or ($1 = \'default\' and "team_id" is null))'),
+              "stale-visit cleanup keeps the team column correctly quoted",
+            );
             const [teamId, now] = values;
             const staleBefore = now.getTime() - 90_000;
             return {

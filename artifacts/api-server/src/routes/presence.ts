@@ -123,7 +123,7 @@ router.post("/presence/heartbeat", async (req, res): Promise<void> => {
             } else {
               const access = await pool.query(
                 `select "id" from "custom_workspaces"
-                  where "id" = $1 and ${teamSqlCondition('"team_id', "$2")}
+                  where "id" = $1 and ${teamSqlCondition('"team_id"', "$2")}
                     and (
                       ("status" = 'published' and (
                         "access_mode" = 'team'
@@ -205,7 +205,7 @@ router.get("/dashboard/workspace-usage", requireCoordinator, async (req, res): P
     const [customRows, activityRows, visitRows, overallSessions] = await Promise.all([
       pool.query<{ id: string; title: string }>(
         `select "id", "title" from "custom_workspaces"
-          where ${teamSqlCondition('"team_id', "$1")}
+          where ${teamSqlCondition('"team_id"', "$1")}
           order by "created_at" asc, "id" asc`,
         [teamId],
       ),
@@ -214,7 +214,7 @@ router.get("/dashboard/workspace-usage", requireCoordinator, async (req, res): P
                 "custom_workspace_id" as "customWorkspaceId",
                 coalesce(sum("active_seconds"), 0)::text as "activeSeconds"
            from "workspace_usage_activity"
-          where ${teamSqlCondition('"team_id', "$1")}
+          where ${teamSqlCondition('"team_id"', "$1")}
             and ("workspace_key" <> 'custom' or exists (
               select 1 from "custom_workspaces" cw
                where cw."id" = "workspace_usage_activity"."custom_workspace_id"
@@ -230,7 +230,7 @@ router.get("/dashboard/workspace-usage", requireCoordinator, async (req, res): P
                 count(*)::text as "visits",
                 count(distinct "session_hash")::text as "distinctSessions"
            from "workspace_usage_visits"
-          where ${teamSqlCondition('"team_id', "$1")}
+          where ${teamSqlCondition('"team_id"', "$1")}
             and ("workspace_key" <> 'custom' or exists (
               select 1 from "custom_workspaces" cw
                where cw."id" = "workspace_usage_visits"."custom_workspace_id"
@@ -243,7 +243,7 @@ router.get("/dashboard/workspace-usage", requireCoordinator, async (req, res): P
       pool.query<{ count: string }>(
         `select count(distinct "session_hash")::text as count
            from "workspace_usage_visits"
-          where ${teamSqlCondition('"team_id', "$1")}
+          where ${teamSqlCondition('"team_id"', "$1")}
             and ("workspace_key" <> 'custom' or exists (
               select 1 from "custom_workspaces" cw
                where cw."id" = "workspace_usage_visits"."custom_workspace_id"
@@ -298,7 +298,7 @@ router.get("/dashboard/workspace-usage", requireCoordinator, async (req, res): P
       `select "activity_date"::text as date,
               coalesce(sum("active_seconds"), 0)::text as "activeSeconds"
          from "workspace_usage_activity"
-        where ${teamSqlCondition('"team_id', "$1")}
+        where ${teamSqlCondition('"team_id"', "$1")}
           and ("workspace_key" <> 'custom' or exists (
             select 1 from "custom_workspaces" cw
              where cw."id" = "workspace_usage_activity"."custom_workspace_id"

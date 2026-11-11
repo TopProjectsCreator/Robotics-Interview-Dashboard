@@ -148,7 +148,7 @@ export async function finalizeStaleWorkspaceVisits(teamId: string, now = new Dat
               "custom_workspace_id" as "customWorkspaceId",
               "last_heartbeat_at" as "lastHeartbeatAt", "is_foreground" as "isForeground"
          from "workspace_usage_visits"
-        where ${teamSqlCondition('"team_id', "$1")}
+        where ${teamSqlCondition('"team_id"', "$1")}
           and "exited_at" is null
           and "last_heartbeat_at" < $2::timestamptz - make_interval(secs => ${STALE_AFTER_SECONDS})
         order by "last_heartbeat_at"
