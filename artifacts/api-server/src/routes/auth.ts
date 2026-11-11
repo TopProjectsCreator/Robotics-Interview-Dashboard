@@ -3,7 +3,7 @@ import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
 import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, teamNameRulesTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
-import { ensureDefaultTeam, findTeamByCode, hashTeamCode, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
+import { ensureDefaultTeam, findTeamByCode, hashTeamCode, hasTeamCode, teamCodesMatch, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import {
   generateAuthenticationOptions,
@@ -502,7 +502,7 @@ function passwordsMatch(provided: string, expected: string): boolean {
 
 function eventPasswordMatches(value: string): boolean {
   const expected = process.env.ADMIN_PASSWORD;
-  return Boolean(expected && passwordsMatch(value.trim(), expected.trim()));
+  return Boolean(expected && teamCodesMatch(value.trim(), expected.trim()));
 }
 
 /**
@@ -1451,12 +1451,9 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
     return;
   }
   // Team codes must be unique across teams so each code opens exactly one team.
-  for (const t of existingTeams) {
-    const { verifyTeamCodeHash } = await import("../lib/teams");
-    if (verifyTeamCodeHash(teamCode, t.codeHash)) {
-      res.status(409).json({ error: "That team access code is already in use. Pick another one." });
-      return;
-    }
+  if (hasTeamCode(teamCode, existingTeams)) {
+    res.status(409).json({ error: "That team access code is already in use. Pick another one." });
+    return;
   }
   if (eventPasswordMatches(teamCode)) {
     res.status(409).json({ error: "That team access code is already in use. Pick another one." });

@@ -6,6 +6,11 @@ import { isDatabaseConnectionError } from "./databaseErrors";
 import { teamSqlCondition } from "./teamSqlCondition.ts";
 export { teamSqlCondition };
 
+/** Normalize only letter casing; callers retain their existing whitespace rules. */
+export function normalizeTeamCode(code: string): string {
+  return code.toLowerCase();
+}
+
 /**
  * Team isolation helpers. Tenant rows with a nullable `team_id` use NULL for
  * legacy default-team data, except shared supplier catalog rows. Queries for
@@ -16,7 +21,7 @@ export { teamSqlCondition };
 
 export function hashTeamCode(code: string): string {
   const salt = randomBytes(16);
-  return `${salt.toString("hex")}:${scryptSync(code, salt, 64).toString("hex")}`;
+  return `${salt.toString("hex")}:${scryptSync(normalizeTeamCode(code), salt, 64).toString("hex")}`;
 }
 
 export function verifyTeamCodeHash(code: string, encoded: string | null | undefined): boolean {
@@ -24,7 +29,7 @@ export function verifyTeamCodeHash(code: string, encoded: string | null | undefi
   const [saltHex, hashHex] = encoded.split(":");
   if (!saltHex || !hashHex) return false;
   try {
-    const actual = scryptSync(code, Buffer.from(saltHex, "hex"), 64);
+    const actual = scryptSync(normalizeTeamCode(code), Buffer.from(saltHex, "hex"), 64);
     const expected = Buffer.from(hashHex, "hex");
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   } catch {
@@ -32,13 +37,24 @@ export function verifyTeamCodeHash(code: string, encoded: string | null | undefi
   }
 }
 
+export function teamCodesMatch(left: string, right: string): boolean {
+  const a = createHash("sha256").update(normalizeTeamCode(left)).digest();
+  const b = createHash("sha256").update(normalizeTeamCode(right)).digest();
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export function hasTeamCode(
+  code: string,
+  teams: readonly { codeHash: string | null }[],
+): boolean {
+  return teams.some((team) => verifyTeamCodeHash(code, team.codeHash));
+}
+
 function legacyCodeMatches(code: string): boolean {
   const expected = process.env.ADMIN_PASSWORD;
   if (!expected) return false;
   try {
-    const a = createHash("sha256").update(code.trim()).digest();
-    const b = createHash("sha256").update(expected.trim()).digest();
-    return a.length === b.length && timingSafeEqual(a, b);
+    return teamCodesMatch(code.trim(), expected.trim());
   } catch {
     return false;
   }
