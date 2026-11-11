@@ -1808,6 +1808,32 @@ export const SendInterviewChatResponse = zod.object({
 
 
 /**
+ * Admin-only bulk send used by the `/multimessage <count> <message>` chat
+ * command. Posts `count` copies of the same message to the current
+ * conversation in one request. There is no upper limit on `count`; it is
+ * whatever the admin asks for. Ordinary spam guards (slow mode, minimum
+ * spacing, duplicate suppression) do not apply to this admin-only action.
+ * @summary Bulk-send a message (admins only)
+ */
+export const sendChatMultimessageBodyMessageMax = 4000;
+
+
+export const sendChatMultimessageBodyScopeDefault = `shared`;
+
+export const SendChatMultimessageBody = zod.object({
+  "message": zod.string().min(1).max(sendChatMultimessageBodyMessageMax).describe('Message body to post `count` times.'),
+  "count": zod.number().int().min(1).describe('How many copies to post. Deliberately no upper limit — admins may ask for as many as they need.'),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(sendChatMultimessageBodyScopeDefault),
+  "recipient": zod.string().nullish().describe('Configured interviewer label receiving the copies in direct scope.'),
+  "channelId": zod.string().nullish().describe('Invite-only channel id receiving the copies; only channel members (and admins) may post.')
+})
+
+export const SendChatMultimessageResponse = zod.object({
+  "sent": zod.number().int().describe('Number of copies posted.')
+})
+
+
+/**
  * @summary Get the AI productivity assessment for a shared conversation
  */
 export const getChatProductivityQueryScopeDefault = `shared`;

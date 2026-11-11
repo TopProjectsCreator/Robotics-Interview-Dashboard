@@ -33,6 +33,9 @@
   --chat-mention-bg: #e2f4f0; --chat-mention-text: #0e6570; --chat-mention-border: #9ecdc9;
   --chat-mention-tooltip-bg: #173a47; --chat-mention-tooltip-text: #f5fbfc; --chat-mention-tooltip-muted: #bfced3;
   --chat-mention-avatar-bg: #d9f0ec; --chat-mention-avatar-text: #0d6470;
+  --chat-channel-bg: #e9edfb; --chat-channel-text: #2e4390; --chat-channel-border: #aab8e4;
+  --chat-channel-tooltip-bg: #1b2237; --chat-channel-tooltip-text: #eef1fc; --chat-channel-tooltip-muted: #b9c3dd;
+  --chat-channel-avatar-bg: #dfe6fb; --chat-channel-avatar-text: #2e4390;
   --chat-mention-attention-bg: #fff8e5; --chat-mention-attention-border: #dfb444;
   --chat-mention-attention-text: #79580e; --chat-mention-attention-glow: rgba(223,180,68,.18);
   --chat-reply-bg: #eef8f7; --chat-reply-border: #b9dddd; --chat-reply-accent: #106d7a;
@@ -131,6 +134,9 @@ button { cursor: pointer; }
   --chat-mention-bg: #183840; --chat-mention-text: #a8e7e2; --chat-mention-border: #3b7475;
   --chat-mention-tooltip-bg: #0b161c; --chat-mention-tooltip-text: #edf7f9; --chat-mention-tooltip-muted: #adbec6;
   --chat-mention-avatar-bg: #21434b; --chat-mention-avatar-text: #a8e7e2;
+  --chat-channel-bg: #20263e; --chat-channel-text: #aab8f5; --chat-channel-border: #454f7d;
+  --chat-channel-tooltip-bg: #090d1c; --chat-channel-tooltip-text: #eef1fc; --chat-channel-tooltip-muted: #aab4d4;
+  --chat-channel-avatar-bg: #272f52; --chat-channel-avatar-text: #aab8f5;
   --chat-mention-attention-bg: #302814; --chat-mention-attention-border: #b58a2f;
   --chat-mention-attention-text: #f0d77c; --chat-mention-attention-glow: rgba(226,185,83,.2);
   --chat-reply-bg: #142b35; --chat-reply-border: #355663; --chat-reply-accent: #81d0da;
@@ -890,6 +896,15 @@ button { cursor: pointer; }
 .chat-mention-tooltip-name { color: var(--chat-mention-tooltip-text); font-size: 12px; font-weight: 700; }
 .chat-mention-tooltip-detail { margin-top: 2px; color: var(--chat-mention-tooltip-muted); font-size: 10px; line-height: 1.35; }
 .chat-mention-tooltip-handle { margin-top: 5px; color: var(--chat-mention-text); font: 500 10px/1.3 var(--app-font-mono); }
+.chat-channel-mention { display: inline; padding: 0 .18em; border: 0; border-radius: .3em; background: var(--chat-channel-bg); box-shadow: inset 0 -1px 0 var(--chat-channel-border); color: var(--chat-channel-text); font: inherit; font-weight: 700; cursor: help; text-decoration: underline; text-decoration-color: var(--chat-channel-border); text-underline-offset: 2px; }
+button.chat-channel-mention { cursor: pointer; }
+.chat-channel-mention:hover { background: var(--chat-channel-border); }
+.chat-channel-mention:focus-visible { outline: 2px solid var(--chat-channel-text); outline-offset: 2px; }
+.chat-channel-tooltip { display: flex; align-items: center; gap: 10px; max-width: 280px; padding: 11px 13px; border: 1px solid var(--chat-channel-border); color: var(--chat-channel-tooltip-text); background: var(--chat-channel-tooltip-bg); box-shadow: 0 10px 28px rgba(0,0,0,.22); }
+.chat-channel-avatar { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: var(--chat-channel-avatar-text); background: var(--chat-channel-avatar-bg); font: 700 13px/1 var(--app-font-mono); }
+.chat-channel-tooltip-name { color: var(--chat-channel-tooltip-text); font-size: 12px; font-weight: 700; }
+.chat-channel-tooltip-detail { margin-top: 2px; color: var(--chat-channel-tooltip-muted); font-size: 10px; line-height: 1.35; }
+.chat-channel-tooltip-handle { margin-top: 5px; color: var(--chat-channel-text); font: 500 10px/1.3 var(--app-font-mono); }
 .chat-message-mentioned { border-color: var(--chat-mention-attention-border); background: var(--chat-mention-attention-bg); box-shadow: 0 0 0 1px var(--chat-mention-attention-border), 0 5px 18px var(--chat-mention-attention-glow); animation: chat-mention-attention 1.25s ease-in-out 2; }
 .chat-message-mentioned:hover { border-color: var(--chat-mention-attention-border); }
 .chat-mentioned-you-badge { display: inline-flex; align-items: center; gap: 3px; border: 1px solid var(--chat-mention-attention-border); border-radius: 999px; padding: 2px 7px; color: var(--chat-mention-attention-text); background: var(--chat-mention-attention-bg); font-size: 10px; font-weight: 700; line-height: 1.25; }

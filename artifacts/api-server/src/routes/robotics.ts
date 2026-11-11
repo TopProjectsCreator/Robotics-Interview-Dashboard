@@ -126,6 +126,8 @@ import {
   ListImportHistoryResponse,
   PreviewImportResponse,
   ReorderQueueBody,
+  SendChatMultimessageBody,
+  SendChatMultimessageResponse,
   SendInterviewChatBody,
   SendInterviewChatResponse,
   ToggleChatReactionBody,
@@ -6623,6 +6625,67 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   res.status(201).json(SendInterviewChatResponse.parse({
     ...chatResponse(message, conversation, undefined, createdPolls.get(message.id) ?? null),
   }));
+});
+
+// Admin-only bulk send for the `/multimessage <count> <message>` chat command.
+// Unlike a manual post this bypasses slow mode, spacing, and duplicate
+// suppression — N identical copies are the whole point, and the strict
+// isAdminRole check in this handler is what keeps it from being a spam
+// vector. `count` is deliberately uncapped; inserts are chunked so one
+// statement stays small.
+router.post("/queue/chat/multimessage", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!isAdminRole(account.role)) {
+    res.status(403).json({ error: "Admins only" });
+    return;
+  }
+  const parsed = SendChatMultimessageBody.safeParse(req.body);
+  if (!parsed.success || !parsed.data.message.trim()) {
+    res.status(400).json({ error: "A message and a count of at least 1 are required." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(
+    parsed.data.scope,
+    parsed.data.recipient,
+    account.displayName,
+    teamId,
+    { channelId: parsed.data.channelId, viewer: channelViewerFor(account) },
+  );
+  if ("error" in conversation) {
+    res.status(400).json({ error: conversation.error });
+    return;
+  }
+  const count = parsed.data.count;
+  const message = parsed.data.message.trim().slice(0, CHAT_MESSAGE_MAX_CHARS);
+  try {
+    await db.transaction(async (tx) => {
+      const chunkSize = 500;
+      for (let remaining = count; remaining > 0; remaining -= chunkSize) {
+        const batch = Math.min(chunkSize, remaining);
+        await tx.insert(interviewChatMessagesTable).values(
+          Array.from({ length: batch }, () => ({
+            id: randomUUID(),
+            teamId,
+            author: account.displayName,
+            message,
+            conversationScope: conversation.scope,
+            conversationPeer: conversation.key,
+            parentMessageId: null,
+            activities: "[]",
+          })),
+        );
+      }
+    });
+  } catch (error) {
+    req.log.error({ err: error }, "multimessage bulk send failed");
+    res.status(500).json({ error: "Couldn't post the messages. Try again." });
+    return;
+  }
+  pushRealtimeHint("interview_chat_messages", "INSERT");
+  res.status(201).json(SendChatMultimessageResponse.parse({ sent: count }));
 });
 
 const chatReactionEmojiSegmenter = new Intl.Segmenter("en", { granularity: "grapheme" });

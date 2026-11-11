@@ -10,6 +10,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts",
     "test:mobile-chat-composer": "node browser-tests/mobile-chat-composer.browser.mjs",
+    "test:mention-mid-message": "node browser-tests/mention-mid-message.browser.mjs",
+    "test:channel-mention": "node browser-tests/channel-mention.browser.mjs",
     "test:chat-viewport-height": "node browser-tests/mobile-chat-composer.browser.mjs",
     "test:media-browser": "node browser-tests/chat-attachment-preview.browser.mjs",
     "test:code-workspace-mobile": "node browser-tests/code-workspace-mobile.browser.mjs",

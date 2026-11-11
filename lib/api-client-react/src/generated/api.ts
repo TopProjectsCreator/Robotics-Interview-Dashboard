@@ -101,6 +101,8 @@ import type {
   ChatMessageUpdateInput,
   ChatMessagesReadInput,
   ChatMessagesReadResult,
+  ChatMultiMessageInput,
+  ChatMultiMessageResult,
   ChatNotificationEventPage,
   ChatPoll,
   ChatPollInput,
@@ -6018,6 +6020,82 @@ export const useSendInterviewChat = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSendInterviewChatMutationOptions(options));
+    }
+
+export const getSendChatMultimessageUrl = () => {
+
+
+
+
+  return `/api/queue/chat/multimessage`
+}
+
+/**
+ * Admin-only bulk send used by the `/multimessage <count> <message>` chat
+ * command. Posts `count` copies of the same message to the current
+ * conversation in one request. There is no upper limit on `count`; it is
+ * whatever the admin asks for. Ordinary spam guards (slow mode, minimum
+ * spacing, duplicate suppression) do not apply to this admin-only action.
+ * @summary Bulk-send a message (admins only)
+ */
+export const sendChatMultimessage = async (chatMultiMessageInput: ChatMultiMessageInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatMultiMessageResult> => {
+
+  return customFetch<ChatMultiMessageResult>(getSendChatMultimessageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatMultiMessageInput)
+  }
+);}
+
+
+
+
+
+export const getSendChatMultimessageMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendChatMultimessage>>, TError,{data: BodyType<ChatMultiMessageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendChatMultimessage>>, TError,{data: BodyType<ChatMultiMessageInput>}, TContext> => {
+
+const mutationKey = ['sendChatMultimessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendChatMultimessage>>, {data: BodyType<ChatMultiMessageInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  sendChatMultimessage(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendChatMultimessageMutationResult = NonNullable<Awaited<ReturnType<typeof sendChatMultimessage>>>
+    export type SendChatMultimessageMutationBody = BodyType<ChatMultiMessageInput>
+    export type SendChatMultimessageMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Bulk-send a message (admins only)
+ */
+export const useSendChatMultimessage = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendChatMultimessage>>, TError,{data: BodyType<ChatMultiMessageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendChatMultimessage>>,
+        TError,
+        {data: BodyType<ChatMultiMessageInput>},
+        TContext
+      > => {
+      return useMutation(getSendChatMultimessageMutationOptions(options));
     }
 
 export const getGetChatProductivityUrl = (params?: GetChatProductivityParams,) => {

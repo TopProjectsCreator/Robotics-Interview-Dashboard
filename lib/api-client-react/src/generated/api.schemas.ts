@@ -1767,6 +1767,39 @@ export interface InterviewChatInput {
   activities?: AssistantActivity[];
 }
 
+export type ChatMultiMessageInputScope = typeof ChatMultiMessageInputScope[keyof typeof ChatMultiMessageInputScope];
+
+
+export const ChatMultiMessageInputScope = {
+  shared: 'shared',
+  direct: 'direct',
+  channel: 'channel',
+} as const;
+
+export interface ChatMultiMessageInput {
+  /**
+     * Message body to post `count` times.
+     * @minLength 1
+     * @maxLength 4000
+     */
+  message: string;
+  /**
+     * How many copies to post. Deliberately no upper limit — admins may ask for as many as they need.
+     * @minimum 1
+     */
+  count: number;
+  scope?: ChatMultiMessageInputScope;
+  /** Configured interviewer label receiving the copies in direct scope. */
+  recipient?: string | null;
+  /** Invite-only channel id receiving the copies; only channel members (and admins) may post. */
+  channelId?: string | null;
+}
+
+export interface ChatMultiMessageResult {
+  /** Number of copies posted. */
+  sent: number;
+}
+
 export interface ScheduledChatPollInput {
   question: string;
   /**

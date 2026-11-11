@@ -42,6 +42,8 @@ export function permissionForRoute(method: string, rawPath: string): PermissionI
   if (path.startsWith("/dashboard/charts")) return read ? "dashboard.view" : "dashboard.manage";
   if (path.startsWith("/snapshots")) return read ? "snapshots.view" : "snapshots.manage";
 
+  // Bulk send is an administration-level action, not ordinary posting.
+  if (path === "/queue/chat/multimessage") return "chat.manage";
   if (path.startsWith("/queue/chat")) {
     if (/\/(?:channels|settings|scheduled|custom-emojis)(?:\/|$)/.test(path)) {
       return read ? "chat.view" : "chat.manage";

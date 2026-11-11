@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -33,7 +33,7 @@ import {
   useGetPresenceStats, getGetPresenceStatsQueryKey,
   useGetAssistantProviderConfiguration,
   useListSnapshots, useCreateSnapshot, useRestoreSnapshot, getListSnapshotsQueryKey,
-  useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendInterviewChat,
+  useLogin, useLogout, usePreviewImport, useReorderQueue, useRequestUploadUrl, useResetQueue, useSendChatMultimessage, useSendInterviewChat,
   useCreateScheduledChat, useDeleteScheduledChat, useListScheduledChats, getListScheduledChatsQueryKey,
   useInterpretScheduledChatTime,
   useUpdateQueueSettings,
@@ -126,11 +126,12 @@ const ChatStlViewer = lazy(() => import("./components/ChatStlViewer").then((m) =
 const ChatParasolidViewer = lazy(() => import("./components/ChatParasolidViewer").then((m) => ({ default: m.ChatParasolidViewer })));
 const SpreadsheetEditor = lazy(() => import("./components/SpreadsheetEditor").then((m) => ({ default: m.SpreadsheetEditor })));
 import { ChatMentionToken } from "./components/ChatMentionToken";
+import { ChatChannelToken } from "./components/ChatChannelToken";
 const ChatGlbViewer = lazy(() => import("./components/ChatGlbViewer").then((m) => ({ default: m.ChatGlbViewer })));
 const CadThreeMfViewer = lazy(() => import("./components/CadThreeMfViewer").then((m) => ({ default: m.CadThreeMfViewer })));
 const CadMeshViewer = lazy(() => import("./components/CadMeshViewer").then((m) => ({ default: m.CadMeshViewer })));
 const ChatStepViewer = lazy(() => import("./components/ChatStepViewer").then((m) => ({ default: m.ChatStepViewer })));
-import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer, type ChatMentionPerson } from "./lib/chat-mentions";
+import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatMentions, messageMentionsInterviewer, type ChatChannelMention, type ChatMentionMatch, type ChatMentionPerson } from "./lib/chat-mentions";
 import { isDocumentData } from "./components/documentCollaboration";
 import {
   getWorkspaceNavigation,
@@ -1358,23 +1359,34 @@ function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compac
   return <div className={`flex ${compact ? "min-h-[160px]" : "min-h-[320px]"} flex-col items-center justify-center gap-3 text-center`} data-testid="status-error"><AlertCircle className="text-[#bd5047]" /><p className="font-semibold">Control link unavailable</p><p className="text-sm text-[#63747c]">The live event data could not be reached.</p>{onRetry && <button onClick={onRetry} data-testid="button-retry" className="rounded-lg bg-[#183a4b] px-4 py-2 text-sm font-semibold text-white">Retry connection</button>}</div>;
 }
 
-function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionPerson[] = []): ReactNode[] {
+function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionPerson[] = [], channelRefs: readonly ChatChannelMention[] = [], onChannelOpen?: (channelId: string) => void): ReactNode[] {
   const tokenPattern = /(!\[[^\]]*\]\((?:https?:\/\/|\/api\/storage\/)[^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:|\/api\/storage\/)[^)]+\)|\*[^*]+\*|_[^_]+_)/g;
   const nodes: ReactNode[] = [];
   let cursor = 0;
   let match: RegExpExecArray | null;
   let key = 0;
   const pushText = (segment: string) => {
-    const mentions = findChatMentions(segment, mentionPeople);
-    if (!mentions.length) {
+    type InlineMatch =
+      | (ChatMentionMatch<ChatMentionPerson> & { type: "person" })
+      | (ChatMentionMatch<ChatChannelMention> & { type: "channel" });
+    const inlineMatches: InlineMatch[] = [
+      ...findChatMentions(segment, mentionPeople).map(person => ({ ...person, type: "person" as const })),
+      ...findChatChannelMentions(segment, channelRefs).map(channel => ({ ...channel, type: "channel" as const })),
+    ].sort((left, right) => left.start - right.start || right.end - left.end);
+    if (!inlineMatches.length) {
       nodes.push(segment);
       return;
     }
     let textCursor = 0;
-    for (const mention of mentions) {
-      if (mention.start > textCursor) nodes.push(segment.slice(textCursor, mention.start));
-      nodes.push(<ChatMentionToken key={`mention-${key++}`} mentionText={mention.text} person={mention.person} />);
-      textCursor = mention.end;
+    for (const entry of inlineMatches) {
+      if (entry.start < textCursor) continue; // overlapping reference inside a consumed token
+      if (entry.start > textCursor) nodes.push(segment.slice(textCursor, entry.start));
+      if (entry.type === "person") {
+        nodes.push(<ChatMentionToken key={`mention-${key++}`} mentionText={entry.text} person={entry.person} />);
+      } else {
+        nodes.push(<ChatChannelToken key={`channel-${key++}`} mentionText={entry.text} channel={entry.person} onOpen={onChannelOpen} />);
+      }
+      textCursor = entry.end;
     }
     if (textCursor < segment.length) nodes.push(segment.slice(textCursor));
   };
@@ -1398,11 +1410,11 @@ function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionP
         ? <AuthenticatedChatAttachment key={tokenKey} src={link[2]} name={link[1]} />
         : <a key={tokenKey} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">{link[1]}</a>);
     } else if (token.startsWith("**") || token.startsWith("__")) {
-      nodes.push(<strong key={tokenKey}>{renderInlineMarkdown(token.slice(2, -2), mentionPeople)}</strong>);
+      nodes.push(<strong key={tokenKey}>{renderInlineMarkdown(token.slice(2, -2), mentionPeople, channelRefs, onChannelOpen)}</strong>);
     } else if (token.startsWith("`")) {
       nodes.push(<code key={tokenKey} className="rounded bg-[#edf4f3] px-1 py-0.5 font-mono text-[.9em] text-[#315a61]">{token.slice(1, -1)}</code>);
     } else if (token.startsWith("*") || token.startsWith("_")) {
-      nodes.push(<em key={tokenKey}>{renderInlineMarkdown(token.slice(1, -1), mentionPeople)}</em>);
+      nodes.push(<em key={tokenKey}>{renderInlineMarkdown(token.slice(1, -1), mentionPeople, channelRefs, onChannelOpen)}</em>);
     }
     cursor = match.index + token.length;
   }
@@ -1917,12 +1929,14 @@ function stripMarkdownCell(cell: string): string {
     .trim();
 }
 
-function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [] }: {
+function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [], channelRefs = [], onChannelOpen }: {
   header: string[];
   rows: string[][];
   aligns: ("left" | "center" | "right")[];
   tableKey: string;
   mentionPeople?: readonly ChatMentionPerson[];
+  channelRefs?: readonly ChatChannelMention[];
+  onChannelOpen?: (channelId: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const fileBase = `ai-table-${new Date().toISOString().slice(0, 10)}`;
@@ -1957,13 +1971,13 @@ function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [
             <tr className="chat-markdown-table-header">
               {header.map((cell, cellIndex) => (
                 <th key={`th-${tableKey}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="chat-markdown-table-heading border-b px-3 py-2 font-semibold">
-                  {renderInlineMarkdown(cell, mentionPeople)}
+                  {renderInlineMarkdown(cell, mentionPeople, channelRefs, onChannelOpen)}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {bodyRowsFallback(rows, aligns, tableKey, mentionPeople)}
+            {bodyRowsFallback(rows, aligns, tableKey, mentionPeople, channelRefs, onChannelOpen)}
           </tbody>
         </table>
       </div>
@@ -1977,12 +1991,12 @@ function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [
   );
 }
 
-function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right")[], tableKey: string, mentionPeople: readonly ChatMentionPerson[] = []) {
+function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right")[], tableKey: string, mentionPeople: readonly ChatMentionPerson[] = [], channelRefs: readonly ChatChannelMention[] = [], onChannelOpen?: (channelId: string) => void) {
   return rows.map((row, rowIndex) => (
     <tr key={`tr-${tableKey}-${rowIndex}`} className="chat-markdown-table-row">
       {row.map((cell, cellIndex) => (
         <td key={`td-${tableKey}-${rowIndex}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="chat-markdown-table-cell border-b px-3 py-2 align-top">
-          {renderInlineMarkdown(cell, mentionPeople)}
+          {renderInlineMarkdown(cell, mentionPeople, channelRefs, onChannelOpen)}
         </td>
       ))}
     </tr>
@@ -2032,7 +2046,7 @@ function findRawBlocks(source: string): RawBlock[] {
 
 const DETAILS_SUMMARY_PATTERN = /^\s*<summary\b[^>]*>([\s\S]*?)<\/summary\s*>/i;
 
-function MarkdownDetails({ text, mentionPeople }: { text: string; mentionPeople: readonly ChatMentionPerson[] }) {
+function MarkdownDetails({ text, mentionPeople, channelRefs = [], onChannelOpen }: { text: string; mentionPeople: readonly ChatMentionPerson[]; channelRefs?: readonly ChatChannelMention[]; onChannelOpen?: (channelId: string) => void }) {
   const attributes = text.match(/^<details\b([^>]*)>/i)?.[1] ?? "";
   const isOpen = /(^|[\s"'])open(\s|=|["']|$)/i.test(attributes);
   const inner = text.replace(/^<details\b[^>]*>/i, "").replace(/<\/details\s*>$/i, "");
@@ -2043,10 +2057,10 @@ function MarkdownDetails({ text, mentionPeople }: { text: string; mentionPeople:
     <details open={isOpen} className="chat-markdown-details my-2 overflow-hidden rounded-xl border">
       <summary className="chat-markdown-details-summary flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[13px] font-semibold">
         <ChevronRight className="chat-markdown-details-marker size-3.5 shrink-0 transition-transform" />
-        <span className="min-w-0 flex-1">{renderInlineMarkdown(summarySource || "Details", mentionPeople)}</span>
+        <span className="min-w-0 flex-1">{renderInlineMarkdown(summarySource || "Details", mentionPeople, channelRefs, onChannelOpen)}</span>
       </summary>
       <div className="chat-markdown-details-body border-t px-3 py-2 text-[13px]">
-        <MarkdownContent source={body.trim()} className="text-[13px]" mentionPeople={mentionPeople} />
+        <MarkdownContent source={body.trim()} className="text-[13px]" mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} />
       </div>
     </details>
   );
@@ -2056,10 +2070,14 @@ function MarkdownContent({
   source,
   className = "",
   mentionPeople = [],
+  channelRefs = [],
+  onChannelOpen,
 }: {
   source: string;
   className?: string;
   mentionPeople?: readonly ChatMentionPerson[];
+  channelRefs?: readonly ChatChannelMention[];
+  onChannelOpen?: (channelId: string) => void;
 }) {
   const capped = source.length > MARKDOWN_MAX_CHARS ? `${source.slice(0, MARKDOWN_MAX_CHARS)}\n\n…(truncated)` : source;
   const blocks: ReactNode[] = [];
@@ -2070,16 +2088,16 @@ function MarkdownContent({
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
-    blocks.push(<p key={`paragraph-${key++}`}>{renderInlineMarkdown(paragraph.join(" "), mentionPeople)}</p>);
+    blocks.push(<p key={`paragraph-${key++}`}>{renderInlineMarkdown(paragraph.join(" "), mentionPeople, channelRefs, onChannelOpen)}</p>);
     paragraph.length = 0;
   };
   const flushLists = () => {
     if (orderedItems.length) {
-      blocks.push(<ol key={`ordered-${key++}`} className="list-decimal space-y-1 pl-5">{orderedItems.map(item => <li key={`ordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople)}</li>)}</ol>);
+      blocks.push(<ol key={`ordered-${key++}`} className="list-decimal space-y-1 pl-5">{orderedItems.map(item => <li key={`ordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople, channelRefs, onChannelOpen)}</li>)}</ol>);
       orderedItems.length = 0;
     }
     if (unorderedItems.length) {
-      blocks.push(<ul key={`unordered-${key++}`} className="list-disc space-y-1 pl-5">{unorderedItems.map(item => <li key={`unordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople)}</li>)}</ul>);
+      blocks.push(<ul key={`unordered-${key++}`} className="list-disc space-y-1 pl-5">{unorderedItems.map(item => <li key={`unordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople, channelRefs, onChannelOpen)}</li>)}</ul>);
       unorderedItems.length = 0;
     }
   };
@@ -2119,7 +2137,7 @@ function MarkdownContent({
           if (rowCells.length === header.length) bodyRows.push(rowCells);
         }
         const tableKey = `table-${key++}`;
-        blocks.push(<MarkdownTableExport key={tableKey} header={header} rows={bodyRows} aligns={aligns} tableKey={tableKey} mentionPeople={mentionPeople} />);
+        blocks.push(<MarkdownTableExport key={tableKey} header={header} rows={bodyRows} aligns={aligns} tableKey={tableKey} mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} />);
         for (let skip = 1; skip <= consumed; skip += 1) allLines[lineIndex + skip] = "";
         return;
       }
@@ -2128,7 +2146,7 @@ function MarkdownContent({
     if (heading) {
       flush();
       const Heading = `h${Math.min(heading[1].length, 4)}` as "h1" | "h2" | "h3" | "h4";
-      blocks.push(<Heading key={`heading-${key++}`} className="font-semibold tracking-[-.02em] text-[#183a4b]">{renderInlineMarkdown(heading[2], mentionPeople)}</Heading>);
+      blocks.push(<Heading key={`heading-${key++}`} className="font-semibold tracking-[-.02em] text-[#183a4b]">{renderInlineMarkdown(heading[2], mentionPeople, channelRefs, onChannelOpen)}</Heading>);
       return;
     }
     if (trimmed === "```robotics-mini-tool") {
@@ -2160,7 +2178,7 @@ function MarkdownContent({
     const quote = trimmed.match(/^>\s?(.+)$/);
     if (quote) {
       flush();
-      blocks.push(<blockquote key={`quote-${key++}`} className="border-l-2 border-[#8cc5c5] pl-3 italic text-[#63747c]">{renderInlineMarkdown(quote[1], mentionPeople)}</blockquote>);
+      blocks.push(<blockquote key={`quote-${key++}`} className="border-l-2 border-[#8cc5c5] pl-3 italic text-[#63747c]">{renderInlineMarkdown(quote[1], mentionPeople, channelRefs, onChannelOpen)}</blockquote>);
       return;
     }
     if (/^([-*_])(?:\s*\1){2,}$/.test(trimmed)) {
@@ -2170,7 +2188,7 @@ function MarkdownContent({
     }
     if (/^(?:!\[[^\]]*\]|\[[^\]]+\])\(\/api\/storage\/objects\/[^)]+\)$/.test(trimmed)) {
       flush();
-      blocks.push(<div key={`attachment-${key++}`}>{renderInlineMarkdown(trimmed, mentionPeople)}</div>);
+      blocks.push(<div key={`attachment-${key++}`}>{renderInlineMarkdown(trimmed, mentionPeople, channelRefs, onChannelOpen)}</div>);
       return;
     }
     if (orderedItems.length || unorderedItems.length) flushLists();
@@ -2185,7 +2203,7 @@ function MarkdownContent({
     if (start > rawCursor) renderTextSegment(capped.slice(rawCursor, start));
     flush();
     if (rawBlock.tag === "details") {
-      blocks.push(<MarkdownDetails key={`details-${key++}`} text={rawBlock.text} mentionPeople={mentionPeople} />);
+      blocks.push(<MarkdownDetails key={`details-${key++}`} text={rawBlock.text} mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} />);
     } else if (rawBlock.tag === "iframe") {
       // A snippet quoted inside a ``` fence is code, not a live embed.
       const embed = parseChatIframeEmbed(rawBlock.text);
@@ -2324,6 +2342,37 @@ function isValidObjectId(value: string): boolean {
 }
 /** Maximum chat message length, in characters. Kept in step with the server. */
 const CHAT_MESSAGE_MAX_CHARS = 4000;
+
+const MULTIMESSAGE_COMMAND = /^\/multimessage(?:\s+(\d+))?(?:\s+([\s\S]*))?$/i;
+
+type MultiMessageCommand =
+  | { count: number; message: string }
+  | { error: string };
+
+/**
+ * Parses the admin-only `/multimessage <count> <message>` composer command.
+ * Returns null when the draft is not a multimessage command at all, and a
+ * usage error (rather than posting anything) for malformed commands.
+ * `count` has no upper limit by design — the admin chooses how many copies
+ * are posted.
+ */
+function parseMultiMessageCommand(raw: string): MultiMessageCommand | null {
+  const match = MULTIMESSAGE_COMMAND.exec(raw.trim());
+  if (!match) return null;
+  const [, countText, bodyText] = match;
+  const body = (bodyText ?? "").trim();
+  if (!countText) {
+    return { error: "Usage: /multimessage <count> <message> — e.g. /multimessage 5 Hello team" };
+  }
+  const count = Number(countText);
+  if (!Number.isSafeInteger(count) || count < 1) {
+    return { error: "Count must be a whole number of at least 1." };
+  }
+  if (!body) {
+    return { error: "Add a message to send, e.g. /multimessage 5 Hello team" };
+  }
+  return { count, message: body };
+}
 
 /** Server-scheduled chat uses the same local date/time inputs as the old client queue. */
 const SCHEDULED_CHAT_MAX_FUTURE_MS = 365 * 24 * 60 * 60 * 1000;
@@ -6062,6 +6111,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     window.setTimeout(() => target.classList.remove("chat-pinned-flash"), 1600);
   }, [settings.reduceMotion]);
   const sendChat = useSendInterviewChat();
+  const sendMultiMessage = useSendChatMultimessage();
   const chatAttachmentUpload = useRequestUploadUrl();
   const ask = useAskAssistant();
   const toggleReaction = useToggleChatReaction();
@@ -6172,6 +6222,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     saveChatDraft(chatDraftStorageKey, message);
   }, [chatDraftStorageKey, demoMode, loadedChatDraftKey, message]);
   const [chatError, setChatError] = useState("");
+  const [multiMessageNotice, setMultiMessageNotice] = useState("");
   const slowmodeConfig = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey(), enabled: !demoMode } });
   const [slowDeadline, setSlowDeadline] = useState(0);
   const [clock, setClock] = useState(() => Date.now());
@@ -6239,6 +6290,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setCreateMenuOpen(false);
     setVoiceMenuOpen(false);
     setMentionOpen(false);
+    setChannelMentionOpen(false);
     setPollOpen(false);
   };
   const interpretScheduleTime = async () => {
@@ -6452,6 +6504,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       clearChatDraft(chatDraftStorageKey);
       setMessage("");
       setMentionOpen(false);
+      setChannelMentionOpen(false);
       setMentionQuery("");
       setReplyingTo(null);
       if (pollSpec) { setPollOpen(false); resetPollDraft(); }
@@ -6484,6 +6537,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const [channelMentionOpen, setChannelMentionOpen] = useState(false);
+  const [channelMentionQuery, setChannelMentionQuery] = useState("");
+  const [channelMentionActiveIndex, setChannelMentionActiveIndex] = useState(0);
   const applicantMentionsQuery = useListApplicants(
     { sort: "rank" },
     {
@@ -6527,6 +6583,29 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     ];
   }, [mentionPeople, mentionQuery]);
   const selectedMentionIndex = Math.min(mentionActiveIndex, Math.max(0, filteredMentionPeople.length - 1));
+  const channelMentions = useMemo<ChatChannelMention[]>(
+    () => buildChannelMentions(channels.map(channel => ({ id: channel.id, name: channel.name, emoji: channel.emoji, memberCount: channel.members?.length ?? 0 }))),
+    [channels],
+  );
+  const filteredChannelMentions = useMemo(() => {
+    const query = channelMentionQuery.trim().toLowerCase();
+    return channelMentions
+      .filter(channel => !query || `${channel.name} #${channel.name}`.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [channelMentions, channelMentionQuery]);
+  const selectedChannelMentionIndex = Math.min(channelMentionActiveIndex, Math.max(0, filteredChannelMentions.length - 1));
+  // Jump the chat to a #channel mention. Missing/revoked channels get an honest error instead of a dead jump.
+  const openMentionedChannel = useCallback((channelId: string) => {
+    if (!channelId) return;
+    if (!channels.some(channel => channel.id === channelId)) {
+      setChatError("That channel isn’t available to you.");
+      return;
+    }
+    setMentionOpen(false);
+    setChannelMentionOpen(false);
+    setConversationPeer(null);
+    setConversationChannelId(channelId);
+  }, [channels]);
   const activeWhiteboard = activeWhiteboardId
     ? getWhiteboard.data ?? whiteboards.data?.items.find(item => item.id === activeWhiteboardId) ?? null
     : null;
@@ -6777,12 +6856,48 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       return current.filter(f => f.id !== id);
     });
   };
-  const updateMentionState = (value: string) => {
+  // Finds an "@query" trigger immediately before the caret so the picker
+  // opens anywhere in the message, not just at the end.
+  const findMentionTrigger = (value: string, caret: number): { start: number; end: number; query: string } | null => {
+    const position = Math.max(0, Math.min(caret, value.length));
+    const before = value.slice(0, position);
+    const match = before.match(/(?:^|\s)@([^\s@]*)$/);
+    if (!match || match.index === undefined) return null;
+    const start = match.index + match[0].length - match[1].length - 1;
+    return { start, end: position, query: match[1] };
+  };
+  // Same trigger hunt for "#query". The query is a single word like "@" —
+  // channel names may contain spaces, but the inserted token is matched
+  // whole at render time, and a spaced query would swallow the rest of the
+  // line mid-message.
+  const findChannelMentionTrigger = (value: string, caret: number): { start: number; end: number; query: string } | null => {
+    const position = Math.max(0, Math.min(caret, value.length));
+    const before = value.slice(0, position);
+    const match = before.match(/(?:^|\s)#([^\s#]*)$/);
+    if (!match || match.index === undefined) return null;
+    const start = match.index + match[0].length - match[1].length - 1;
+    return { start, end: position, query: match[1] };
+  };
+  // Opens at most one picker: "@" for people, "#" for channels.
+  const syncAutocompleteToCaret = (value: string, caret: number) => {
+    const mentionTrigger = findMentionTrigger(value, caret);
+    const channelTrigger = mentionTrigger ? null : findChannelMentionTrigger(value, caret);
+    setMentionOpen(Boolean(mentionTrigger));
+    setMentionQuery(mentionTrigger?.query ?? "");
+    setChannelMentionOpen(Boolean(channelTrigger));
+    setChannelMentionQuery(channelTrigger?.query ?? "");
+  };
+  const syncMentionFromCaret = () => {
+    const input = chatMessageInputRef.current;
+    if (!input) return;
+    syncAutocompleteToCaret(input.value, input.selectionStart ?? input.value.length);
+  };
+  const updateMentionState = (value: string, caret?: number) => {
     setMessage(value);
-    const match = value.match(/(?:^|\s)@([^\s@]*)$/);
-    setMentionOpen(Boolean(match));
-    setMentionQuery(match?.[1] ?? "");
+    const position = caret ?? chatMessageInputRef.current?.selectionStart ?? value.length;
+    syncAutocompleteToCaret(value, position);
     setMentionActiveIndex(0);
+    setChannelMentionActiveIndex(0);
     setEmojiOpen(false);
     setComposerMenuOpen(false);
     setVoiceMenuOpen(false);
@@ -6798,6 +6913,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     const next = `${message.slice(0, start)}${value}${message.slice(end)}`;
     setMessage(next);
     setMentionOpen(false);
+    setChannelMentionOpen(false);
     requestAnimationFrame(() => {
       input.focus();
       const cursor = start + value.length;
@@ -6805,26 +6921,69 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     });
   };
   const selectMention = (person: ChatMentionPerson) => {
-    const match = message.match(/(?:^|\s)@([^\s@]*)$/);
-    if (!match || match.index === undefined) return;
-    const start = match.index + (match[0].startsWith(" ") ? 1 : 0);
-    const next = `${message.slice(0, start)}@${person.token} ${message.slice(message.length)}`;
+    const input = chatMessageInputRef.current;
+    const caret = input?.selectionStart ?? message.length;
+    const trigger = findMentionTrigger(message, caret);
+    if (!trigger) return;
+    const rest = message.slice(trigger.end);
+    const hasFollowingSpace = /^\s/.test(rest);
+    const next = `${message.slice(0, trigger.start)}@${person.token}${hasFollowingSpace ? "" : " "}${rest}`;
     setMessage(next);
     setMentionOpen(false);
+    setChannelMentionOpen(false);
+    setMentionQuery("");
+    setChannelMentionQuery("");
+    requestAnimationFrame(() => {
+      const el = chatMessageInputRef.current;
+      el?.focus();
+      const cursor = trigger.start + 1 + person.token.length + (hasFollowingSpace ? 0 : 1);
+      el?.setSelectionRange(cursor, cursor);
+    });
+  };
+  const selectChannelMention = (channel: ChatChannelMention) => {
+    const input = chatMessageInputRef.current;
+    const caret = input?.selectionStart ?? message.length;
+    const trigger = findChannelMentionTrigger(message, caret);
+    if (!trigger) return;
+    const rest = message.slice(trigger.end);
+    const hasFollowingSpace = /^\s/.test(rest);
+    const next = `${message.slice(0, trigger.start)}#${channel.token}${hasFollowingSpace ? "" : " "}${rest}`;
+    setMessage(next);
+    setChannelMentionOpen(false);
+    setChannelMentionQuery("");
     setMentionQuery("");
     requestAnimationFrame(() => {
-      const input = chatMessageInputRef.current;
-      input?.focus();
-      input?.setSelectionRange(next.length, next.length);
+      const el = chatMessageInputRef.current;
+      el?.focus();
+      const cursor = trigger.start + 1 + channel.token.length + (hasFollowingSpace ? 0 : 1);
+      el?.setSelectionRange(cursor, cursor);
     });
   };
   const handleChatInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape") {
       setMentionOpen(false);
+      setChannelMentionOpen(false);
       setEmojiOpen(false);
       setComposerMenuOpen(false);
       setScheduleOpen(false);
       return;
+    }
+    if (channelMentionOpen && filteredChannelMentions.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setChannelMentionActiveIndex(index => (Math.min(index, filteredChannelMentions.length - 1) + 1) % filteredChannelMentions.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setChannelMentionActiveIndex(index => (Math.min(index, filteredChannelMentions.length - 1) - 1 + filteredChannelMentions.length) % filteredChannelMentions.length);
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
+        event.preventDefault();
+        selectChannelMention(filteredChannelMentions[selectedChannelMentionIndex] ?? filteredChannelMentions[0]);
+        return;
+      }
     }
     if (mentionOpen && filteredMentionPeople.length > 0) {
       if (event.key === "ArrowDown") {
@@ -6843,7 +7002,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         return;
       }
     }
-    if (event.key === "Enter" && !event.shiftKey && !mentionOpen) {
+    if (event.key === "Enter" && !event.shiftKey && !mentionOpen && !channelMentionOpen) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
     }
@@ -6857,6 +7016,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     const content = selected || "text";
     const next = `${message.slice(0, start)}${before}${content}${after}${message.slice(end)}`;
     setMessage(next);
+    syncAutocompleteToCaret(next, selected ? start + before.length + selected.length + after.length : start + before.length);
     requestAnimationFrame(() => {
       input.focus();
       const cursor = selected ? start + before.length + selected.length + after.length : start + before.length;
@@ -6922,6 +7082,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         const base = dictationBaseRef.current;
         setMessage(`${base}${base && transcript ? " " : ""}${transcript}`);
         setMentionOpen(false);
+        setChannelMentionOpen(false);
       };
       recognition.onerror = event => {
         if (event.error === "not-allowed" || event.error === "service-not-allowed") {
@@ -7212,12 +7373,53 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     if (!message.trim() && !chatFiles.length) return;
     if (message.trim().length > CHAT_MESSAGE_MAX_CHARS) { setChatError("Message is too long — shorten the text."); return; }
     const draft = message.trim();
+    const multiMessageCommand = parseMultiMessageCommand(draft);
+    if (multiMessageCommand) {
+      // Admin-only bulk send. The server re-checks the role before posting;
+      // this branch just gives the sender immediate, friendly feedback.
+      if (chatFiles.length) { setChatError("Remove attachments to use /multimessage."); return; }
+      if ("error" in multiMessageCommand) { setChatError(multiMessageCommand.error); return; }
+      const isChatAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
+      if (!isChatAdmin) { setChatError("Only admins can use /multimessage."); return; }
+      setChatError("");
+      setMultiMessageNotice("");
+      chatStickRef.current = true;
+      chatForceScrollRef.current = true;
+      setChatUploading(true);
+      try {
+        const result = await sendMultiMessage.mutateAsync({
+          data: {
+            message: multiMessageCommand.message,
+            count: multiMessageCommand.count,
+            ...conversationTarget,
+          },
+        });
+        clearChatDraft(chatDraftStorageKey);
+        setMessage("");
+        setReplyingTo(null);
+        setMentionOpen(false);
+        setChannelMentionOpen(false);
+        setMentionQuery("");
+        setMultiMessageNotice(`Posted ${result.sent} ${result.sent === 1 ? "copy" : "copies"} of your message.`);
+        await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+      } catch (error) {
+        chatForceScrollRef.current = false;
+        const status = error && typeof error === "object" && "status" in error ? (error as { status?: number }).status : undefined;
+        setChatError(status === 403
+          ? "Only admins can use /multimessage."
+          : serverErrorMessage(error, "Couldn't post the messages. Try again."));
+      } finally {
+        setChatUploading(false);
+      }
+      return;
+    }
     if (failedAiReply && /@ai\b/i.test(draft)) {
       setChatError("Retry the saved AI reply before sending another @ai prompt.");
       return;
     }
     setChatError("");
     setAiReplySavedNotice("");
+    setMultiMessageNotice("");
     chatStickRef.current = true;
     const author = activeInterviewer;
     const uploadedIds: string[] = [];
@@ -7246,6 +7448,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       if (configuredSlowmode > 0 && (conversationScope === "shared" || conversationScope === "channel")) startSlowmodeCountdown(configuredSlowmode);
       clearChatDraft(chatDraftStorageKey);
       setMessage("");
+      setMentionOpen(false);
+      setChannelMentionOpen(false);
+      setMentionQuery("");
       if (/@ai\b/i.test(submitted)) {
         stage = "ai";
         const question = submitted.replace(/@ai\b/ig, "").trim() || "Give me a quick read on the active applicants.";
@@ -7309,6 +7514,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       setFileStatus({});
       setMessage("");
       setMentionOpen(false);
+      setChannelMentionOpen(false);
       setMentionQuery("");
       setEmojiOpen(false);
       setComposerMenuOpen(false);
@@ -7407,7 +7613,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                  ? <BoardChatCard boardId={sharedBoard.id} fallbackTitle={sharedBoard.title} onOpen={() => openBoard(sharedBoard.id)} />
                  : sharedSpreadsheet
                    ? <SpreadsheetChatCard spreadsheetId={sharedSpreadsheet.id} fallbackTitle={sharedSpreadsheet.title} onOpen={() => openSpreadsheet(sharedSpreadsheet.id)} />
-                 : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} className="mt-1 text-[#52666e]" />;
+                 : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} channelRefs={channelMentions} onChannelOpen={openMentionedChannel} className="mt-1 text-[#52666e]" />;
         })()}
       <ActivityPills activities={item.activities ?? []} />
       {item.poll && <div className="mt-2 space-y-1.5" data-testid={`chat-poll-${item.id}`}>
@@ -7593,6 +7799,27 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                {filteredMentionPeople.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && <p className="px-3 py-4 text-center text-xs text-[#7c8c91]">No matching people or applicants.</p>}
             </div>
          </div>}
+           {channelMentionOpen && <div id="chat-channel-listbox" role="listbox" aria-label="Channel suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="channel-mention-menu">
+            <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">Channels</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Mentioning a channel links to it — click the mention in a message to jump there.</p></div>
+            <div className="max-h-64 overflow-y-auto p-1.5">
+               {filteredChannelMentions.map((channel, index) => <button
+                  key={channel.id}
+                  id={`chat-channel-mention-option-${index}`}
+                  role="option"
+                  aria-selected={index === selectedChannelMentionIndex}
+                  type="button"
+                  onMouseDown={event => event.preventDefault()}
+                  onMouseEnter={() => setChannelMentionActiveIndex(index)}
+                  onClick={() => selectChannelMention(channel)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition ${index === selectedChannelMentionIndex ? "bg-[#e8ecf9]" : "hover:bg-[#e8ecf9]"}`}
+                  data-testid={`channel-mention-option-${channel.name.toLowerCase().replaceAll(" ", "-")}`}
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e4e9fb] text-[13px] font-bold leading-none text-[#2e4390]">{channel.emoji && !channel.emoji.startsWith(":") ? channel.emoji : <Hash size={15} />}</span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b]">{channel.name}</span><span className="block truncate text-[11px] text-[#7c8c91]">Channel · {channel.memberCount} {channel.memberCount === 1 ? "member" : "members"}{unreadChannels.has(channel.id) ? " · Unread" : ""}</span></span>
+                 </button>)}
+               {filteredChannelMentions.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#7c8c91]">{channelMentions.length === 0 ? "No channels you can access yet." : "No matching channels."}</p>}
+            </div>
+         </div>}
           {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(60dvh,320px)] w-64 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-upload-files"><Upload size={16} className="text-primary" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-muted-foreground">Images, documents, 3D models, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-open-create-menu"><Plus size={16} className="text-primary" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-muted-foreground">Choose a shared workspace item</span></span></button></div>}
             {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(60dvh,340px)] w-72 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-xl" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-card-foreground">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-primary" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-muted-foreground">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-primary" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-muted-foreground">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-primary" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-muted-foreground">Track tasks, handoffs, and dates</span></span></button><button type="button" onClick={() => void createSharedSpreadsheet()} disabled={createSpreadsheetMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-spreadsheet"><FileSpreadsheet size={17} className="text-primary" /><span><span className="block">Spreadsheet</span><span className="block text-[11px] font-normal text-muted-foreground">A shared worksheet for tryout notes</span></span></button></div>}
          {emojiOpen && <InterviewerChatEmojiPicker
@@ -7650,25 +7877,26 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
           <div className="chat-composer-shell rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
             <div className="chat-composer-layout">
               <div className="chat-composer-more">
-                <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
+                <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setChannelMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
               </div>
               <div className="chat-composer-input min-w-0">
                 <textarea
                    ref={chatMessageInputRef}
                    value={message}
-                   onChange={event => updateMentionState(event.target.value)}
+                   onChange={event => updateMentionState(event.target.value, event.target.selectionStart)}
+                   onSelect={syncMentionFromCaret}
                    onPaste={handleChatPaste}
                    onKeyDown={handleChatInputKeyDown}
                    aria-autocomplete="list"
-                   aria-controls={mentionOpen ? "chat-mention-listbox" : undefined}
-                   aria-expanded={mentionOpen}
-                   aria-activedescendant={mentionOpen && filteredMentionPeople.length ? `chat-mention-option-${selectedMentionIndex}` : undefined}
+                   aria-controls={mentionOpen ? "chat-mention-listbox" : channelMentionOpen ? "chat-channel-listbox" : undefined}
+                   aria-expanded={mentionOpen || channelMentionOpen}
+                   aria-activedescendant={mentionOpen && filteredMentionPeople.length ? `chat-mention-option-${selectedMentionIndex}` : channelMentionOpen && filteredChannelMentions.length ? `chat-channel-mention-option-${selectedChannelMentionIndex}` : undefined}
                    data-testid="input-interviewer-chat"
                    maxLength={CHAT_MESSAGE_MAX_CHARS}
                    rows={1}
                    disabled={demoMode}
                    className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-base md:text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
-                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} or type @ to mention` : "Message the team or type @ to mention"}
+                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} — @ people, # channels` : "Message the team — @ people, # channels"}
                  />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-11 w-11 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-11 w-11 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-11 w-11 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown or {'<iframe>'} embeds supported</span></div>}
               </div>
@@ -7681,7 +7909,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                  <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
                 <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
               </div>
-              <button disabled={slowmodeRemaining > 0 || (!message.trim() && !chatFiles.length) || sendChat.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`chat-composer-send flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
+              <button disabled={(slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim())) || (!message.trim() && !chatFiles.length) || sendChat.isPending || sendMultiMessage.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`chat-composer-send flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
            </div>
          </div>
        </div>
@@ -7701,6 +7929,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
           <button type="button" onClick={() => void retryFailedAiReply()} disabled={aiReplyRetrying} data-testid="button-retry-ai-reply" className="shrink-0 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50">{aiReplyRetrying ? "Saving reply…" : "Retry AI reply"}</button>
         </div>}
         {aiReplySavedNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="ai-reply-retry-success">{aiReplySavedNotice}</p>}
+        {multiMessageNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="multimessage-notice">{multiMessageNotice}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
         {pollOpen && <div onKeyDown={event => { if (event.key === "Enter" && (event.target as HTMLElement)?.tagName === "INPUT") { event.preventDefault(); event.stopPropagation(); void submitPoll(); } }} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
           <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a] dark:text-[#6fc3cf]">New poll</p>

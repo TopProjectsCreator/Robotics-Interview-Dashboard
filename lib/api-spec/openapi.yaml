@@ -1629,6 +1629,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/chat/multimessage:
+    post:
+      operationId: sendChatMultimessage
+      tags: [queue]
+      summary: Bulk-send a message (admins only)
+      description: |
+        Admin-only bulk send used by the `/multimessage <count> <message>` chat
+        command. Posts `count` copies of the same message to the current
+        conversation in one request. There is no upper limit on `count`; it is
+        whatever the admin asks for. Ordinary spam guards (slow mode, minimum
+        spacing, duplicate suppression) do not apply to this admin-only action.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatMultiMessageInput"
+      responses:
+        "201":
+          description: Bulk send accepted; every copy was posted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatMultiMessageResult"
+        "400":
+          description: Invalid input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admins only
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /queue/chat/productivity:
     get:
       operationId: getChatProductivity
@@ -7717,6 +7753,39 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AssistantActivity"
+    ChatMultiMessageInput:
+      type: object
+      required: [message, count]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: Message body to post `count` times.
+        count:
+          type: integer
+          minimum: 1
+          description: How many copies to post. Deliberately no upper limit —
+            admins may ask for as many as they need.
+        scope:
+          type: string
+          enum: [shared, direct, channel]
+          default: shared
+        recipient:
+          type: string
+          nullable: true
+          description: Configured interviewer label receiving the copies in direct scope.
+        channelId:
+          type: string
+          nullable: true
+          description: Invite-only channel id receiving the copies; only channel members (and admins) may post.
+    ChatMultiMessageResult:
+      type: object
+      required: [sent]
+      properties:
+        sent:
+          type: integer
+          description: Number of copies posted.
     ScheduledChatPollInput:
       type: object
       required: [question, options]

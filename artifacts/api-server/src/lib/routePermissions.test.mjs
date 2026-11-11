@@ -16,6 +16,9 @@ test("route policy separates read, ordinary writes, and management actions", () 
   assert.equal(permissionForRoute("DELETE", "/api/cad/models/abc"), "cad.manage");
   assert.equal(permissionForRoute("PUT", "/api/code/files/abc"), "code.edit");
   assert.equal(permissionForRoute("POST", "/api/queue/chat"), "chat.send");
+  assert.equal(permissionForRoute("POST", "/api/queue/chat/multimessage"), "chat.manage");
+  assert.equal(routePermissionIsGranted(["chat.manage"], "POST", "/api/queue/chat/multimessage"), true);
+  assert.equal(routePermissionIsGranted(["chat.send"], "POST", "/api/queue/chat/multimessage"), false);
   assert.equal(permissionForRoute("POST", "/api/queue/chat/abc/pin"), "chat.moderate");
   assert.equal(permissionForRoute("POST", "/api/queue/chat/channels"), "chat.manage");
   assert.equal(routePermissionIsGranted(["chat.manage"], "POST", "/api/queue/chat/channels"), true);
@@ -75,6 +78,7 @@ test("workspace visibility fallback maps granted workspaces to read permissions"
   assert.equal(workspaceVisibilityFallback("DELETE", "/api/cad/models/abc"), null);
   assert.equal(workspaceVisibilityFallback("DELETE", "/api/code/projects/abc"), null);
   assert.equal(workspaceVisibilityFallback("POST", "/api/queue/chat/channels"), null);
+  assert.equal(workspaceVisibilityFallback("POST", "/api/queue/chat/multimessage"), null);
   assert.equal(workspaceVisibilityFallback("POST", "/api/applicants/abc/regenerate"), null);
   assert.equal(workspaceVisibilityFallback("GET", "/api/not-in-the-catalog"), null);
 });

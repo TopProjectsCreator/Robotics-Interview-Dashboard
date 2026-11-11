@@ -114,6 +114,10 @@ Every workspace and public surface, what it does, and how far it goes.
   polls ride along with scheduled messages.
 - **Moderation:** authors edit/delete their own; coordinators & chat.moderate roles
   moderate everything; server-side spam guards against floods and duplicate posts.
+- **Admin bulk send:** coordinators can post the same message many times in one
+  command — `/multimessage <count> <message>` in the composer. The count is
+  admin-chosen and uncapped; everyone else is told admins only, and the server
+  enforces the same role check independently.
 - **Productivity meter:** optional AI review of team/channel conversation into a score,
   breakdown (project progress / planning / focus) and activity assessments —
   admin-toggleable, admin can switch it off any time.

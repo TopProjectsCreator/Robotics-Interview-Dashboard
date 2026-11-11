@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApplicantMentionPeople, findChatMentions, messageMentionsInterviewer } from "./chat-mentions";
+import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatMentions, messageMentionsInterviewer } from "./chat-mentions";
 
 const people = [
   { token: "Maksim" },
@@ -21,6 +21,38 @@ describe("chat mentions", () => {
     expect(matches).toHaveLength(1);
     expect(matches[0].person).toBe(people[1]);
     expect(matches[0].text).toBe("@Maksim Stone");
+  });
+
+  it("matches #channel references case-insensitively and prefers the longest channel name", () => {
+    const channel = (id: string, name: string) => ({ id, token: name, name, emoji: null, memberCount: 1, kind: "channel" as const });
+    const channels = [channel("chan-1", "design"), channel("chan-2", "design eng"), channel("chan-3", "finance")];
+
+    const matches = findChatChannelMentions("See #Design Eng for notes, and #finance too.", channels);
+
+    expect(matches).toHaveLength(2);
+    expect(matches[0]).toMatchObject({ text: "#Design Eng", person: channels[1] });
+    expect(matches[1]).toMatchObject({ text: "#finance", person: channels[2] });
+  });
+
+  it("does not match partial names, hashes inside words, or c#-style handles", () => {
+    const channels = [{ id: "chan-1", token: "general", name: "general", emoji: null, memberCount: 1, kind: "channel" as const }];
+
+    expect(findChatChannelMentions("issue #generals and c#generalcs are not references.", channels)).toHaveLength(0);
+    expect(findChatChannelMentions("ping #general!", channels)).toHaveLength(1);
+    expect(findChatChannelMentions("guid/#general", channels)).toHaveLength(0);
+  });
+
+  it("builds stable, whitespace-normalized channel tokens", () => {
+    const channels = buildChannelMentions([
+      { id: "chan-1", name: "  Design   Eng  ", emoji: "🔧", memberCount: 3 },
+      { id: "chan-2", name: "design eng", emoji: null, memberCount: 4 },
+      { id: "chan-3", name: "press room", emoji: null, memberCount: 0 },
+      { id: "chan-4", name: "   ", emoji: null, memberCount: 1 },
+    ]);
+
+    expect(channels.map(channel => channel.token)).toEqual(["Design Eng", "press room"]);
+    expect(channels[0]).toMatchObject({ id: "chan-1", emoji: "🔧", memberCount: 3, kind: "channel" });
+    expect(channels[1].memberCount).toBe(0);
   });
 
   it("matches applicant references with a stable roster qualifier", () => {

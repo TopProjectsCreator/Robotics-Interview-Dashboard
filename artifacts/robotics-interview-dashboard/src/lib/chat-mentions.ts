@@ -9,6 +9,19 @@ export type ChatMentionPerson = ChatMentionToken & {
   kind: "interviewer" | "group" | "assistant" | "applicant";
 };
 
+/**
+ * A resolvable `#channel-name` token. `token` is the channel name matched
+ * after the `#` trigger (whitespace-normalized); `id` is the stable channel
+ * id used for navigation, since names can change.
+ */
+export type ChatChannelMention = ChatMentionToken & {
+  id: string;
+  name: string;
+  emoji: string | null;
+  memberCount: number;
+  kind: "channel";
+};
+
 export type ApplicantMentionSource = {
   id: string;
   name: string;
@@ -55,6 +68,42 @@ export function buildApplicantMentionPeople(
   });
 }
 
+export type ChannelMentionSource = {
+  id: string;
+  name: string;
+  emoji?: string | null;
+  memberCount?: number | null;
+};
+
+/**
+ * Builds the `#`-mention token list from the channels the signed-in account
+ * can access. Tokens are the whitespace-normalized channel names; the server
+ * already enforces case-insensitive uniqueness per team, but duplicates are
+ * dropped defensively and the first channel wins.
+ */
+export function buildChannelMentions(
+  channels: readonly ChannelMentionSource[],
+): ChatChannelMention[] {
+  const seen = new Set<string>();
+  const mentions: ChatChannelMention[] = [];
+  for (const channel of channels) {
+    const name = channel.name.trim().replace(/\s+/g, " ");
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    mentions.push({
+      id: channel.id,
+      token: name,
+      name,
+      emoji: channel.emoji ?? null,
+      memberCount: Math.max(0, Math.trunc(channel.memberCount ?? 0)),
+      kind: "channel",
+    });
+  }
+  return mentions;
+}
+
 export type ChatMentionMatch<T extends ChatMentionToken = ChatMentionPerson> = {
   start: number;
   end: number;
@@ -66,11 +115,12 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function findChatMentions<T extends ChatMentionToken>(
+function findTriggeredMentions<T extends ChatMentionToken>(
   text: string,
-  people: readonly T[],
+  items: readonly T[],
+  trigger: "@" | "#",
 ): ChatMentionMatch<T>[] {
-  const uniquePeople = people.filter((person, index, list) =>
+  const uniquePeople = items.filter((person, index, list) =>
     person.token.trim() &&
     list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index,
   );
@@ -80,8 +130,13 @@ export function findChatMentions<T extends ChatMentionToken>(
     .slice()
     .sort((left, right) => right.token.length - left.token.length)
     .map(person => escapeRegExp(person.token.trim()));
+  // `#` needs a stricter preceding boundary than `@`: URL fragments
+  // (example.com/spec#general) and query strings are not channel references.
+  const precedingBoundary = trigger === "#"
+    ? "(^|[^\\p{L}\\p{N}_.+\\-/?&=#%])"
+    : "(^|[^\\p{L}\\p{N}_.+\\-])";
   const pattern = new RegExp(
-    `(^|[^\\p{L}\\p{N}_.+\\-])@(${alternatives.join("|")})(?=$|[^\\p{L}\\p{N}_\\-])`,
+    `${precedingBoundary}${escapeRegExp(trigger)}(${alternatives.join("|")})(?=$|[^\\p{L}\\p{N}_\\-])`,
     "giu",
   );
   const byToken = new Map(uniquePeople.map(person => [person.token.toLowerCase(), person]));
@@ -101,6 +156,25 @@ export function findChatMentions<T extends ChatMentionToken>(
   }
 
   return matches;
+}
+
+export function findChatMentions<T extends ChatMentionToken>(
+  text: string,
+  people: readonly T[],
+): ChatMentionMatch<T>[] {
+  return findTriggeredMentions(text, people, "@");
+}
+
+/**
+ * Finds `#channel` references in message text. Matching rules mirror
+ * `findChatMentions`, including multi-word channel names and longest-match
+ * preference, so `#design eng` resolves to a channel named "design eng".
+ */
+export function findChatChannelMentions<T extends ChatChannelMention>(
+  text: string,
+  channels: readonly T[],
+): ChatMentionMatch<T>[] {
+  return findTriggeredMentions(text, channels, "#");
 }
 
 export function messageMentionsInterviewer(
