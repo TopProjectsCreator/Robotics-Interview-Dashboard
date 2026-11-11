@@ -8,5 +8,7 @@
 
 export interface ChatProductivitySettings {
   enabled: boolean;
+  /** @maxLength 2000 */
+  customMessage: string;
   updatedAt: Date;
 }

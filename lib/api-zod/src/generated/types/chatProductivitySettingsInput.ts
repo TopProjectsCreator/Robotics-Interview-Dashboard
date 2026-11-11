@@ -7,7 +7,12 @@
  */
 
 export interface ChatProductivitySettingsInput {
-  enabled: boolean;
+  enabled?: boolean;
   /** Must be true when enabling after the coordinator reviews the AI processing notice. */
-  acknowledgeNotice: boolean;
+  acknowledgeNotice?: boolean;
+  /**
+     * Optional additional admin guidance for productivity AI reviews. Empty text clears it.
+     * @maxLength 2000
+     */
+  customMessage?: string;
 }

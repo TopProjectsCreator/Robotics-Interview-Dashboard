@@ -22,6 +22,7 @@ export type ChatProductivityBreakdown = {
 export const chatProductivitySettingsTable = pgTable("chat_productivity_settings", {
   teamId: text("team_id").primaryKey(),
   enabled: boolean("enabled").notNull().default(false),
+  customMessage: text("custom_message").notNull().default(""),
   enabledBy: text("enabled_by"),
   enabledAt: timestamp("enabled_at", { withTimezone: true }),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),

@@ -1710,10 +1710,21 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatProductivityStatus"
   /queue/chat/productivity/settings:
+    get:
+      operationId: getChatProductivitySettings
+      tags: [queue]
+      summary: Get the signed-in team's AI productivity settings
+      responses:
+        "200":
+          description: Current team-wide productivity settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatProductivitySettings"
     put:
       operationId: updateChatProductivitySettings
       tags: [queue]
-      summary: Enable or disable periodic AI analysis of shared chat
+      summary: Update team-wide AI productivity settings
       requestBody:
         required: true
         content:
@@ -8332,19 +8343,26 @@ components:
           enum: [1h, 1d, 3d, 5d, 7d, 30d]
     ChatProductivitySettingsInput:
       type: object
-      required: [enabled, acknowledgeNotice]
+      minProperties: 1
       properties:
         enabled:
           type: boolean
         acknowledgeNotice:
           type: boolean
           description: Must be true when enabling after the coordinator reviews the AI processing notice.
+        customMessage:
+          type: string
+          maxLength: 2000
+          description: Optional additional admin guidance for productivity AI reviews. Empty text clears it.
     ChatProductivitySettings:
       type: object
-      required: [enabled, updatedAt]
+      required: [enabled, customMessage, updatedAt]
       properties:
         enabled:
           type: boolean
+        customMessage:
+          type: string
+          maxLength: 2000
         updatedAt:
           type: string
           format: date-time

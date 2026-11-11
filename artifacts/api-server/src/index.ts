@@ -404,12 +404,15 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `create table if not exists "chat_productivity_settings" (
        "team_id" text primary key,
        "enabled" boolean not null default false,
+        "custom_message" text not null default '',
        "enabled_by" text,
        "enabled_at" timestamptz,
        "last_run_at" timestamptz,
        "last_error" text,
        "updated_at" timestamptz not null default now()
      )`,
+    `alter table "chat_productivity_settings"
+       add column if not exists "custom_message" text not null default ''`,
     `create table if not exists "chat_productivity_snapshots" (
        "id" text primary key,
        "team_id" text not null,

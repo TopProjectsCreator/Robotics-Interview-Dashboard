@@ -55,6 +55,7 @@ import {
   AssignSeatResponse,
   GetInterviewChatResponse,
   GetChatProductivityResponse,
+  GetChatProductivitySettingsResponse,
   ReviewChatProductivityRangeBody,
   ReviewChatProductivityRangeResponse,
   MarkInterviewChatReadBody,
@@ -6324,6 +6325,25 @@ router.post("/queue/chat/productivity/review", requireAdmin, async (req, res): P
   }));
 });
 
+router.get("/queue/chat/productivity/settings", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!isAdminRole(account.role)) {
+    res.status(403).json({ error: "Only admins can view AI productivity settings." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const [settings] = await db.select().from(chatProductivitySettingsTable)
+    .where(eq(chatProductivitySettingsTable.teamId, teamId))
+    .limit(1);
+  res.json(GetChatProductivitySettingsResponse.parse({
+    enabled: settings?.enabled ?? false,
+    customMessage: settings?.customMessage ?? "",
+    updatedAt: settings?.updatedAt ?? new Date(),
+  }));
+});
+
 router.put("/queue/chat/productivity/settings", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
@@ -6334,42 +6354,68 @@ router.put("/queue/chat/productivity/settings", requireAdmin, async (req, res): 
     res.status(400).json({ error: "Invalid productivity settings." });
     return;
   }
+  if (parsed.data.enabled === undefined && parsed.data.customMessage === undefined) {
+    res.status(400).json({ error: "Provide a productivity setting to update." });
+    return;
+  }
+  if (parsed.data.customMessage !== undefined && !isAdminRole(account.role)) {
+    res.status(403).json({ error: "Only admins can change the AI productivity message." });
+    return;
+  }
   const viewer = channelViewerFor(account);
   if (!(await viewerCanManageChat(viewer))) {
     res.status(403).json({ error: "You do not have permission to manage team chat." });
     return;
   }
-  if (parsed.data.enabled && !parsed.data.acknowledgeNotice) {
+  if (parsed.data.enabled === true && !parsed.data.acknowledgeNotice) {
     res.status(400).json({ error: "Review and acknowledge the AI processing notice before enabling." });
     return;
   }
 
   const teamId = await requestTeamId(req);
   const now = new Date();
-  await db.insert(chatProductivitySettingsTable).values({
+  const [existing] = await db.select().from(chatProductivitySettingsTable)
+    .where(eq(chatProductivitySettingsTable.teamId, teamId))
+    .limit(1);
+  const enabled = parsed.data.enabled ?? existing?.enabled ?? false;
+  const customMessage = parsed.data.customMessage === undefined
+    ? existing?.customMessage ?? ""
+    : parsed.data.customMessage.trim();
+  const settingValues = {
     teamId,
-    enabled: parsed.data.enabled,
-    enabledBy: account.id,
-    enabledAt: parsed.data.enabled ? now : null,
-    lastRunAt: null,
-    lastError: null,
-    updatedAt: now,
-  }).onConflictDoUpdate({
-    target: chatProductivitySettingsTable.teamId,
-    set: {
-      enabled: parsed.data.enabled,
+    enabled,
+    customMessage,
+    ...(parsed.data.enabled !== undefined ? {
       enabledBy: account.id,
-      enabledAt: parsed.data.enabled ? now : null,
+      enabledAt: enabled ? now : null,
       lastRunAt: null,
       lastError: null,
-      updatedAt: now,
-    },
+    } : {}),
+    updatedAt: now,
+  };
+  const updateValues = {
+    updatedAt: now,
+    ...(parsed.data.enabled !== undefined ? {
+      enabled,
+      enabledBy: account.id,
+      enabledAt: enabled ? now : null,
+      lastRunAt: null,
+      lastError: null,
+    } : {}),
+    ...(parsed.data.customMessage !== undefined ? { customMessage } : {}),
+  };
+  await db.insert(chatProductivitySettingsTable).values({
+    ...settingValues,
+  }).onConflictDoUpdate({
+    target: chatProductivitySettingsTable.teamId,
+    set: updateValues,
   });
   res.json(UpdateChatProductivitySettingsResponse.parse({
-    enabled: parsed.data.enabled,
+    enabled,
+    customMessage,
     updatedAt: now,
   }));
-  if (parsed.data.enabled) {
+  if (parsed.data.enabled === true) {
     void dispatchChatProductivityReviewForTeam(teamId);
   }
 });

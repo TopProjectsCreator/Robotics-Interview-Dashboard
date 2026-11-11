@@ -6253,6 +6253,83 @@ export const useReviewChatProductivityRange = <TError = ErrorType<unknown>,
       return useMutation(getReviewChatProductivityRangeMutationOptions(options));
     }
 
+export const getGetChatProductivitySettingsUrl = () => {
+
+
+
+
+  return `/api/queue/chat/productivity/settings`
+}
+
+/**
+ * @summary Get the signed-in team's AI productivity settings
+ */
+export const getChatProductivitySettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<ChatProductivitySettings> => {
+
+  return customFetch<ChatProductivitySettings>(getGetChatProductivitySettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetChatProductivitySettingsQueryKey = () => {
+    return [
+    `/api/queue/chat/productivity/settings`
+    ] as const;
+    }
+
+
+export const getGetChatProductivitySettingsQueryOptions = <TData = Awaited<ReturnType<typeof getChatProductivitySettings>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatProductivitySettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetChatProductivitySettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getChatProductivitySettings>>> = ({ signal }) => getChatProductivitySettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getChatProductivitySettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetChatProductivitySettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getChatProductivitySettings>>>
+export type GetChatProductivitySettingsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the signed-in team's AI productivity settings
+ */
+
+export function useGetChatProductivitySettings<TData = Awaited<ReturnType<typeof getChatProductivitySettings>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatProductivitySettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetChatProductivitySettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
 export const getUpdateChatProductivitySettingsUrl = () => {
 
 
@@ -6262,7 +6339,7 @@ export const getUpdateChatProductivitySettingsUrl = () => {
 }
 
 /**
- * @summary Enable or disable periodic AI analysis of shared chat
+ * @summary Update team-wide AI productivity settings
  */
 export const updateChatProductivitySettings = async (chatProductivitySettingsInput: ChatProductivitySettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatProductivitySettings> => {
 
@@ -6311,7 +6388,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateChatProductivitySettingsMutationError = ErrorType<unknown>
 
     /**
- * @summary Enable or disable periodic AI analysis of shared chat
+ * @summary Update team-wide AI productivity settings
  */
 export const useUpdateChatProductivitySettings = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatProductivitySettings>>, TError,{data: BodyType<ChatProductivitySettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}

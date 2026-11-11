@@ -54,6 +54,7 @@ import type { FeatureRequest, InterviewerAccount } from "@workspace/api-client-r
 import { permissionsForBuiltInRole, hasPermission as hasCatalogPermission } from "@workspace/api-zod";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { ChatProductivityMeter } from "./components/ChatProductivityMeter";
+import { ProductivityPromptSettings } from "./components/ProductivityPromptSettings";
 import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { TeamNameRulesSettings } from "./components/TeamNameRulesSettings";
@@ -1099,6 +1100,7 @@ function SettingsModal({
       </div>
       <AIProviderSettingsCategory canManageProvider={canManageAssistant && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
       {isAdmin && session.data?.teamId && <AssistantGovernanceSettings teamId={session.data.teamId} />}
+      {isAdmin && session.data?.teamId && <ProductivityPromptSettings key={session.data.teamId} teamId={session.data.teamId} />}
       {isAdmin && <div className={divider} data-testid="settings-live-now">
         <p className={sectionLabel}>Live now</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>

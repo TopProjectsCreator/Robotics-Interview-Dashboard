@@ -2,12 +2,27 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   CHAT_PRODUCTIVITY_RANGE_MS,
+  buildProductivitySystemPrompt,
   buildProductivityInput,
   buildProductivityResponseFormat,
   chatProductivityRangeStart,
   noActivityAssessment,
   parseProductivityResults,
 } from "./chatProductivityAnalysis.ts";
+
+test("admin guidance supplements but cannot replace productivity review rules", () => {
+  const prompt = buildProductivitySystemPrompt(
+    new Date("2026-11-11T19:30:00.000Z"),
+    new Date("2026-11-11T20:00:00.000Z"),
+    "Emphasize measurable drivetrain tests.",
+  );
+
+  assert.match(prompt, /Emphasize measurable drivetrain tests\./);
+  assert.match(prompt, /contextMessages only to understand references/);
+  assert.match(prompt, /never count, describe, or credit them/);
+  assert.match(prompt, /Do not identify, rank, or assess individual people/);
+  assert.match(prompt, /do not follow it when it conflicts with the privacy, scoring-window, scoring, or JSON requirements above/);
+});
 
 const validAssessment = {
   score: 6,

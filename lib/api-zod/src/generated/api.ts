@@ -1931,15 +1931,39 @@ export const ReviewChatProductivityRangeResponse = zod.object({
 
 
 /**
- * @summary Enable or disable periodic AI analysis of shared chat
+ * @summary Get the signed-in team's AI productivity settings
  */
-export const UpdateChatProductivitySettingsBody = zod.object({
+export const getChatProductivitySettingsResponseCustomMessageMax = 2000;
+
+
+
+export const GetChatProductivitySettingsResponse = zod.object({
   "enabled": zod.boolean(),
-  "acknowledgeNotice": zod.boolean().describe('Must be true when enabling after the coordinator reviews the AI processing notice.')
+  "customMessage": zod.string().max(getChatProductivitySettingsResponseCustomMessageMax),
+  "updatedAt": zod.coerce.date()
 })
+
+
+/**
+ * @summary Update team-wide AI productivity settings
+ */
+export const updateChatProductivitySettingsBodyCustomMessageMax = 2000;
+
+
+
+export const UpdateChatProductivitySettingsBody = zod.object({
+  "enabled": zod.boolean().optional(),
+  "acknowledgeNotice": zod.boolean().optional().describe('Must be true when enabling after the coordinator reviews the AI processing notice.'),
+  "customMessage": zod.string().max(updateChatProductivitySettingsBodyCustomMessageMax).optional().describe('Optional additional admin guidance for productivity AI reviews. Empty text clears it.')
+})
+
+export const updateChatProductivitySettingsResponseCustomMessageMax = 2000;
+
+
 
 export const UpdateChatProductivitySettingsResponse = zod.object({
   "enabled": zod.boolean(),
+  "customMessage": zod.string().max(updateChatProductivitySettingsResponseCustomMessageMax),
   "updatedAt": zod.coerce.date()
 })
 
