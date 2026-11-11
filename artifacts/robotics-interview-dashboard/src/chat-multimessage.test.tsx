@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { InterviewChatMessage } from "@workspace/api-client-react";
 import { Router as WouterRouter } from "wouter";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,13 +19,13 @@ type StoredMessage = {
   parentMessageId: null;
   pinnedAt: null;
   activities: { tool: string; detail: string }[];
-  reactions: [];
+  reactions: NonNullable<InterviewChatMessage["reactions"]>;
   createdAt: string;
   conversationKey: string | null;
   editedAt?: null;
   deletedAt?: null;
   poll?: null;
-  readBy?: [];
+  readBy?: InterviewChatMessage["readBy"];
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
