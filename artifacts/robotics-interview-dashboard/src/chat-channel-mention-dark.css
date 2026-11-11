@@ -1,0 +1,47 @@
+.dark #chat-channel-listbox {
+  border-color: #2b424d;
+  background-color: #142630;
+}
+
+.dark #chat-channel-listbox > div:first-child {
+  border-color: #304450;
+}
+
+.dark #chat-channel-listbox > div:first-child p:first-child {
+  color: #eef5f7;
+}
+
+.dark #chat-channel-listbox > div:first-child p:last-child {
+  color: #aabac2;
+}
+
+.dark #chat-channel-listbox [role="option"] {
+  color: #e5edf2;
+}
+
+.dark #chat-channel-listbox [role="option"][aria-selected="true"] {
+  background-color: #29364e;
+}
+
+.dark #chat-channel-listbox [role="option"]:not([aria-selected="true"]):hover {
+  background-color: #203943;
+}
+
+.dark #chat-channel-listbox [role="option"] > span:first-child {
+  color: var(--chat-channel-avatar-text);
+  background-color: var(--chat-channel-avatar-bg);
+}
+
+.dark #chat-channel-listbox [role="option"] > span:last-child > span:first-child {
+  color: #eef5f7;
+}
+
+.dark #chat-channel-listbox [role="option"] > span:last-child > span:last-child,
+.dark #chat-channel-listbox > div:last-child > p {
+  color: #aabac2;
+}
+
+.dark #chat-channel-listbox [role="option"]:focus-visible {
+  outline: 2px solid #aab8f5;
+  outline-offset: -2px;
+}

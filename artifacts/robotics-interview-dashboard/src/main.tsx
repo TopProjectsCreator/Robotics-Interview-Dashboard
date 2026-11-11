@@ -8,6 +8,7 @@ import { getStoredAuthToken } from './authSession';
 import { setAuthTokenGetter } from '@workspace/api-client-react';
 
 import './index.css';
+import './chat-channel-mention-dark.css';
 
 setAuthTokenGetter(getStoredAuthToken);
 
