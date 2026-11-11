@@ -280,6 +280,8 @@ import type {
   SpreadsheetCreateInput,
   SpreadsheetUpdateInput,
   SystemUsage,
+  TeamAccessCodeInput,
+  TeamAccessCodeUpdate,
   TeamBranding,
   TeamCreateInput,
   TeamCreateResponse,
@@ -857,6 +859,78 @@ export function useGetRandomTeamCode<TData = Awaited<ReturnType<typeof getRandom
 
 
 
+
+export const getUpdateTeamAccessCodeUrl = () => {
+
+
+
+
+  return `/api/auth/teams/access-code`
+}
+
+/**
+ * Admin-only. Stores only a hash and does not revoke existing sessions.
+ * @summary Replace the signed-in team's access code
+ */
+export const updateTeamAccessCode = async (teamAccessCodeInput: TeamAccessCodeInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamAccessCodeUpdate> => {
+
+  return customFetch<TeamAccessCodeUpdate>(getUpdateTeamAccessCodeUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamAccessCodeInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateTeamAccessCodeMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamAccessCode>>, TError,{data: BodyType<TeamAccessCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamAccessCode>>, TError,{data: BodyType<TeamAccessCodeInput>}, TContext> => {
+
+const mutationKey = ['updateTeamAccessCode'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamAccessCode>>, {data: BodyType<TeamAccessCodeInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateTeamAccessCode(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamAccessCodeMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamAccessCode>>>
+    export type UpdateTeamAccessCodeMutationBody = BodyType<TeamAccessCodeInput>
+    export type UpdateTeamAccessCodeMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Replace the signed-in team's access code
+ */
+export const useUpdateTeamAccessCode = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamAccessCode>>, TError,{data: BodyType<TeamAccessCodeInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamAccessCode>>,
+        TError,
+        {data: BodyType<TeamAccessCodeInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamAccessCodeMutationOptions(options));
+    }
 
 export const getCreateTeamUrl = () => {
 

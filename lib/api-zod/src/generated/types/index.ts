@@ -457,6 +457,8 @@ export * from './spreadsheetRow';
 export * from './spreadsheetScope';
 export * from './spreadsheetUpdateInput';
 export * from './systemUsage';
+export * from './teamAccessCodeInput';
+export * from './teamAccessCodeUpdate';
 export * from './teamBranding';
 export * from './teamCreateInput';
 export * from './teamCreateResponse';

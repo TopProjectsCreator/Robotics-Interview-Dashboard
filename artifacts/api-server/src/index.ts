@@ -535,6 +535,8 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
         "blocked_at" timestamptz not null default now(),
         primary key ("team_id", "vendor_key")
       )`,
+    `alter table "chat_productivity_settings"
+       add column if not exists "custom_message" text not null default ''`,
     `create unique index if not exists "webauthn_credentials_credential_id_unique" on "webauthn_credentials" ("credential_id")`,
     // Lease row for the background sitemap crawler. Autoscaled deployments run
     // several server instances, so an in-process flag is not enough to stop two

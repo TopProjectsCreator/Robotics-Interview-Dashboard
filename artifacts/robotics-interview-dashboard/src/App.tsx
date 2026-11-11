@@ -58,6 +58,7 @@ import { ProductivityPromptSettings } from "./components/ProductivityPromptSetti
 import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { TeamNameRulesSettings } from "./components/TeamNameRulesSettings";
+import { TeamAccessCodeSettings } from "./components/TeamAccessCodeSettings";
 import { accountSetupErrorMessage } from "./lib/auth-error-messages";
 import { AssistantModelPicker, type AssistantIntegrationPolicyView, type AssistantModelPolicyView, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
 import { AssistantProviderSetup } from "./components/AssistantProviderSetup";
@@ -1195,6 +1196,7 @@ function SettingsModal({
           {branding.updateColor.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateColor.error.message}</p>}
         </SettingRow>
       </div>}
+      {session.data?.teamId && <TeamAccessCodeSettings key={session.data.teamId} canManage={isAdmin} />}
       {canManageNameRules && session.data?.teamId && <TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} />}
       <div className={divider}><p className={sectionLabel}>Applicants list</p>
         <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>

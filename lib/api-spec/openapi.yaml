@@ -148,6 +148,58 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/RandomTeamCode"
+  /auth/teams/access-code:
+    put:
+      operationId: updateTeamAccessCode
+      tags: [auth]
+      summary: Replace the signed-in team's access code
+      description: Admin-only. Stores only a hash and does not revoke existing sessions.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TeamAccessCodeInput"
+      responses:
+        "200":
+          description: Team access code replaced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamAccessCodeUpdate"
+        "400":
+          description: Invalid access code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Signed-in team not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Access code already belongs to another team or is reserved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: Team database temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/teams:
     post:
       operationId: createTeam
@@ -6623,6 +6675,24 @@ components:
         confirmLowExposure:
           type: boolean
           description: Confirm using a password found 1–2 times in Pwned Passwords after the warning is shown
+    TeamAccessCodeInput:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          minLength: 1
+          maxLength: 128
+          description: New team access code; the current code is never returned.
+    TeamAccessCodeUpdate:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          description: Confirmation that the access code was updated.
     TeamCreateResponse:
       type: object
       required: [message, teamId, teamName, authenticated]

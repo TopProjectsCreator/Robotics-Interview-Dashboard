@@ -1,9 +1,9 @@
 import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypto";
 import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
-import { and, count, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, teamNameRulesTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
-import { ensureDefaultTeam, findTeamByCode, hashTeamCode, hasTeamCode, teamCodesMatch, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
+import { ensureDefaultTeam, findTeamByCode, hashTeamCode, hasTeamCode, matchesLegacyTeamCode, TEAM_CODE_UNIQUENESS_LOCK_KEY, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import {
   generateAuthenticationOptions,
@@ -501,8 +501,7 @@ function passwordsMatch(provided: string, expected: string): boolean {
 }
 
 function eventPasswordMatches(value: string): boolean {
-  const expected = process.env.ADMIN_PASSWORD;
-  return Boolean(expected && teamCodesMatch(value.trim(), expected.trim()));
+  return matchesLegacyTeamCode(value);
 }
 
 /**
@@ -511,13 +510,9 @@ function eventPasswordMatches(value: string): boolean {
  * team so the current team's data stays reachable through the migration.
  */
 async function resolveEventTeam(eventPassword: string): Promise<ResolvedTeam | null> {
-  const team = await findTeamByCode(eventPassword);
-  if (team) return team;
-  if (eventPasswordMatches(eventPassword)) {
-    const instance = activeTeamDatabaseInstance();
-    return { ...(await ensureDefaultTeam(instance)), instance };
-  }
-  return null;
+  // findTeamByCode also owns the legacy default fallback. Keeping that policy
+  // in one place ensures a rotated default-team code cannot be bypassed here.
+  return findTeamByCode(eventPassword);
 }
 
 function accountTeamId(account: { teamId?: string | null } | null | undefined): string {
@@ -1484,12 +1479,30 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
   try {
   enterInstance(teamInstance);
   await ensureDefaultTeam(teamInstance);
-    const [team] = await db.insert(teamsTable).values({
-      id: teamId,
-      name: teamName,
-      normalizedName: normalizedTeam,
-      codeHash: hashTeamCode(teamCode),
-    }).returning();
+    const teamResult = await db.transaction(async (tx) => {
+      // Creation and rotation use the same database-wide lock so their
+      // uniqueness checks cannot pass concurrently on separate API instances.
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${TEAM_CODE_UNIQUENESS_LOCK_KEY}))`);
+      const currentTeams = await tx.select({
+        id: teamsTable.id,
+        codeHash: teamsTable.codeHash,
+      }).from(teamsTable);
+      if (hasTeamCode(teamCode, currentTeams) || eventPasswordMatches(teamCode)) {
+        return { kind: "conflict" as const };
+      }
+      const [created] = await tx.insert(teamsTable).values({
+        id: teamId,
+        name: teamName,
+        normalizedName: normalizedTeam,
+        codeHash: hashTeamCode(teamCode),
+      }).returning();
+      return created ? { kind: "created" as const, team: created } : { kind: "failed" as const };
+    });
+    if (teamResult.kind === "conflict") {
+      res.status(409).json({ error: "That team access code is already in use. Pick another one." });
+      return;
+    }
+    const team = teamResult.kind === "created" ? teamResult.team : undefined;
     if (!team) {
       res.status(500).json({ error: "Could not create that team. Try again." });
       return;

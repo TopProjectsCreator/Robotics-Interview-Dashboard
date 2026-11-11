@@ -967,6 +967,20 @@ export interface TeamCreateInput {
   confirmLowExposure?: boolean;
 }
 
+export interface TeamAccessCodeInput {
+  /**
+     * New team access code; the current code is never returned.
+     * @minLength 1
+     * @maxLength 128
+     */
+  code: string;
+}
+
+export interface TeamAccessCodeUpdate {
+  /** Confirmation that the access code was updated. */
+  message: string;
+}
+
 export interface TeamCreateResponse {
   message: string;
   teamId: string;

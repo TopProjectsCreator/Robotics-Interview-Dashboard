@@ -14,6 +14,7 @@ import customWorkspacesRouter from "./customWorkspaces";
 import featureRequestsRouter from "./featureRequests";
 import sitemapRouter from "./sitemap";
 import assistantProvidersRouter from "./assistantProviders";
+import teamAccessCodeRouter from "./teamAccessCode";
 
 const router: IRouter = Router();
 
@@ -21,6 +22,7 @@ router.use(sitemapRouter);
 
 router.use(healthRouter);
 router.use(authRouter);
+router.use(teamAccessCodeRouter);
 router.use(roboticsRouter);
 router.use(assistantProvidersRouter);
 router.use(storageRouter);

@@ -6,6 +6,8 @@ import { isDatabaseConnectionError } from "./databaseErrors";
 import { teamSqlCondition } from "./teamSqlCondition.ts";
 export { teamSqlCondition };
 
+export const TEAM_CODE_UNIQUENESS_LOCK_KEY = "team-access-code-uniqueness";
+
 /** Normalize only letter casing; callers retain their existing whitespace rules. */
 export function normalizeTeamCode(code: string): string {
   return code.toLowerCase();
@@ -50,7 +52,7 @@ export function hasTeamCode(
   return teams.some((team) => verifyTeamCodeHash(code, team.codeHash));
 }
 
-function legacyCodeMatches(code: string): boolean {
+export function matchesLegacyTeamCode(code: string): boolean {
   const expected = process.env.ADMIN_PASSWORD;
   if (!expected) return false;
   try {
@@ -111,7 +113,12 @@ export async function findTeamByCode(code: string): Promise<ResolvedTeam | null>
     for (const team of teams) {
       if (verifyTeamCodeHash(trimmed, team.codeHash)) return { ...team, instance };
     }
-    if (legacyCodeMatches(trimmed)) {
+    if (matchesLegacyTeamCode(trimmed)) {
+      const defaultTeam = teams.find((team) => team.id === DEFAULT_TEAM_ID);
+      // The legacy password is only a fallback before a default-team code is
+      // explicitly configured. Once that row has a different hash, accepting
+      // ADMIN_PASSWORD here would silently undo a default-team code rotation.
+      if (defaultTeam) return null;
       const def = await ensureDefaultTeam(instance);
       return { ...def, instance };
     }
@@ -119,7 +126,7 @@ export async function findTeamByCode(code: string): Promise<ResolvedTeam | null>
   } catch (error) {
     if (isDatabaseConnectionError(error)) throw error;
     // A pre-migration database may not have the teams table yet.
-    if (legacyCodeMatches(trimmed)) {
+    if (matchesLegacyTeamCode(trimmed)) {
       return { id: DEFAULT_TEAM_ID, name: "Wolverines", instance };
     }
     return null;

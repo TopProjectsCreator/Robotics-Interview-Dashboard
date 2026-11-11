@@ -88,5 +88,13 @@ test("team code lookups and duplicate checks ignore letter casing", async (t) =>
   assert.equal(hasTeamCode("SPARK-9999", [team, defaultTeam]), false);
   assert.equal(teamCodesMatch("Legacy-Mixed-Code", "legacy-mixed-code"), true);
   assert.equal(teamCodesMatch("Legacy-Mixed-Code", "legacy-other-code"), false);
+  // Once the default team has an explicit code hash, the legacy fallback must
+  // not continue accepting ADMIN_PASSWORD behind that configured code.
+  assert.equal(await findTeamByCode("lEgAcY-mIxEd-CoDe"), null);
+  assert.equal((await findTeamByCode("different-default-code"))?.id, DEFAULT_TEAM_ID);
+
+  // The legacy password remains a fallback when the default team row has not
+  // yet been created on a pre-migration database.
+  teamRows = [team];
   assert.equal((await findTeamByCode("lEgAcY-mIxEd-CoDe"))?.id, DEFAULT_TEAM_ID);
 });

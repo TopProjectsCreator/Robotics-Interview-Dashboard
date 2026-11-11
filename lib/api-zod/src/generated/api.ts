@@ -139,6 +139,23 @@ export const GetRandomTeamCodeResponse = zod.object({
 
 
 /**
+ * Admin-only. Stores only a hash and does not revoke existing sessions.
+ * @summary Replace the signed-in team's access code
+ */
+export const updateTeamAccessCodeBodyCodeMax = 128;
+
+
+
+export const UpdateTeamAccessCodeBody = zod.object({
+  "code": zod.string().min(1).max(updateTeamAccessCodeBodyCodeMax).describe('New team access code; the current code is never returned.')
+})
+
+export const UpdateTeamAccessCodeResponse = zod.object({
+  "message": zod.string().describe('Confirmation that the access code was updated.')
+})
+
+
+/**
  * Creates a team plus its first coordinator account and signs that account in. The new team starts empty and is completely separate from every other team.
  * @summary Create a brand-new team with its own access code
  */
