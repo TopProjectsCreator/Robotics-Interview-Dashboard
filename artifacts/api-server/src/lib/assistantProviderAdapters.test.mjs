@@ -45,10 +45,14 @@ test("OpenAI Chat Completions uses the team credential and selected model", asyn
     const response = await invokeAssistantProvider(provider("openai-chat-completions"), model, {
       model: "ignored-model",
       messages: [{ role: "user", content: "hello" }],
+      reasoning_effort: "high",
     });
     assert.equal(captured.url, "https://api.openai.com/v1/chat/completions");
     assert.equal(captured.headers.get("authorization"), "Bearer private-key-value");
     assert.equal(captured.body.model, model.id);
+    assert.equal(captured.body.reasoning_effort, "high");
+    assert.equal("max_tokens" in captured.body, false);
+    assert.equal("max_completion_tokens" in captured.body, false);
     assert.equal(response.choices[0].message.content, "hello");
     assert.deepEqual(response.usage, { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 });
   } finally {
@@ -96,10 +100,13 @@ test("OpenAI Responses converts the native output back to the assistant chat con
       model: model.id,
       messages: [{ role: "user", content: "hello" }],
       response_format: { type: "json_object" },
+      reasoning: { effort: "high" },
     });
     assert.equal(captured.url, "https://api.openai.com/v1/responses");
     assert.equal(captured.body.input[0].role, "user");
     assert.deepEqual(captured.body.text, { format: { type: "json_object" } });
+    assert.deepEqual(captured.body.reasoning, { effort: "high" });
+    assert.equal("max_output_tokens" in captured.body, false);
     assert.equal(response.choices[0].message.content, "from responses");
     assert.equal(response.usage.prompt_tokens, 4);
     assert.equal(response.usage.completion_tokens, 3);

@@ -19,6 +19,7 @@
 
 export * from "./applicants";
 export * from "./interview";
+export * from "./chatProductivity";
 export * from "./assistant";
 export * from "./broadcasts";
 export * from "./presence";

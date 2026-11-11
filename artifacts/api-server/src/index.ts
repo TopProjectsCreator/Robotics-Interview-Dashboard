@@ -10,6 +10,7 @@ import { activeTeamDatabaseInstance } from "./lib/activeTeamDatabase";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
 import { startAssistantPromptDispatcher, startAssistantScheduledTaskDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
+import { startChatProductivityDispatcher } from "./lib/chatProductivity";
 import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
 import { startMailboxPoller } from "./lib/maildrop";
 import { resumeStalePreviewJobs } from "./routes/storage";
@@ -122,6 +123,8 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "chat_custom_emojis",
     "chat_message_reactions",
     "chat_message_reads",
+    "chat_productivity_settings",
+    "chat_productivity_snapshots",
     "chat_polls",
     "chat_poll_votes",
     "scheduled_chat_messages",
@@ -398,6 +401,34 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `create unique index if not exists "chat_message_reads_message_reader_unique" on "chat_message_reads" ("message_id", "reader_id")`,
     `alter table "chat_message_reads" add column if not exists "team_id" text`,
     `create table if not exists "chat_settings" ("id" text primary key default '1', "team_id" text, "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
+    `create table if not exists "chat_productivity_settings" (
+       "team_id" text primary key,
+       "enabled" boolean not null default false,
+       "enabled_by" text,
+       "enabled_at" timestamptz,
+       "last_run_at" timestamptz,
+       "last_error" text,
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create table if not exists "chat_productivity_snapshots" (
+       "id" text primary key,
+       "team_id" text not null,
+       "conversation_scope" text not null check ("conversation_scope" in ('shared', 'channel')),
+       "conversation_key" text not null,
+       "conversation_name" text not null,
+       "score" integer not null check ("score" between 0 and 10),
+       "summary" text not null,
+       "activities" jsonb not null default '[]'::jsonb check (jsonb_typeof("activities") = 'array'),
+       "breakdown" jsonb not null check (jsonb_typeof("breakdown") = 'object'),
+       "period_start" timestamptz,
+       "period_end" timestamptz,
+       "model_id" text not null,
+       "created_at" timestamptz not null default now()
+     )`,
+    `create unique index if not exists "chat_productivity_snapshots_conversation_unique"
+       on "chat_productivity_snapshots" ("team_id", "conversation_scope", "conversation_key")`,
+    `create index if not exists "chat_productivity_snapshots_team_created_idx"
+       on "chat_productivity_snapshots" ("team_id", "created_at")`,
     `create table if not exists "team_name_rules" ("team_id" text primary key, "rules" jsonb not null default '[]'::jsonb check (jsonb_typeof("rules") = 'array'), "updated_at" timestamptz not null default now())`,
     `create table if not exists "assistant_model_policies" (
        "team_id" text primary key,
@@ -1210,6 +1241,7 @@ function startBackgroundWork(): void {
   // Server-side scheduled chat delivery: posts due messages even when no
   // browser is open.
   startScheduledChatDispatcher();
+  startChatProductivityDispatcher();
   startAssistantScheduledTaskDispatcher();
   // Persisted assistant prompts continue independently of the browser tab.
   startAssistantPromptDispatcher();

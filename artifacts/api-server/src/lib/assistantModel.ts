@@ -15,6 +15,8 @@ export type AssistantCatalogModel = {
   isFree?: unknown;
   architecture?: unknown;
   input_modalities?: unknown;
+  context_length?: unknown;
+  contextLength?: unknown;
   supported_parameters?: unknown;
   supportedParameters?: unknown;
   reasoning_levels?: unknown;

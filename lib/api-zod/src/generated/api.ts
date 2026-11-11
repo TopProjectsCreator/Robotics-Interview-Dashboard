@@ -1805,6 +1805,68 @@ export const SendInterviewChatResponse = zod.object({
 
 
 /**
+ * @summary Get the AI productivity assessment for a shared conversation
+ */
+export const getChatProductivityQueryScopeDefault = `shared`;
+
+export const GetChatProductivityQueryParams = zod.object({
+  "scope": zod.enum(['shared', 'channel']).default(getChatProductivityQueryScopeDefault),
+  "channelId": zod.coerce.string().optional().describe('Invite-only channel id; the caller must be a member or have chat management permission.')
+})
+
+export const getChatProductivityResponseLatestOneScoreMin = 0;
+export const getChatProductivityResponseLatestOneScoreMax = 10;
+
+export const getChatProductivityResponseLatestOneBreakdownProjectProgressMin = 0;
+export const getChatProductivityResponseLatestOneBreakdownProjectProgressMax = 10;
+
+export const getChatProductivityResponseLatestOneBreakdownPlanningCoordinationMin = 0;
+export const getChatProductivityResponseLatestOneBreakdownPlanningCoordinationMax = 10;
+
+export const getChatProductivityResponseLatestOneBreakdownFocusDisciplineMin = 0;
+export const getChatProductivityResponseLatestOneBreakdownFocusDisciplineMax = 10;
+
+
+
+export const GetChatProductivityResponse = zod.object({
+  "enabled": zod.boolean(),
+  "canManage": zod.boolean(),
+  "lastError": zod.string().nullable(),
+  "latest": zod.union([zod.object({
+  "conversationName": zod.string(),
+  "score": zod.number().int().min(getChatProductivityResponseLatestOneScoreMin).max(getChatProductivityResponseLatestOneScoreMax),
+  "summary": zod.string(),
+  "activities": zod.array(zod.object({
+  "activity": zod.string(),
+  "assessment": zod.enum(['productive', 'low_value', 'potentially_useful', 'no_recorded_progress'])
+})),
+  "breakdown": zod.object({
+  "projectProgress": zod.number().int().min(getChatProductivityResponseLatestOneBreakdownProjectProgressMin).max(getChatProductivityResponseLatestOneBreakdownProjectProgressMax),
+  "planningCoordination": zod.number().int().min(getChatProductivityResponseLatestOneBreakdownPlanningCoordinationMin).max(getChatProductivityResponseLatestOneBreakdownPlanningCoordinationMax),
+  "focusDiscipline": zod.number().int().min(getChatProductivityResponseLatestOneBreakdownFocusDisciplineMin).max(getChatProductivityResponseLatestOneBreakdownFocusDisciplineMax)
+}),
+  "periodStart": zod.coerce.date().nullable(),
+  "periodEnd": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}),zod.null()])
+})
+
+
+/**
+ * @summary Enable or disable periodic AI analysis of shared chat
+ */
+export const UpdateChatProductivitySettingsBody = zod.object({
+  "enabled": zod.boolean(),
+  "acknowledgeNotice": zod.boolean().describe('Must be true when enabling after the coordinator reviews the AI processing notice.')
+})
+
+export const UpdateChatProductivitySettingsResponse = zod.object({
+  "enabled": zod.boolean(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
  * @summary Record that the signed-in interviewer read chat messages
  */
 

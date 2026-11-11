@@ -2101,6 +2101,75 @@ export interface ChatChannelUpdateInput {
   memberIds?: string[];
 }
 
+export type ChatProductivityActivityAssessment = typeof ChatProductivityActivityAssessment[keyof typeof ChatProductivityActivityAssessment];
+
+
+export const ChatProductivityActivityAssessment = {
+  productive: 'productive',
+  low_value: 'low_value',
+  potentially_useful: 'potentially_useful',
+  no_recorded_progress: 'no_recorded_progress',
+} as const;
+
+export interface ChatProductivityActivity {
+  activity: string;
+  assessment: ChatProductivityActivityAssessment;
+}
+
+export interface ChatProductivityBreakdown {
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  projectProgress: number;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  planningCoordination: number;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  focusDiscipline: number;
+}
+
+export interface ChatProductivitySnapshot {
+  conversationName: string;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  score: number;
+  summary: string;
+  activities: ChatProductivityActivity[];
+  breakdown: ChatProductivityBreakdown;
+  /** @nullable */
+  periodStart: string | null;
+  /** @nullable */
+  periodEnd: string | null;
+  createdAt: string;
+}
+
+export interface ChatProductivityStatus {
+  enabled: boolean;
+  canManage: boolean;
+  /** @nullable */
+  lastError: string | null;
+  latest: ChatProductivitySnapshot | null;
+}
+
+export interface ChatProductivitySettingsInput {
+  enabled: boolean;
+  /** Must be true when enabling after the coordinator reviews the AI processing notice. */
+  acknowledgeNotice: boolean;
+}
+
+export interface ChatProductivitySettings {
+  enabled: boolean;
+  updatedAt: string;
+}
+
 export interface ChatReactionInput {
   /**
      * A single Unicode emoji or an existing team emoji shortcode such as :rover:.
@@ -4514,6 +4583,22 @@ export type GetInterviewChatScope = typeof GetInterviewChatScope[keyof typeof Ge
 export const GetInterviewChatScope = {
   shared: 'shared',
   direct: 'direct',
+  channel: 'channel',
+} as const;
+
+export type GetChatProductivityParams = {
+scope?: GetChatProductivityScope;
+/**
+ * Invite-only channel id; the caller must be a member or have chat management permission.
+ */
+channelId?: string;
+};
+
+export type GetChatProductivityScope = typeof GetChatProductivityScope[keyof typeof GetChatProductivityScope];
+
+
+export const GetChatProductivityScope = {
+  shared: 'shared',
   channel: 'channel',
 } as const;
 

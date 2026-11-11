@@ -1629,6 +1629,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/chat/productivity:
+    get:
+      operationId: getChatProductivity
+      tags: [queue]
+      summary: Get the AI productivity assessment for a shared conversation
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [shared, channel]
+            default: shared
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Invite-only channel id; the caller must be a member or have chat management permission.
+      responses:
+        "200":
+          description: Current team-wide setting and the latest assessment for this conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatProductivityStatus"
+  /queue/chat/productivity/settings:
+    put:
+      operationId: updateChatProductivitySettings
+      tags: [queue]
+      summary: Enable or disable periodic AI analysis of shared chat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatProductivitySettingsInput"
+      responses:
+        "200":
+          description: Updated team-wide productivity setting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatProductivitySettings"
   /queue/chat/read:
     post:
       operationId: markInterviewChatRead
@@ -8102,6 +8146,90 @@ components:
           items:
             type: string
           description: Full replacement of the invited members.
+    ChatProductivityActivity:
+      type: object
+      required: [activity, assessment]
+      properties:
+        activity:
+          type: string
+        assessment:
+          type: string
+          enum: [productive, low_value, potentially_useful, no_recorded_progress]
+    ChatProductivityBreakdown:
+      type: object
+      required: [projectProgress, planningCoordination, focusDiscipline]
+      properties:
+        projectProgress:
+          type: integer
+          minimum: 0
+          maximum: 10
+        planningCoordination:
+          type: integer
+          minimum: 0
+          maximum: 10
+        focusDiscipline:
+          type: integer
+          minimum: 0
+          maximum: 10
+    ChatProductivitySnapshot:
+      type: object
+      required: [conversationName, score, summary, activities, breakdown, periodStart, periodEnd, createdAt]
+      properties:
+        conversationName:
+          type: string
+        score:
+          type: integer
+          minimum: 0
+          maximum: 10
+        summary:
+          type: string
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatProductivityActivity"
+        breakdown:
+          $ref: "#/components/schemas/ChatProductivityBreakdown"
+        periodStart:
+          type: ["string", "null"]
+          format: date-time
+        periodEnd:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    ChatProductivityStatus:
+      type: object
+      required: [enabled, canManage, lastError, latest]
+      properties:
+        enabled:
+          type: boolean
+        canManage:
+          type: boolean
+        lastError:
+          type: ["string", "null"]
+        latest:
+          anyOf:
+            - $ref: "#/components/schemas/ChatProductivitySnapshot"
+            - type: "null"
+    ChatProductivitySettingsInput:
+      type: object
+      required: [enabled, acknowledgeNotice]
+      properties:
+        enabled:
+          type: boolean
+        acknowledgeNotice:
+          type: boolean
+          description: Must be true when enabling after the coordinator reviews the AI processing notice.
+    ChatProductivitySettings:
+      type: object
+      required: [enabled, updatedAt]
+      properties:
+        enabled:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
     ChatReactionInput:
       type: object
       required: [emoji, author]

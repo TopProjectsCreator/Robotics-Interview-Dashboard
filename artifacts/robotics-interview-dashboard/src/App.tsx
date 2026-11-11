@@ -53,6 +53,7 @@ import {
 import type { FeatureRequest } from "@workspace/api-client-react";
 import { permissionsForBuiltInRole, hasPermission as hasCatalogPermission } from "@workspace/api-zod";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
+import { ChatProductivityMeter } from "./components/ChatProductivityMeter";
 import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./components/ChatMiniTool";
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { TeamNameRulesSettings } from "./components/TeamNameRulesSettings";
@@ -7382,7 +7383,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
           </optgroup>}
         </select>
         {canManageChannels && conversationChannelId && <button type="button" onClick={() => openManageChannelDialog(conversationChannelId)} data-testid="button-manage-channel" aria-label="Manage this channel" title="Rename, invite, or delete this channel" className="flex items-center gap-1.5 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-2 text-xs font-semibold text-[#12737d] transition hover:border-[#16869a] dark:bg-[#172b38] dark:text-[#8fd7e0]"><Settings size={12} /><span>Manage</span></button>}
+        {!conversationPeer && !demoMode && conversationChannelId && <ChatProductivityMeter scope="channel" channelId={conversationChannelId} />}
         {canManageChannels && <button type="button" onClick={openCreateChannelDialog} data-testid="button-create-channel" aria-label="New invite-only channel" title="New invite-only channel" className="flex items-center gap-1 rounded-lg border border-dashed border-[#b7d5d1] bg-white px-2.5 py-2 text-xs font-semibold text-[#52666e] transition hover:border-[#16869a] hover:text-[#16869a] dark:bg-[#172b38] dark:text-[#b9c9d1] dark:hover:text-[#6fc3cf]"><Plus size={12} /><span>Channel</span></button>}
+        {!conversationPeer && !demoMode && !conversationChannelId && <ChatProductivityMeter scope="shared" />}
          <div className="ml-auto flex shrink-0 items-center gap-2">
            <span data-testid="chat-signed-in" className="whitespace-nowrap rounded-full border border-[#b9dddd] bg-[#f2fbfa] px-2.5 py-1.5 text-[11px] font-semibold text-[#12737d] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#8fd7e0]">
              {demoMode ? "Sample identity" : "Signed in as"} <span className="font-bold">{activeInterviewer}</span>

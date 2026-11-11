@@ -563,6 +563,12 @@ function openAiResponsesRequest(request: ChatRequest, modelId: string, stream: b
   const maxTokens = request.max_completion_tokens ?? request.max_tokens;
   if (maxTokens !== undefined) body.max_output_tokens = maxTokens;
   if (request.temperature !== undefined) body.temperature = request.temperature;
+  const reasoning = request.reasoning && typeof request.reasoning === "object"
+    ? request.reasoning
+    : typeof request.reasoning_effort === "string"
+      ? { effort: request.reasoning_effort }
+      : undefined;
+  if (reasoning) body.reasoning = reasoning;
   if (request.tools?.length) body.tools = responsesTools(request.tools);
   if (request.tool_choice === "none") body.tool_choice = "none";
   else if (request.tool_choice && request.tool_choice !== "auto") {

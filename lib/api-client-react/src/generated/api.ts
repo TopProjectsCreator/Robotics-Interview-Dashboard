@@ -105,6 +105,9 @@ import type {
   ChatPoll,
   ChatPollInput,
   ChatPollVoteInput,
+  ChatProductivitySettings,
+  ChatProductivitySettingsInput,
+  ChatProductivityStatus,
   ChatReactionInput,
   ChatReactionList,
   ChatSettings,
@@ -172,6 +175,7 @@ import type {
   GetAssistantUsageParams,
   GetBroadcastCommandsParams,
   GetChatNotificationEventsParams,
+  GetChatProductivityParams,
   GetDisplayStateParams,
   GetInterviewChatParams,
   GetInterviewWhiteboardByIdParams,
@@ -6013,6 +6017,161 @@ export const useSendInterviewChat = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getSendInterviewChatMutationOptions(options));
+    }
+
+export const getGetChatProductivityUrl = (params?: GetChatProductivityParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/queue/chat/productivity?${stringifiedParams}` : `/api/queue/chat/productivity`
+}
+
+/**
+ * @summary Get the AI productivity assessment for a shared conversation
+ */
+export const getChatProductivity = async (params?: GetChatProductivityParams, options?: Parameters<typeof customFetch>[1]): Promise<ChatProductivityStatus> => {
+
+  return customFetch<ChatProductivityStatus>(getGetChatProductivityUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetChatProductivityQueryKey = (params?: GetChatProductivityParams,) => {
+    return [
+    `/api/queue/chat/productivity`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetChatProductivityQueryOptions = <TData = Awaited<ReturnType<typeof getChatProductivity>>, TError = ErrorType<unknown>>(params?: GetChatProductivityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatProductivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetChatProductivityQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getChatProductivity>>> = ({ signal }) => getChatProductivity(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getChatProductivity>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetChatProductivityQueryResult = NonNullable<Awaited<ReturnType<typeof getChatProductivity>>>
+export type GetChatProductivityQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the AI productivity assessment for a shared conversation
+ */
+
+export function useGetChatProductivity<TData = Awaited<ReturnType<typeof getChatProductivity>>, TError = ErrorType<unknown>>(
+ params?: GetChatProductivityParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatProductivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetChatProductivityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateChatProductivitySettingsUrl = () => {
+
+
+
+
+  return `/api/queue/chat/productivity/settings`
+}
+
+/**
+ * @summary Enable or disable periodic AI analysis of shared chat
+ */
+export const updateChatProductivitySettings = async (chatProductivitySettingsInput: ChatProductivitySettingsInput, options?: Parameters<typeof customFetch>[1]): Promise<ChatProductivitySettings> => {
+
+  return customFetch<ChatProductivitySettings>(getUpdateChatProductivitySettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(chatProductivitySettingsInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateChatProductivitySettingsMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatProductivitySettings>>, TError,{data: BodyType<ChatProductivitySettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateChatProductivitySettings>>, TError,{data: BodyType<ChatProductivitySettingsInput>}, TContext> => {
+
+const mutationKey = ['updateChatProductivitySettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateChatProductivitySettings>>, {data: BodyType<ChatProductivitySettingsInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateChatProductivitySettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateChatProductivitySettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateChatProductivitySettings>>>
+    export type UpdateChatProductivitySettingsMutationBody = BodyType<ChatProductivitySettingsInput>
+    export type UpdateChatProductivitySettingsMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Enable or disable periodic AI analysis of shared chat
+ */
+export const useUpdateChatProductivitySettings = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateChatProductivitySettings>>, TError,{data: BodyType<ChatProductivitySettingsInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateChatProductivitySettings>>,
+        TError,
+        {data: BodyType<ChatProductivitySettingsInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateChatProductivitySettingsMutationOptions(options));
     }
 
 export const getMarkInterviewChatReadUrl = () => {

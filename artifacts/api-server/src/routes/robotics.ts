@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
-import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
+import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, chatProductivitySettingsTable, chatProductivitySnapshotsTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { assistantToolPoliciesTable, teamRolesTable } from "@workspace/db/schema";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import { hasPermission } from "@workspace/api-zod";
@@ -53,6 +53,7 @@ import {
   AssignSeatBody,
   AssignSeatResponse,
   GetInterviewChatResponse,
+  GetChatProductivityResponse,
   MarkInterviewChatReadBody,
   MarkInterviewChatReadResponse,
   GetChatConversationsResponse,
@@ -61,6 +62,8 @@ import {
   ListChatChannelsResponse,
   CreateChatChannelBody,
   CreateChatChannelResponse,
+  UpdateChatProductivitySettingsBody,
+  UpdateChatProductivitySettingsResponse,
   UpdateChatChannelBody,
   UpdateChatChannelParams,
   UpdateChatChannelResponse,
@@ -6053,6 +6056,12 @@ router.delete("/queue/chat/channels/:channelId", requireCoordinator, async (req,
     await tx.delete(chatPollVotesTable).where(inArray(chatPollVotesTable.messageId, messageIds));
     await tx.delete(chatPollsTable).where(inArray(chatPollsTable.messageId, messageIds));
     await tx.delete(interviewChatMessagesTable).where(messageFilter);
+    await tx.delete(chatProductivitySnapshotsTable)
+      .where(and(
+        eq(chatProductivitySnapshotsTable.teamId, teamId),
+        eq(chatProductivitySnapshotsTable.conversationScope, "channel"),
+        eq(chatProductivitySnapshotsTable.conversationKey, channel.id),
+      ));
     await tx.delete(chatChannelsTable)
       .where(and(eq(chatChannelsTable.id, channel.id), teamFilter(chatChannelsTable.teamId, teamId)));
   });
@@ -6146,6 +6155,114 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       channel: conversation.channelId ? { id: conversation.channelId, name: conversation.channelName ?? "" } : null,
     });
   });
+});
+
+router.get("/queue/chat/productivity", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const rawScope = req.query.scope;
+  const scope = rawScope === undefined ? "shared" : rawScope;
+  const rawChannelId = req.query.channelId;
+  if (
+    (scope !== "shared" && scope !== "channel") ||
+    (rawChannelId !== undefined && typeof rawChannelId !== "string")
+  ) {
+    res.status(400).json({ error: "Invalid productivity conversation." });
+    return;
+  }
+  const channelId = typeof rawChannelId === "string" ? rawChannelId : undefined;
+  const teamId = await requestTeamId(req);
+  const viewer = channelViewerFor(account);
+  const conversation = await resolveChatConversation(scope, undefined, account.displayName, teamId, {
+    channelId,
+    viewer,
+  });
+  if ("error" in conversation) {
+    const status = conversation.error.includes("not a member") ? 403
+      : conversation.error.includes("not found") ? 404
+        : 400;
+    res.status(status).json({ error: conversation.error });
+    return;
+  }
+
+  const [settings] = await db.select().from(chatProductivitySettingsTable)
+    .where(eq(chatProductivitySettingsTable.teamId, teamId))
+    .limit(1);
+  const conversationKey = conversation.scope === "shared" ? "team" : conversation.channelId!;
+  const [latest] = await db.select().from(chatProductivitySnapshotsTable)
+    .where(and(
+      eq(chatProductivitySnapshotsTable.teamId, teamId),
+      eq(chatProductivitySnapshotsTable.conversationScope, conversation.scope),
+      eq(chatProductivitySnapshotsTable.conversationKey, conversationKey),
+    ))
+    .orderBy(desc(chatProductivitySnapshotsTable.createdAt))
+    .limit(1);
+  const canManage = await viewerCanManageChat(viewer);
+  const latestForConversation = latest
+    ? {
+      ...latest,
+      conversationName: conversation.scope === "channel"
+        ? conversation.channelName ?? latest.conversationName
+        : "Team conversation",
+    }
+    : null;
+  res.json(GetChatProductivityResponse.parse({
+    enabled: settings?.enabled ?? false,
+    canManage,
+    lastError: settings?.enabled && settings.lastError
+      ? "The latest AI review failed. Another review is scheduled."
+      : null,
+    latest: latestForConversation,
+  }));
+});
+
+router.put("/queue/chat/productivity/settings", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const parsed = UpdateChatProductivitySettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid productivity settings." });
+    return;
+  }
+  const viewer = channelViewerFor(account);
+  if (!(await viewerCanManageChat(viewer))) {
+    res.status(403).json({ error: "You do not have permission to manage team chat." });
+    return;
+  }
+  if (parsed.data.enabled && !parsed.data.acknowledgeNotice) {
+    res.status(400).json({ error: "Review and acknowledge the AI processing notice before enabling." });
+    return;
+  }
+
+  const teamId = await requestTeamId(req);
+  const now = new Date();
+  await db.insert(chatProductivitySettingsTable).values({
+    teamId,
+    enabled: parsed.data.enabled,
+    enabledBy: account.id,
+    enabledAt: parsed.data.enabled ? now : null,
+    lastRunAt: null,
+    lastError: null,
+    updatedAt: now,
+  }).onConflictDoUpdate({
+    target: chatProductivitySettingsTable.teamId,
+    set: {
+      enabled: parsed.data.enabled,
+      enabledBy: account.id,
+      enabledAt: parsed.data.enabled ? now : null,
+      lastRunAt: null,
+      lastError: null,
+      updatedAt: now,
+    },
+  });
+  res.json(UpdateChatProductivitySettingsResponse.parse({
+    enabled: parsed.data.enabled,
+    updatedAt: now,
+  }));
 });
 
 router.post("/queue/chat/read", requireAdmin, async (req, res): Promise<void> => {
