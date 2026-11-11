@@ -112,14 +112,14 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
         type="button"
         onClick={() => setOpen(true)}
         aria-label={score === undefined
-          ? "Open AI productivity meter"
-          : `Open AI productivity score ${score} out of 10`}
-        title="AI productivity estimate"
+          ? "Open productivity meter"
+          : `Open productivity score ${score} out of 10`}
+        title="Productivity estimate"
         data-testid="button-chat-productivity"
         className="flex w-[116px] shrink-0 flex-col gap-1 rounded-lg border border-[#d5e0e0] bg-white px-2.5 py-1.5 text-left transition hover:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38]"
       >
         <span className="flex w-full items-center justify-between gap-1 text-[11px] font-semibold text-[#385762] dark:text-[#d5e0e0]">
-          <span className="flex items-center gap-1"><Activity size={12} aria-hidden="true" /> AI score</span>
+          <span className="flex items-center gap-1"><Activity size={12} aria-hidden="true" /> Productivity Score</span>
           <span data-testid="status-chat-productivity-score" className="tabular-nums">
             {score === undefined ? (status?.enabled ? "Pending" : "Off") : `${score}/10`}
           </span>

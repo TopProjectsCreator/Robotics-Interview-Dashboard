@@ -64,6 +64,8 @@ describe("ChatProductivityMeter", () => {
   it("shows the processing notice and requires coordinator acknowledgement before enabling", async () => {
     renderMeter({ scope: "channel", channelId: "drive-team" });
     await screen.findByTestId("status-chat-productivity-score");
+    expect(screen.getByTestId("button-chat-productivity")).toHaveTextContent("Productivity Score");
+    expect(screen.getByTestId("button-chat-productivity")).toHaveAccessibleName("Open productivity meter");
     fireEvent.click(screen.getByTestId("button-chat-productivity"));
 
     expect(await screen.findByText("A coordinator has not enabled AI productivity reviews.")).toBeInTheDocument();
