@@ -14,7 +14,9 @@ import { isDatabaseConnectionError } from "./lib/databaseErrors";
 import { and, eq } from "drizzle-orm";
 import { db, interviewerAccountsTable, teamRolesTable, DEFAULT_TEAM_ID } from "@workspace/db";
 import { isAdminRole } from "./lib/roles";
-import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted } from "./lib/routePermissions";
+import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted, workspaceVisibilityFallback } from "./lib/routePermissions";
+import { readWorkspaceVisibility, userCanSeeWorkspace } from "./lib/workspaceAccess";
+import { WORKSPACE_KEYS } from "./lib/workspaceVisibility";
 import { normalizePermissions, permissionsForBuiltInRole } from "@workspace/api-zod";
 
 const app: Express = express();
@@ -211,8 +213,26 @@ app.use("/api", async (req, res, next) => {
       permissions = permissionsForBuiltInRole(account.role);
     }
     if (!routePermissionIsGranted(permissions, req.method, req.originalUrl, req.body)) {
-      res.status(403).json({ error: "This action is not available for your role." });
-      return;
+      // Settings → Workspace access is an explicit per-person grant from an
+      // admin, so it also satisfies the permissions tied to that workspace.
+      // Administration permissions (*.manage) are outside the fallback.
+      const fallback = workspaceVisibilityFallback(req.method, req.originalUrl);
+      let grantedByVisibility = false;
+      if (fallback) {
+        try {
+          const teamId = account.teamId?.trim() || DEFAULT_TEAM_ID;
+          const visibility = await readWorkspaceVisibility(teamId);
+          grantedByVisibility = fallback === "any"
+            ? WORKSPACE_KEYS.some((key) => userCanSeeWorkspace(visibility, interviewerId, account.role, key))
+            : userCanSeeWorkspace(visibility, interviewerId, account.role, fallback);
+        } catch {
+          grantedByVisibility = false;
+        }
+      }
+      if (!grantedByVisibility) {
+        res.status(403).json({ error: "This action is not available for your role." });
+        return;
+      }
     }
     const permissionRequest = req as typeof req & { customRolePermissions?: string[]; effectivePermissions?: string[]; isCustomRole?: boolean };
     permissionRequest.effectivePermissions = permissions;

@@ -1,4 +1,5 @@
 import { hasPermission, type PermissionId } from "@workspace/api-zod";
+import type { WorkspaceKey } from "./workspaceVisibility";
 
 /**
  * Central route-to-capability inventory for custom roles. Exact subroute checks
@@ -136,6 +137,50 @@ export function permissionIsGranted(
   permission: PermissionId | null,
 ): boolean {
   return permission !== null && hasPermission(permissions, permission);
+}
+
+/**
+ * Read-level (plus CAD/Code editing) permissions a Settings → Workspace
+ * access grant implies for that workspace. The matrix is an explicit
+ * per-person grant from an admin, so a granted treasurer or team member must
+ * be able to use the workspace — otherwise the toggle in Settings does
+ * nothing. Administration permissions (*.manage, imports, deletes) are
+ * deliberately absent: those stay gated by the account's (custom) role.
+ */
+const WORKSPACE_PERMISSION_FALLBACK: Partial<Record<PermissionId, WorkspaceKey>> = {
+  "interview.view": "interview",
+  "applicants.view": "interview",
+  "applicants.search": "interview",
+  "queue.view": "interview",
+  "attendance.view": "interview",
+  "display.view": "interview",
+  "chat.view": "chat",
+  "chat.send": "chat",
+  "chat.moderate": "chat",
+  "parts.view": "parts",
+  "parts.edit": "parts",
+  "cad.view": "cad",
+  "cad.edit": "cad",
+  "code.view": "code",
+  "code.edit": "code",
+};
+
+/**
+ * Workspace whose access grant is enough for this request, "any" when any
+ * granted workspace is enough, or null when the fallback does not apply.
+ * Only single-permission routes qualify (the compound rules of
+ * routePermissionIsGranted keep their usual meaning). Callers check the
+ * caller's visibility grant for the returned workspace.
+ */
+export function workspaceVisibilityFallback(method: string, rawPath: string): WorkspaceKey | "any" | null {
+  const path = rawPath.split("?", 1)[0].replace(/^\/api(?=\/|$)/, "") || "/";
+  const verb = method.toUpperCase();
+  const read = verb === "GET" || verb === "HEAD";
+  // The shell cannot render at all without reading the matrix, even for a
+  // custom role with no view permissions of its own.
+  if (read && path === "/workspaces/visibility") return "any";
+  const permission = permissionForRoute(method, rawPath);
+  return permission ? WORKSPACE_PERMISSION_FALLBACK[permission] ?? null : null;
 }
 
 export function routePermissionIsGranted(permissions: readonly string[], method: string, rawPath: string, body?: unknown): boolean {

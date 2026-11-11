@@ -23,7 +23,7 @@ import {
    useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
-  useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam,
+  useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam, useListTeamRoles, getListTeamRolesQueryKey, useAssignCustomRole,
   useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
@@ -50,7 +50,7 @@ import {
   listApplicants,
   regenerateApplicant,
 } from "@workspace/api-client-react";
-import type { FeatureRequest } from "@workspace/api-client-react";
+import type { FeatureRequest, InterviewerAccount } from "@workspace/api-client-react";
 import { permissionsForBuiltInRole, hasPermission as hasCatalogPermission } from "@workspace/api-zod";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { ChatProductivityMeter } from "./components/ChatProductivityMeter";
@@ -140,6 +140,8 @@ import {
 } from "./workspaceNavigation";
 import {
   useWorkspaceVisibility,
+  useWorkspaceViewSession,
+  sessionWithWorkspaceViews,
   userCanSeeWorkspace,
   visibleWorkspacesForUser,
   WORKSPACE_KEYS,
@@ -851,6 +853,22 @@ function SettingsModal({
   const updateInterviewerPassword = useUpdateInterviewerPassword();
   const resetAllInterviewerPasswords = useResetAllInterviewerPasswords();
   const updateInterviewerRole = useUpdateInterviewerRole();
+  const assignCustomRole = useAssignCustomRole();
+  const teamRolesQuery = useListTeamRoles({
+    query: {
+      queryKey: [...getListTeamRolesQueryKey(), session.data?.teamId ?? "team"],
+      enabled: isAdmin && Boolean(session.data?.teamId),
+      retry: false,
+    },
+  });
+  const teamRoles = teamRolesQuery.data?.roles ?? [];
+  const [roleBusyId, setRoleBusyId] = useState("");
+  const [roleNotice, setRoleNotice] = useState("");
+  const [roleError, setRoleError] = useState("");
+  const roleLabelFor = (account: InterviewerAccount) => {
+    if (account.customRoleId) return teamRoles.find((role) => role.id === account.customRoleId)?.name ?? "Custom role";
+    return account.role === "coordinator" || account.role === "admin" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member";
+  };
   const deleteInterviewer = useDeleteInterviewer();
   const updateInterviewerName = useUpdateInterviewerName();
   const renameInterviewer = (id: string, displayName: string) => {
@@ -877,14 +895,40 @@ function SettingsModal({
       },
     });
   };
-  const changeInterviewerRole = (id: string, role: "coordinator" | "treasurer" | "interviewer") => {
-    updateInterviewerRole.mutate({ interviewerId: id, data: { role } }, {
-      onSuccess: () => {
-        setPasswordNotice("Access updated.");
-        setPasswordError("");
-        qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
-      },
-      onError: () => { setPasswordError("Could not update access. Try again."); },
+  // One role per person: built-in (Team member, Treasurer, Admin) or a
+  // custom role built by an admin. Picking a built-in role clears any
+  // assigned custom role; picking a custom role keeps the built-in fallback.
+  const changeAccountRole = (account: InterviewerAccount, value: string) => {
+    const builtIn = value === "coordinator" || value === "treasurer" || value === "interviewer" ? value : null;
+    const fail = () => { setRoleBusyId(""); setRoleError("Could not update role. Try again."); };
+    const finish = (message: string) => {
+      setRoleBusyId("");
+      setRoleNotice(message);
+      setRoleError("");
+      qc.invalidateQueries({ queryKey: getListInterviewersQueryKey() });
+      void qc.invalidateQueries({ queryKey: getGetSessionQueryKey() });
+    };
+    setRoleBusyId(account.id);
+    setRoleError("");
+    if (builtIn) {
+      const currentBuiltIn = account.role === "coordinator" || account.role === "admin" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer";
+      const clearCustomThenFinish = () => {
+        if (!account.customRoleId) { finish("Role updated."); return; }
+        assignCustomRole.mutate({ interviewerId: account.id, data: { customRoleId: null } }, {
+          onSuccess: () => finish("Role updated."),
+          onError: fail,
+        });
+      };
+      if (currentBuiltIn === builtIn) { clearCustomThenFinish(); return; }
+      updateInterviewerRole.mutate({ interviewerId: account.id, data: { role: builtIn } }, {
+        onSuccess: clearCustomThenFinish,
+        onError: fail,
+      });
+      return;
+    }
+    assignCustomRole.mutate({ interviewerId: account.id, data: { customRoleId: value } }, {
+      onSuccess: () => finish("Role updated."),
+      onError: fail,
     });
   };
   const removeInterviewerAccount = (id: string, displayName: string) => {
@@ -1148,8 +1192,13 @@ function SettingsModal({
       </div>
       {isAdmin && <TeamRoleManagement
         teamId={session.data?.teamId}
-        accounts={interviewerAccounts.data?.items ?? []}
+        accounts={teamAccounts}
         accountsLoading={interviewerAccounts.isLoading}
+        busyAccountId={roleBusyId}
+        selfId={session.data?.interviewerId}
+        onRoleChange={changeAccountRole}
+        roleNotice={roleNotice}
+        roleError={roleError}
       />}
       <div className={divider}><p className={sectionLabel}>Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
@@ -1165,7 +1214,7 @@ function SettingsModal({
         <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa] dark:divide-[#243743] dark:border-[#2a3f4c] dark:bg-[#10202a]">
           {interviewerAccounts.isLoading && <p className="px-3 py-3 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading interviewer accounts…</p>}
           {interviewerAccounts.data?.items.map(account => <div key={account.id} className="space-y-2 px-3 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{account.displayName}</p><p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={account.role === "coordinator" ? "blue" : "neutral"}>{account.role === "coordinator" ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team member"}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
+            <div className="flex flex-wrap items-center justify-between gap-2"><div className="min-w-0"><p className="truncate text-sm font-semibold text-[#182232] dark:text-[#e8eef2]">{account.displayName}</p><p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">{account.hasPassword ? "Password is set" : "Setup required"}</p></div><div className="flex items-center gap-2"><Badge tone={isAdminAccountRole(account.role) ? "blue" : account.customRoleId ? "teal" : "neutral"}>{roleLabelFor(account)}</Badge><Badge tone={account.hasPassword ? "teal" : "yellow"}>{account.hasPassword ? "Ready" : "Needs setup"}</Badge></div></div>
             <form onSubmit={e => { e.preventDefault(); void changeInterviewerPassword(account.id, passwordDrafts[account.id] ?? ""); }} className="flex flex-wrap gap-2">
               <input type="password" autoComplete="new-password" value={passwordDrafts[account.id] ?? ""} onChange={e => setPasswordDrafts(current => ({ ...current, [account.id]: e.target.value }))} placeholder="Type new password, press Enter" data-testid={`input-settings-password-${account.id}`} className={`${field} h-9 min-w-[160px] flex-1 text-base md:text-xs`} />
               <button type="submit" disabled={passwordBusy} data-testid={`button-settings-set-password-${account.id}`} className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a] dark:hover:bg-[#1c8b9d]">Save</button>
@@ -1183,7 +1232,7 @@ function SettingsModal({
               />
               <button type="submit" disabled={updateInterviewerName.isPending} data-testid={`button-settings-rename-${account.id}`} className="rounded-lg border border-[#cbd9da] bg-white px-3 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]">Rename</button>
             </form>
-            <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Access:</span><Segmented options={[{ value: "coordinator", label: "Admin" }, { value: "treasurer", label: "Treasurer" }, { value: "interviewer", label: "Team member" }]} value={account.role === "coordinator" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer"} onChange={(v) => changeInterviewerRole(account.id, v)} testId={`segment-settings-role-${account.id}`} />{session.data?.interviewerId !== account.id && <button type="button" onClick={async () => { if (await confirmAction({ title: `Remove ${account.displayName} from the team?`, detail: "They will be signed out immediately.", danger: true, confirmLabel: "Remove" })) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button>}</div>
+            {isAdmin && session.data?.interviewerId !== account.id && <div className="mt-2 flex flex-wrap items-center gap-2"><button type="button" onClick={async () => { if (await confirmAction({ title: `Remove ${account.displayName} from the team?`, detail: "They will be signed out immediately.", danger: true, confirmLabel: "Remove" })) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button></div>}
           </div>)}
         </div>
         <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className={`${dangerButton} mt-3 flex w-full items-center justify-center gap-2 px-3 py-2.5`}><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all team passwords"}</button>
@@ -1199,8 +1248,8 @@ function SettingsModal({
                 <th scope="col" className="px-3 py-2 font-semibold">Workspace</th>
                 {workspaceAccessAccounts.map(account => (
                   <th key={account.id} scope="col" data-testid={`workspace-access-account-${account.id}`} className="px-2 py-2 text-center font-semibold">
-                    <span className="block max-w-[90px] truncate" title={`${account.displayName} (${account.role})`}>{account.displayName}</span>
-                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal opacity-70">{isAdminAccountRole(account.role) ? "Admin" : account.role === "treasurer" ? "Treasurer" : "Team"}</span>
+                    <span className="block max-w-[90px] truncate" title={`${account.displayName} (${roleLabelFor(account)})`}>{account.displayName}</span>
+                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal opacity-70">{roleLabelFor(account)}</span>
                   </th>
                 ))}
               </tr>
@@ -3466,7 +3515,7 @@ function Shell({
     }
   }, [demoMode, broadcasts.data, dismissedBroadcasts]);
   const isCoordinator = !demoMode && session.data?.role === "coordinator";
-  const canViewApplicants = !demoMode && canSessionUsePermission(session.data, "applicants.view");
+  const canViewApplicants = !demoMode && canSessionUsePermission(sessionWithViews, "applicants.view");
   const activeTeamName = demoMode
     ? "Demo Robotics"
     : session.data?.teamId === "default"
@@ -3502,14 +3551,15 @@ function Shell({
   const visibility = workspaceVisibility.visibility;
   const visibleWorkspaces = useMemo(() => {
     if (demoMode) return new Set<WorkspaceKey>(["chat", "parts", "cad", "code"]);
-    const set = new Set<WorkspaceKey>();
     // Per-user access: coordinators always see everything (enforced inside
     // userCanSeeWorkspace), everyone else sees exactly their own workspaces.
-    for (const key of visibleWorkspacesForUser(visibility, sessionUserId, sessionRole)) {
-      if (canSessionUsePermission(session.data, `${key}.view`)) set.add(key);
-    }
-    return set;
-  }, [demoMode, visibility, sessionUserId, sessionRole, session.data]);
+    // The matrix is the grant, so no second permission veto here.
+    return new Set<WorkspaceKey>(visibleWorkspacesForUser(visibility, sessionUserId, sessionRole));
+  }, [demoMode, visibility, sessionUserId, sessionRole]);
+  const sessionWithViews = useMemo(
+    () => sessionWithWorkspaceViews(session.data, visibleWorkspaces),
+    [session.data, visibleWorkspaces],
+  );
   const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
   const isDashboardPath = demoMode ? demoView === "overview" : shellPath === "/dashboard";
   const isInterviewPath = !demoMode && (
@@ -3604,10 +3654,10 @@ function Shell({
   ].filter((item) => {
     if (item.href.includes("assistant") && !assistantAccessible) return false;
     const path = item.href.split(/[?#]/, 1)[0] ?? "";
-    if (path.startsWith("/applicants")) return canSessionUsePermission(session.data, "applicants.view");
-    if (path.startsWith("/queue")) return canSessionUsePermission(session.data, "queue.view");
-    if (path.startsWith("/attendance") || path.startsWith("/seating")) return canSessionUsePermission(session.data, "attendance.view");
-    if (path.startsWith("/display") || path.startsWith("/big-screen")) return canSessionUsePermission(session.data, "display.view");
+    if (path.startsWith("/applicants")) return canSessionUsePermission(sessionWithViews, "applicants.view");
+    if (path.startsWith("/queue")) return canSessionUsePermission(sessionWithViews, "queue.view");
+    if (path.startsWith("/attendance") || path.startsWith("/seating")) return canSessionUsePermission(sessionWithViews, "attendance.view");
+    if (path.startsWith("/display") || path.startsWith("/big-screen")) return canSessionUsePermission(sessionWithViews, "display.view");
     return true;
   })
     .map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
@@ -3964,8 +4014,7 @@ function WorkspaceOverview({ demoMode = false }: { demoMode?: boolean } = {}) {
   const canManageCustomWorkspaces = !demoMode && canSessionUsePermission(session.data, "customWorkspaces.manage");
   const canSee = (key: WorkspaceKey) => demoMode
     ? key !== "interview"
-    : userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key) &&
-      canSessionUsePermission(session.data, `${key}.view`);
+    : userCanSeeWorkspace(visibility, sessionUserId, sessionRole, key);
   // Per-user workspace list in canonical order: numbering and the count below
   // are relative to what this person can open, so the same workspace can be
   // Workspace 01 for one person and Workspace 03 for another.
@@ -4972,7 +5021,8 @@ type AttendancePatch = { attendance: string; lateArrivalTime?: string | null; ma
 function DisplayTextCard() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
   const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewDisplay = canSessionUsePermission(roleSession.data, "display.view");
+  const viewSession = useWorkspaceViewSession(roleSession.data);
+  const canViewDisplay = canSessionUsePermission(viewSession, "display.view");
   const canManageDisplay = canSessionUsePermission(roleSession.data, "display.manage");
   const settings = useGetDisplaySettings({ query: { queryKey: getGetDisplaySettingsQueryKey(), enabled: canViewDisplay, refetchInterval: streamHealthy ? false : (5000 )} });
   const live = useGetDisplayState(undefined, { query: { queryKey: getGetDisplayStateQueryKey(), refetchInterval: streamHealthy ? false : (5000 )} });
@@ -7648,11 +7698,12 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewQueue = canSessionUsePermission(session.data, "queue.view");
+  const viewSession = useWorkspaceViewSession(session.data);
+  const canViewQueue = canSessionUsePermission(viewSession, "queue.view");
   const canManageQueue = canSessionUsePermission(session.data, "queue.manage");
-  const canViewApplicants = canSessionUsePermission(session.data, "applicants.view");
+  const canViewApplicants = canSessionUsePermission(viewSession, "applicants.view");
   const canEditApplicants = canSessionUsePermission(session.data, "applicants.edit");
-  const canViewChat = canSessionUsePermission(session.data, "chat.view");
+  const canViewChat = canSessionUsePermission(viewSession, "chat.view");
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), enabled: canViewQueue, refetchInterval: streamHealthy ? false : (refreshMs )} });
   const advance = useAdvanceQueue();
   const callback = useCallbackQueue();
@@ -9910,7 +9961,8 @@ function seatDot(attendance: string | null | undefined): string {
 function SeatingChart({ applicants }: { applicants: Applicant[] }) { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
   const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewAttendance = canSessionUsePermission(roleSession.data, "attendance.view");
+  const viewSession = useWorkspaceViewSession(roleSession.data);
+  const canViewAttendance = canSessionUsePermission(viewSession, "attendance.view");
   const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
   const settings = useGetSeatingSettings({ query: { queryKey: getGetSeatingSettingsQueryKey(), enabled: canViewAttendance, refetchInterval: streamHealthy ? false : (5000 )} });
   const updateSettings = useUpdateSeatingSettings();
@@ -9999,9 +10051,10 @@ function SeatingChart({ applicants }: { applicants: Applicant[] }) { const strea
 function AttendancePage() { const streamHealthy = useRealtimeHealthy();
   const qc = useQueryClient();
   const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewAttendance = canSessionUsePermission(roleSession.data, "attendance.view");
+  const viewSession = useWorkspaceViewSession(roleSession.data);
+  const canViewAttendance = canSessionUsePermission(viewSession, "attendance.view");
   const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
-  const canViewApplicants = canSessionUsePermission(roleSession.data, "applicants.view");
+  const canViewApplicants = canSessionUsePermission(viewSession, "applicants.view");
   const { settings } = useWorkspaceSettings();
   const refreshMs = settings.autoRefresh ? settings.refreshMs : false;
   const boardParams = useMemo(() => ({ sort: "queue" }), []);
