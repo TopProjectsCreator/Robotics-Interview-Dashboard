@@ -1,9 +1,59 @@
+import fs from 'node:fs';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
+
+// The agent briefing lives in public/AGENTS.md and is served at /AGENTS.md.
+// Static hosts match paths case-sensitively on Linux, so /agents.md used to
+// fall through to the SPA fallback and render the 404 page instead of the
+// markdown. This alias serves the same file at the lowercase path in
+// dev/preview and copies it into the build output so static hosts have it
+// too (the API server also aliases it for already-built bundles).
+const agentsMdAlias = (): Plugin => {
+  const file = path.resolve(import.meta.dirname, 'public', 'AGENTS.md');
+  let outDir = path.resolve(import.meta.dirname, 'dist', 'public');
+  const middleware = (
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: () => void,
+  ) => {
+    const pathname = req.url
+      ? new URL(req.url, 'http://localhost').pathname
+      : '';
+    if (pathname !== '/agents.md') {
+      next();
+      return;
+    }
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+    fs.createReadStream(file).pipe(res);
+  };
+  return {
+    name: 'agents-md-alias',
+    configResolved(config) {
+      outDir = path.resolve(config.root, config.build.outDir);
+    },
+    configureServer(server) {
+      server.middlewares.use(middleware);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(middleware);
+    },
+    closeBundle() {
+      try {
+        if (fs.existsSync(outDir)) {
+          fs.copyFileSync(file, path.join(outDir, 'agents.md'));
+        }
+      } catch {
+        // Non-fatal: the API server aliases /agents.md as a fallback.
+      }
+    },
+  };
+};
 
 const rawPort = process.env.PORT;
 
@@ -30,6 +80,7 @@ if (!basePath) {
 export default defineConfig({
   base: basePath,
   plugins: [
+    agentsMdAlias(),
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),

@@ -1,5 +1,5 @@
 import { hasPermission, type PermissionId } from "@workspace/api-zod";
-import { userCanSeeWorkspace, type WorkspaceKey, type WorkspaceVisibility } from "./workspaceVisibility";
+import { userCanSeeWorkspace, type WorkspaceKey, type WorkspaceVisibility } from "./workspaceVisibility.ts";
 
 /**
  * Central route-to-capability inventory for custom roles. Exact subroute checks

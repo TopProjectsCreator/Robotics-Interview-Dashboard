@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gt, lt } from "drizzle-orm";
-import { db, pool, presenceHeartbeatsTable } from "@workspace/db";
+import { and, desc, eq, gt, inArray, lt } from "drizzle-orm";
+import { db, pool, interviewerAccountsTable, presenceHeartbeatsTable } from "@workspace/db";
 import { GetPresenceStatsResponse, GetPresenceResponse, hasPermission, KickPresenceBody, KickPresenceResponse, PostPresenceHeartbeatBody, PostPresenceHeartbeatResponse } from "@workspace/api-zod";
 import { authenticatedInterviewerId, isRevokedAdminSession, isValidAdminSession, requestAdminSession, requestTeamId, requireCoordinator } from "../middlewares/adminAuth";
-import { closeOpenVisits, geoLookup, getClientIp, getIpStats, rotatePageVisit } from "../lib/presence";
+import { closeOpenVisits, geoLookup, getClientIp, getAccountStats, rotatePageVisit } from "../lib/presence";
 import { teamFilter, teamSqlCondition } from "../lib/teams";
 import { workspaceIdentityForPath, safeWorkspaceName, BUILT_IN_WORKSPACE_KEYS } from "../lib/workspaceUsage";
 import { finalizeStaleWorkspaceVisits, recordWorkspaceActivity } from "../lib/workspaceUsageTracking";
@@ -29,6 +29,24 @@ export function presenceSessionHash(session: string | undefined): string {
   if (typeof session !== "string" || !session) return "";
   return createHash("sha256").update(session).digest("hex");
 }
+
+/** Look up display names for a batch of account ids (team-scoped best effort). */
+async function accountNamesById(ids: Iterable<string>, teamId: string): Promise<Map<string, string>> {
+  const unique = [...new Set([...ids].filter(Boolean))];
+  if (unique.length === 0) return new Map();
+  try {
+    const rows = await db
+      .select({ id: interviewerAccountsTable.id, displayName: interviewerAccountsTable.displayName })
+      .from(interviewerAccountsTable)
+      .where(and(inArray(interviewerAccountsTable.id, unique), teamFilter(interviewerAccountsTable.teamId, teamId)));
+    return new Map(rows.map((row) => [row.id, row.displayName]));
+  } catch {
+    // Names are a display nicety; presence still works without them.
+    return new Map();
+  }
+}
+
+const UNKNOWN_USER_LABEL = "Unknown user";
 
 export async function deletePresenceHeartbeat(session: string | undefined): Promise<void> {
   const hash = presenceSessionHash(session);
@@ -103,12 +121,12 @@ router.post("/presence/heartbeat", async (req, res): Promise<void> => {
     const nextNotify = notifyPermission || existingNotify;
     await db
       .insert(presenceHeartbeatsTable)
-      .values({ sessionHash: hash, teamId, ip, userAgent, city, region, country, page, notifyPermission: nextNotify, createdAt: now, updatedAt: now })
+      .values({ sessionHash: hash, teamId, ip, accountId, userAgent, city, region, country, page, notifyPermission: nextNotify, createdAt: now, updatedAt: now })
       .onConflictDoUpdate({
         target: presenceHeartbeatsTable.sessionHash,
-        set: { teamId, ip, userAgent, city, region, country, page, notifyPermission: nextNotify, updatedAt: now },
+        set: { teamId, ip, accountId, userAgent, city, region, country, page, notifyPermission: nextNotify, updatedAt: now },
       });
-    await rotatePageVisit(hash, ip, page, existing?.page ?? "", teamId);
+    await rotatePageVisit(hash, ip, page, existing?.page ?? "", teamId, accountId);
     try {
       let identity = parsed.success ? workspaceIdentityForPath(rawPage) : null;
       if (identity) {
@@ -347,11 +365,13 @@ router.get("/presence", async (req, res): Promise<void> => {
         ),
       )
       .orderBy(desc(presenceHeartbeatsTable.updatedAt));
+    const names = await accountNamesById(rows.map((row) => row.accountId), teamId);
     res.json(
       GetPresenceResponse.parse({
         onlineCount: rows.length,
         entries: rows.map((row) => ({
-          ip: row.ip,
+          userId: row.accountId,
+          name: (row.accountId && names.get(row.accountId)) || UNKNOWN_USER_LABEL,
           city: row.city,
           region: row.region,
           country: row.country,
@@ -371,21 +391,23 @@ router.get("/presence", async (req, res): Promise<void> => {
 router.get("/presence/stats", async (req, res): Promise<void> => {
   const hash = await requirePresenceSession(req, res);
   if (!hash) return;
-  const ip = String(req.query.ip ?? "").trim().slice(0, 45);
-  if (!ip) {
-    res.status(400).json({ error: "Query parameter ip is required" });
+  const userId = String(req.query.userId ?? "").trim().slice(0, 64);
+  if (!userId) {
+    res.status(400).json({ error: "Query parameter userId is required" });
     return;
   }
   try {
     const teamId = await requestTeamId(req);
-    const stats = await getIpStats(ip, teamId);
+    const names = await accountNamesById([userId], teamId);
+    const name = names.get(userId) ?? UNKNOWN_USER_LABEL;
+    const stats = await getAccountStats(userId, teamId);
     const online = await db
       .select({ notifyPermission: presenceHeartbeatsTable.notifyPermission })
       .from(presenceHeartbeatsTable)
       .where(
         and(
           teamFilter(presenceHeartbeatsTable.teamId, teamId),
-          eq(presenceHeartbeatsTable.ip, ip),
+          eq(presenceHeartbeatsTable.accountId, userId),
           gt(presenceHeartbeatsTable.updatedAt, new Date(Date.now() - ONLINE_WINDOW_MS)),
         ),
       );
@@ -397,7 +419,7 @@ router.get("/presence/stats", async (req, res): Promise<void> => {
       else if (session.notifyPermission === "denied" || session.notifyPermission === "default") notifyDenied += 1;
       else notifyUnknown += 1;
     }
-    res.json(GetPresenceStatsResponse.parse({ ...stats, notifyGranted, notifyDenied, notifyUnknown }));
+    res.json(GetPresenceStatsResponse.parse({ ...stats, name, notifyGranted, notifyDenied, notifyUnknown }));
   } catch (error) {
     req.log.error({ err: error }, "Presence stats failed");
     res.status(503).json({ error: "Presence unavailable" });
@@ -412,32 +434,38 @@ router.post("/presence/kick", async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const ip = parsed.data.ip.trim().slice(0, 45);
-  if (!ip) {
-    res.status(400).json({ error: "ip is required" });
+  const userId = parsed.data.userId.trim().slice(0, 64);
+  if (!userId) {
+    res.status(400).json({ error: "userId is required" });
     return;
   }
-  if (req.body && typeof req.body === "object" && "targetIp" in (req.body as Record<string, unknown>)) {
-    res.status(400).json({ error: "Use { ip }, not { targetIp }" });
+  const ownAccountId = authenticatedInterviewerId(req);
+  if (ownAccountId && ownAccountId === userId) {
+    res.status(400).json({ error: "Cannot kick your own session" });
+    return;
+  }
+  if (req.body && typeof req.body === "object" && "ip" in (req.body as Record<string, unknown>)) {
+    res.status(400).json({ error: "Use { userId }, not { ip }" });
     return;
   }
   try {
     // Kick only sessions belonging to the requester's team; victims are
-    // matched by IP *and* team so one team cannot boot another's devices.
+    // matched by account *and* team so one team cannot boot another's members.
     const teamId = await requestTeamId(req);
+    const names = await accountNamesById([userId], teamId);
+    const displayName = names.get(userId) ?? UNKNOWN_USER_LABEL;
     const victims = await db
       .select({ sessionHash: presenceHeartbeatsTable.sessionHash })
       .from(presenceHeartbeatsTable)
       .where(
         and(
           teamFilter(presenceHeartbeatsTable.teamId, teamId),
-          eq(presenceHeartbeatsTable.ip, ip),
+          eq(presenceHeartbeatsTable.accountId, userId),
         ),
       );
     const hashes = victims.map((r) => r.sessionHash).filter((h) => h && h !== hash);
     if (hashes.length === 0) {
-      const selfOnly = victims.some((r) => r.sessionHash === hash);
-      res.status(selfOnly ? 400 : 404).json({ error: selfOnly ? "Cannot kick your own session" : "No online session found for that IP" });
+      res.status(404).json({ error: "No online session found for that person" });
       return;
     }
     for (const victimHash of hashes) {
@@ -449,7 +477,7 @@ router.post("/presence/kick", async (req, res): Promise<void> => {
       const { closeOpenVisits } = await import("../lib/presence");
       await closeOpenVisits(victimHash);
     }
-    res.json(KickPresenceResponse.parse({ kicked: hashes.length, ip }));
+    res.json(KickPresenceResponse.parse({ kicked: hashes.length, userId, name: displayName }));
   } catch (error) {
     req.log.error({ err: error }, "Presence kick failed");
     res.status(503).json({ error: "Presence unavailable" });

@@ -7,6 +7,7 @@ export const pageVisitsTable = pgTable("page_visits", {
   teamId: text("team_id"),
   sessionHash: text("session_hash").notNull(),
   ip: text("ip").notNull().default(""),
+  accountId: text("account_id").notNull().default(""),
   page: text("page").notNull().default(""),
   enteredAt: timestamp("entered_at", { withTimezone: true }).notNull().defaultNow(),
   exitedAt: timestamp("exited_at", { withTimezone: true }),

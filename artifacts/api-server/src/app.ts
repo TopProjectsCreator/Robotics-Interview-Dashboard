@@ -290,6 +290,16 @@ function resolvePublicDir(): string | null {
 const publicDir = resolvePublicDir();
 if (publicDir) {
   logger.info({ publicDir }, "Serving frontend build");
+  // Lowercase alias for the public agent briefing. Static file servers match
+  // paths case-sensitively on Linux, so /agents.md used to fall through to
+  // the SPA fallback and render the app shell (404) instead of the
+  // markdown. Serve the canonical file with the right content type instead.
+  app.get("/agents.md", (_req, res, next) => {
+    res.type("text/markdown; charset=utf-8");
+    res.sendFile(path.join(publicDir, "AGENTS.md"), (err) => {
+      if (err) next(err);
+    });
+  });
   app.use(express.static(publicDir, { index: false }));
   // SPA fallback for client-side routes. API routes are mounted above,
   // so only non-API paths reach here.
