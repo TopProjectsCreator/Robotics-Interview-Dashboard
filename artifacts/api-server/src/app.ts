@@ -14,7 +14,7 @@ import { isDatabaseConnectionError } from "./lib/databaseErrors";
 import { and, eq } from "drizzle-orm";
 import { db, interviewerAccountsTable, teamRolesTable, DEFAULT_TEAM_ID } from "@workspace/db";
 import { isAdminRole } from "./lib/roles";
-import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted, workspaceVisibilityFallback } from "./lib/routePermissions";
+import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted, workspaceGrantedPermissions, workspaceVisibilityFallback } from "./lib/routePermissions";
 import { readWorkspaceVisibility, userCanSeeWorkspace } from "./lib/workspaceAccess";
 import { WORKSPACE_KEYS } from "./lib/workspaceVisibility";
 import { normalizePermissions, permissionsForBuiltInRole } from "@workspace/api-zod";
@@ -212,6 +212,7 @@ app.use("/api", async (req, res, next) => {
     } else {
       permissions = permissionsForBuiltInRole(account.role);
     }
+    let impliedByVisibility: string[] = [];
     if (!routePermissionIsGranted(permissions, req.method, req.originalUrl, req.body)) {
       // Settings → Workspace access is an explicit per-person grant from an
       // admin, so it also satisfies the permissions tied to that workspace.
@@ -225,6 +226,9 @@ app.use("/api", async (req, res, next) => {
           grantedByVisibility = fallback === "any"
             ? WORKSPACE_KEYS.some((key) => userCanSeeWorkspace(visibility, interviewerId, account.role, key))
             : userCanSeeWorkspace(visibility, interviewerId, account.role, fallback);
+          if (grantedByVisibility) {
+            impliedByVisibility = workspaceGrantedPermissions(visibility, interviewerId, account.role);
+          }
         } catch {
           grantedByVisibility = false;
         }
@@ -235,7 +239,9 @@ app.use("/api", async (req, res, next) => {
       }
     }
     const permissionRequest = req as typeof req & { customRolePermissions?: string[]; effectivePermissions?: string[]; isCustomRole?: boolean };
-    permissionRequest.effectivePermissions = permissions;
+    permissionRequest.effectivePermissions = impliedByVisibility.length > 0
+      ? [...new Set([...permissions, ...impliedByVisibility])]
+      : permissions;
     if (isCustomRole) {
       permissionRequest.customRolePermissions = permissions;
       permissionRequest.isCustomRole = true;

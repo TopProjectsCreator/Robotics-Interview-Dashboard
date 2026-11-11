@@ -4,11 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TeamRoleManagement } from "./TeamRoleManagement";
 
 let savedRoles: { id: string; name: string; permissions: string[] }[] = [];
-const accounts = [
-  { id: "member-1", displayName: "Build lead", role: "interviewer", hasPassword: true, customRoleId: null },
-  { id: "admin-1", displayName: "Team admin", role: "coordinator", hasPassword: true, customRoleId: null },
-  { id: "treasurer-1", displayName: "Money", role: "treasurer", hasPassword: true, customRoleId: null },
-];
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const path = new URL(String(input), window.location.origin).pathname;
   const method = (init?.method ?? "GET").toUpperCase();
@@ -23,37 +18,29 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     savedRoles = [role];
     return json(role, 201);
   }
+  if (path === "/api/auth/roles/role-build-lead" && method === "DELETE") {
+    savedRoles = savedRoles.filter((role) => role.id !== "role-build-lead");
+    return new Response(null, { status: 204 });
+  }
   return json({ error: "Not found" }, 404);
 });
 
-const defaultProps = {
-  teamId: "team-1",
-  accounts,
-  accountsLoading: false,
-  busyAccountId: "",
-  selfId: "someone-else",
-  onRoleChange: vi.fn(),
-};
-
-function renderManagement(overrides: Partial<typeof defaultProps> = {}) {
+function renderManagement() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const onRoleChange = vi.fn();
-  return {
-    onRoleChange,
-    ...render(
-      <QueryClientProvider client={client}>
-        <TeamRoleManagement {...defaultProps} onRoleChange={onRoleChange} {...overrides} />
-      </QueryClientProvider>,
-    ),
-  };
+  return render(
+    <QueryClientProvider client={client}>
+      <TeamRoleManagement teamId="team-1" />
+    </QueryClientProvider>,
+  );
 }
 
 beforeEach(() => {
   savedRoles = [];
   fetchMock.mockClear();
   vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("confirm", vi.fn(() => true));
 });
 
 describe("TeamRoleManagement", () => {
@@ -69,33 +56,15 @@ describe("TeamRoleManagement", () => {
       name: "Build lead",
       permissions: ["applicants.edit"],
     }]));
+    // Assignment happens with the Role menu on each person in Team members.
+    expect(screen.queryByTestId("select-settings-role-member-1")).not.toBeInTheDocument();
   });
 
-  it("offers built-in roles for every account and routes selection through onRoleChange", async () => {
-    const { onRoleChange } = renderManagement();
-    const select = await screen.findByTestId("select-settings-role-member-1");
-    await waitFor(() => expect(select).not.toBeDisabled());
-    expect(select).toHaveValue("interviewer");
-    expect(screen.getByTestId("select-settings-role-admin-1")).toHaveValue("coordinator");
-    expect(screen.getByTestId("select-settings-role-treasurer-1")).toHaveValue("treasurer");
-    fireEvent.change(select, { target: { value: "treasurer" } });
-    expect(onRoleChange).toHaveBeenCalledWith(expect.objectContaining({ id: "member-1" }), "treasurer");
-  });
-
-  it("lists saved custom roles and disables them for Admin accounts and for yourself", async () => {
+  it("deletes a saved role after confirmation", async () => {
     savedRoles = [{ id: "role-build-lead", name: "Build lead", permissions: ["applicants.edit"] }];
-    const { onRoleChange } = renderManagement({ selfId: "member-1" });
-    const adminSelect = await screen.findByTestId("select-settings-role-admin-1");
-    await waitFor(() => expect(adminSelect).not.toBeDisabled());
-    // Custom roles must not be assignable to built-in Admin accounts.
-    const customGroups = adminSelect.querySelectorAll("optgroup[label='Custom roles']");
-    expect(customGroups[0]).toHaveAttribute("disabled");
-    // You cannot change your own role.
-    expect(screen.getByTestId("select-settings-role-member-1")).toBeDisabled();
-    const treasurerSelect = screen.getByTestId("select-settings-role-treasurer-1");
-    await waitFor(() => expect(treasurerSelect).not.toBeDisabled());
-    fireEvent.change(treasurerSelect, { target: { value: "role-build-lead" } });
-    expect(onRoleChange).toHaveBeenCalledWith(expect.objectContaining({ id: "treasurer-1" }), "role-build-lead");
+    renderManagement();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(savedRoles).toEqual([]));
   });
 
   it("fails closed for role creation when the roles list cannot load", async () => {

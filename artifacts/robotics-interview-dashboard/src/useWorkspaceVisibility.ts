@@ -45,7 +45,7 @@ export const WORKSPACE_KEYS = Object.keys(WORKSPACE_LABELS) as (keyof WorkspaceV
  * administration (*.manage, imports, deletes): use a custom role for that.
  */
 export const WORKSPACE_VIEW_PERMISSIONS: Record<keyof WorkspaceVisibility, PermissionId[]> = {
-  interview: ["applicants.view", "applicants.search", "queue.view", "attendance.view", "display.view"],
+  interview: ["applicants.view", "applicants.search", "queue.view", "attendance.view", "display.view", "dashboard.view"],
   chat: ["chat.view", "chat.send", "chat.moderate"],
   parts: ["parts.view", "parts.edit"],
   cad: ["cad.view", "cad.edit"],

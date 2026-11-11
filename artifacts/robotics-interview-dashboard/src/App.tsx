@@ -80,6 +80,7 @@ import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTING
 import { useRealtimeSync } from "./useRealtimeSync";
 import { shouldUseChunkedUpload, uploadChunked } from "./lib/chunkedUpload";
 import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
+import { useFaviconUnreadDot } from "./hooks/use-favicon-unread-dot";
 import { confirmAction, DialogHost, notify } from "./lib/dialogs";
 import { browserSupportsPasskeys, loginWithPasskeyFlow, registerPasskeyFlow } from "./lib/passkeyClient";
 import { ErrorBoundary } from "@/components/error-boundary";
@@ -1190,16 +1191,6 @@ function SettingsModal({
       <div className={divider}><p className={sectionLabel}>Applicants list</p>
         <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
       </div>
-      {isAdmin && <TeamRoleManagement
-        teamId={session.data?.teamId}
-        accounts={teamAccounts}
-        accountsLoading={interviewerAccounts.isLoading}
-        busyAccountId={roleBusyId}
-        selfId={session.data?.interviewerId}
-        onRoleChange={changeAccountRole}
-        roleNotice={roleNotice}
-        roleError={roleError}
-      />}
       <div className={divider}><p className={sectionLabel}>Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
         <SettingRow title="Instant updates" detail="Pushes changes to the team in about a second. Periodic refresh stays on as a backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
@@ -1208,8 +1199,8 @@ function SettingsModal({
       <div className={divider}><p className={sectionLabel}>Notifications</p>
        <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts and chat mentions pop up in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — enable to catch broadcasts and chat mentions"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f] dark:text-[#6fce8f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#102c3c] dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Enable</button>}</SettingRow>
       </div>
-      <div className={divider}><p className={sectionLabel}>Team passwords</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Type the new password next to a person and press <strong className="text-[#385762] dark:text-[#c8d8e0]">Enter</strong>. Add the team access code once per visit.</p>
+      <div className={divider} data-testid="settings-team-members"><p className={sectionLabel}>Team members</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Passwords, names, and roles for the team. Type the new password next to a person and press <strong className="text-[#385762] dark:text-[#c8d8e0]">Enter</strong>. Add the team access code once per visit. Team member, Treasurer, and Admin are built in — the Role menu lists them alongside any custom roles.</p>
         <label className="mt-3 block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-[#63747c] dark:text-[#a9bcc6]">Team access code</span><input ref={eventPasscodeRef} type="password" autoComplete="current-password" value={passwordAdminCode} onChange={e => setPasswordAdminCode(e.target.value)} onKeyDown={e => { if (e.key !== "Enter") return; e.preventDefault(); const first = document.querySelector("[data-testid^='input-settings-password-']"); if (first instanceof HTMLElement) first.focus(); }} placeholder="Used once per visit" data-testid="input-settings-event-passcode" className={field} /></label>
         <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa] dark:divide-[#243743] dark:border-[#2a3f4c] dark:bg-[#10202a]">
           {interviewerAccounts.isLoading && <p className="px-3 py-3 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading interviewer accounts…</p>}
@@ -1232,12 +1223,25 @@ function SettingsModal({
               />
               <button type="submit" disabled={updateInterviewerName.isPending} data-testid={`button-settings-rename-${account.id}`} className="rounded-lg border border-[#cbd9da] bg-white px-3 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] disabled:opacity-50 dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]">Rename</button>
             </form>
-            {isAdmin && session.data?.interviewerId !== account.id && <div className="mt-2 flex flex-wrap items-center gap-2"><button type="button" onClick={async () => { if (await confirmAction({ title: `Remove ${account.displayName} from the team?`, detail: "They will be signed out immediately.", danger: true, confirmLabel: "Remove" })) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button></div>}
+            {isAdmin && <div className="mt-2 flex flex-wrap items-center gap-2"><span className="text-[11px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Role:</span><select aria-label={`Role for ${account.displayName}`} data-testid={`select-settings-role-${account.id}`} value={account.customRoleId ?? (account.role === "coordinator" || account.role === "admin" ? "coordinator" : account.role === "treasurer" ? "treasurer" : "interviewer")} disabled={roleBusyId === account.id || session.data?.interviewerId === account.id || teamRolesQuery.isLoading} title={session.data?.interviewerId === account.id ? "You cannot change your own role" : undefined} onChange={(event) => changeAccountRole(account, event.target.value)} className={`${field} h-9 w-44 text-xs`}>
+              <optgroup label="Built-in roles">
+                <option value="interviewer">Team member</option>
+                <option value="treasurer">Treasurer</option>
+                <option value="coordinator">Admin</option>
+              </optgroup>
+              {(teamRoles.length > 0 || (account.customRoleId && !teamRoles.some((role) => role.id === account.customRoleId))) && <optgroup label="Custom roles" disabled={isAdminAccountRole(account.role)}>
+                {account.customRoleId && !teamRoles.some((role) => role.id === account.customRoleId) && <option value={account.customRoleId}>{roleLabelFor(account)}</option>}
+                {teamRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+              </optgroup>}
+            </select>{session.data?.interviewerId !== account.id && <button type="button" onClick={async () => { if (await confirmAction({ title: `Remove ${account.displayName} from the team?`, detail: "They will be signed out immediately.", danger: true, confirmLabel: "Remove" })) removeInterviewerAccount(account.id, account.displayName); }} data-testid={`button-settings-remove-${account.id}`} className={dangerButton}>Remove</button>}</div>}
           </div>)}
         </div>
         <button type="button" disabled={passwordBusy} onClick={resetEveryPassword} data-testid="button-settings-reset-all-passwords" className={`${dangerButton} mt-3 flex w-full items-center justify-center gap-2 px-3 py-2.5`}><Trash2 size={14} />{resetAllInterviewerPasswords.isPending ? "Resetting all passwords…" : "Reset all team passwords"}</button>
         {passwordNotice && <p className="mt-2 text-xs font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="settings-password-success">{passwordNotice}</p>}
         {passwordError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="settings-password-error">{passwordError}</p>}
+        {roleNotice && <p className="mt-2 text-xs font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="role-notice">{roleNotice}</p>}
+        {roleError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="role-error">{roleError}</p>}
+        {isAdmin && <TeamRoleManagement teamId={session.data?.teamId} />}
       </div>
       <div className={divider}><p className={sectionLabel}>Workspace access</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Choose which person can open each workspace. Saved on the server per person — the dashboard, counts, and Workspace numbers follow each person's own access. Admins can always open everything.</p>
@@ -3434,6 +3438,28 @@ function Shell({
     viewingChannel: new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("channel")?.trim() || null,
     enabled: !demoMode && session.data?.authenticated === true,
   });
+  // Global unread signal for the favicon badge: any peer, team-channel, or
+  // invite-only channel summary flagged unread draws a red dot on the icon.
+  // The query shares its key with the chat panel, so realtime invalidation
+  // and polling behave exactly as they do there.
+  const chatConversations = useGetChatConversations({
+    query: {
+      queryKey: getGetChatConversationsQueryKey(),
+      refetchInterval: streamHealthy ? false : 5000,
+      enabled: !demoMode && session.data?.authenticated === true,
+    },
+  });
+  const hasUnreadChat = useMemo(() => {
+    if (demoMode) return false;
+    const data = chatConversations.data;
+    if (!data) return false;
+    return (
+      Boolean(data.shared?.isUnread) ||
+      (data.items ?? []).some((item) => item.isUnread) ||
+      (data.channels ?? []).some((channel) => channel.isUnread)
+    );
+  }, [chatConversations.data, demoMode]);
+  useFaviconUnreadDot(hasUnreadChat);
   const qc = useQueryClient();
   useEffect(() => {
     if (!mobileNav) return;
@@ -3515,7 +3541,6 @@ function Shell({
     }
   }, [demoMode, broadcasts.data, dismissedBroadcasts]);
   const isCoordinator = !demoMode && session.data?.role === "coordinator";
-  const canViewApplicants = !demoMode && canSessionUsePermission(sessionWithViews, "applicants.view");
   const activeTeamName = demoMode
     ? "Demo Robotics"
     : session.data?.teamId === "default"
@@ -3560,6 +3585,7 @@ function Shell({
     () => sessionWithWorkspaceViews(session.data, visibleWorkspaces),
     [session.data, visibleWorkspaces],
   );
+  const canViewApplicants = !demoMode && canSessionUsePermission(sessionWithViews, "applicants.view");
   const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
   const isDashboardPath = demoMode ? demoView === "overview" : shellPath === "/dashboard";
   const isInterviewPath = !demoMode && (
@@ -3904,9 +3930,10 @@ function CustomChartView({ data, chart, colorIndex, xAxisLabel, yAxisLabel }: { 
 
 function CustomCharts() {
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
-  const canViewDashboard = canSessionUsePermission(session.data, "dashboard.view");
+  const viewSession = useWorkspaceViewSession(session.data);
+  const canViewDashboard = canSessionUsePermission(viewSession, "dashboard.view");
   const canManageDashboard = canSessionUsePermission(session.data, "dashboard.manage");
-  const canViewApplicants = canSessionUsePermission(session.data, "applicants.view");
+  const canViewApplicants = canSessionUsePermission(viewSession, "applicants.view");
   const [xAxis, setXAxis] = useState<CustomChartXAxis>("grade");
   const [yAxis, setYAxis] = useState<CustomChartYAxis>("count");
   const [chart, setChart] = useState<CustomChartType>("pie");
@@ -4463,9 +4490,10 @@ function VersionHistoryPanel({ onClose }: { onClose: () => void }) {
 function Applicants() {
   const { settings } = useWorkspaceSettings();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const viewSession = useWorkspaceViewSession(session.data);
   const canManageApplicants = canSessionUsePermission(session.data, "applicants.manage");
   const canManageSnapshots = canSessionUsePermission(session.data, "snapshots.manage");
-  const canSearchApplicants = canSessionUsePermission(session.data, "applicants.search");
+  const canSearchApplicants = canSessionUsePermission(viewSession, "applicants.search");
   const [, setLocation] = useLocation();
   const searchParams = useSearch();
   const [search, setSearch] = useState("");

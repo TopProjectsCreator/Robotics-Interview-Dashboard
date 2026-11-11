@@ -1,5 +1,5 @@
 import { hasPermission, type PermissionId } from "@workspace/api-zod";
-import type { WorkspaceKey } from "./workspaceVisibility";
+import { userCanSeeWorkspace, type WorkspaceKey, type WorkspaceVisibility } from "./workspaceVisibility";
 
 /**
  * Central route-to-capability inventory for custom roles. Exact subroute checks
@@ -154,6 +154,7 @@ const WORKSPACE_PERMISSION_FALLBACK: Partial<Record<PermissionId, WorkspaceKey>>
   "queue.view": "interview",
   "attendance.view": "interview",
   "display.view": "interview",
+  "dashboard.view": "interview",
   "chat.view": "chat",
   "chat.send": "chat",
   "chat.moderate": "chat",
@@ -181,6 +182,23 @@ export function workspaceVisibilityFallback(method: string, rawPath: string): Wo
   if (read && path === "/workspaces/visibility") return "any";
   const permission = permissionForRoute(method, rawPath);
   return permission ? WORKSPACE_PERMISSION_FALLBACK[permission] ?? null : null;
+}
+
+/**
+ * Every read-level permission implied by the given visibility grant. Used to
+ * augment effective permissions so custom-role capability checks agree with
+ * the HTTP fallback.
+ */
+export function workspaceGrantedPermissions(
+  visibility: WorkspaceVisibility,
+  userId: string | undefined | null,
+  role: string | undefined | null,
+): PermissionId[] {
+  const granted = new Set<PermissionId>();
+  for (const [permission, workspace] of Object.entries(WORKSPACE_PERMISSION_FALLBACK) as [PermissionId, WorkspaceKey][]) {
+    if (userCanSeeWorkspace(visibility, userId, role, workspace)) granted.add(permission);
+  }
+  return [...granted];
 }
 
 export function routePermissionIsGranted(permissions: readonly string[], method: string, rawPath: string, body?: unknown): boolean {
