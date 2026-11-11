@@ -217,9 +217,9 @@ export async function recordWorkspaceActivity(input: {
       await client.query(
         `update "workspace_usage_visits"
             set "active_seconds" = "active_seconds" + $2,
-                "last_heartbeat_at" = $3,
+                "last_heartbeat_at" = $3::timestamptz,
                 "is_foreground" = $4,
-                "exited_at" = case when $5 then null else $3 end
+                "exited_at" = case when $5 then null else $6 end
           where "id" = $1 and "exited_at" is null`,
         [
           openVisit.id,
@@ -227,6 +227,7 @@ export async function recordWorkspaceActivity(input: {
           now,
           remainsHere && input.visible,
           remainsHere,
+          now,
         ],
       );
       if (remainsHere) {
