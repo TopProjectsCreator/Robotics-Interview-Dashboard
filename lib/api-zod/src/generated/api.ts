@@ -797,7 +797,8 @@ export const PostPresenceHeartbeatResponse = zod.object({
 export const GetPresenceResponse = zod.object({
   "onlineCount": zod.number().int(),
   "entries": zod.array(zod.object({
-  "ip": zod.string(),
+  "userId": zod.string().describe('Account id of the signed-in person (\"\" for a legacy session that cannot be attributed to one)'),
+  "name": zod.string().describe('Display name of the signed-in person'),
   "city": zod.string(),
   "region": zod.string(),
   "country": zod.string(),
@@ -810,14 +811,15 @@ export const GetPresenceResponse = zod.object({
 
 
 /**
- * @summary Per-IP usage stats from page-visit history
+ * @summary Per-user usage stats from page-visit history
  */
 export const GetPresenceStatsQueryParams = zod.object({
-  "ip": zod.coerce.string()
+  "userId": zod.coerce.string()
 })
 
 export const GetPresenceStatsResponse = zod.object({
-  "ip": zod.string(),
+  "userId": zod.string(),
+  "name": zod.string().describe('Display name of the person these stats belong to'),
   "totalSeconds": zod.number().int(),
   "sessionCount": zod.number().int(),
   "visitCount": zod.number().int(),
@@ -828,22 +830,23 @@ export const GetPresenceStatsResponse = zod.object({
   "visits": zod.number().int(),
   "seconds": zod.number().int()
 })),
-  "notifyGranted": zod.number().int().describe('Online sessions from this IP with browser notifications granted'),
-  "notifyDenied": zod.number().int().describe('Online sessions from this IP with browser notifications denied or dismissed'),
-  "notifyUnknown": zod.number().int().describe('Online sessions from this IP with unknown or unsupported notification state')
+  "notifyGranted": zod.number().int().describe('Online sessions from this person with browser notifications granted'),
+  "notifyDenied": zod.number().int().describe('Online sessions from this person with browser notifications denied or dismissed'),
+  "notifyUnknown": zod.number().int().describe('Online sessions from this person with unknown or unsupported notification state')
 })
 
 
 /**
- * @summary Kick all sessions from an IP (revoke + remove presence)
+ * @summary Kick all sessions of a user (revoke + remove presence)
  */
 export const KickPresenceBody = zod.object({
-  "ip": zod.string()
+  "userId": zod.string().describe('Account id of the person to kick, from a presence or list_presence result')
 })
 
 export const KickPresenceResponse = zod.object({
   "kicked": zod.number().int(),
-  "ip": zod.string()
+  "userId": zod.string(),
+  "name": zod.string().optional().describe('Display name of the kicked person')
 })
 
 
@@ -853,7 +856,7 @@ export const KickPresenceResponse = zod.object({
 export const PostBroadcastBody = zod.object({
   "message": zod.string(),
   "kind": zod.string().optional().describe('message (default) or a big-screen command: audio-test, audio-engine, audio-reset, audio-say'),
-  "targetIp": zod.string().optional(),
+  "targetUserId": zod.string().optional().describe('Account id of the person to address, \"\" for everyone online'),
   "ttlMinutes": zod.number().int().optional()
 })
 
@@ -861,7 +864,7 @@ export const PostBroadcastResponse = zod.object({
   "id": zod.string(),
   "message": zod.string(),
   "kind": zod.string().describe('message = coordinator popup; audio-test\/audio-engine\/audio-reset\/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say)'),
-  "targetIp": zod.string(),
+  "targetUserId": zod.string().describe('Account id of the addressed person, or \"\" for everyone online'),
   "createdAt": zod.string(),
   "expiresAt": zod.string()
 })
@@ -875,7 +878,7 @@ export const GetMyBroadcastsResponse = zod.object({
   "id": zod.string(),
   "message": zod.string(),
   "kind": zod.string().describe('message = coordinator popup; audio-test\/audio-engine\/audio-reset\/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say)'),
-  "targetIp": zod.string(),
+  "targetUserId": zod.string().describe('Account id of the addressed person, or \"\" for everyone online'),
   "createdAt": zod.string(),
   "expiresAt": zod.string()
 }))
@@ -894,7 +897,7 @@ export const GetBroadcastCommandsResponse = zod.object({
   "id": zod.string(),
   "message": zod.string(),
   "kind": zod.string().describe('message = coordinator popup; audio-test\/audio-engine\/audio-reset\/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say)'),
-  "targetIp": zod.string(),
+  "targetUserId": zod.string().describe('Account id of the addressed person, or \"\" for everyone online'),
   "createdAt": zod.string(),
   "expiresAt": zod.string()
 }))

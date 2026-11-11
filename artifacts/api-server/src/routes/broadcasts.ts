@@ -8,7 +8,7 @@ import {
   PostBroadcastBody,
   PostBroadcastResponse,
 } from "@workspace/api-zod";
-import { requireStaff, requestAdminSession, requestTeamId } from "../middlewares/adminAuth";
+import { authenticatedInterviewerId, requireStaff, requestAdminSession, requestTeamId } from "../middlewares/adminAuth";
 import { presenceSessionHash } from "./presence";
 import { getClientIp } from "../lib/presence";
 import { pushRealtimeHint } from "../lib/realtime";
@@ -88,7 +88,7 @@ router.get("/broadcasts/mine", async (req, res): Promise<void> => {
         id: broadcastsTable.id,
         message: broadcastsTable.message,
         kind: broadcastsTable.kind,
-        targetIp: broadcastsTable.targetIp,
+        targetUserId: broadcastsTable.targetUserId,
         createdAt: broadcastsTable.createdAt,
         expiresAt: broadcastsTable.expiresAt,
       })
@@ -146,7 +146,7 @@ router.get("/broadcasts/commands", async (req, res): Promise<void> => {
         id: broadcastsTable.id,
         message: broadcastsTable.message,
         kind: broadcastsTable.kind,
-        targetIp: broadcastsTable.targetIp,
+        targetUserId: broadcastsTable.targetUserId,
         createdAt: broadcastsTable.createdAt,
         expiresAt: broadcastsTable.expiresAt,
       })

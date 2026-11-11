@@ -245,10 +245,10 @@ import type {
   PersonalNotepadInput,
   PresenceHeartbeat,
   PresenceHeartbeatInput,
-  PresenceIpStats,
   PresenceKickInput,
   PresenceKickResult,
   PresenceList,
+  PresenceUserStats,
   QueueCallbackInput,
   QueueLabels,
   QueueSettingsInput,
@@ -3442,11 +3442,11 @@ export const getGetPresenceStatsUrl = (params: GetPresenceStatsParams,) => {
 }
 
 /**
- * @summary Per-IP usage stats from page-visit history
+ * @summary Per-user usage stats from page-visit history
  */
-export const getPresenceStats = async (params: GetPresenceStatsParams, options?: Parameters<typeof customFetch>[1]): Promise<PresenceIpStats> => {
+export const getPresenceStats = async (params: GetPresenceStatsParams, options?: Parameters<typeof customFetch>[1]): Promise<PresenceUserStats> => {
 
-  return customFetch<PresenceIpStats>(getGetPresenceStatsUrl(params),
+  return customFetch<PresenceUserStats>(getGetPresenceStatsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -3489,7 +3489,7 @@ export type GetPresenceStatsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Per-IP usage stats from page-visit history
+ * @summary Per-user usage stats from page-visit history
  */
 
 export function useGetPresenceStats<TData = Awaited<ReturnType<typeof getPresenceStats>>, TError = ErrorType<unknown>>(
@@ -3519,7 +3519,7 @@ export const getKickPresenceUrl = () => {
 }
 
 /**
- * @summary Kick all sessions from an IP (revoke + remove presence)
+ * @summary Kick all sessions of a user (revoke + remove presence)
  */
 export const kickPresence = async (presenceKickInput: PresenceKickInput, options?: Parameters<typeof customFetch>[1]): Promise<PresenceKickResult> => {
 
@@ -3568,7 +3568,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type KickPresenceMutationError = ErrorType<unknown>
 
     /**
- * @summary Kick all sessions from an IP (revoke + remove presence)
+ * @summary Kick all sessions of a user (revoke + remove presence)
  */
 export const useKickPresence = <TError = ErrorType<unknown>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof kickPresence>>, TError,{data: BodyType<PresenceKickInput>}, TContext>, request?: SecondParameter<typeof customFetch>}

@@ -1224,7 +1224,10 @@ export interface DashboardCount {
 }
 
 export interface PresenceEntry {
-  ip: string;
+  /** Account id of the signed-in person ("" for a legacy session that cannot be attributed to one) */
+  userId: string;
+  /** Display name of the signed-in person */
+  name: string;
   city: string;
   region: string;
   country: string;
@@ -1293,35 +1296,40 @@ export interface PresenceHeartbeat {
   onlineCount: number;
 }
 
-export type PresenceIpStatsPagesItem = {
+export type PresenceUserStatsPagesItem = {
   page: string;
   visits: number;
   seconds: number;
 };
 
-export interface PresenceIpStats {
-  ip: string;
+export interface PresenceUserStats {
+  userId: string;
+  /** Display name of the person these stats belong to */
+  name: string;
   totalSeconds: number;
   sessionCount: number;
   visitCount: number;
   firstSeenAt: string | null;
   lastSeenAt: string | null;
-  pages: PresenceIpStatsPagesItem[];
-  /** Online sessions from this IP with browser notifications granted */
+  pages: PresenceUserStatsPagesItem[];
+  /** Online sessions from this person with browser notifications granted */
   notifyGranted: number;
-  /** Online sessions from this IP with browser notifications denied or dismissed */
+  /** Online sessions from this person with browser notifications denied or dismissed */
   notifyDenied: number;
-  /** Online sessions from this IP with unknown or unsupported notification state */
+  /** Online sessions from this person with unknown or unsupported notification state */
   notifyUnknown: number;
 }
 
 export interface PresenceKickInput {
-  ip: string;
+  /** Account id of the person to kick, from a presence or list_presence result */
+  userId: string;
 }
 
 export interface PresenceKickResult {
   kicked: number;
-  ip: string;
+  userId: string;
+  /** Display name of the kicked person */
+  name?: string;
 }
 
 export interface Broadcast {
@@ -1329,7 +1337,8 @@ export interface Broadcast {
   message: string;
   /** message = coordinator popup; audio-test/audio-engine/audio-reset/audio-say = silent big-screen commands (message carries the engine id, or the custom text for audio-say) */
   kind: string;
-  targetIp: string;
+  /** Account id of the addressed person, or "" for everyone online */
+  targetUserId: string;
   createdAt: string;
   expiresAt: string;
 }
@@ -1342,7 +1351,8 @@ export interface BroadcastInput {
   message: string;
   /** message (default) or a big-screen command: audio-test, audio-engine, audio-reset, audio-say */
   kind?: string;
-  targetIp?: string;
+  /** Account id of the person to address, "" for everyone online */
+  targetUserId?: string;
   ttlMinutes?: number;
 }
 
@@ -4556,7 +4566,7 @@ to: string;
 };
 
 export type GetPresenceStatsParams = {
-ip: string;
+userId: string;
 };
 
 export type GetBroadcastCommandsParams = {
