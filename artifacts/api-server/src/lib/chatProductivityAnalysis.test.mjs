@@ -59,6 +59,7 @@ test("round-robins the newest message from each conversation within the input bu
         { message: "new team update", createdAt: "2026-11-10T20:02:00.000Z" },
         { message: "older team update", createdAt: "2026-11-10T19:00:00.000Z" },
       ],
+      contextMessages: [],
     },
     {
       scope: "channel",
@@ -68,12 +69,13 @@ test("round-robins the newest message from each conversation within the input bu
         { message: "new build update", createdAt: "2026-11-10T20:01:00.000Z" },
         { message: "older build update", createdAt: "2026-11-10T18:00:00.000Z" },
       ],
+      contextMessages: [],
     },
   ];
   const basePayload = {
     channels: {
-      team: { name: "Team", messages: [] },
-      build: { name: "Build", messages: [] },
+      team: { name: "Team", messages: [], contextMessages: [] },
+      build: { name: "Build", messages: [], contextMessages: [] },
     },
   };
   const firstRoundBytes = [
@@ -87,6 +89,7 @@ test("round-robins the newest message from each conversation within the input bu
   assert.equal(payload.channels.build.messages[0]?.text, "new build update");
   assert.equal(payload.channels.team.messages.length, 1);
   assert.equal(payload.channels.build.messages.length, 1);
+  assert.deepEqual(payload.channels.team.contextMessages, []);
   assert.ok(Buffer.byteLength(JSON.stringify(payload)) <= budget);
 });
 
@@ -113,6 +116,67 @@ test("limits productivity input to the 30-minute review window", () => {
     includedMessages.get("team")?.map((message) => message.text),
     ["newer update", "inside window"],
   );
+});
+
+test("uses older messages only as context and fills them after scoring messages", () => {
+  const windowStart = new Date("2026-11-11T10:00:00.000Z");
+  const windowEnd = new Date("2026-11-11T10:30:00.000Z");
+  const conversations = [{
+    scope: "shared",
+    key: "team",
+    name: "Team",
+    messages: [
+      { message: "Scored update", createdAt: "2026-11-11T10:10:00.000Z" },
+      { message: "Old item accidentally in score input", createdAt: "2026-11-11T09:30:00.000Z" },
+    ],
+    contextMessages: [
+      { message: "Earlier reference", createdAt: "2026-11-11T09:59:00.000Z" },
+      { message: "Outside context boundary", createdAt: "2026-11-11T10:01:00.000Z" },
+    ],
+  }];
+  const { payload, includedMessages } = buildProductivityInput(
+    conversations,
+    20_000,
+    windowStart,
+    windowEnd,
+  );
+
+  assert.deepEqual(
+    payload.channels.team.messages.map((message) => message.text),
+    ["Scored update"],
+  );
+  assert.deepEqual(
+    payload.channels.team.contextMessages.map((message) => message.text),
+    ["Earlier reference"],
+  );
+  assert.deepEqual(
+    includedMessages.get("team")?.map((message) => message.text),
+    ["Scored update"],
+  );
+});
+
+test("prioritizes score-window messages when the input budget is tight", () => {
+  const windowStart = new Date("2026-11-11T10:00:00.000Z");
+  const windowEnd = new Date("2026-11-11T10:30:00.000Z");
+  const conversations = [{
+    scope: "shared",
+    key: "team",
+    name: "Team",
+    messages: [{ message: "Scored", createdAt: "2026-11-11T10:10:00.000Z" }],
+    contextMessages: [{ message: "Historical context", createdAt: "2026-11-11T09:59:00.000Z" }],
+  }];
+  const basePayload = {
+    channels: {
+      team: { name: "Team", messages: [], contextMessages: [] },
+    },
+  };
+  const scoredMessage = { at: "2026-11-11T10:10:00.000Z", text: "Scored" };
+  const budget = Buffer.byteLength(JSON.stringify(basePayload)) +
+    Buffer.byteLength(JSON.stringify(scoredMessage));
+  const { payload } = buildProductivityInput(conversations, budget, windowStart, windowEnd);
+
+  assert.deepEqual(payload.channels.team.messages, [scoredMessage]);
+  assert.deepEqual(payload.channels.team.contextMessages, []);
 });
 
 test("requires exactly one valid JSON assessment for every conversation key", () => {

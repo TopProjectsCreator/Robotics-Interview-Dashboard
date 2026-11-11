@@ -3,6 +3,7 @@ export type ProductivityConversation = {
   key: string;
   name: string;
   messages: { message: string; createdAt: Date | string }[];
+  contextMessages?: { message: string; createdAt: Date | string }[];
 };
 
 export type ProductivityAssessment = {
@@ -115,7 +116,8 @@ function truncateUtf8(value: string, maxBytes: number): string {
 }
 
 /**
- * Keeps the newest messages from each conversation in round-robin order.
+ * Prioritizes 30-minute score-window messages, then fills remaining budget
+ * with older context. Only score-window messages are returned in includedMessages.
  * The payload contains conversation names and message text only: no authors,
  * direct messages, attachments, reactions, polls, or deleted messages.
  */
@@ -124,8 +126,21 @@ export function buildProductivityInput(
   maxBytes: number,
   windowStart?: Date,
   windowEnd?: Date,
-): { payload: { channels: Record<string, { name: string; messages: { at: string; text: string }[] }> }; includedMessages: Map<string, { at: string; text: string }[]> } {
-  const channels: Record<string, { name: string; messages: { at: string; text: string }[] }> = {};
+): {
+  payload: {
+    channels: Record<string, {
+      name: string;
+      messages: { at: string; text: string }[];
+      contextMessages: { at: string; text: string }[];
+    }>;
+  };
+  includedMessages: Map<string, { at: string; text: string }[]>;
+} {
+  const channels: Record<string, {
+    name: string;
+    messages: { at: string; text: string }[];
+    contextMessages: { at: string; text: string }[];
+  }> = {};
   const ordered = conversations.map((conversation) => ({
     ...conversation,
     messages: [...conversation.messages]
@@ -135,9 +150,12 @@ export function buildProductivityInput(
           (!windowEnd || createdAt <= windowEnd.getTime());
       })
       .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
+    contextMessages: [...(conversation.contextMessages ?? [])]
+      .filter((message) => !windowStart || new Date(message.createdAt).getTime() < windowStart.getTime())
+      .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()),
   })).sort((left, right) => {
-    const leftNewest = left.messages[0]?.createdAt;
-    const rightNewest = right.messages[0]?.createdAt;
+    const leftNewest = left.messages[0]?.createdAt ?? left.contextMessages[0]?.createdAt;
+    const rightNewest = right.messages[0]?.createdAt ?? right.contextMessages[0]?.createdAt;
     return (rightNewest ? new Date(rightNewest).getTime() : 0) -
       (leftNewest ? new Date(leftNewest).getTime() : 0);
   });
@@ -145,6 +163,7 @@ export function buildProductivityInput(
   for (const conversation of ordered) channels[conversation.key] = {
     name: conversation.name,
     messages: [],
+    contextMessages: [],
   };
 
   const payload = { channels };
@@ -153,42 +172,47 @@ export function buildProductivityInput(
     throw new Error("The channel list is too large for the configured model context.");
   }
 
-  const blocked = new Set<string>();
-  const maxDepth = Math.max(0, ...ordered.map((conversation) => conversation.messages.length));
-  for (let depth = 0; depth < maxDepth; depth += 1) {
-    let addedAtDepth = false;
-    for (const conversation of ordered) {
-      if (blocked.has(conversation.key)) continue;
-      const message = conversation.messages[depth];
-      if (!message) continue;
-      const entry = { at: timestamp(message.createdAt), text: message.message };
-      const encoded = JSON.stringify(entry);
-      const extraBytes = utf8Bytes(encoded) + (channels[conversation.key]!.messages.length ? 1 : 0);
-      if (usedBytes + extraBytes <= maxBytes) {
-        channels[conversation.key]!.messages.push(entry);
-        usedBytes += extraBytes;
-        addedAtDepth = true;
-        continue;
-      }
+  const appendRoundRobin = (source: "messages" | "contextMessages") => {
+    const blocked = new Set<string>();
+    const maxDepth = Math.max(0, ...ordered.map((conversation) => conversation[source].length));
+    for (let depth = 0; depth < maxDepth; depth += 1) {
+      let addedAtDepth = false;
+      for (const conversation of ordered) {
+        if (blocked.has(conversation.key)) continue;
+        const message = conversation[source][depth];
+        if (!message) continue;
+        const target = channels[conversation.key]![source];
+        const entry = { at: timestamp(message.createdAt), text: message.message };
+        const encoded = JSON.stringify(entry);
+        const extraBytes = utf8Bytes(encoded) + (target.length ? 1 : 0);
+        if (usedBytes + extraBytes <= maxBytes) {
+          target.push(entry);
+          usedBytes += extraBytes;
+          addedAtDepth = true;
+          continue;
+        }
 
-      const available = maxBytes - usedBytes - 64;
-      if (available > 0 && entry.text.length > 0) {
-        const clipped = truncateUtf8(entry.text, available);
-        if (clipped) {
-          const clippedEntry = { ...entry, text: clipped };
-          const clippedBytes = utf8Bytes(JSON.stringify(clippedEntry)) +
-            (channels[conversation.key]!.messages.length ? 1 : 0);
-          if (usedBytes + clippedBytes <= maxBytes) {
-            channels[conversation.key]!.messages.push(clippedEntry);
-            usedBytes += clippedBytes;
-            addedAtDepth = true;
+        const available = maxBytes - usedBytes - 64;
+        if (available > 0 && entry.text.length > 0) {
+          const clipped = truncateUtf8(entry.text, available);
+          if (clipped) {
+            const clippedEntry = { ...entry, text: clipped };
+            const clippedBytes = utf8Bytes(JSON.stringify(clippedEntry)) + (target.length ? 1 : 0);
+            if (usedBytes + clippedBytes <= maxBytes) {
+              target.push(clippedEntry);
+              usedBytes += clippedBytes;
+              addedAtDepth = true;
+            }
           }
         }
+        blocked.add(conversation.key);
       }
-      blocked.add(conversation.key);
+      if (!addedAtDepth) break;
     }
-    if (!addedAtDepth) break;
-  }
+  };
+
+  appendRoundRobin("messages");
+  appendRoundRobin("contextMessages");
 
   return {
     payload,
