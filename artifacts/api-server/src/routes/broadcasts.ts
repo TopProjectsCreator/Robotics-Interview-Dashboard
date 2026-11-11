@@ -8,7 +8,7 @@ import {
   PostBroadcastBody,
   PostBroadcastResponse,
 } from "@workspace/api-zod";
-import { requestAdminSession, requestTeamId, requireAdmin } from "../middlewares/adminAuth";
+import { requireStaff, requestAdminSession, requestTeamId } from "../middlewares/adminAuth";
 import { presenceSessionHash } from "./presence";
 import { getClientIp } from "../lib/presence";
 import { pushRealtimeHint } from "../lib/realtime";
@@ -32,7 +32,7 @@ function broadcastResponse(row: typeof broadcastsTable.$inferSelect) {
   };
 }
 
-router.post("/broadcasts", requireAdmin, async (req, res): Promise<void> => {
+router.post("/broadcasts", requireStaff, async (req, res): Promise<void> => {
   const parsed = PostBroadcastBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
