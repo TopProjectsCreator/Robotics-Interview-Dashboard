@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, SquareSlash, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -135,6 +135,7 @@ const CadThreeMfViewer = lazy(() => import("./components/CadThreeMfViewer").then
 const CadMeshViewer = lazy(() => import("./components/CadMeshViewer").then((m) => ({ default: m.CadMeshViewer })));
 const ChatStepViewer = lazy(() => import("./components/ChatStepViewer").then((m) => ({ default: m.ChatStepViewer })));
 import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatMentions, messageMentionsInterviewer, type ChatChannelMention, type ChatMentionMatch, type ChatMentionPerson } from "./lib/chat-mentions";
+import { filterSlashCommands, findSlashCommandTrigger, type ChatSlashCommand } from "./lib/chatSlashCommands";
 import { isDocumentData } from "./components/documentCollaboration";
 import {
   getWorkspaceNavigation,
@@ -6297,6 +6298,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setVoiceMenuOpen(false);
     setMentionOpen(false);
     setChannelMentionOpen(false);
+    setSlashOpen(false);
     setPollOpen(false);
   };
   const interpretScheduleTime = async () => {
@@ -6511,6 +6513,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       setMessage("");
       setMentionOpen(false);
       setChannelMentionOpen(false);
+      setSlashOpen(false);
       setMentionQuery("");
       setReplyingTo(null);
       if (pollSpec) { setPollOpen(false); resetPollDraft(); }
@@ -6546,6 +6549,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const [channelMentionOpen, setChannelMentionOpen] = useState(false);
   const [channelMentionQuery, setChannelMentionQuery] = useState("");
   const [channelMentionActiveIndex, setChannelMentionActiveIndex] = useState(0);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState("");
+  const [slashActiveIndex, setSlashActiveIndex] = useState(0);
   const applicantMentionsQuery = useListApplicants(
     { sort: "rank" },
     {
@@ -6600,6 +6606,10 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       .slice(0, 8);
   }, [channelMentions, channelMentionQuery]);
   const selectedChannelMentionIndex = Math.min(channelMentionActiveIndex, Math.max(0, filteredChannelMentions.length - 1));
+  // Slash commands are filtered from the shared registry — typing "/" at the
+  // start of the draft opens a Slack/Discord/Google Chat style picker.
+  const filteredSlashCommands = useMemo(() => filterSlashCommands(slashQuery), [slashQuery]);
+  const selectedSlashIndex = Math.min(slashActiveIndex, Math.max(0, filteredSlashCommands.length - 1));
   // Jump the chat to a #channel mention. Missing/revoked channels get an honest error instead of a dead jump.
   const openMentionedChannel = useCallback((channelId: string) => {
     if (!channelId) return;
@@ -6609,6 +6619,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     }
     setMentionOpen(false);
     setChannelMentionOpen(false);
+    setSlashOpen(false);
     setConversationPeer(null);
     setConversationChannelId(channelId);
   }, [channels]);
@@ -6884,10 +6895,13 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     const start = match.index + match[0].length - match[1].length - 1;
     return { start, end: position, query: match[1] };
   };
-  // Opens at most one picker: "@" for people, "#" for channels.
+  // Opens at most one picker: "/" for commands, "@" for people, "#" for channels.
   const syncAutocompleteToCaret = (value: string, caret: number) => {
-    const mentionTrigger = findMentionTrigger(value, caret);
-    const channelTrigger = mentionTrigger ? null : findChannelMentionTrigger(value, caret);
+    const slashTrigger = findSlashCommandTrigger(value, caret);
+    const mentionTrigger = slashTrigger ? null : findMentionTrigger(value, caret);
+    const channelTrigger = mentionTrigger || slashTrigger ? null : findChannelMentionTrigger(value, caret);
+    setSlashOpen(Boolean(slashTrigger));
+    setSlashQuery(slashTrigger?.query ?? "");
     setMentionOpen(Boolean(mentionTrigger));
     setMentionQuery(mentionTrigger?.query ?? "");
     setChannelMentionOpen(Boolean(channelTrigger));
@@ -6904,6 +6918,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     syncAutocompleteToCaret(value, position);
     setMentionActiveIndex(0);
     setChannelMentionActiveIndex(0);
+    setSlashActiveIndex(0);
     setEmojiOpen(false);
     setComposerMenuOpen(false);
     setVoiceMenuOpen(false);
@@ -6920,6 +6935,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setMessage(next);
     setMentionOpen(false);
     setChannelMentionOpen(false);
+    setSlashOpen(false);
     requestAnimationFrame(() => {
       input.focus();
       const cursor = start + value.length;
@@ -6937,6 +6953,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setMessage(next);
     setMentionOpen(false);
     setChannelMentionOpen(false);
+    setSlashOpen(false);
     setMentionQuery("");
     setChannelMentionQuery("");
     requestAnimationFrame(() => {
@@ -6956,6 +6973,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     const next = `${message.slice(0, trigger.start)}#${channel.token}${hasFollowingSpace ? "" : " "}${rest}`;
     setMessage(next);
     setChannelMentionOpen(false);
+    setSlashOpen(false);
     setChannelMentionQuery("");
     setMentionQuery("");
     requestAnimationFrame(() => {
@@ -6965,14 +6983,46 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       el?.setSelectionRange(cursor, cursor);
     });
   };
+  const selectSlashCommand = (command: ChatSlashCommand) => {
+    const next = `/${command.name} `;
+    setMessage(next);
+    setSlashOpen(false);
+    setSlashQuery("");
+    setSlashActiveIndex(0);
+    setMentionOpen(false);
+    setChannelMentionOpen(false);
+    requestAnimationFrame(() => {
+      const el = chatMessageInputRef.current;
+      el?.focus();
+      el?.setSelectionRange(next.length, next.length);
+    });
+  };
   const handleChatInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === "Escape") {
       setMentionOpen(false);
       setChannelMentionOpen(false);
+      setSlashOpen(false);
       setEmojiOpen(false);
       setComposerMenuOpen(false);
       setScheduleOpen(false);
       return;
+    }
+    if (slashOpen && filteredSlashCommands.length > 0) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setSlashActiveIndex(index => (Math.min(index, filteredSlashCommands.length - 1) + 1) % filteredSlashCommands.length);
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setSlashActiveIndex(index => (Math.min(index, filteredSlashCommands.length - 1) - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+        return;
+      }
+      if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
+        event.preventDefault();
+        selectSlashCommand(filteredSlashCommands[selectedSlashIndex] ?? filteredSlashCommands[0]);
+        return;
+      }
     }
     if (channelMentionOpen && filteredChannelMentions.length > 0) {
       if (event.key === "ArrowDown") {
@@ -7089,6 +7139,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         setMessage(`${base}${base && transcript ? " " : ""}${transcript}`);
         setMentionOpen(false);
         setChannelMentionOpen(false);
+        setSlashOpen(false);
       };
       recognition.onerror = event => {
         if (event.error === "not-allowed" || event.error === "service-not-allowed") {
@@ -7405,6 +7456,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         setReplyingTo(null);
         setMentionOpen(false);
         setChannelMentionOpen(false);
+        setSlashOpen(false);
         setMentionQuery("");
         setMultiMessageNotice(`Posted ${result.sent} ${result.sent === 1 ? "copy" : "copies"} of your message.`);
         await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
@@ -7456,6 +7508,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       setMessage("");
       setMentionOpen(false);
       setChannelMentionOpen(false);
+      setSlashOpen(false);
       setMentionQuery("");
       if (/@ai\b/i.test(submitted)) {
         stage = "ai";
@@ -7521,6 +7574,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       setMessage("");
       setMentionOpen(false);
       setChannelMentionOpen(false);
+      setSlashOpen(false);
       setMentionQuery("");
       setEmojiOpen(false);
       setComposerMenuOpen(false);
@@ -7782,6 +7836,27 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
        {replyingTo && <div className="chat-reply-preview flex items-start gap-2 rounded-xl border px-3 py-2" data-testid="chat-reply-preview"><Reply size={15} className="chat-reply-icon mt-0.5 shrink-0" /><div className="min-w-0 flex-1"><p className="chat-reply-label text-[11px] font-semibold uppercase tracking-[.08em]">Replying to {replyingTo.author}</p><p className="chat-reply-body truncate text-xs">{replyingTo.message.replace(/\s+/g, " ").trim()}</p></div><button type="button" onClick={() => setReplyingTo(null)} aria-label="Cancel reply" data-testid="button-cancel-reply" className="chat-reply-close flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition"><X size={13} /></button></div>}
        {chatFiles.length > 0 && <div className="space-y-2">{chatFiles.map(f => <div key={f.id} className="flex items-center gap-3 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-2" data-testid={`chat-file-${f.id}`}><ChatAttachmentPreview file={f} /><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{f.name}</p><p className="text-[11px] text-[#7c8c91]">{fileStatus[f.id] ?? (isHeicFile(f.file) ? "iPhone photo · converts on send" : `${formatUploadSize(f.size)} · will upload on send`)}</p></div><button type="button" onClick={() => removeChatFile(f.id)} data-testid={`button-remove-chat-file-${f.id}`} aria-label={`Remove ${f.name}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#183a4b] text-white hover:bg-[#b34a42]"><X size={13} /></button></div>)}</div>}
        <div className="relative">
+           {slashOpen && <div id="chat-slash-listbox" role="listbox" aria-label="Command suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#10212b] dark:shadow-[0_12px_32px_rgba(0,0,0,0.4)]" data-testid="slash-command-menu">
+            <div className="border-b border-[#edf1f1] px-4 py-2.5 dark:border-[#263e49]"><p className="text-xs font-semibold text-[#52666e] dark:text-[#d5e0e0]">Commands</p><p className="mt-0.5 text-[11px] text-[#8a999d] dark:text-[#a9bbc2]">Start a message with / to run a command. Admins-only commands are tagged.</p></div>
+            <div className="max-h-64 overflow-y-auto p-1.5">
+               {filteredSlashCommands.map((command, index) => <button
+                  key={command.name}
+                  id={`chat-slash-option-${index}`}
+                  role="option"
+                  aria-selected={index === selectedSlashIndex}
+                  type="button"
+                  onMouseDown={event => event.preventDefault()}
+                  onMouseEnter={() => setSlashActiveIndex(index)}
+                  onClick={() => selectSlashCommand(command)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16869a] dark:focus-visible:ring-[#6fc3cf] ${index === selectedSlashIndex ? "bg-[#e9f4fb] dark:bg-[#1d3a47]" : "hover:bg-[#e9f4fb] dark:hover:bg-[#1d3a47]"}`}
+                  data-testid={`slash-command-option-${command.name}`}
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e6effb] text-[#2e4390] dark:bg-[#203d52] dark:text-[#b4c7ff]"><SquareSlash size={16} /></span>
+                  <span className="min-w-0"><span className="flex items-center gap-2"><span className="block truncate text-sm font-semibold text-[#183a4b] dark:text-[#e8eef2]">/{command.name}</span>{command.adminOnly && <span data-testid={`slash-command-admin-badge-${command.name}`} className="shrink-0 rounded-full border border-[#e3d3a0] bg-[#fff6d8] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[.06em] text-[#8a6508] dark:border-[#6f5b28] dark:bg-[#3a301b] dark:text-[#f5d779]">Admins</span>}</span><span className="block truncate text-[11px] text-[#7c8c91] dark:text-[#a9bbc2]">{command.description}</span></span>
+                 </button>)}
+               {filteredSlashCommands.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">No matching commands.</p>}
+            </div>
+         </div>}
            {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">
             <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">People and applicants</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Applicant mentions are chat references; applicants aren’t notified.</p></div>
             <div className="max-h-64 overflow-y-auto p-1.5">
@@ -7883,7 +7958,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
           <div className="chat-composer-shell rounded-[22px] border border-[#cadbdf] bg-[#eef5ff] px-2 py-2 shadow-sm transition focus-within:border-[#8bbfc5] focus-within:shadow-[0_0_0_3px_rgba(22,134,154,0.1)]">
             <div className="chat-composer-layout">
               <div className="chat-composer-more">
-                <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setChannelMentionOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
+                <button type="button" onClick={() => { setComposerMenuOpen(open => !open); setCreateMenuOpen(false); setEmojiOpen(false); setMentionOpen(false); setChannelMentionOpen(false); setSlashOpen(false); setScheduleOpen(false); }} aria-label="More message options" aria-expanded={composerMenuOpen || createMenuOpen} data-testid="button-chat-more" className="chat-composer-control flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Plus size={20} /></button>
               </div>
               <div className="chat-composer-input min-w-0">
                 <textarea
@@ -7894,26 +7969,26 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                    onPaste={handleChatPaste}
                    onKeyDown={handleChatInputKeyDown}
                    aria-autocomplete="list"
-                   aria-controls={mentionOpen ? "chat-mention-listbox" : channelMentionOpen ? "chat-channel-listbox" : undefined}
-                   aria-expanded={mentionOpen || channelMentionOpen}
-                   aria-activedescendant={mentionOpen && filteredMentionPeople.length ? `chat-mention-option-${selectedMentionIndex}` : channelMentionOpen && filteredChannelMentions.length ? `chat-channel-mention-option-${selectedChannelMentionIndex}` : undefined}
+                   aria-controls={slashOpen ? "chat-slash-listbox" : mentionOpen ? "chat-mention-listbox" : channelMentionOpen ? "chat-channel-listbox" : undefined}
+                   aria-expanded={slashOpen || mentionOpen || channelMentionOpen}
+                   aria-activedescendant={slashOpen && filteredSlashCommands.length ? `chat-slash-option-${selectedSlashIndex}` : mentionOpen && filteredMentionPeople.length ? `chat-mention-option-${selectedMentionIndex}` : channelMentionOpen && filteredChannelMentions.length ? `chat-channel-mention-option-${selectedChannelMentionIndex}` : undefined}
                    data-testid="input-interviewer-chat"
                    maxLength={CHAT_MESSAGE_MAX_CHARS}
                    rows={1}
                    disabled={demoMode}
                    className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-base md:text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
-                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} — @ people, # channels` : "Message the team — @ people, # channels"}
+                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} — @ people, # channels, / commands` : "Message the team — @ people, # channels, / commands"}
                  />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-11 w-11 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-11 w-11 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-11 w-11 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown or {'<iframe>'} embeds supported</span></div>}
               </div>
               <div className="chat-composer-actions" data-testid="chat-composer-actions">
                 
-                 <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
-                 <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
-                 <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
+                 <button type="button" onClick={() => { setFormattingOpen(open => !open); setEmojiOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); setSlashOpen(false); }} aria-label="Formatting options" aria-expanded={formattingOpen} data-testid="button-chat-formatting" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-sm font-semibold transition hover:bg-white ${formattingOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}>A</button>
+                 <button type="button" onClick={() => { setEmojiOpen(open => !open); setPickerFor(null); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); setSlashOpen(false); }} aria-label="Insert emoji" aria-expanded={emojiOpen} data-testid="button-chat-emoji" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${emojiOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Smile size={18} /></button>
+                 <button type="button" onClick={() => { setPollOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); setSlashOpen(false); }} aria-label="Create poll" aria-expanded={pollOpen} data-testid="button-chat-poll" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${pollOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><BarChart3 size={18} /></button>
                  <button type="button" onClick={openScheduleMenu} title="Schedule send" aria-label="Schedule message send" aria-expanded={scheduleOpen} data-testid="button-chat-schedule" className={`chat-composer-control relative flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${scheduleOpen ? "is-active bg-white text-[#16869a]" : "text-[#52666e]"}`}><Clock size={18} />{scheduledForConversation.length > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#16869a] px-1 text-[9px] font-bold text-white" data-testid="chat-schedule-count">{scheduledForConversation.length}</span>}</button>
                  <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
-                <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
+                <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); setSlashOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
               </div>
               <button disabled={(slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim())) || (!message.trim() && !chatFiles.length) || sendChat.isPending || sendMultiMessage.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`chat-composer-send flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
            </div>

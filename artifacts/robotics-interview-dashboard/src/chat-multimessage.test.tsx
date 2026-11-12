@@ -221,4 +221,97 @@ describe("/multimessage chat command", () => {
     });
     expect(requests.filter(request => request.url.pathname === "/api/queue/chat/multimessage")).toHaveLength(0);
   });
+
+  describe("slash command picker", () => {
+    it("opens when the draft starts with / and lists the available commands", async () => {
+      installFetchMock("coordinator");
+      renderPanel();
+
+      await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+      fireEvent.change(screen.getByTestId("input-interviewer-chat"), {
+        target: { value: "/" },
+      });
+
+      const menu = await screen.findByTestId("slash-command-menu");
+      expect(menu).toBeVisible();
+      expect(menu).toHaveClass("dark:bg-[#10212b]");
+      expect(menu).toHaveClass("dark:border-[#355663]");
+      const option = screen.getByTestId("slash-command-option-multimessage");
+      expect(option).toHaveTextContent("/multimessage");
+      expect(option).toHaveClass("dark:bg-[#1d3a47]");
+      expect(screen.getByTestId("slash-command-admin-badge-multimessage")).toHaveTextContent("Admins");
+    });
+
+    it("filters the list as the command name is typed", async () => {
+      installFetchMock("coordinator");
+      renderPanel();
+
+      await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+      const input = screen.getByTestId("input-interviewer-chat");
+      fireEvent.change(input, { target: { value: "/zzz" } });
+
+      const menu = await screen.findByTestId("slash-command-menu");
+      expect(menu).toHaveTextContent("No matching commands.");
+      expect(screen.queryByTestId("slash-command-option-multimessage")).not.toBeInTheDocument();
+    });
+
+    it("closes the picker and inserts the command when Tab is pressed", async () => {
+      installFetchMock("coordinator");
+      renderPanel();
+
+      await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+      const input = screen.getByTestId("input-interviewer-chat");
+      fireEvent.change(input, { target: { value: "/mul" } });
+      await screen.findByTestId("slash-command-menu");
+
+      fireEvent.keyDown(input, { key: "Tab" });
+
+      expect(input).toHaveValue("/multimessage ");
+      expect(screen.queryByTestId("slash-command-menu")).not.toBeInTheDocument();
+    });
+
+    it("inserts the command on Enter without submitting the message", async () => {
+      const { requests } = installFetchMock("coordinator");
+      renderPanel();
+
+      await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+      const input = screen.getByTestId("input-interviewer-chat");
+      fireEvent.change(input, { target: { value: "/mul" } });
+      await screen.findByTestId("slash-command-menu");
+
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(input).toHaveValue("/multimessage ");
+      expect(requests.filter(request => request.init?.method === "POST")).toHaveLength(0);
+    });
+
+    it("clicking a command inserts it and closes the picker", async () => {
+      installFetchMock("interviewer");
+      renderPanel();
+
+      await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+      const input = screen.getByTestId("input-interviewer-chat");
+      fireEvent.change(input, { target: { value: "/" } });
+
+      fireEvent.click(await screen.findByTestId("slash-command-option-multimessage"));
+
+      expect(input).toHaveValue("/multimessage ");
+      expect(screen.queryByTestId("slash-command-menu")).not.toBeInTheDocument();
+    });
+
+    it("closes the picker once a space is typed (arguments mode) and on Escape", async () => {
+      installFetchMock("coordinator");
+      renderPanel();
+
+      await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+      const input = screen.getByTestId("input-interviewer-chat");
+      fireEvent.change(input, { target: { value: "/multimessage 5 Go team" } });
+      expect(screen.queryByTestId("slash-command-menu")).not.toBeInTheDocument();
+
+      fireEvent.change(input, { target: { value: "/" } });
+      await screen.findByTestId("slash-command-menu");
+      fireEvent.keyDown(input, { key: "Escape" });
+      expect(screen.queryByTestId("slash-command-menu")).not.toBeInTheDocument();
+    });
+  });
 });
