@@ -154,8 +154,9 @@ Every workspace and public surface, what it does, and how far it goes.
   camera-based "Scan part" AI identification (capture → vision model → uncertainty
   shown → nothing saved until you review), one-click details dialogs with price/quote
   history.
-- **Find parts:** streaming supplier search across 14 vendors — AndyMark, goBILDA,
+- **Find parts:** streaming supplier search across 15 vendors — AndyMark, goBILDA,
   REV Robotics, ServoCity, Studica, Swyft, WestCoast Products, Platypus Robotics,
+  Limelight Vision,
   Ferra, Optii, Offset Robotics, Axon, Melonbotics and BWTLink — with FTC
   team-price toggle, FTC catalog syncs,
   per-vendor block/unblock, sync-now button, and a coverage panel with per-vendor ETA

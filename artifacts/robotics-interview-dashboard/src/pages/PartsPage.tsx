@@ -1670,7 +1670,7 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
                 <div className="min-w-0 space-y-4">
                 {searchBusy && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                    <Loader2 className="animate-spin" size={16} /> Searching across 14 suppliers…
+                    <Loader2 className="animate-spin" size={16} /> Searching across 15 suppliers…
                   </div>
                 )}
                 {!searchBusy && searchStatus && (
