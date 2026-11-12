@@ -6,7 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type PresenceIpStatsPagesItem = {
+export type PresenceUserStatsPagesItem = {
   page: string;
   visits: number;
   seconds: number;

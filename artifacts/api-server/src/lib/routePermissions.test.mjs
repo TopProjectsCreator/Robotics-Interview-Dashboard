@@ -5,7 +5,7 @@ import { hasPermission, normalizePermissions, permissionsForBuiltInRole } from "
 
 mock.module("@workspace/api-zod", { namedExports: { hasPermission } });
 
-const { permissionForRoute, permissionIsGranted, routePermissionIsGranted } = await import("./routePermissions.ts");
+const { permissionForRoute, permissionIsGranted, routePermissionIsGranted, workspaceVisibilityFallback } = await import("./routePermissions.ts");
 
 test("route policy separates read, ordinary writes, and management actions", () => {
   assert.equal(permissionForRoute("GET", "/api/applicants"), "applicants.view");
@@ -60,6 +60,24 @@ test("generic object reads and writes require an applicable workspace capability
   assert.equal(routePermissionIsGranted(["chat.view"], "POST", "/api/storage/uploads/chunk-url"), false);
   assert.equal(routePermissionIsGranted(["code.view"], "GET", "/api/workspaces/visibility"), true);
   assert.equal(routePermissionIsGranted([], "GET", "/api/workspaces/visibility"), false);
+});
+
+test("workspace visibility fallback maps granted workspaces to read permissions", () => {
+  assert.equal(workspaceVisibilityFallback("GET", "/api/applicants"), "interview");
+  assert.equal(workspaceVisibilityFallback("GET", "/api/queue"), "interview");
+  assert.equal(workspaceVisibilityFallback("GET", "/api/applicants/search/ai?q=x"), "interview");
+  assert.equal(workspaceVisibilityFallback("GET", "/api/cad/library"), "cad");
+  assert.equal(workspaceVisibilityFallback("PUT", "/api/code/files/abc"), "code");
+  assert.equal(workspaceVisibilityFallback("POST", "/api/queue/chat"), "chat");
+  assert.equal(workspaceVisibilityFallback("GET", "/api/parts/catalog"), "parts");
+  assert.equal(workspaceVisibilityFallback("GET", "/api/workspaces/visibility"), "any");
+  // Administration stays role-gated: the matrix never grants management.
+  assert.equal(workspaceVisibilityFallback("DELETE", "/api/cad/models/abc"), null);
+  assert.equal(workspaceVisibilityFallback("DELETE", "/api/code/projects/abc"), null);
+  assert.equal(workspaceVisibilityFallback("DELETE", "/api/queue/chat/message-1"), null);
+  assert.equal(workspaceVisibilityFallback("POST", "/api/queue/chat/channels"), null);
+  assert.equal(workspaceVisibilityFallback("POST", "/api/applicants/abc/regenerate"), null);
+  assert.equal(workspaceVisibilityFallback("GET", "/api/not-in-the-catalog"), null);
 });
 
 test("applicant updates require all permissions for mixed queue and attendance fields", () => {

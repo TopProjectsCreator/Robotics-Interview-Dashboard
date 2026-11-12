@@ -10,6 +10,8 @@ export const broadcastsTable = pgTable("broadcasts", {
   // are silent commands the big screen executes (payload: engine id).
   kind: text("kind").notNull().default("message"),
   targetIp: text("target_ip").notNull().default(""),
+  // Account the message is addressed to. "" = everyone online.
+  targetUserId: text("target_user_id").notNull().default(""),
   createdBy: text("created_by").notNull().default(""),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull().defaultNow(),

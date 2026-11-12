@@ -44,16 +44,16 @@ export function getClientIp(req: Request): string {
   return cleaned.slice(0, 45) || "unknown";
 }
 
-export type IpPageStat = { page: string; visits: number; seconds: number };
+export type AccountPageStat = { page: string; visits: number; seconds: number };
 
-export type IpStats = {
-  ip: string;
+export type AccountStats = {
+  userId: string;
   totalSeconds: number;
   sessionCount: number;
   visitCount: number;
   firstSeenAt: string | null;
   lastSeenAt: string | null;
-  pages: IpPageStat[];
+  pages: AccountPageStat[];
 };
 
 export async function rotatePageVisit(
@@ -62,6 +62,7 @@ export async function rotatePageVisit(
   page: string,
   storedPage: string,
   teamId?: string | null,
+  accountId?: string | null,
 ): Promise<void> {
   try {
     if (storedPage !== page) {
@@ -76,6 +77,7 @@ export async function rotatePageVisit(
           ...(trimmedTeam ? { teamId: trimmedTeam } : {}),
           sessionHash,
           ip,
+          accountId: accountId?.trim() || "",
           page,
         });
       }
@@ -101,9 +103,9 @@ export async function closeOpenVisits(sessionHash: string): Promise<void> {
   }
 }
 
-export async function getIpStats(ip: string, teamId?: string | null): Promise<IpStats> {
+export async function getAccountStats(userId: string, teamId?: string | null): Promise<AccountStats> {
   const now = Date.now();
-  const conditions = [eq(pageVisitsTable.ip, ip)];
+  const conditions = [eq(pageVisitsTable.accountId, userId)];
   const trimmedTeam = teamId?.trim();
   if (trimmedTeam) {
     const { teamFilter } = await import("./teams");
@@ -136,7 +138,7 @@ export async function getIpStats(ip: string, teamId?: string | null): Promise<Ip
     byPage.set(key, entry);
   }
   return {
-    ip,
+    userId,
     totalSeconds,
     sessionCount: sessions.size,
     visitCount: rows.length,

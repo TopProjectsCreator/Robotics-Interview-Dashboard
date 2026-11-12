@@ -13,6 +13,10 @@ const pool = {
         if (statement.startsWith("select pg_advisory_xact_lock")) return { rows: [] };
         if (statement.startsWith("select") && statement.includes('from "workspace_usage_visits"')) {
           if (statement.includes('"last_heartbeat_at" <')) {
+            assert.ok(
+              statement.includes('where ("team_id" = $1 or ($1 = \'default\' and "team_id" is null))'),
+              "stale-visit cleanup keeps the team column correctly quoted",
+            );
             const [teamId, now] = values;
             const staleBefore = now.getTime() - 90_000;
             return {
@@ -60,6 +64,9 @@ const pool = {
           if (!visit) return { rows: [] };
           visit.activeSeconds += values[1];
           if (statement.includes('"last_heartbeat_at" = $3')) {
+            assert.ok(statement.includes('"last_heartbeat_at" = $3::timestamptz'));
+            assert.ok(statement.includes('"exited_at" = case when $5 then null else $6 end'));
+            assert.ok(values[2] instanceof Date && values[5] instanceof Date);
             visit.lastHeartbeatAt = values[2];
             visit.isForeground = values[3];
             visit.exitedAt = values[4] ? null : values[2];

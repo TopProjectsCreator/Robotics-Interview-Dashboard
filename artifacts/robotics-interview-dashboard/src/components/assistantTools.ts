@@ -41,7 +41,7 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
       { name: "list_conversations", label: "List chats", hint: "Past threads", write: false },
       { name: "read_conversation", label: "Read chat", hint: "Recall context", write: false },
       { name: "list_presence", label: "List presence", hint: "Who is online", write: false },
-      { name: "presence_stats", label: "Presence stats", hint: "Per-IP detail", write: false },
+      { name: "presence_stats", label: "Presence stats", hint: "Per-person detail", write: false },
     ],
   },
   {

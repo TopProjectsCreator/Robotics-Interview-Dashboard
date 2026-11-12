@@ -6,6 +6,7 @@ export const presenceHeartbeatsTable = pgTable("presence_heartbeats", {
   sessionHash: text("session_hash").primaryKey(),
   teamId: text("team_id"),
   ip: text("ip").notNull().default("unknown"),
+  accountId: text("account_id").notNull().default(""),
   userAgent: text("user_agent").notNull().default(""),
   city: text("city").notNull().default(""),
   region: text("region").notNull().default(""),

@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TeamRoleManagement } from "./TeamRoleManagement";
 
 let savedRoles: { id: string; name: string; permissions: string[] }[] = [];
-let assignedRoleId: string | null = null;
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const path = new URL(String(input), window.location.origin).pathname;
   const method = (init?.method ?? "GET").toUpperCase();
@@ -19,9 +18,9 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     savedRoles = [role];
     return json(role, 201);
   }
-  if (path === "/api/auth/interviewers/member-1/custom-role" && method === "PUT") {
-    assignedRoleId = (body.customRoleId as string | null) ?? null;
-    return json({ id: "member-1", displayName: "Build lead", role: "interviewer", hasPassword: true, customRoleId: assignedRoleId });
+  if (path === "/api/auth/roles/role-build-lead" && method === "DELETE") {
+    savedRoles = savedRoles.filter((role) => role.id !== "role-build-lead");
+    return new Response(null, { status: 204 });
   }
   return json({ error: "Not found" }, 404);
 });
@@ -32,27 +31,20 @@ function renderManagement() {
   });
   return render(
     <QueryClientProvider client={client}>
-      <TeamRoleManagement
-        teamId="team-1"
-        accounts={[
-          { id: "member-1", displayName: "Build lead", role: "interviewer", hasPassword: true },
-          { id: "admin-1", displayName: "Team admin", role: "coordinator", hasPassword: true },
-        ]}
-        accountsLoading={false}
-      />
+      <TeamRoleManagement teamId="team-1" />
     </QueryClientProvider>,
   );
 }
 
 beforeEach(() => {
   savedRoles = [];
-  assignedRoleId = null;
   fetchMock.mockClear();
   vi.stubGlobal("fetch", fetchMock);
+  vi.stubGlobal("confirm", vi.fn(() => true));
 });
 
 describe("TeamRoleManagement", () => {
-  it("creates a role with selected permissions and assigns it without offering Admin accounts", async () => {
+  it("creates a role with selected permissions", async () => {
     renderManagement();
     const permission = await screen.findByTestId("checkbox-permission-applicants.edit");
     fireEvent.change(screen.getByTestId("input-custom-role-name"), { target: { value: "Build lead" } });
@@ -64,21 +56,21 @@ describe("TeamRoleManagement", () => {
       name: "Build lead",
       permissions: ["applicants.edit"],
     }]));
-    expect(screen.queryByTestId("select-custom-role-admin-1")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByTestId("select-custom-role-member-1"), { target: { value: "role-build-lead" } });
-    await waitFor(() => expect(assignedRoleId).toBe("role-build-lead"));
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/auth/interviewers/member-1/custom-role",
-      expect.objectContaining({ method: "PUT" }),
-    );
+    // Assignment happens with the Role menu on each person in Team members.
+    expect(screen.queryByTestId("select-settings-role-member-1")).not.toBeInTheDocument();
   });
 
-  it("fails closed for role assignment when the roles list cannot load", async () => {
+  it("deletes a saved role after confirmation", async () => {
+    savedRoles = [{ id: "role-build-lead", name: "Build lead", permissions: ["applicants.edit"] }];
+    renderManagement();
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(savedRoles).toEqual([]));
+  });
+
+  it("fails closed for role creation when the roles list cannot load", async () => {
     fetchMock.mockImplementationOnce(async () => new Response("unavailable", { status: 503 }));
     renderManagement();
-    const select = await screen.findByTestId("select-custom-role-member-1");
     await screen.findByText(/Roles could not be loaded/);
-    expect(select).toBeDisabled();
     expect(screen.getByTestId("button-save-custom-role")).toBeDisabled();
   });
 });

@@ -35,6 +35,21 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
   if (url.pathname.endsWith("/queue/chat/productivity") && method === "GET") {
     return jsonResponse(status);
   }
+  if (url.pathname.endsWith("/queue/chat/productivity/review") && method === "POST") {
+    return jsonResponse({
+      ...status,
+      latest: {
+        conversationName: "Drive team",
+        score: 8,
+        summary: "Recent range review.",
+        activities: [{ activity: "Completed a motor test", assessment: "productive" }],
+        breakdown: { projectProgress: 8, planningCoordination: 8, focusDiscipline: 7 },
+        periodStart: "2026-11-10T20:00:00.000Z",
+        periodEnd: "2026-11-11T20:00:00.000Z",
+        createdAt: "2026-11-11T20:00:00.000Z",
+      },
+    });
+  }
   if (url.pathname.endsWith("/queue/chat/productivity/settings") && method === "PUT") {
     status = { ...status, enabled: body?.enabled === true, lastError: null, lastRunAt: null };
     return jsonResponse({ enabled: status.enabled, updatedAt: "2026-11-10T20:00:00.000Z" });
@@ -70,7 +85,7 @@ describe("ChatProductivityMeter", () => {
 
     expect(await screen.findByText("A coordinator has not enabled AI productivity reviews.")).toBeInTheDocument();
     expect(await screen.findByTestId("checkbox-chat-productivity-notice")).toBeInTheDocument();
-    expect(screen.getByText(/Stored message text, which may contain names or other personal details/)).toBeInTheDocument();
+    expect(screen.getByText(/selected message text may contain personal details/)).toBeInTheDocument();
     expect(screen.getByTestId("button-enable-chat-productivity")).toBeDisabled();
     expect(requests.some((request) =>
       request.method === "GET" && request.path.includes("scope=channel") && request.path.includes("channelId=drive-team"),
@@ -123,6 +138,30 @@ describe("ChatProductivityMeter", () => {
     expect(screen.getByText("Planning and coordination")).toBeInTheDocument();
     expect(screen.queryByTestId("button-disable-chat-productivity")).not.toBeInTheDocument();
     expect(screen.queryByTestId("button-enable-chat-productivity")).not.toBeInTheDocument();
+  });
+
+  it("requests a one-time assessment for the selected range and channel", async () => {
+    status = { enabled: true, canManage: false, lastRunAt: null, lastError: null, latest: null };
+    renderMeter({ scope: "channel", channelId: "drive-team" });
+    fireEvent.click(await screen.findByTestId("button-chat-productivity"));
+
+    const rangeSelect = await screen.findByTestId("select-chat-productivity-range");
+    expect(screen.getByRole("option", { name: "Last hour" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Last day" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Last 3 days" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Last 5 days" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Last week" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Last month" })).toBeInTheDocument();
+
+    fireEvent.change(rangeSelect, { target: { value: "1d" } });
+
+    expect(await screen.findByText("Recent range review.")).toBeInTheDocument();
+    expect(requests.find((request) => request.method === "POST" && request.path.endsWith("/queue/chat/productivity/review"))?.body).toEqual({
+      scope: "channel",
+      channelId: "drive-team",
+      range: "1d",
+    });
+    expect(screen.getByTestId("panel-chat-productivity-details")).toBeInTheDocument();
   });
 
   it("lets a coordinator retry a failed review without changing the opt-in setting", async () => {

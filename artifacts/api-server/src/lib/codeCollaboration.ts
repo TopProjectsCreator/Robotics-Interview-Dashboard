@@ -21,6 +21,7 @@ import { hasPermission } from "@workspace/api-zod";
 import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
 import { findAccountAnywhere } from "./teams";
 import { permissionsForAccount } from "./teamRoles";
+import { readWorkspaceVisibility, userCanSeeWorkspace } from "./workspaceAccess";
 import {
   interviewerIdFromSession,
   isRevokedAdminSession,
@@ -309,13 +310,24 @@ export function setupCodeCollaboration(server: Server): void {
           client.close(4401, "unauthorized");
           return;
         }
-        void permissionsForAccount(who).then((permissions) => {
-          if (!hasPermission(permissions, "code.view")) {
+        void (async () => {
+          const permissions = await permissionsForAccount(who);
+          let allowed = hasPermission(permissions, "code.view");
+          let canEdit = hasPermission(permissions, "code.edit");
+          if (!allowed || !canEdit) {
+            // Settings → Workspace access is an explicit per-person grant to
+            // open Code; it also covers editing, like the HTTP routes.
+            const visibility = await readWorkspaceVisibility(who.teamId);
+            const codeVisible = userCanSeeWorkspace(visibility, who.id, who.role, "code");
+            allowed = allowed || codeVisible;
+            canEdit = canEdit || codeVisible;
+          }
+          if (!allowed) {
             client.close(4403, "forbidden");
             return;
           }
-          return open(client, fileId, who.displayName, who.teamId, hasPermission(permissions, "code.edit"));
-        }).catch((error) => {
+          return open(client, fileId, who.displayName, who.teamId, canEdit);
+        })().catch((error) => {
           logger.error({ err: error, fileId }, "Code collaboration connection failed");
           try { client.close(1011, "error"); } catch { /* closed */ }
         });

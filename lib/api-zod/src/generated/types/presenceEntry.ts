@@ -7,7 +7,10 @@
  */
 
 export interface PresenceEntry {
-  ip: string;
+  /** Account id of the signed-in person ("" for a legacy session that cannot be attributed to one) */
+  userId: string;
+  /** Display name of the signed-in person */
+  name: string;
   city: string;
   region: string;
   country: string;

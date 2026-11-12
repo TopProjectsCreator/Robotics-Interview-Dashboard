@@ -399,8 +399,8 @@ export default function AgentsMdPage() {
             <Panel>
               <Ul>
                 <Li><strong>Recurring tasks:</strong> owned by you; <Mono>active / paused / running / succeeded / failed / cancelled / interrupted</Mono> states; cadence language like “Every Monday, Wednesday”; next-run preview; per-run history with output and last-error box; pause/resume/edit (prompt, frequency, time, weekdays, timezone)/cancel.</Li>
-                <Li><strong>Broadcasts:</strong> admins message the whole team (or a targeted viewer) with in-app popups, optionally mirrored as OS notifications; delivery to everyone online or a specific person; short-lived by default.</Li>
-                <Li><strong>Presence:</strong> “Live now” pills show who is online, their page and rough region, with coordinator kick and per-person drill-down (visits, sessions, first/last seen).</Li>
+                <Li><strong>Broadcasts:</strong> admins send popups from Workspace settings → Broadcast to the whole team (or one person, picked by name); optionally mirrored as OS notifications; delivery to everyone online or a specific person; short-lived by default.</Li>
+                <Li><strong>Presence:</strong> “Live now” pills in admin settings show who is online by name, their page and rough region, with coordinator kick and per-person drill-down (visits, sessions, first/last seen).</Li>
               </Ul>
             </Panel>
 
