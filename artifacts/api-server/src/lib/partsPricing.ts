@@ -77,6 +77,47 @@ export async function saveFtcPricingPreference(
   return result.rows[0]?.useFtcPricing === true;
 }
 
+export async function readMaxPartsOrderItems(
+  query: PriceQuery,
+  teamId: string,
+): Promise<number | null> {
+  const result = await query(
+    `select "max_order_items" as "maxOrderItems"
+       from "parts_team_settings"
+      where "team_id" = $1`,
+    [teamId],
+  );
+  const value = result.rows[0]?.maxOrderItems;
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
+export async function saveMaxPartsOrderItems(
+  query: PriceQuery,
+  teamId: string,
+  maxOrderItems: number | null,
+): Promise<number | null> {
+  const result = await query(
+    `insert into "parts_team_settings" ("team_id", "max_order_items", "updated_at")
+     values ($1, $2, now())
+     on conflict ("team_id") do update set
+       "max_order_items" = excluded."max_order_items",
+       "updated_at" = now()
+     returning "max_order_items" as "maxOrderItems"`,
+    [teamId, maxOrderItems],
+  );
+  const value = result.rows[0]?.maxOrderItems;
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
+}
+
+export async function isPartsOrderQuantityAllowed(
+  query: PriceQuery,
+  teamId: string,
+  itemCount: number,
+): Promise<boolean> {
+  const maxOrderItems = await readMaxPartsOrderItems(query, teamId);
+  return maxOrderItems === null || itemCount <= maxOrderItems;
+}
+
 export function selectSupplierPrice(
   regularPrice: string | null,
   ftcTeamPrice: string | null,

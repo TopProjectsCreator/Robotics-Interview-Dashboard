@@ -3805,6 +3805,95 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /parts/order-settings:
+    get:
+      operationId: getPartsOrderSettings
+      tags: [parts]
+      summary: Read team order-tray settings
+      responses:
+        "200":
+          description: Team order-tray settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsOrderSettings"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: updatePartsOrderSettings
+      tags: [parts]
+      summary: Update team order-tray settings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsOrderSettingsUpdateInput"
+      responses:
+        "200":
+          description: Saved team order-tray settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsOrderSettings"
+        "400":
+          description: Invalid order-tray settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Admin role required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /parts/order-limit/check:
+    post:
+      operationId: checkPartsOrderLimit
+      tags: [parts]
+      summary: Check whether a proposed draft quantity is allowed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PartsOrderLimitCheckInput"
+      responses:
+        "200":
+          description: Whether the proposed order quantity is allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PartsOrderLimitCheck"
+        "400":
+          description: Invalid proposed quantity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /parts/catalog:
     get:
       operationId: listPartsCatalog
@@ -6078,6 +6167,41 @@ components:
       additionalProperties: false
       properties:
         useFtcPricing:
+          type: boolean
+    PartsOrderSettings:
+      type: object
+      required: [maxOrderItems]
+      properties:
+        maxOrderItems:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 1000000
+          description: Maximum total line quantity in a draft order; null means unlimited.
+    PartsOrderSettingsUpdateInput:
+      type: object
+      required: [maxOrderItems]
+      additionalProperties: false
+      properties:
+        maxOrderItems:
+          type: ["integer", "null"]
+          minimum: 1
+          maximum: 1000000
+          description: Maximum total line quantity in a draft order; null means unlimited.
+    PartsOrderLimitCheckInput:
+      type: object
+      required: [itemCount]
+      additionalProperties: false
+      properties:
+        itemCount:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+          description: Proposed total line quantity after the change.
+    PartsOrderLimitCheck:
+      type: object
+      required: [allowed]
+      properties:
+        allowed:
           type: boolean
     PartsCatalogSearch:
       type: object

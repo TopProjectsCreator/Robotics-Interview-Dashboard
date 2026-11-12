@@ -512,8 +512,21 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `create table if not exists "parts_team_settings" (
        "team_id" text primary key,
        "use_ftc_pricing" boolean not null default false,
+       "max_order_items" integer,
        "updated_at" timestamptz not null default now()
      )`,
+    `alter table "parts_team_settings" add column if not exists "max_order_items" integer`,
+    `do $parts_order_limit$ begin
+       if not exists (
+         select 1 from pg_constraint
+          where conname = 'parts_team_settings_max_order_items_valid'
+            and conrelid = 'parts_team_settings'::regclass
+       ) then
+         alter table "parts_team_settings"
+           add constraint "parts_team_settings_max_order_items_valid"
+           check ("max_order_items" is null or "max_order_items" between 1 and 1000000);
+       end if;
+     end $parts_order_limit$`,
     `alter table "parts_catalog_items" add column if not exists "is_manual" boolean not null default false`,
     `alter table "parts_catalog_items" add column if not exists "unit_cost" numeric(10,2)`,
     `alter table "parts_catalog_items" add column if not exists "cost_currency" text`,

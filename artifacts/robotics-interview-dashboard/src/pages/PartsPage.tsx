@@ -39,6 +39,7 @@ import {
   useUpdatePartsCatalogStock,
   useUpdatePartsVendorBlock,
   useUpdatePartsPricingPreference,
+  useCheckPartsOrderLimit,
   type PartsCatalogItem,
   type PartsCatalogSearchResult,
   type PartsCatalogSearchStreamEvent,
@@ -586,7 +587,7 @@ function DraftOrderTray({
   isOpen: boolean;
   onToggle: () => void;
   onClear: () => void;
-  onSetQuantity: (url: string, quantity: number) => void;
+  onSetQuantity: (url: string, direction: "increase" | "decrease") => void;
 }) {
   return (
     <details open={isOpen} className="parts-disclosure h-fit rounded-xl border border-border bg-card" data-testid="details-parts-order">
@@ -646,11 +647,11 @@ function DraftOrderTray({
                         <p className="text-sm font-semibold tabular-nums text-foreground">{amount !== null ? formatMoney(amount * quantity, product.currency) : "Subtotal unavailable"}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button type="button" size="icon" variant="outline" className="size-9" aria-label={`Decrease quantity of ${product.title}`} onClick={() => onSetQuantity(product.url, quantity - 1)}>
+                        <Button type="button" size="icon" variant="outline" className="size-9" aria-label={`Decrease quantity of ${product.title}`} onClick={() => onSetQuantity(product.url, "decrease")}>
                           <Minus size={14} aria-hidden="true" />
                         </Button>
                         <span className="w-7 text-center text-sm font-medium tabular-nums" aria-label={`Quantity ${quantity}`}>{quantity}</span>
-                        <Button type="button" size="icon" variant="outline" className="size-9" aria-label={`Increase quantity of ${product.title}`} onClick={() => onSetQuantity(product.url, quantity + 1)}>
+                        <Button type="button" size="icon" variant="outline" className="size-9" aria-label={`Increase quantity of ${product.title}`} onClick={() => onSetQuantity(product.url, "increase")}>
                           <Plus size={14} aria-hidden="true" />
                         </Button>
                       </div>
@@ -720,6 +721,8 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   }>>({});
   const searchRunId = useRef(0);
   const [orderDraft, setOrderDraft] = useState<PartsOrderLine[]>(() => demoMode ? [] : readPartsOrderDraft());
+  const orderDraftRef = useRef(orderDraft);
+  const orderChangeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const [notice, setNotice] = useState<Notice | null>(null);
   const [robotName, setRobotName] = useState("");
   const [customName, setCustomName] = useState("");
@@ -782,6 +785,7 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
   const allocationMutation = useSetPartsRobotAllocation();
   const vendorBlockMutation = useUpdatePartsVendorBlock();
   const pricingPreferenceMutation = useUpdatePartsPricingPreference();
+  const checkPartsOrderLimit = useCheckPartsOrderLimit();
   const vendors = dashboardQuery.data?.vendors ?? [];
   const canManageVendors =
     sessionQuery.data?.role === "admin" ||
@@ -1012,6 +1016,31 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
     }
   };
 
+  const replaceOrderDraft = (next: PartsOrderLine[]) => {
+    orderDraftRef.current = next;
+    setOrderDraft(next);
+  };
+
+  const queueOrderChange = (change: () => Promise<void> | void) => {
+    const queued = orderChangeQueueRef.current.then(change, change);
+    orderChangeQueueRef.current = queued.catch(() => undefined);
+    return queued;
+  };
+
+  const checkOrderQuantity = async (itemCount: number): Promise<boolean | null> => {
+    if (demoMode) return true;
+    try {
+      const result = await checkPartsOrderLimit.mutateAsync({ data: { itemCount } });
+      return result.allowed;
+    } catch (error) {
+      setNotice({
+        kind: "error",
+        text: errorMessage(error, "Could not check the team's order limit. Try again before changing the draft."),
+      });
+      return null;
+    }
+  };
+
   const addSearchResultToDraft = (product: PartsCatalogSearchResult) => {
     const selected = selectedPrice(
       product.vendorKey,
@@ -1027,21 +1056,51 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
       return;
     }
     const pricedProduct: DraftProduct = { ...product, currency: product.currency };
-    setOrderDraft((previous) => {
+    void queueOrderChange(async () => {
+      const previous = orderDraftRef.current;
+      const itemCount = previous.reduce((total, line) => total + line.quantity, 0) + 1;
+      const allowed = await checkOrderQuantity(itemCount);
+      if (allowed === null) return;
+      if (!allowed) {
+        setNotice({
+          kind: "error",
+          text: "Your team's order-tray item limit has been reached. Remove an item or ask an admin to raise the limit.",
+        });
+        return;
+      }
       const existing = previous.find((line) => line.product.url === pricedProduct.url);
-      return existing
+      const next = existing
         ? previous.map((line) => line.product.url === pricedProduct.url
           ? { product: pricedProduct, quantity: line.quantity + 1 }
           : line)
         : [...previous, { product: pricedProduct, quantity: 1 }];
+      replaceOrderDraft(next);
+      setNotice({ kind: "success", text: `${product.title} added to the draft order. No purchase has been placed.` });
     });
-    setNotice({ kind: "success", text: `${product.title} added to the draft order. No purchase has been placed.` });
   };
 
-  const setDraftQuantity = (productUrl: string, quantity: number) => {
-    setOrderDraft((previous) => previous
-      .map((line) => line.product.url === productUrl ? { ...line, quantity } : line)
-      .filter((line) => line.quantity > 0));
+  const setDraftQuantity = (productUrl: string, direction: "increase" | "decrease") => {
+    void queueOrderChange(async () => {
+      const previous = orderDraftRef.current;
+      const line = previous.find((entry) => entry.product.url === productUrl);
+      if (!line) return;
+      const nextQuantity = direction === "increase" ? line.quantity + 1 : Math.max(0, line.quantity - 1);
+      if (direction === "increase") {
+        const itemCount = previous.reduce((total, entry) => total + entry.quantity, 0) + 1;
+        const allowed = await checkOrderQuantity(itemCount);
+        if (allowed === null) return;
+        if (!allowed) {
+          setNotice({
+            kind: "error",
+            text: "Your team's order-tray item limit has been reached. Remove an item or ask an admin to raise the limit.",
+          });
+          return;
+        }
+      }
+      replaceOrderDraft(previous
+        .map((entry) => entry.product.url === productUrl ? { ...entry, quantity: nextQuantity } : entry)
+        .filter((entry) => entry.quantity > 0));
+    });
   };
 
   const saveSearchResultToInventory = async (product: PartsCatalogSearchResult) => {
@@ -1833,7 +1892,7 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
                     useFtcPricing={useFtcPricing}
                     isOpen={partsOrderOpen}
                     onToggle={() => setPartsOrderOpen((open) => !open)}
-                    onClear={() => setOrderDraft([])}
+                    onClear={() => replaceOrderDraft([])}
                     onSetQuantity={setDraftQuantity}
                   />
                 </aside>

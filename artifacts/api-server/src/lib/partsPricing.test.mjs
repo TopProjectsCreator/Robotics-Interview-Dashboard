@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   parsePublishedFtcTeamPrice,
+  isPartsOrderQuantityAllowed,
+  readMaxPartsOrderItems,
   readFtcPricingPreference,
+  saveMaxPartsOrderItems,
   saveFtcPricingPreference,
   selectSupplierPrice,
 } from "./partsPricing.ts";
@@ -66,4 +69,33 @@ test("team FTC pricing preference persists independently by team", async () => {
   assert.equal(await readFtcPricingPreference(query, "team-b"), false);
   assert.ok(queries.every(({ statement }) => statement.includes('"team_id" = $1') || statement.includes('("team_id"')));
   assert.deepEqual(settings, new Map([["team-a", true]]));
+});
+
+test("team order quantity limits persist independently and enforce the boundary", async () => {
+  const settings = new Map();
+  const queries = [];
+  const query = async (statement, values = []) => {
+    queries.push({ statement, values });
+    if (statement.includes("select")) {
+      const maxOrderItems = settings.get(values[0]) ?? null;
+      return { rows: [{ maxOrderItems }] };
+    }
+    if (statement.includes("insert")) {
+      settings.set(values[0], values[1]);
+      return { rows: [{ maxOrderItems: values[1] }] };
+    }
+    throw new Error(`Unexpected order limit statement: ${statement}`);
+  };
+
+  assert.equal(await readMaxPartsOrderItems(query, "team-a"), null);
+  assert.equal(await isPartsOrderQuantityAllowed(query, "team-a", 500), true);
+  assert.equal(await saveMaxPartsOrderItems(query, "team-a", 3), 3);
+  assert.equal(await readMaxPartsOrderItems(query, "team-a"), 3);
+  assert.equal(await isPartsOrderQuantityAllowed(query, "team-a", 3), true);
+  assert.equal(await isPartsOrderQuantityAllowed(query, "team-a", 4), false);
+  assert.equal(await readMaxPartsOrderItems(query, "team-b"), null);
+  assert.equal(await saveMaxPartsOrderItems(query, "team-a", null), null);
+  assert.equal(await isPartsOrderQuantityAllowed(query, "team-a", 500), true);
+  assert.deepEqual(settings, new Map([["team-a", null]]));
+  assert.ok(queries.every(({ statement }) => statement.includes('"team_id" = $1') || statement.includes('("team_id"')));
 });

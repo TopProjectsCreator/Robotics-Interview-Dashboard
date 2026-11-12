@@ -417,6 +417,39 @@ export interface PartsPricingPreferenceUpdateInput {
   useFtcPricing: boolean;
 }
 
+export interface PartsOrderSettings {
+  /**
+     * Maximum total line quantity in a draft order; null means unlimited.
+     * @minimum 1
+     * @maximum 1000000
+     * @nullable
+     */
+  maxOrderItems: number | null;
+}
+
+export interface PartsOrderSettingsUpdateInput {
+  /**
+     * Maximum total line quantity in a draft order; null means unlimited.
+     * @minimum 1
+     * @maximum 1000000
+     * @nullable
+     */
+  maxOrderItems: number | null;
+}
+
+export interface PartsOrderLimitCheckInput {
+  /**
+     * Proposed total line quantity after the change.
+     * @minimum 1
+     * @maximum 1000000
+     */
+  itemCount: number;
+}
+
+export interface PartsOrderLimitCheck {
+  allowed: boolean;
+}
+
 /**
  * Whether current live supplier-page discovery providers responded.
  */

@@ -231,6 +231,7 @@ function mapCatalogRow(item, teamId) {
 test("Parts inventory lists tracked supplier stock with team-scoped totals and filters", async (t) => {
   const catalogQueries = [];
   const pricingPreferences = new Map();
+  const orderLimits = new Map();
   const feedRefreshState = {
     supplierPrice: "22.99",
     ftcTeamPrice: null,
@@ -241,6 +242,14 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   const feedUpsertStatements = [];
   const pool = {
     async query(statement, values = []) {
+      if (statement.includes('select "max_order_items"')) {
+        const value = orderLimits.get(values[0]);
+        return { rows: value === undefined ? [] : [{ maxOrderItems: value }], rowCount: value === undefined ? 0 : 1 };
+      }
+      if (statement.includes('insert into "parts_team_settings"') && statement.includes('"max_order_items"')) {
+        orderLimits.set(values[0], values[1]);
+        return { rows: [{ maxOrderItems: values[1] }], rowCount: 1 };
+      }
       if (statement.includes('from "parts_team_settings"')) {
         const value = pricingPreferences.get(values[0]);
         return { rows: value === undefined ? [] : [{ useFtcPricing: value }], rowCount: value === undefined ? 0 : 1 };
@@ -349,7 +358,10 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   mock.module("../middlewares/adminAuth", {
     namedExports: {
       requireAdmin: (_req, _res, next) => next(),
-      requireInboxAdmin: (_req, _res, next) => next(),
+      requireInboxAdmin: (req, res, next) => {
+        if (["admin", "coordinator"].includes(req.get("x-role") ?? "coordinator")) next();
+        else res.status(403).json({ error: "Admins only" });
+      },
       requestTeamId: async (req) => req.get("x-team-id") ?? "team-a",
     },
   });
@@ -374,8 +386,8 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   const address = server.address();
   assert.ok(address && typeof address === "object");
   const baseUrl = `http://127.0.0.1:${address.port}/api`;
-  const get = async (path, teamId = "team-a") => {
-    const response = await fetch(`${baseUrl}${path}`, { headers: { "x-team-id": teamId } });
+  const get = async (path, teamId = "team-a", role = "coordinator") => {
+    const response = await fetch(`${baseUrl}${path}`, { headers: { "x-team-id": teamId, "x-role": role } });
     assert.equal(response.status, 200, `${path} should succeed`);
     return response.json();
   };
@@ -491,6 +503,33 @@ test("Parts inventory lists tracked supplier stock with team-scoped totals and f
   assert.deepEqual(await get("/parts/pricing", "team-a"), { useFtcPricing: true });
   assert.deepEqual(await get("/parts/pricing", "team-b"), { useFtcPricing: false });
   assert.deepEqual(pricingPreferences, new Map([["team-a", true]]));
+  assert.deepEqual(await get("/parts/order-settings", "team-a"), { maxOrderItems: null });
+  const setOrderLimit = async (maxOrderItems, teamId = "team-a", role = "coordinator") => fetch(`${baseUrl}/parts/order-settings`, {
+    method: "PUT",
+    headers: { "content-type": "application/json", "x-team-id": teamId, "x-role": role },
+    body: JSON.stringify({ maxOrderItems }),
+  });
+  assert.equal((await setOrderLimit(3, "team-a", "interviewer")).status, 403);
+  assert.equal((await fetch(`${baseUrl}/parts/order-settings`, { headers: { "x-role": "interviewer" } })).status, 403);
+  const savedOrderLimit = await setOrderLimit(3);
+  assert.equal(savedOrderLimit.status, 200);
+  assert.deepEqual(await savedOrderLimit.json(), { maxOrderItems: 3 });
+  assert.deepEqual(await get("/parts/order-settings", "team-a"), { maxOrderItems: 3 });
+  assert.deepEqual(await get("/parts/order-settings", "team-b"), { maxOrderItems: null });
+  assert.equal((await setOrderLimit(0)).status, 400);
+  assert.equal((await setOrderLimit(1.5)).status, 400);
+  assert.equal((await setOrderLimit(null)).status, 200);
+  assert.deepEqual(orderLimits, new Map([["team-a", null]]));
+  const checkOrderCount = async (itemCount, teamId = "team-a") => fetch(`${baseUrl}/parts/order-limit/check`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-team-id": teamId, "x-role": "interviewer" },
+    body: JSON.stringify({ itemCount }),
+  });
+  await setOrderLimit(2);
+  assert.deepEqual(await (await checkOrderCount(2)).json(), { allowed: true });
+  assert.deepEqual(await (await checkOrderCount(3)).json(), { allowed: false });
+  assert.deepEqual(await (await checkOrderCount(3, "team-b")).json(), { allowed: true });
+  assert.equal((await checkOrderCount(0)).status, 400);
   assert.deepEqual(
     await saveCatalogFeedRecords([{
       vendorKey: "gobilda",

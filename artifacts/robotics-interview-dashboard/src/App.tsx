@@ -59,6 +59,7 @@ import { ChatMiniTool, InvalidChatMiniTool, parseChatMiniToolPayload } from "./c
 import { PersonalNotepad } from "./components/PersonalNotepad";
 import { TeamNameRulesSettings } from "./components/TeamNameRulesSettings";
 import { TeamAccessCodeSettings } from "./components/TeamAccessCodeSettings";
+import { PartsOrderLimitSetting } from "./components/PartsOrderLimitSetting";
 import { accountSetupErrorMessage } from "./lib/auth-error-messages";
 import { AssistantModelPicker, type AssistantIntegrationPolicyView, type AssistantModelPolicyView, type AssistantThinkingLevel, type CustomMcpConnectionItem } from "./components/AssistantModelPicker";
 import { AssistantProviderSetup } from "./components/AssistantProviderSetup";
@@ -1107,6 +1108,7 @@ function SettingsModal({
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>
         <div className="mt-2"><PresencePanel /></div>
       </div>}
+      {isAdmin && session.data?.teamId && <PartsOrderLimitSetting key={session.data.teamId} teamId={session.data.teamId} />}
       {canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>

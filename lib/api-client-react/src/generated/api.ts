@@ -221,6 +221,10 @@ import type {
   PartsDashboard,
   PartsImageIdentification,
   PartsImageIdentificationInput,
+  PartsOrderLimitCheck,
+  PartsOrderLimitCheckInput,
+  PartsOrderSettings,
+  PartsOrderSettingsUpdateInput,
   PartsPriceSnapshot,
   PartsPriceSnapshotInput,
   PartsPricingPreference,
@@ -13844,6 +13848,225 @@ export const useUpdatePartsPricingPreference = <TError = ErrorType<ErrorResponse
         TContext
       > => {
       return useMutation(getUpdatePartsPricingPreferenceMutationOptions(options));
+    }
+
+export const getGetPartsOrderSettingsUrl = () => {
+
+
+
+
+  return `/api/parts/order-settings`
+}
+
+/**
+ * @summary Read team order-tray settings
+ */
+export const getPartsOrderSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<PartsOrderSettings> => {
+
+  return customFetch<PartsOrderSettings>(getGetPartsOrderSettingsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetPartsOrderSettingsQueryKey = () => {
+    return [
+    `/api/parts/order-settings`
+    ] as const;
+    }
+
+
+export const getGetPartsOrderSettingsQueryOptions = <TData = Awaited<ReturnType<typeof getPartsOrderSettings>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPartsOrderSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetPartsOrderSettingsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getPartsOrderSettings>>> = ({ signal }) => getPartsOrderSettings({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getPartsOrderSettings>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetPartsOrderSettingsQueryResult = NonNullable<Awaited<ReturnType<typeof getPartsOrderSettings>>>
+export type GetPartsOrderSettingsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Read team order-tray settings
+ */
+
+export function useGetPartsOrderSettings<TData = Awaited<ReturnType<typeof getPartsOrderSettings>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getPartsOrderSettings>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetPartsOrderSettingsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdatePartsOrderSettingsUrl = () => {
+
+
+
+
+  return `/api/parts/order-settings`
+}
+
+/**
+ * @summary Update team order-tray settings
+ */
+export const updatePartsOrderSettings = async (partsOrderSettingsUpdateInput: PartsOrderSettingsUpdateInput, options?: Parameters<typeof customFetch>[1]): Promise<PartsOrderSettings> => {
+
+  return customFetch<PartsOrderSettings>(getUpdatePartsOrderSettingsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(partsOrderSettingsUpdateInput)
+  }
+);}
+
+
+
+
+
+export const getUpdatePartsOrderSettingsMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsOrderSettings>>, TError,{data: BodyType<PartsOrderSettingsUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePartsOrderSettings>>, TError,{data: BodyType<PartsOrderSettingsUpdateInput>}, TContext> => {
+
+const mutationKey = ['updatePartsOrderSettings'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePartsOrderSettings>>, {data: BodyType<PartsOrderSettingsUpdateInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updatePartsOrderSettings(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePartsOrderSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updatePartsOrderSettings>>>
+    export type UpdatePartsOrderSettingsMutationBody = BodyType<PartsOrderSettingsUpdateInput>
+    export type UpdatePartsOrderSettingsMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update team order-tray settings
+ */
+export const useUpdatePartsOrderSettings = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePartsOrderSettings>>, TError,{data: BodyType<PartsOrderSettingsUpdateInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updatePartsOrderSettings>>,
+        TError,
+        {data: BodyType<PartsOrderSettingsUpdateInput>},
+        TContext
+      > => {
+      return useMutation(getUpdatePartsOrderSettingsMutationOptions(options));
+    }
+
+export const getCheckPartsOrderLimitUrl = () => {
+
+
+
+
+  return `/api/parts/order-limit/check`
+}
+
+/**
+ * @summary Check whether a proposed draft quantity is allowed
+ */
+export const checkPartsOrderLimit = async (partsOrderLimitCheckInput: PartsOrderLimitCheckInput, options?: Parameters<typeof customFetch>[1]): Promise<PartsOrderLimitCheck> => {
+
+  return customFetch<PartsOrderLimitCheck>(getCheckPartsOrderLimitUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(partsOrderLimitCheckInput)
+  }
+);}
+
+
+
+
+
+export const getCheckPartsOrderLimitMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkPartsOrderLimit>>, TError,{data: BodyType<PartsOrderLimitCheckInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof checkPartsOrderLimit>>, TError,{data: BodyType<PartsOrderLimitCheckInput>}, TContext> => {
+
+const mutationKey = ['checkPartsOrderLimit'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkPartsOrderLimit>>, {data: BodyType<PartsOrderLimitCheckInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  checkPartsOrderLimit(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CheckPartsOrderLimitMutationResult = NonNullable<Awaited<ReturnType<typeof checkPartsOrderLimit>>>
+    export type CheckPartsOrderLimitMutationBody = BodyType<PartsOrderLimitCheckInput>
+    export type CheckPartsOrderLimitMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Check whether a proposed draft quantity is allowed
+ */
+export const useCheckPartsOrderLimit = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkPartsOrderLimit>>, TError,{data: BodyType<PartsOrderLimitCheckInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof checkPartsOrderLimit>>,
+        TError,
+        {data: BodyType<PartsOrderLimitCheckInput>},
+        TContext
+      > => {
+      return useMutation(getCheckPartsOrderLimitMutationOptions(options));
     }
 
 export const getListPartsCatalogUrl = (params?: ListPartsCatalogParams,) => {

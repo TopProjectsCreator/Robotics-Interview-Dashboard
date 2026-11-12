@@ -14,8 +14,10 @@ const mocks = vi.hoisted(() => ({
   teamRobots: new Map<string, Array<Record<string, unknown>>>(),
   blockedVendors: new Map<string, Set<string>>(),
   teamFtcPricing: new Map<string, boolean>(),
+  teamOrderLimits: new Map<string, number | null>(),
   blockVendor: vi.fn(),
   saveFtcPricing: vi.fn(),
+  checkOrderLimit: vi.fn(),
   createRobot: vi.fn(),
   setAllocation: vi.fn(),
   syncCatalogs: vi.fn(),
@@ -82,6 +84,17 @@ vi.mock("@workspace/api-client-react", async () => {
           await mocks.saveFtcPricing({ teamId, data });
           mocks.teamFtcPricing.set(teamId, data.useFtcPricing);
           return { useFtcPricing: data.useFtcPricing };
+        },
+        isPending: false,
+      };
+    },
+    useCheckPartsOrderLimit: () => {
+      const teamId = getTeamId();
+      return {
+        mutateAsync: async ({ data }: { data: { itemCount: number } }) => {
+          await mocks.checkOrderLimit({ teamId, data });
+          const maxOrderItems = mocks.teamOrderLimits.get(teamId) ?? null;
+          return { allowed: maxOrderItems === null || data.itemCount <= maxOrderItems };
         },
         isPending: false,
       };
@@ -415,6 +428,7 @@ describe("progressive Parts search", () => {
     mocks.teamRobots.set("team-b", []);
     mocks.blockedVendors.clear();
     mocks.teamFtcPricing.clear();
+    mocks.teamOrderLimits.clear();
     mocks.role = "coordinator";
     mocks.getDetails.mockReset().mockImplementation(loadMockPartDetails);
     mocks.createItem.mockResolvedValue({});
@@ -429,6 +443,7 @@ describe("progressive Parts search", () => {
     window.localStorage.removeItem("robotics-parts-order-draft-v1");
     mocks.blockVendor.mockResolvedValue({});
     mocks.saveFtcPricing.mockResolvedValue({});
+    mocks.checkOrderLimit.mockResolvedValue({});
     mocks.identifyImage.mockResolvedValue({
       identified: true,
       name: "Camera suggested bracket",
@@ -819,9 +834,99 @@ describe("progressive Parts search", () => {
     fireEvent.click(within(orderDetails).getByRole("button", {
       name: "Increase quantity of Draft-order bracket",
     }));
-    expect(orderDetails).toHaveTextContent("2 items");
+    await waitFor(() => expect(orderDetails).toHaveTextContent("2 items"));
     expect(JSON.parse(window.localStorage.getItem("robotics-parts-order-draft-v1") ?? "[]"))
       .toMatchObject([{ product: { title: "Draft-order bracket" }, quantity: 2 }]);
+  });
+
+  it("counts line quantities and blocks adds and increases at the team's exact limit", async () => {
+    mocks.teamOrderLimits.set("team-a", 2);
+    mocks.consumeSearch.mockImplementation(async (_params, onEvent) => {
+      await onEvent({
+        type: "result",
+        result: {
+          ...earlyProduct,
+          title: "Limited bracket",
+          url: "https://www.andymark.com/products/limited-bracket",
+          price: "14.50",
+          currency: "USD",
+        },
+      });
+      await onEvent({
+        type: "complete",
+        status: "available",
+        providerCount: 2,
+        failedProviderCount: 0,
+        resultCount: 1,
+      });
+    });
+    const page = await renderPartsPage();
+    startSearch("limited bracket");
+    const addButton = await within(page.container).findByRole("button", { name: "Add to draft" });
+    fireEvent.click(addButton);
+    await waitFor(() => expect(mocks.checkOrderLimit).toHaveBeenLastCalledWith({
+      teamId: "team-a",
+      data: { itemCount: 1 },
+    }));
+    fireEvent.click(addButton);
+    await waitFor(() => expect(mocks.checkOrderLimit).toHaveBeenLastCalledWith({
+      teamId: "team-a",
+      data: { itemCount: 2 },
+    }));
+    expect(await within(page.container).findByText("Limited bracket added to the draft order. No purchase has been placed."))
+      .toBeInTheDocument();
+
+    const orderDetails = within(page.container).getByTestId("details-parts-order");
+    const orderSummary = orderDetails.querySelector("summary");
+    if (!orderSummary) throw new Error("The draft order summary was not found.");
+    if (!orderDetails.hasAttribute("open")) fireEvent.click(orderSummary);
+    await waitFor(() => expect(orderDetails).toHaveTextContent("2 items"));
+    fireEvent.click(addButton);
+    expect(await within(page.container).findByText(/order-tray item limit has been reached/))
+      .toBeInTheDocument();
+    fireEvent.click(within(orderDetails).getByRole("button", { name: "Increase quantity of Limited bracket" }));
+    expect(await within(page.container).findByText(/order-tray item limit has been reached/))
+      .toBeInTheDocument();
+    expect(orderDetails).toHaveTextContent("2 items");
+
+    fireEvent.click(within(orderDetails).getByRole("button", { name: "Decrease quantity of Limited bracket" }));
+    await waitFor(() => expect(orderDetails).toHaveTextContent("1 items"));
+    expect(JSON.parse(window.localStorage.getItem("robotics-parts-order-draft-v1") ?? "[]"))
+      .toMatchObject([{ product: { title: "Limited bracket" }, quantity: 1 }]);
+  });
+
+  it("preserves drafts already over a newly lowered limit and allows decreases", async () => {
+    mocks.teamOrderLimits.set("team-a", 1);
+    window.localStorage.setItem("robotics-parts-order-draft-v1", JSON.stringify([{
+      product: {
+        ...earlyProduct,
+        title: "Previously saved bracket",
+        url: "https://www.andymark.com/products/previously-saved-bracket",
+        price: "14.50",
+        currency: "USD",
+      },
+      quantity: 3,
+    }]));
+    const page = await renderPartsPage();
+    const orderDetails = within(page.container).getByTestId("details-parts-order");
+    const orderSummary = orderDetails.querySelector("summary");
+    if (!orderSummary) throw new Error("The draft order summary was not found.");
+    if (!orderDetails.hasAttribute("open")) fireEvent.click(orderSummary);
+    expect(orderDetails).toHaveTextContent("3 items");
+    const serializedBeforeIncrease = window.localStorage.getItem("robotics-parts-order-draft-v1");
+
+    fireEvent.click(within(orderDetails).getByRole("button", { name: "Increase quantity of Previously saved bracket" }));
+    expect(await within(page.container).findByText(/order-tray item limit has been reached/))
+      .toBeInTheDocument();
+    expect(orderDetails).toHaveTextContent("3 items");
+    expect(window.localStorage.getItem("robotics-parts-order-draft-v1")).toBe(serializedBeforeIncrease);
+
+    fireEvent.click(within(orderDetails).getByRole("button", { name: "Decrease quantity of Previously saved bracket" }));
+    await waitFor(() => expect(orderDetails).toHaveTextContent("2 items"));
+    fireEvent.click(within(orderDetails).getByRole("button", { name: "Decrease quantity of Previously saved bracket" }));
+    await waitFor(() => expect(orderDetails).toHaveTextContent("1 items"));
+    fireEvent.click(within(orderDetails).getByRole("button", { name: "Decrease quantity of Previously saved bracket" }));
+    await waitFor(() => expect(orderDetails).toHaveTextContent("Nothing in the tray yet."));
   });
 
   it("lets a user save a verified result before the stream completes", async () => {

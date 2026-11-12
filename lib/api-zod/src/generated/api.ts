@@ -5192,6 +5192,54 @@ export const UpdatePartsPricingPreferenceResponse = zod.object({
 
 
 /**
+ * @summary Read team order-tray settings
+ */
+export const getPartsOrderSettingsResponseMaxOrderItemsMax = 1000000;
+
+
+
+export const GetPartsOrderSettingsResponse = zod.object({
+  "maxOrderItems": zod.number().int().min(1).max(getPartsOrderSettingsResponseMaxOrderItemsMax).nullable().describe('Maximum total line quantity in a draft order; null means unlimited.')
+})
+
+
+/**
+ * @summary Update team order-tray settings
+ */
+export const updatePartsOrderSettingsBodyMaxOrderItemsMax = 1000000;
+
+
+
+export const UpdatePartsOrderSettingsBody = zod.object({
+  "maxOrderItems": zod.number().int().min(1).max(updatePartsOrderSettingsBodyMaxOrderItemsMax).nullable().describe('Maximum total line quantity in a draft order; null means unlimited.')
+})
+
+export const updatePartsOrderSettingsResponseMaxOrderItemsMax = 1000000;
+
+
+
+export const UpdatePartsOrderSettingsResponse = zod.object({
+  "maxOrderItems": zod.number().int().min(1).max(updatePartsOrderSettingsResponseMaxOrderItemsMax).nullable().describe('Maximum total line quantity in a draft order; null means unlimited.')
+})
+
+
+/**
+ * @summary Check whether a proposed draft quantity is allowed
+ */
+export const checkPartsOrderLimitBodyItemCountMax = 1000000;
+
+
+
+export const CheckPartsOrderLimitBody = zod.object({
+  "itemCount": zod.number().int().min(1).max(checkPartsOrderLimitBodyItemCountMax).describe('Proposed total line quantity after the change.')
+})
+
+export const CheckPartsOrderLimitResponse = zod.object({
+  "allowed": zod.boolean()
+})
+
+
+/**
  * @summary List saved catalog items and inventory allocations
  */
 export const listPartsCatalogQueryLimitDefault = 100;

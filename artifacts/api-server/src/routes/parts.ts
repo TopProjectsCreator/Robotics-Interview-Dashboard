@@ -11,6 +11,11 @@ import {
   CreatePartsRobotResponse,
   GetPartsDashboardResponse,
   GetPartsPricingPreferenceResponse,
+  GetPartsOrderSettingsResponse,
+  UpdatePartsOrderSettingsBody,
+  UpdatePartsOrderSettingsResponse,
+  CheckPartsOrderLimitBody,
+  CheckPartsOrderLimitResponse,
   GetPartsCatalogDetailsParams,
   GetPartsCatalogDetailsResponse,
   GetPartsRobotDetailsParams,
@@ -61,6 +66,11 @@ import {
   extractProductPageMetadata,
   extractVerifiedProductMetadata,
 } from "../lib/partsProductMetadata";
+import {
+  isPartsOrderQuantityAllowed,
+  readMaxPartsOrderItems,
+  saveMaxPartsOrderItems,
+} from "../lib/partsPricing";
 import {
   catalogSearchVariants,
   isRelevantCatalogSearchResult,
@@ -2413,6 +2423,60 @@ router.put("/parts/pricing", requireAdmin, async (req, res): Promise<void> => {
   } catch (error) {
     req.log.error({ err: error }, "Parts pricing preference update failed");
     res.status(500).json({ error: "Unable to save team pricing settings." });
+  }
+});
+
+router.get("/parts/order-settings", requireInboxAdmin, async (req, res): Promise<void> => {
+  try {
+    const teamId = await requestTeamId(req);
+    const maxOrderItems = await readMaxPartsOrderItems(
+      (statement, values) => pool.query(statement, values),
+      teamId,
+    );
+    res.json(GetPartsOrderSettingsResponse.parse({ maxOrderItems }));
+  } catch (error) {
+    req.log.error({ err: error }, "Parts order settings load failed");
+    res.status(500).json({ error: "Unable to load team order settings." });
+  }
+});
+
+router.put("/parts/order-settings", requireInboxAdmin, async (req, res): Promise<void> => {
+  const parsed = UpdatePartsOrderSettingsBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Set the item limit to a positive whole number or leave it unlimited." });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const maxOrderItems = await saveMaxPartsOrderItems(
+      (statement, values) => pool.query(statement, values),
+      teamId,
+      parsed.data.maxOrderItems,
+    );
+    res.json(UpdatePartsOrderSettingsResponse.parse({ maxOrderItems }));
+  } catch (error) {
+    req.log.error({ err: error }, "Parts order settings update failed");
+    res.status(500).json({ error: "Unable to save team order settings." });
+  }
+});
+
+router.post("/parts/order-limit/check", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = CheckPartsOrderLimitBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "The proposed draft quantity must be a positive whole number." });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const allowed = await isPartsOrderQuantityAllowed(
+      (statement, values) => pool.query(statement, values),
+      teamId,
+      parsed.data.itemCount,
+    );
+    res.json(CheckPartsOrderLimitResponse.parse({ allowed }));
+  } catch (error) {
+    req.log.error({ err: error }, "Parts order limit check failed");
+    res.status(500).json({ error: "Unable to check the team order limit." });
   }
 });
 
