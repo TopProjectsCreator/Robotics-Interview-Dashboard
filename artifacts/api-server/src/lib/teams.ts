@@ -31,9 +31,15 @@ export function verifyTeamCodeHash(code: string, encoded: string | null | undefi
   const [saltHex, hashHex] = encoded.split(":");
   if (!saltHex || !hashHex) return false;
   try {
-    const actual = scryptSync(normalizeTeamCode(code), Buffer.from(saltHex, "hex"), 64);
+    const salt = Buffer.from(saltHex, "hex");
     const expected = Buffer.from(hashHex, "hex");
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
+    const normalized = normalizeTeamCode(code);
+    const actual = scryptSync(normalized, salt, 64);
+    if (actual.length === expected.length && timingSafeEqual(actual, expected)) return true;
+    // Legacy rows hashed the caller-provided casing.
+    if (normalized === code) return false;
+    const legacy = scryptSync(code, salt, 64);
+    return legacy.length === expected.length && timingSafeEqual(legacy, expected);
   } catch {
     return false;
   }

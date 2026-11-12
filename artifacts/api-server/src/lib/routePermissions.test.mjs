@@ -77,6 +77,7 @@ test("workspace visibility fallback maps granted workspaces to read permissions"
   // Administration stays role-gated: the matrix never grants management.
   assert.equal(workspaceVisibilityFallback("DELETE", "/api/cad/models/abc"), null);
   assert.equal(workspaceVisibilityFallback("DELETE", "/api/code/projects/abc"), null);
+  assert.equal(workspaceVisibilityFallback("DELETE", "/api/queue/chat/message-1"), null);
   assert.equal(workspaceVisibilityFallback("POST", "/api/queue/chat/channels"), null);
   assert.equal(workspaceVisibilityFallback("POST", "/api/queue/chat/multimessage"), null);
   assert.equal(workspaceVisibilityFallback("POST", "/api/applicants/abc/regenerate"), null);

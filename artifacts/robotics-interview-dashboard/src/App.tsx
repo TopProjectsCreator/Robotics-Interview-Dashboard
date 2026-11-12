@@ -1110,6 +1110,11 @@ function SettingsModal({
         <div className="mt-2"><PresencePanel /></div>
       </div>}
       {isAdmin && session.data?.teamId && <PartsOrderLimitSetting key={session.data.teamId} teamId={session.data.teamId} />}
+      {canSendBroadcast && <div className={divider} data-testid="settings-broadcast">
+        <p className={sectionLabel}>Broadcast</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Send a popup to everyone online, or to one person by name. It pops up in seconds — and with browser notifications on, even in another tab.</p>
+        <div className="mt-2"><BroadcastCard /></div>
+      </div>}
       {canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>
@@ -2650,7 +2655,7 @@ function BroadcastCard() {
     });
   };
   return (
-    <Section title="Broadcast" kicker="Message the other admin">
+    <div>
       <form onSubmit={submit} className="mt-1 space-y-2">
         <textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} maxLength={500} placeholder="Maksim — check the chat…" data-testid="input-broadcast-message" aria-label="Broadcast message" className="w-full resize-y rounded-xl border border-[#d5e0e0] p-3 text-base md:text-sm outline-none focus:border-[#16869a] dark:border-[#31495a] dark:bg-[#0f1e27] dark:text-[#e6eef2] dark:placeholder:text-[#6b7f8a]" />
         <div className="flex gap-2">
@@ -2663,7 +2668,7 @@ function BroadcastCard() {
       </form>
       {sentNote && <p className="mt-2 text-xs text-[#718189] dark:text-[#93a8b2]" data-testid="broadcast-sent-note">{sentNote}</p>}
       <p className="mt-2 text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Admins with browser notifications on also get a push, even in another tab.</p>
-    </Section>
+    </div>
   );
 }
 
@@ -4500,79 +4505,7 @@ function InterviewOverview() {
   if (summary.isLoading) return <><PageHeading eyebrow="Live overview" title="Good morning, team." /><div className="grid gap-4 md:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div></>;
   if (summary.isError || !summary.data) return <ErrorState onRetry={() => summary.refetch()} />;
   const d = summary.data;
-  return (
-    <div className="fade-up">
-      <PageHeading
-        eyebrow="Live overview / 08:42 local"
-        title="Good morning, team."
-        detail="The room is calm. Here is the signal across the applicant field."
-        action={
-          <Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm">
-            <Monitor size={16} /> Launch big screen
-          </Link>
-        }
-      />
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} />
-        <StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" />
-        <StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} />
-        <StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" />
-      </div>
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
-        <Section title="Score distribution" kicker="AI signal across the current intake">
-          <Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" />
-        </Section>
-        <Section title="Recommendation signal" kicker="Review the edges first">
-          <Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" />
-        </Section>
-      </div>
-      <div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]">
-        <Section title="Team decisions" kicker="What your interviewers actually said">
-          <Bars data={decisionMix} max={Math.max(...decisionMix.map(x => x.value), 1)} color="teal" xAxisLabel="Decision" yAxisLabel="Applicants" />
-          {!decisionMix.length && <p className="mt-3 text-xs text-[#7c8c91]">No decisions recorded yet. The interview decision on the queue card lands here and on the applicant lanes.</p>}
-        </Section>
-        <Section title="Roster lanes" kicker="Where applicants sit right now">
-          <Bars data={laneMix} max={Math.max(...laneMix.map(x => x.value), 1)} color="blue" xAxisLabel="Lane" yAxisLabel="Applicants" />
-        </Section>
-      </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-3">
-        <Section title="Grade mix">
-          <Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" />
-        </Section>
-        <Section title="Commitment signal">
-          <Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" />
-        </Section>
-        <Section title="Queue pulse" kicker="Individual applicant progression">
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p>
-              <p className="mt-2 text-sm text-[#718189]">applicants cleared</p>
-            </div>
-            <div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}>
-              <div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">
-                {Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%
-              </div>
-            </div>
-          </div>
-          <Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">
-            Open interview queue <ChevronRight size={15} />
-          </Link>
-        </Section>
-      </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <Section title="Gender mix" kicker="M / F across the current intake">
-          <Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" />
-        </Section>
-        <Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant">
-          <Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" />
-        </Section>
-      </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-3">
-        <div className="lg:col-span-2"><CustomCharts /></div>
-        <div className="space-y-5"><BroadcastCard /></div>
-      </div>
-    </div>
-  );
+  return <div className="fade-up"><PageHeading eyebrow="Live overview / 08:42 local" title="Good morning, team." detail="The room is calm. Here is the signal across the applicant field." action={<Link href="/display" target="_blank" data-testid="link-launch-display" className="flex items-center gap-2 rounded-xl bg-[#183a4b] px-4 py-3 text-sm font-semibold text-white shadow-sm"><Monitor size={16} /> Launch big screen</Link>} /><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total applicants" value={d.total} tone="navy" note={`${d.reviewed} reviewed so far`} /><StatCard label="Average AI score" value={d.averageScore.toFixed(1)} suffix="/ 100" tone="yellow" note="Across valid applications" /><StatCard label="Interview complete" value={d.interviewProgress.completed} suffix={` / ${d.interviewProgress.completed + d.interviewProgress.remaining}`} tone="teal" note={`${d.interviewProgress.remaining} still in the queue`} /><StatCard label="Needs attention" value={d.invalid} tone="red" note="Invalid or incomplete records" /></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Score distribution" kicker="AI signal across the current intake"><Bars data={d.scoreBuckets} max={Math.max(...d.scoreBuckets.map(x => x.value), 1)} color="teal" xAxisLabel="Score range" yAxisLabel="Applicants" /></Section><Section title="Recommendation signal" kicker="Review the edges first"><Bars data={d.recommendations} max={Math.max(...d.recommendations.map(x => x.value), 1)} color="yellow" xAxisLabel="Recommendation" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 xl:grid-cols-[1.1fr_.9fr]"><Section title="Team decisions" kicker="What your interviewers actually said"><Bars data={decisionMix} max={Math.max(...decisionMix.map(x => x.value), 1)} color="teal" xAxisLabel="Decision" yAxisLabel="Applicants" />{!decisionMix.length && <p className="mt-3 text-xs text-[#7c8c91]">No decisions recorded yet. The interview decision on the queue card lands here and on the applicant lanes.</p>}</Section><Section title="Roster lanes" kicker="Where applicants sit right now"><Bars data={laneMix} max={Math.max(...laneMix.map(x => x.value), 1)} color="blue" xAxisLabel="Lane" yAxisLabel="Applicants" /></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-3"><Section title="Grade mix"><Bars data={d.grades} max={Math.max(...d.grades.map(x => x.value), 1)} color="blue" xAxisLabel="Grade" yAxisLabel="Applicants" /></Section><Section title="Commitment signal"><Bars data={d.commitments} max={Math.max(...d.commitments.map(x => x.value), 1)} color="green" xAxisLabel="Commitment" yAxisLabel="Applicants" /></Section><Section title="Queue pulse" kicker="Individual applicant progression"><div className="flex items-end justify-between"><div><p className="mono text-5xl font-medium tracking-[-.08em] text-[#16869a]">{d.interviewProgress.completed}</p><p className="mt-2 text-sm text-[#718189]">applicants cleared</p></div><div className="h-24 w-24 rounded-full p-2" style={{ background: `conic-gradient(#16869a ${Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%, #e4eceb 0)` }}><div className="flex h-full w-full items-center justify-center rounded-full bg-white text-xs font-semibold">{Math.round((d.interviewProgress.completed / Math.max(d.interviewProgress.completed + d.interviewProgress.remaining, 1)) * 100)}%</div></div></div><Link href="/queue" data-testid="link-view-queue" className="mt-5 flex items-center gap-2 text-sm font-semibold text-[#16869a]">Open interview queue <ChevronRight size={15} /></Link></Section></div><div className="mt-5 grid gap-5 lg:grid-cols-2"><Section title="Gender mix" kicker="M / F across the current intake"><Bars data={mix.genderMix} max={Math.max(...mix.genderMix.map(x => x.value), 1)} color="blue" xAxisLabel="Gender" yAxisLabel="Applicants" /></Section><Section title="Skill mix" kicker="Strongest Build / Code / CAD signal per applicant"><Bars data={mix.skillMix} max={Math.max(...mix.skillMix.map(x => x.value), 1)} color="green" xAxisLabel="Skill" yAxisLabel="Applicants" /></Section></div><div className="mt-5"><CustomCharts /></div></div>;
 }
 function Bars({ data, max, color, xAxisLabel, yAxisLabel }: { data: DashboardCount[]; max: number; color: "teal" | "yellow" | "blue" | "green"; xAxisLabel?: string; yAxisLabel?: string }) { const c = { teal: "bg-[#16869a]", yellow: "bg-[#edb52c]", blue: "bg-[#466896]", green: "bg-[#3aa582]" }; return <div>{(xAxisLabel || yAxisLabel) && <div className="mb-3 flex justify-between text-[10px] font-semibold uppercase tracking-[.1em] text-[#7c8c91]"><span>Y · {yAxisLabel ?? "Value"}</span><span>X · {xAxisLabel ?? "Category"}</span></div>}<div className="space-y-4">{data.length ? data.map((item, i) => <div key={`${item.label}-${i}`} data-testid={`bar-${item.label}`}><div className="mb-1.5 flex justify-between text-xs"><span className="font-medium text-[#52666e]">{item.label}</span><span className="mono text-[#7b8a8f]">{item.value}</span></div><div className="h-2 overflow-hidden rounded-full bg-[#edf1f1]"><div className={`h-full rounded-full ${c[color]} transition-all`} style={{ width: `${Math.max(5, (item.value / max) * 100)}%` }} /></div></div>) : <p className="text-sm text-[#7c8c91]">No signal yet.</p>}</div></div>; }
 
