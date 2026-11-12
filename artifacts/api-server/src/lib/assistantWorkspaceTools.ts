@@ -623,6 +623,7 @@ export const ASSISTANT_SCRIPT_EXCLUDED_TOOLS = new Set([
   "ask_user",
   "create_chat_mini_tool",
   "generate_image",
+  "generate_cad_model",
   "request_custom_mcp_connection",
   "rename_conversation",
 ]);

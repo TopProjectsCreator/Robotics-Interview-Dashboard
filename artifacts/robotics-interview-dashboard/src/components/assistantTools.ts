@@ -23,6 +23,7 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
       { name: "search_skill_repository", label: "Linked skill repository", hint: "Read-only public files", write: false, skillContextOnly: true },
       { name: "python_exec", label: "Python", hint: "Calculations", write: false },
       { name: "generate_image", label: "Generate image", hint: "Posters & graphics", write: false },
+      { name: "generate_cad_model", label: "Generate CAD model", hint: "Downloadable STL/STEP", write: true },
       { name: "create_chat_mini_tool", label: "Interactive mini-tools", hint: "Quizzes, checklists & counters", write: true },
       { name: "show_svg", label: "Show SVG", hint: "Diagrams with review", write: false },
     ],

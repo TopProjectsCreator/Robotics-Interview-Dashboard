@@ -402,11 +402,12 @@ describe("AssistantModelPicker", () => {
   });
 
   it("covers the complete static assistant tool catalog, including image and workspace actions", () => {
-    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(84);
+    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(85);
     expect(new Set(ALL_ASSISTANT_TOOL_NAMES).size).toBe(ALL_ASSISTANT_TOOL_NAMES.length);
     const names = new Set(ALL_ASSISTANT_TOOL_NAMES);
     for (const name of [
       "generate_image",
+      "generate_cad_model",
       "show_svg",
       "create_chat_mini_tool",
       "get_parts_inventory_details",

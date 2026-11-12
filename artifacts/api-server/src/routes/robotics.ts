@@ -202,6 +202,7 @@ import {
 import type { AssistantActivity } from "@workspace/api-zod";
 import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResults, fetchUrlText } from "../lib/websearch";
 import { runPythonCode } from "../lib/python";
+import { runCadPython } from "../lib/cadPython";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, ne, or } from "drizzle-orm";
 import { authenticatedInterviewerId, createInterviewerSession, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
@@ -1561,6 +1562,21 @@ const ASSISTANT_PYTHON_TOOL = {
   },
 };
 
+const ASSISTANT_CAD_TOOL = {
+  type: "function" as const,
+  function: {
+    name: "generate_cad_model",
+    description: "Generate a downloadable CAD file by running Python with cadquery (import cadquery as cq). Describe what to build in natural language; the code must write the finished model to /out (e.g. cq.exporters.export(result, \"/out/model.stl\") or \"/out/model.step\"). The tool runs your code in a network-less sandbox and returns the model as a download link rendered in your answer. Keep boolean/extrude operations modest and export STL by default — STEP if the user asks for it.",
+    parameters: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "Python code using cadquery written to /out. Use cq.exporters.export(result, \"/out/model.stl\") to save. Print progress if helpful. Keep under 20,000 characters." },
+      },
+      required: ["code"],
+    },
+  },
+};
+
 const ASSISTANT_RENAME_TOOL = {
   type: "function" as const,
   function: {
@@ -2014,6 +2030,7 @@ const ASSISTANT_TOOLS = [
   ASSISTANT_CHAT_MINI_TOOL,
   ASSISTANT_SEARCH_TOOL,
   ASSISTANT_PYTHON_TOOL,
+  ASSISTANT_CAD_TOOL,
   ASSISTANT_RENAME_TOOL,
   ASSISTANT_SEARCH_APPLICANTS_TOOL,
   ASSISTANT_GET_APPLICANT_TOOL,
@@ -2324,6 +2341,7 @@ function parsePseudoToolCalls(text: string, enableChatMiniTools = false): Assist
       name !== "fetch_url" &&
       name !== "python_exec" &&
       name !== "python" &&
+      name !== "generate_cad_model" &&
       name !== "rename_conversation" &&
       name !== "rename" &&
       name !== "search_applicants" &&
@@ -2373,6 +2391,7 @@ function parsePseudoToolCalls(text: string, enableChatMiniTools = false): Assist
       name !== "fetch_url" &&
       name !== "python_exec" &&
       name !== "python" &&
+      name !== "generate_cad_model" &&
       name !== "rename_conversation" &&
       name !== "rename" &&
       name !== "search_applicants" &&
@@ -2472,6 +2491,7 @@ async function runAssistantTools(
   const outgoingCalls: { id: string; type: "function"; function: { name: string; arguments: string } }[] = [];
   const imageMarkdowns: string[] = [];
   const images: GeneratedImage[] = [];
+  const cadAttachments: { markdown: string; name: string }[] = [];
   const activities: AssistantActivity[] = [];
   const connectionRequests: AssistantMcpConnectionRequest[] = [];
   const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
@@ -2530,6 +2550,7 @@ async function runAssistantTools(
       name !== "fetch_url" &&
       name !== "python_exec" &&
       name !== "python" &&
+      name !== "generate_cad_model" &&
       name !== "rename_conversation" &&
       name !== "rename" &&
       name !== "search_applicants" &&
@@ -2828,6 +2849,39 @@ async function runAssistantTools(
       toolMessages.push({
         role: "tool",
         content: outcome.ok ? `Python output:\n${outcome.output}` : `Python run failed: ${outcome.output}`,
+        tool_call_id: call.id,
+      });
+    } else if (name === "generate_cad_model") {
+      const code = String(args.code ?? "").trim().slice(0, 20_000);
+      if (!code) continue;
+      const outcome = await runCadPython(code);
+      activities.push({ tool: "generate_cad_model", detail: code.split("\n")[0].slice(0, 80) || "cad" });
+      outgoingCalls.push({ id: call.id, type: "function", function: { name, arguments: call.function.arguments } });
+      if (!outcome.ok) {
+        toolMessages.push({
+          role: "tool",
+          content: `CAD generation failed: ${outcome.output}`,
+          tool_call_id: call.id,
+        });
+        continue;
+      }
+      const links: string[] = [];
+      for (const file of outcome.files) {
+        try {
+          const objectPath = await objectStorageService.uploadGeneratedCadFile(file.buffer, file.contentType, team);
+          const url = `/api/storage/objects/${objectPath.replace(/^\/objects\//, "")}`;
+          links.push(`[${file.name}](${url})`);
+          cadAttachments.push({ markdown: `[${file.name}](${url})`, name: file.name });
+        } catch (error) {
+          activities.push({ tool: "generate_cad_model", detail: `storage error: ${(error as Error)?.message ?? "unknown"}` });
+        }
+      }
+      const producedNames = outcome.files.map((file) => file.name).join(", ");
+      toolMessages.push({
+        role: "tool",
+        content: links.length
+          ? `CAD model generated (${producedNames}). It is attached to your answer for the coordinator to download.`
+          : `The CAD script ran and produced ${producedNames}, but the files could not be stored.`,
         tool_call_id: call.id,
       });
     } else if (name === "fetch_url" || name === "web_fetch") {
@@ -3602,7 +3656,9 @@ async function runAssistantTools(
   return {
     toolMessages,
     outgoingCalls,
-    imageMarkdown: imageMarkdowns.join("\n\n"),
+    // CAD download links share the attachments channel with generated images
+    // so every answer path (blocking and streaming) appends them uniformly.
+    imageMarkdown: [...imageMarkdowns, ...cadAttachments.map((attachment) => attachment.markdown)].join("\n\n"),
     images,
     activities: detailedActivities,
     miniTools,
