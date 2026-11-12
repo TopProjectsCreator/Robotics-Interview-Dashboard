@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import {
   buildCadDockerArgs,
   cadContentType,
+  filesFromWorkerResponse,
   isCadFileExtension,
   scanCadOutputDirectory,
 } from "./cadPython.ts";
@@ -57,6 +58,41 @@ describe("cadContentType / isCadFileExtension", () => {
     assert.equal(isCadFileExtension("evil.sh"), false);
     assert.equal(cadContentType("evil.sh"), null);
     assert.equal(isCadFileExtension(""), false);
+  });
+});
+
+describe("filesFromWorkerResponse", () => {
+  const b64 = (text) => Buffer.from(text).toString("base64");
+
+  test("accepts a well-formed worker payload", () => {
+    const files = filesFromWorkerResponse({
+      ok: true,
+      output: "done",
+      files: [
+        { name: "model.stl", extension: "stl", contentType: "model/stl", base64: b64("solid fake") },
+        { name: "model.step", extension: "step", contentType: "model/step", base64: b64("ISO-10303-21;") },
+      ],
+    });
+    assert.equal(files.length, 2);
+    assert.equal(files[0].name, "model.stl");
+    assert.equal(files[0].contentType, "model/stl");
+    assert.equal(files[0].buffer.toString("utf8"), "solid fake");
+  });
+
+  test("rejects hostile or broken payloads", () => {
+    assert.deepEqual(filesFromWorkerResponse(null), []);
+    assert.deepEqual(filesFromWorkerResponse({}), []);
+    assert.deepEqual(filesFromWorkerResponse({ files: "nope" }), []);
+    const mixed = filesFromWorkerResponse({
+      files: [
+        { name: "../escape.stl", base64: b64("x") },        // path traversal
+        { name: "notes.txt", base64: b64("x") },            // unknown extension
+        { name: "empty.stl", base64: "" },                  // zero bytes
+        { name: ".hidden.stl", base64: b64("x") },          // dotfile
+        { name: "good.stl", base64: b64("solid ok") },
+      ],
+    });
+    assert.deepEqual(mixed.map((file) => file.name), ["good.stl"]);
   });
 });
 

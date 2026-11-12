@@ -5,16 +5,20 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 /**
- * Sandboxed Python/CAD runner for the `generate_cad_model` assistant tool.
+ * Sandboxed CAD runner for the `generate_cad_model` assistant tool.
  *
- * Model-generated code runs inside a locked-down container
- * (`--network none`, read-only root FS, 512MB RAM, non-root, no capabilities)
- * with a host directory mounted at `/out`. The model writes its finished CAD
- * files to `/out`; the host then reads them, validates them by extension, and
- * returns them for upload to team storage.
+ * Two execution backends, selected by environment:
+ *   - CAD_WORKER_URL set (e.g. Render, which cannot run docker-in-docker):
+ *     the code is POSTed to a separate CAD worker service that runs it in a
+ *     locked-down subprocess and returns the CAD files. The worker holds no
+ *     secrets.
+ *   - otherwise (local development): docker on this machine with
+ *     `--network none`, read-only root FS, 640MB RAM, non-root, and a host
+ *     directory mounted at `/out`.
  *
- * Mirrors the `python_exec` sandbox shape, but allows CAD libraries (OCCT)
- * and captures an output directory instead of only stdout.
+ * The model writes its finished CAD files to `/out`; the caller uploads
+ * them to team storage. Mirrors the `python_exec` sandbox shape, but allows
+ * CAD libraries (OCCT) and captures an output directory instead of stdout.
  */
 
 export type CadFileOutcome = {
@@ -29,6 +33,8 @@ export type CadPythonOutcome =
   | { ok: false; output: string };
 
 const DOCKER_IMAGE = process.env.PYTHON_CAD_IMAGE || "robotics-dashboard/cad-sandbox:latest";
+const WORKER_URL = process.env.CAD_WORKER_URL?.trim().replace(/\/+$/, "") || null;
+const WORKER_SECRET = process.env.CAD_WORKER_SECRET ?? "";
 const DOCKER_TIMEOUT_MS = 60_000;
 const DOCKER_INNER_TIMEOUT_S = 45;
 const MAX_CODE_CHARS = 20_000;
@@ -150,6 +156,69 @@ function dockerUsableCad(): Promise<boolean> {
 let dockerState: "unknown" | "yes" | "no" = "unknown";
 
 /**
+ * Validate the worker's response payload and convert it to CAD files. The
+ * worker is trusted only with the shared secret, never with its claim about
+ * sizes or types: we re-derive the extension allowlist, sizes, and content
+ * types ourselves. Exported for unit tests.
+ */
+export function filesFromWorkerResponse(payload: unknown): CadFileOutcome[] {
+  if (!payload || typeof payload !== "object") return [];
+  const rawFiles = (payload as { files?: unknown }).files;
+  if (!Array.isArray(rawFiles)) return [];
+  const collected: CadFileOutcome[] = [];
+  for (const raw of rawFiles.slice(0, MAX_FILES)) {
+    if (!raw || typeof raw !== "object") continue;
+    const candidate = raw as { name?: unknown; base64?: unknown };
+    const name = typeof candidate.name === "string" ? candidate.name : "";
+    const base64 = typeof candidate.base64 === "string" ? candidate.base64 : "";
+    if (!name || name.length > 200 || name.includes("/") || name.includes("\\") || name.startsWith(".")) continue;
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    const contentType = cadContentType(ext);
+    if (!contentType) continue;
+    let buffer: Buffer;
+    try {
+      buffer = Buffer.from(base64, "base64");
+    } catch {
+      continue;
+    }
+    if (buffer.length === 0 || buffer.length > MAX_FILE_BYTES) continue;
+    collected.push({ name, buffer, extension: ext, contentType });
+  }
+  return collected;
+}
+
+/** Generate CAD files through a separate CAD worker service (e.g. Render, which cannot run docker-in-docker). */
+async function runViaWorker(code: string): Promise<CadPythonOutcome> {
+  let response: Response;
+  try {
+    response = await fetch(`${WORKER_URL}/generate`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-cad-secret": WORKER_SECRET },
+      body: JSON.stringify({ code }),
+      signal: AbortSignal.timeout(75_000),
+    });
+  } catch {
+    return { ok: false, output: "CAD generation is unavailable: the CAD worker could not be reached. Ask an admin to check the cad-worker service." };
+  }
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    return { ok: false, output: "CAD generation failed: the CAD worker returned an unreadable response." };
+  }
+  const payload = data as { ok?: unknown; output?: unknown } | null;
+  const output = typeof payload?.output === "string" ? payload.output.slice(0, MAX_OUTPUT_CHARS) : "";
+  if (!response.ok || !payload || payload.ok !== true) {
+    return { ok: false, output: output || "CAD generation failed on the CAD worker." };
+  }
+  const files = filesFromWorkerResponse(data);
+  if (!files.length) {
+    return { ok: false, output: `The CAD worker reported success but returned no usable CAD files. Output:\n${output}` };
+  }
+  return { ok: true, files, output };
+}
+
+/**
  * Run model-generated CAD code in the locked-down CAD sandbox. The code is
  * expected to import cadquery/build123d and write one or more CAD files to
  * `/out` (e.g. `/out/model.stl`). Whatever lands there is returned; callers
@@ -158,6 +227,9 @@ let dockerState: "unknown" | "yes" | "no" = "unknown";
 export async function runCadPython(code: string): Promise<CadPythonOutcome> {
   const trimmed = code.trim().slice(0, MAX_CODE_CHARS);
   if (!trimmed) return { ok: false, output: "No CAD code to run." };
+  // A configured worker takes precedence: hosts without docker-in-docker
+  // (Render) generate there, local development uses the local docker sandbox.
+  if (WORKER_URL) return runViaWorker(trimmed);
   if (dockerState === "unknown") {
     dockerState = (await dockerUsableCad()) ? "yes" : "no";
   }
