@@ -53,16 +53,20 @@
     <lastmod>2026-10-10</lastmod>
   </url>
   <url>
+    <loc>http://localhost/compare</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
     <loc>http://localhost/custom-workspaces</loc>
     <lastmod>2026-10-20</lastmod>
   </url>
   <url>
-    <loc>http://localhost/demo</loc>
-    <lastmod>2026-11-06</lastmod>
-  </url>
-  <url>
     <loc>http://localhost/dashboard</loc>
     <lastmod>2026-10-09</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/demo</loc>
+    <lastmod>2026-11-06</lastmod>
   </url>
   <url>
     <loc>http://localhost/display</loc>
@@ -93,16 +97,12 @@
     <lastmod>2026-10-09</lastmod>
   </url>
   <url>
-    <loc>http://localhost/pricing</loc>
-    <lastmod>2026-11-05</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/compare</loc>
-    <lastmod>2026-11-05</lastmod>
-  </url>
-  <url>
     <loc>http://localhost/parts/assistant</loc>
     <lastmod>2026-10-09</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/pricing</loc>
+    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>http://localhost/queue</loc>

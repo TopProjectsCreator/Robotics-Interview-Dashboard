@@ -62,7 +62,7 @@ import { AssistantModelPicker, type AssistantIntegrationPolicyView, type Assista
 import { AssistantProviderSetup } from "./components/AssistantProviderSetup";
 import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
-import { loadDisabledTools, saveDisabledTools, type AssistantToolItem } from "./components/assistantTools";
+import { loadDisabledTools, loadToolExposure, saveDisabledTools, saveToolExposure, type AssistantToolExposureMode, type AssistantToolItem } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { getEmojiPickerFloatingPosition, type EmojiPickerFloatingPosition } from "./lib/emojiPickerPosition";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
@@ -7204,12 +7204,14 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         // No timeout here: the agent keeps calling tools until it is done, so
         // a long multi-step answer must not be cut off at an arbitrary mark.
         const chatAssistantDisabledTools = loadDisabledTools();
+        const chatToolExposure = loadToolExposure();
         const response = await ask.mutateAsync({
           data: {
             question,
             applicantIds,
             chatContext,
             ...(chatAssistantDisabledTools.length ? { disabledTools: chatAssistantDisabledTools } : {}),
+            ...(chatToolExposure !== "direct" ? { toolExposure: chatToolExposure } : {}),
           },
         });
         assistantReplyForRetry = {
@@ -8525,6 +8527,11 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const [disabledTools, setDisabledTools] = useState<string[]>(() => loadDisabledTools());
   const [dynamicAssistantTools, setDynamicAssistantTools] = useState<AssistantToolItem[]>([]);
   const [dynamicAssistantToolsError, setDynamicAssistantToolsError] = useState("");
+  const [toolExposure, setToolExposure] = useState<AssistantToolExposureMode>(() => loadToolExposure());
+  const rememberToolExposure = (mode: AssistantToolExposureMode) => {
+    setToolExposure(mode);
+    saveToolExposure(mode);
+  };
   const rememberDisabledTools = (tools: string[]) => {
     setDisabledTools(tools);
     saveDisabledTools(tools);
@@ -9555,13 +9562,14 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     if (isStreaming || hasPersistedWork) {
       if (queuePrompt.isPending || stopPrompt.isPending) return;
       const queuedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-      const queuedPayload: AssistantInput = {
+      const queuedPayload: AssistantInput & { toolExposure?: AssistantToolExposureMode } = {
         question: q,
         model: availableModel || undefined,
         ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
         conversationId: activeConversationId,
         ...(canManageAssistantTools && queuedFiles.length ? { attachments: queuedFiles } : {}),
         ...(disabledTools.length ? { disabledTools } : {}),
+        ...(toolExposure !== "direct" ? { toolExposure } : {}),
       };
       queuePrompt.mutate({ conversationId: activeConversationId, data: queuedPayload }, {
         onSuccess: () => {
@@ -9585,13 +9593,14 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     setQuestion("");
     setStreamError("");
     const attachedFiles = attachments.map(a => ({ fileName: a.fileName, objectPath: a.objectPath }));
-    const payload: AssistantInput = {
+    const payload: AssistantInput & { toolExposure?: AssistantToolExposureMode } = {
       question: q,
       model: availableModel || undefined,
       ...(thinkingLevel !== "auto" ? { thinkingLevel } : {}),
       conversationId: activeConversationId,
       ...(canManageAssistantTools && attachedFiles.length ? { attachments: attachedFiles } : {}),
       ...(disabledTools.length ? { disabledTools } : {}),
+      ...(toolExposure !== "direct" ? { toolExposure } : {}),
     };
     void runAssistantStream(payload, requestIdentity);
   };
@@ -9760,6 +9769,8 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
             onThinkingLevelChange={rememberThinkingLevel}
             disabledTools={disabledTools}
             onDisabledToolsChange={rememberDisabledTools}
+            toolExposure={toolExposure}
+            onToolExposureChange={rememberToolExposure}
             dynamicTools={dynamicAssistantTools}
             dynamicToolsError={dynamicAssistantToolsError}
             onshapeConnected={assistantScopeReady && onshapeConnected}

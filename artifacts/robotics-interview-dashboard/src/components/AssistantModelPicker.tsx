@@ -15,10 +15,13 @@ import {
   ALL_ASSISTANT_TOOL_NAMES,
   ASSISTANT_TOOL_GROUPS,
   WRITE_TOOL_NAMES,
+  type AssistantToolExposureMode,
   type AssistantToolItem,
   loadDisabledTools,
+  loadToolExposure,
   normalizeDisabledTools,
   saveDisabledTools,
+  saveToolExposure,
 } from "./assistantTools";
 
 export type AssistantModelOption = {
@@ -87,6 +90,8 @@ type AssistantModelPickerProps = {
   onThinkingLevelChange?: (level: AssistantThinkingLevel) => void;
   disabledTools?: string[];
   onDisabledToolsChange?: (tools: string[]) => void;
+  toolExposure?: AssistantToolExposureMode;
+  onToolExposureChange?: (mode: AssistantToolExposureMode) => void;
   dynamicTools?: AssistantToolItem[];
   dynamicToolsError?: string;
   onshapeConnected?: boolean;
@@ -141,6 +146,8 @@ export function AssistantModelPicker({
   onThinkingLevelChange,
   disabledTools: controlledDisabled,
   onDisabledToolsChange,
+  toolExposure: controlledExposure,
+  onToolExposureChange,
   dynamicTools = [],
   dynamicToolsError = "",
   onshapeConnected = false,
@@ -209,6 +216,8 @@ export function AssistantModelPicker({
     return `Default: ${policy.defaultModel} · ${policy.locked ? "Locked" : "Unlocked"} · ${restriction}`;
   };
   const [internalDisabled, setInternalDisabled] = useState<string[]>(() => loadDisabledTools());
+  const [internalExposure, setInternalExposure] = useState<AssistantToolExposureMode>(() => loadToolExposure());
+  const toolExposure = controlledExposure ?? internalExposure;
   const [toolsOpen, setToolsOpen] = useState(false);
   const [skillsExpanded, setSkillsExpanded] = useState(false);
   const disabledTools = useMemo(
@@ -237,6 +246,14 @@ export function AssistantModelPicker({
     else {
       setInternalDisabled(normalized);
       saveDisabledTools(normalized);
+    }
+  };
+
+  const updateExposure = (mode: AssistantToolExposureMode) => {
+    if (onToolExposureChange) onToolExposureChange(mode);
+    else {
+      setInternalExposure(mode);
+      saveToolExposure(mode);
     }
   };
 
@@ -395,6 +412,40 @@ export function AssistantModelPicker({
                   <AlarmClock size={16} aria-hidden="true" />
                   <span>Manage recurring tasks</span>
                 </Link>
+              </section>
+            )}
+            {canManageAssistantTools && (
+              <section className="assistant-tool-exposure" aria-label="Tool exposure" data-testid="assistant-tool-exposure">
+                <div className="assistant-onshape-setting-copy">
+                  <p className="assistant-onshape-setting-title">Tool exposure <span className="assistant-tool-exposure-beta">beta</span></p>
+                  <p className="assistant-onshape-setting-status">
+                    {toolExposure === "execute"
+                      ? "Scripted: the assistant only sees execute_workspace_tools and calls every workspace tool through scripts."
+                      : "Direct: every workspace tool except execute_workspace_tools is exposed to the assistant."}
+                  </p>
+                </div>
+                <div className="assistant-tool-exposure-toggle" role="radiogroup" aria-label="Tool exposure mode">
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={toolExposure === "direct"}
+                    className={toolExposure === "direct" ? "assistant-tool-exposure-option active" : "assistant-tool-exposure-option"}
+                    onClick={() => updateExposure("direct")}
+                    data-testid="assistant-tool-exposure-direct"
+                  >
+                    Direct
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={toolExposure === "execute"}
+                    className={toolExposure === "execute" ? "assistant-tool-exposure-option active" : "assistant-tool-exposure-option"}
+                    onClick={() => updateExposure("execute")}
+                    data-testid="assistant-tool-exposure-execute"
+                  >
+                    Scripted (beta)
+                  </button>
+                </div>
               </section>
             )}
             {canManageAssistantPolicy && <section className="assistant-model-policy" aria-label="Team model policy" data-testid="assistant-model-policy">

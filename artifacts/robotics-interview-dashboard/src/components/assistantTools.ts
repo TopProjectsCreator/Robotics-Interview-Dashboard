@@ -130,6 +130,7 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
       { name: "read_custom_workspace_file", label: "Read custom app file", hint: "Inspect draft source", write: false },
       { name: "create_custom_workspace_file", label: "Create custom app file", hint: "Add draft source", write: true },
       { name: "write_custom_workspace_file", label: "Edit custom app file", hint: "Replace draft source", write: true },
+      { name: "execute_workspace_tools", label: "Script tool batch", hint: "Run tools via script (beta)", write: true },
       { name: "list_code_project_files", label: "List code files", hint: "Find project sources", write: false },
       { name: "read_code_file", label: "Read code file", hint: "Inspect project source", write: false },
       { name: "create_code_file", label: "Create code file", hint: "Add project source", write: true },
@@ -193,6 +194,26 @@ export function loadDisabledTools(): string[] {
 export function saveDisabledTools(tools: string[]): void {
   try {
     window.localStorage.setItem(ASSISTANT_TOOLS_STORAGE_KEY, JSON.stringify(normalizeDisabledTools(tools)));
+  } catch {
+    // Storage can be unavailable in private browsing.
+  }
+}
+
+export type AssistantToolExposureMode = "direct" | "execute";
+
+export const ASSISTANT_TOOL_EXPOSURE_STORAGE_KEY = "robotics-assistant-tool-exposure";
+
+export function loadToolExposure(): AssistantToolExposureMode {
+  try {
+    return window.localStorage.getItem(ASSISTANT_TOOL_EXPOSURE_STORAGE_KEY) === "execute" ? "execute" : "direct";
+  } catch {
+    return "direct";
+  }
+}
+
+export function saveToolExposure(mode: AssistantToolExposureMode): void {
+  try {
+    window.localStorage.setItem(ASSISTANT_TOOL_EXPOSURE_STORAGE_KEY, mode);
   } catch {
     // Storage can be unavailable in private browsing.
   }

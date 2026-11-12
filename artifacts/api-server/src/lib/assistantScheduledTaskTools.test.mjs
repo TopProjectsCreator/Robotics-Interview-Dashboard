@@ -111,7 +111,7 @@ const pool = {
   },
 };
 
-mock.module("@workspace/db", { namedExports: { DEFAULT_TEAM_ID: "default", pool } });
+mock.module("@workspace/db", { namedExports: { DEFAULT_TEAM_ID: "default", pool, runWithInstance: (_instance, fn) => fn() } });
 mock.module("@workspace/integrations-openai-ai-server", { namedExports: { openai: {} } });
 mock.module("./codeCollaboration", { namedExports: { applyCodeFileContent: async () => {} } });
 mock.module("./realtime", { namedExports: { pushRealtimeHint: () => {} } });

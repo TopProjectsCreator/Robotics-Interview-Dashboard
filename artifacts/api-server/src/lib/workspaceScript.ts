@@ -49,7 +49,7 @@ function parseToolContent(content: string): unknown {
 export async function runWorkspaceScript(
   code: string,
   toolRunner: ScriptToolRunner,
-  catalog: { name: string; description: string }[],
+  catalog: { name: string; description: string; parameters?: unknown }[],
 ): Promise<ScriptRunResult> {
   const trimmed = String(code ?? "").trim();
   if (!trimmed) throw new Error("Script is empty.");
@@ -73,10 +73,14 @@ export async function runWorkspaceScript(
       return parseToolContent(result.content);
     };
   }
-  tools.catalog = () => catalog.map((entry) => entry.name);
+  const visibleCatalog = catalog.filter((entry) => entry.name !== "execute_workspace_tools");
+  tools.catalog = () => visibleCatalog.map((entry) => entry.name);
   tools.help = (toolName: string) => {
-    const found = catalog.find((entry) => entry.name === toolName);
-    return found ? `${found.name}: ${found.description}` : `Unknown tool: ${String(toolName)}`;
+    if (toolName === "execute_workspace_tools") return "execute_workspace_tools: Cannot be called recursively from a script.";
+    const found = visibleCatalog.find((entry) => entry.name === toolName);
+    if (!found) return `Unknown tool: ${String(toolName)}`;
+    const schema = found.parameters ? `\nArguments: ${JSON.stringify(found.parameters).slice(0, 1200)}` : "";
+    return `${found.name}: ${found.description}${schema}`;
   };
 
   const sandbox: Record<string, unknown> = {

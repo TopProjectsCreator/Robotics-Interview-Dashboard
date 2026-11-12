@@ -556,7 +556,7 @@ export async function runAssistantCustomWorkspaceTool(
       enabled: true,
       intent: standard.write ? "write" : "read",
       inputSchema: standardSchema,
-      operation,
+      operation: operation as WorkspaceToolDeclaration["operation"],
       ...(["get", "update", "delete"].includes(operation) ? { recordIdArgument: "recordId" } : {}),
       ...(["create", "update"].includes(operation) ? { fields: { record: "__whole_record__" } } : {}),
     };
