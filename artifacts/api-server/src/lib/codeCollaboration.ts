@@ -314,12 +314,13 @@ export function setupCodeCollaboration(server: Server): void {
           const permissions = await permissionsForAccount(who);
           let allowed = hasPermission(permissions, "code.view");
           let canEdit = hasPermission(permissions, "code.edit");
-          if (!allowed) {
+          if (!allowed || !canEdit) {
             // Settings → Workspace access is an explicit per-person grant to
             // open Code; it also covers editing, like the HTTP routes.
             const visibility = await readWorkspaceVisibility(who.teamId);
-            allowed = userCanSeeWorkspace(visibility, who.id, who.role, "code");
-            canEdit = canEdit || allowed;
+            const codeVisible = userCanSeeWorkspace(visibility, who.id, who.role, "code");
+            allowed = allowed || codeVisible;
+            canEdit = canEdit || codeVisible;
           }
           if (!allowed) {
             client.close(4403, "forbidden");

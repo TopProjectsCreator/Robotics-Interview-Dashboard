@@ -157,7 +157,6 @@ const WORKSPACE_PERMISSION_FALLBACK: Partial<Record<PermissionId, WorkspaceKey>>
   "dashboard.view": "interview",
   "chat.view": "chat",
   "chat.send": "chat",
-  "chat.moderate": "chat",
   "parts.view": "parts",
   "parts.edit": "parts",
   "cad.view": "cad",
