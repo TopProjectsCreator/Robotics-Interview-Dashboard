@@ -74,7 +74,6 @@ export type PartsVendorGroup = typeof PartsVendorGroup[keyof typeof PartsVendorG
 export const PartsVendorGroup = {
   General_Parts: 'General Parts',
   Specific_Parts: 'Specific Parts',
-  Machining_Companies: 'Machining Companies',
 } as const;
 
 export type PartsVendorCatalogMode = typeof PartsVendorCatalogMode[keyof typeof PartsVendorCatalogMode];
@@ -82,7 +81,6 @@ export type PartsVendorCatalogMode = typeof PartsVendorCatalogMode[keyof typeof 
 
 export const PartsVendorCatalogMode = {
   products: 'products',
-  custom_fabrication: 'custom_fabrication',
 } as const;
 
 /**
@@ -94,8 +92,6 @@ export type PartsVendorCoverageState = typeof PartsVendorCoverageState[keyof typ
 export const PartsVendorCoverageState = {
   feed_sync_required: 'feed_sync_required',
   discovery_only: 'discovery_only',
-  access_restricted: 'access_restricted',
-  custom_fabrication: 'custom_fabrication',
 } as const;
 
 export type PartsVendorSyncStateStatus = typeof PartsVendorSyncStateStatus[keyof typeof PartsVendorSyncStateStatus];
@@ -317,6 +313,12 @@ export interface PartsCatalogItem {
      * @pattern ^[A-Z]{3}$
      */
   supplierPriceCurrency: string | null;
+  /**
+     * Supplier-published purchase availability of the sellable variant. Populated from the vendor's machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.
+     * @nullable
+     * @pattern ^(in_stock|backorder|preorder|out_of_stock|discontinued)$
+     */
+  stockStatus?: string | null;
   /**
      * @maxLength 120
      * @nullable
@@ -2222,6 +2224,69 @@ export interface ChatProductivityBreakdown {
      * @maximum 10
      */
   focusDiscipline: number;
+}
+
+export interface ChatProductivityHistoryPoint {
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  score: number;
+  summary: string;
+  breakdown: ChatProductivityBreakdown;
+  /** @nullable */
+  periodStart: string | null;
+  /** @nullable */
+  periodEnd: string | null;
+  createdAt: string;
+}
+
+export interface ChatProductivityHistoryDay {
+  /**
+     * Local calendar day (or UTC when no timezone offset was provided), YYYY-MM-DD
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  date: string;
+  /**
+     * Mean score across the day's retained reviews, rounded to one decimal
+     * @minimum 0
+     * @maximum 10
+     */
+  averageScore: number;
+  /**
+     * @minimum 0
+     * @maximum 10
+     */
+  maxScore: number;
+  /** @minimum 1 */
+  reviewCount: number;
+}
+
+export type ChatProductivityHistoryRange = typeof ChatProductivityHistoryRange[keyof typeof ChatProductivityHistoryRange];
+
+
+export const ChatProductivityHistoryRange = {
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
+} as const;
+
+export interface ChatProductivityHistory {
+  range: ChatProductivityHistoryRange;
+  /**
+     * Every retained review in the range, including ones not included in `points` when truncated
+     * @minimum 0
+     */
+  reviewCount: number;
+  /** True when the range held more than 1500 reviews; `points` then contains only the newest 1500. `daily` always covers the whole range. */
+  truncated: boolean;
+  /**
+     * Retained reviews, ascending by creation time
+     * @maxItems 1500
+     */
+  points: ChatProductivityHistoryPoint[];
+  /** Per-day averages for every retained review in the range, ascending by date */
+  daily: ChatProductivityHistoryDay[];
 }
 
 export interface ChatProductivitySnapshot {
@@ -4726,6 +4791,38 @@ export type GetChatProductivityScope = typeof GetChatProductivityScope[keyof typ
 export const GetChatProductivityScope = {
   shared: 'shared',
   channel: 'channel',
+} as const;
+
+export type GetChatProductivityHistoryParams = {
+scope?: GetChatProductivityHistoryScope;
+/**
+ * Invite-only channel id; the caller must be a member or have chat management permission.
+ */
+channelId?: string;
+range?: GetChatProductivityHistoryRange;
+/**
+ * Browser timezone offset in minutes (`Date.getTimezoneOffset()`). Used to bucket reviews into local calendar days; defaults to UTC.
+ * @minimum -840
+ * @maximum 840
+ */
+tzOffsetMinutes?: number;
+};
+
+export type GetChatProductivityHistoryScope = typeof GetChatProductivityHistoryScope[keyof typeof GetChatProductivityHistoryScope];
+
+
+export const GetChatProductivityHistoryScope = {
+  shared: 'shared',
+  channel: 'channel',
+} as const;
+
+export type GetChatProductivityHistoryRange = typeof GetChatProductivityHistoryRange[keyof typeof GetChatProductivityHistoryRange];
+
+
+export const GetChatProductivityHistoryRange = {
+  '7d': '7d',
+  '30d': '30d',
+  '90d': '90d',
 } as const;
 
 export type GetChatNotificationEventsParams = {

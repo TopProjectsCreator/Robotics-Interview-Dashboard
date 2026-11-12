@@ -950,7 +950,7 @@ describe("progressive Parts search", () => {
     startSearch();
 
     const saveButton = await screen.findByRole("button", { name: "Add to Stockroom" });
-    expect(screen.getByText("Searching across 19 suppliers…")).toBeInTheDocument();
+    expect(screen.getByText("Searching across 14 suppliers…")).toBeInTheDocument();
     expect(screen.queryByText(/Search complete/)).not.toBeInTheDocument();
 
     fireEvent.click(saveButton);

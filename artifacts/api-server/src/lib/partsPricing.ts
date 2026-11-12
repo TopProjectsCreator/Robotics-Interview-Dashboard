@@ -6,6 +6,22 @@ export type PriceQuery = (
 ) => Promise<PriceQueryResult>;
 
 /**
+ * Reads a price string from a Shopify products.json variant. Prices on the
+ * feed are major-unit decimal strings ("399.99"), unlike the UCP API, which
+ * uses integer minor units — do not scale these. Returns the value unchanged
+ * when it matches the catalog's stored numeric shape; anything else is
+ * dropped rather than guessed so a malformed price can never reach SQL.
+ */
+export function shopifyFeedVariantPrice(value: unknown): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const text = String(value).trim();
+  if (!/^\d{1,9}(\.\d{1,4})?$/.test(text)) return null;
+  const numeric = Number(text);
+  // Matches the parts_catalog_items supplier_price check (<= 99,999,999.99).
+  return Number.isFinite(numeric) && numeric <= 99_999_999.99 ? text : null;
+}
+
+/**
  * Reads only an explicit goBILDA FTC price label and its adjacent amount.
  * It deliberately does not derive a percentage from the regular price.
  */

@@ -29,6 +29,7 @@ export const partsCatalogItemsTable = pgTable(
     supplierPrice: numeric("supplier_price", { precision: 10, scale: 2 }),
     ftcTeamPrice: numeric("ftc_team_price", { precision: 10, scale: 2 }),
     supplierPriceCurrency: text("supplier_price_currency"),
+    stockStatus: text("stock_status"),
     unitCost: numeric("unit_cost", { precision: 10, scale: 2 }),
     costCurrency: text("cost_currency"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

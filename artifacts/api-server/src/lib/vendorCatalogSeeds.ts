@@ -20,6 +20,7 @@ import { STUDICA_CATALOG_SEED } from "./studicaCatalogSeed";
 import { AXON_ROBOTICS_CATALOG_SEED } from "./axonRoboticsCatalogSeed";
 import { BWTLINK_CATALOG_SEED } from "./bwtlinkCatalogSeed";
 import { OFFSET_ROBOTICS_CATALOG_SEED } from "./offsetRoboticsCatalogSeed";
+import { PLATYPUS_ROBOTICS_CATALOG_SEED } from "./platypusRoboticsCatalogSeed";
 
 export type VendorCatalogSeedRecord = {
   vendorKey: string;
@@ -99,6 +100,17 @@ export const VENDOR_CATALOG_SEEDS: ReadonlyMap<string, VendorCatalogSeed> = new 
       coverage: "complete",
       coverageDetail:
         "all 4 catalogs / 12 site-nav collections walked (52 unique products)",
+    },
+  ],
+  [
+    "platypus-robotics",
+    {
+      records: PLATYPUS_ROBOTICS_CATALOG_SEED,
+      source: "https://www.platypus-robotics.org/store-products-sitemap.xml",
+      provenance: "Platypus Robotics store catalog, Nov 2026 polite scrape",
+      coverage: "complete",
+      coverageDetail:
+        "product sitemap enumerated (274 product URLs, matching the storefront's own 274-product count) and all 274 product pages collected via schema.org JSON-LD",
     },
   ],
 ]);

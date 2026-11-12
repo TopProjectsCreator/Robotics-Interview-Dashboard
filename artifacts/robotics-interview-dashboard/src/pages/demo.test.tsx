@@ -118,7 +118,7 @@ describe("public robotics workspace demo", () => {
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     expect(await screen.findByText("JST-PH 3-pin Cable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add to draft" }));
-    expect(screen.getByText("JST-PH 3-pin Cable added to the draft order. No purchase has been placed.")).toBeInTheDocument();
+    expect(await screen.findByText("JST-PH 3-pin Cable added to the draft order. No purchase has been placed.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Stockroom" }));
     fireEvent.click(screen.getByRole("button", { name: "Open details for Strafer Chassis 96mm Wheel" }));
     const inventoryDetails = await screen.findByRole("dialog");

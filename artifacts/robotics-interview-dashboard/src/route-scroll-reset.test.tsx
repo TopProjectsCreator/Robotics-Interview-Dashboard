@@ -53,7 +53,7 @@ describe("route scroll reset", () => {
     render(<App />);
     Object.defineProperty(window, "scrollY", { configurable: true, value: 900 });
 
-    fireEvent.click(screen.getByTestId("link-hero-capabilities"));
+    fireEvent.click(screen.getByRole("link", { name: "Capabilities" }));
 
     await waitFor(() => expect(window.location.hash).toBe("#capabilities"));
     expect(scrollTo).not.toHaveBeenCalled();

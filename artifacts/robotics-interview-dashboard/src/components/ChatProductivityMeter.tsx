@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Activity, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";
+import { Activity, History, LoaderCircle, PauseCircle, PlayCircle } from "lucide-react";
 import {
   getGetChatProductivityQueryKey,
   useGetChatProductivity,
@@ -15,6 +15,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
+// Kept out of the initial bundle: recharts is the app's heaviest dependency and
+// history charts are only needed once the user opens that tab.
+const ProductivityHistoryPanel = lazy(() => import("./ProductivityHistoryPanel"));
 
 type Props = {
   scope: "shared" | "channel";
@@ -89,6 +93,7 @@ function formatStartedAt(value: string): string {
 export function ChatProductivityMeter({ scope, channelId }: Props) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"latest" | "history">("latest");
   const [acknowledged, setAcknowledged] = useState(false);
   const queryParams = {
     scope,
@@ -177,6 +182,7 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
         if (!next) {
           setAcknowledged(false);
           setSelectedRange("");
+          setTab("latest");
           rangeReview.reset();
           updateSettings.reset();
         }
@@ -202,6 +208,31 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
             </p>
           ) : (
             <>
+              <div className="mb-3 flex rounded-lg border border-[#d5e0e0] p-0.5 dark:border-[#355663]" role="tablist" aria-label="Productivity views">
+                {([
+                  ["latest", "Latest review", Activity],
+                  ["history", "History", History],
+                ] as const).map(([value, label, Icon]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === value}
+                    onClick={() => setTab(value)}
+                    data-testid={`tab-productivity-${value}`}
+                    className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                      tab === value
+                        ? "bg-white text-[#12737d] shadow-sm dark:bg-[#172b38] dark:text-[#8fd7e0]"
+                        : "text-[#667b82] hover:text-[#16869a] dark:text-[#a9bbc2]"
+                    }`}
+                  >
+                    <Icon size={13} aria-hidden="true" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {tab === "latest" && (
+              <>
               <section className="rounded-lg border border-[#e0e8e7] p-3 dark:border-[#355663]">
                 <label htmlFor="select-chat-productivity-range" className="flex flex-wrap items-center gap-2 text-sm font-semibold">
                   <span>View time range</span>
@@ -330,7 +361,7 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
               )}
 
               <section className="rounded-lg bg-[#f5f8f7] p-3 text-xs leading-5 text-[#52666e] dark:bg-[#172b38] dark:text-[#c2d0d6]">
-                Automatic reviews score the last 30 minutes every 30 minutes. A selected range runs a one-time review; only messages inside that range affect its score, and older messages are context only. The selected message text may contain personal details and is sent to the configured AI provider. Direct messages, sender labels, attachments, reactions, and polls are excluded. On-demand results are not retained; only the latest automatic result is stored.
+                Automatic reviews score the last 30 minutes every 30 minutes. A selected range runs a one-time review; only messages inside that range affect its score, and older messages are context only. The selected message text may contain personal details and is sent to the configured AI provider. Direct messages, sender labels, attachments, reactions, and polls are excluded. Automatic reviews are retained and charted under the History tab; one-time range assessments are not stored.
               </section>
 
               {status?.canManage && (
@@ -375,6 +406,21 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
                     </button>
                   )}
                 </div>
+              )}
+              </>
+              )}
+              {tab === "history" && (
+                <Suspense fallback={(
+                  <div className="flex items-center gap-2 py-10 text-sm text-[#667b82] dark:text-[#a9bbc2]" data-testid="status-productivity-history-loading">
+                    <LoaderCircle size={16} className="animate-spin" /> Loading the productivity history…
+                  </div>
+                )}>
+                  <ProductivityHistoryPanel
+                    key={scope === "channel" ? `channel:${channelId ?? "unknown"}` : "shared"}
+                    scope={scope}
+                    channelId={channelId}
+                  />
+                </Suspense>
               )}
             </>
           )}

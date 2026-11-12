@@ -2,6 +2,11 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 import path from "node:path";
 
+// The surrounding shell may export NODE_ENV=production, which loads the
+// production react-dom build and breaks @testing-library/react's act().
+// Tests must always resolve the development/test builds.
+process.env.NODE_ENV = "test";
+
 export default defineConfig({
   plugins: [react()],
   resolve: {

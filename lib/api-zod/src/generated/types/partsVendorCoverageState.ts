@@ -15,6 +15,4 @@ export type PartsVendorCoverageState = typeof PartsVendorCoverageState[keyof typ
 export const PartsVendorCoverageState = {
   feed_sync_required: 'feed_sync_required',
   discovery_only: 'discovery_only',
-  access_restricted: 'access_restricted',
-  custom_fabrication: 'custom_fabrication',
 } as const;

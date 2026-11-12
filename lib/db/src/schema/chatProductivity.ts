@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { boolean, index, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 export type ChatProductivityAssessment =
@@ -50,8 +50,10 @@ export const chatProductivitySnapshotsTable = pgTable("chat_productivity_snapsho
   modelId: text("model_id").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex("chat_productivity_snapshots_conversation_unique")
-    .on(table.teamId, table.conversationScope, table.conversationKey),
+  // Snapshots accumulate as retained history; the conversation-ordered
+  // composite index backs the productivity history endpoint.
+  index("chat_productivity_snapshots_conversation_created_idx")
+    .on(table.teamId, table.conversationScope, table.conversationKey, table.createdAt),
   index("chat_productivity_snapshots_team_created_idx").on(table.teamId, table.createdAt),
 ]);
 

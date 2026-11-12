@@ -428,8 +428,11 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
        "model_id" text not null,
        "created_at" timestamptz not null default now()
      )`,
-    `create unique index if not exists "chat_productivity_snapshots_conversation_unique"
-       on "chat_productivity_snapshots" ("team_id", "conversation_scope", "conversation_key")`,
+    // Snapshots now accumulate as retained history (charted in the productivity
+    // dialog), so the old "latest per conversation" unique index is dropped.
+    `drop index if exists "chat_productivity_snapshots_conversation_unique"`,
+    `create index if not exists "chat_productivity_snapshots_conversation_created_idx"
+       on "chat_productivity_snapshots" ("team_id", "conversation_scope", "conversation_key", "created_at")`,
     `create index if not exists "chat_productivity_snapshots_team_created_idx"
        on "chat_productivity_snapshots" ("team_id", "created_at")`,
     `create table if not exists "team_name_rules" ("team_id" text primary key, "rules" jsonb not null default '[]'::jsonb check (jsonb_typeof("rules") = 'array'), "updated_at" timestamptz not null default now())`,
@@ -538,9 +541,21 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
                and "cost_currency" is not null and "cost_currency" ~ '^[A-Z]{3}$'));
        end if;
      end $parts_cost$`,
+    // Variant-level stock availability, written by supplier feeds that publish
+    // it (e.g. the WestCoast Products UCP catalog API). NULL = supplier did
+    // not say so; teams should treat NULL as unknown, never as in stock.
+    `alter table "parts_catalog_items" add column if not exists "stock_status" text`,
+    `do $parts_stock_status$ begin
+       if not exists (select 1 from pg_constraint where conname = 'parts_catalog_stock_status_valid' and conrelid = 'parts_catalog_items'::regclass) then
+         alter table "parts_catalog_items" add constraint "parts_catalog_stock_status_valid"
+           check ("stock_status" is null
+             or "stock_status" in ('in_stock', 'backorder', 'preorder', 'out_of_stock', 'discontinued'));
+       end if;
+     end $parts_stock_status$`,
     `create unique index if not exists "parts_catalog_vendor_external_key_unique" on "parts_catalog_items" ("vendor_key", "external_key")`,
     `create index if not exists "parts_catalog_vendor_name_idx" on "parts_catalog_items" ("vendor_key", lower("name"))`,
-    `create table if not exists "parts_catalog_sync_state" ("id" text primary key check ("id" = 'global'), "last_attempted_at" timestamptz, "last_completed_at" timestamptz)`,
+    `create table if not exists "parts_catalog_sync_state" ("id" text primary key check ("id" = 'global'), "last_attempted_at" timestamptz, "last_completed_at" timestamptz, "public_origin" text)`,
+    `alter table "parts_catalog_sync_state" add column if not exists "public_origin" text`,
     `insert into "parts_catalog_sync_state" ("id") values ('global') on conflict ("id") do nothing`,
     `create table if not exists "parts_vendor_blocks" (
         "team_id" text not null default 'default',

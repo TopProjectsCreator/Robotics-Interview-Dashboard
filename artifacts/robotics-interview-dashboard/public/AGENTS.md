@@ -58,7 +58,7 @@ made free for every FTC team that wants it.
 
 Sign in with your team's access code and you get a cockpit, not a filing cabinet: a
 realtime chat that can hold files, polls, and @ai; documents, whiteboards, boards and
-spreadsheets collaborators can edit together; a parts bench that searches nineteen
+spreadsheets collaborators can edit together; a parts bench that searches fourteen
 suppliers with live prices; a CAD library that previews STEP, IGES, Parasolid and mesh
 files in the browser; a code workspace that edits FTC Java live and pushes it to a
 REV Hub over USB; and an AI assistant that can see your team's data, act on it, and
@@ -117,7 +117,9 @@ Every workspace and public surface, what it does, and how far it goes.
 - **Admin bulk send:** coordinators can post the same message many times in one
   command — `/multimessage <count> <message>` in the composer. The count is
   admin-chosen and uncapped; everyone else is told admins only, and the server
-  enforces the same role check independently.
+  enforces the same role check independently. Typing `/` in the composer opens a
+  command picker (like Slack/Discord/Google Chat) listing the commands that
+  exist, with keyboard (↑↓ + Enter/Tab) and mouse selection.
 - **Productivity meter:** optional AI review of team/channel conversation into a score,
   breakdown (project progress / planning / focus) and activity assessments —
   admin-toggleable, admin can switch it off any time.
@@ -152,9 +154,10 @@ Every workspace and public surface, what it does, and how far it goes.
   camera-based "Scan part" AI identification (capture → vision model → uncertainty
   shown → nothing saved until you review), one-click details dialogs with price/quote
   history.
-- **Find parts:** streaming supplier search across ~19 vendors — AndyMark, goBILDA,
-  Grainger, REV Robotics, ServoCity, Studica, Swyft, Axon, Melonbotics, BWTLink,
-  Misumi, McMaster-Carr and more — with FTC team-price toggle, FTC catalog syncs,
+- **Find parts:** streaming supplier search across 14 vendors — AndyMark, goBILDA,
+  REV Robotics, ServoCity, Studica, Swyft, WestCoast Products, Platypus Robotics,
+  Ferra, Optii, Offset Robotics, Axon, Melonbotics and BWTLink — with FTC
+  team-price toggle, FTC catalog syncs,
   per-vendor block/unblock, sync-now button, and a coverage panel with per-vendor ETA
   status.
 - **Price history:** supplier price snapshots over time, so the team can see when a

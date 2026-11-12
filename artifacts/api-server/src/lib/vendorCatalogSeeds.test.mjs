@@ -34,6 +34,7 @@ const VENDOR_DOMAINS = {
   "axon-robotics": "axon-robotics.com",
   "bwtlink": "bwtlink.com",
   "offset-robotics": "offsetrobotics.com",
+  "platypus-robotics": "platypus-robotics.org",
 };
 
 function owns(host, domain) {

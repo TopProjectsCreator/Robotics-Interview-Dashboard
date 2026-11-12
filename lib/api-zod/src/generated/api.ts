@@ -1900,6 +1900,75 @@ export const GetChatProductivityResponse = zod.object({
 
 
 /**
+ * Automatic reviews are retained as history. Returns slim review points and per-day averages for the selected range. On-demand range reviews are not stored.
+ * @summary List retained automatic productivity reviews for a conversation
+ */
+export const getChatProductivityHistoryQueryScopeDefault = `shared`;
+export const getChatProductivityHistoryQueryRangeDefault = `30d`;
+export const getChatProductivityHistoryQueryTzOffsetMinutesMin = -840;
+export const getChatProductivityHistoryQueryTzOffsetMinutesMax = 840;
+
+
+
+export const GetChatProductivityHistoryQueryParams = zod.object({
+  "scope": zod.enum(['shared', 'channel']).default(getChatProductivityHistoryQueryScopeDefault),
+  "channelId": zod.coerce.string().optional().describe('Invite-only channel id; the caller must be a member or have chat management permission.'),
+  "range": zod.enum(['7d', '30d', '90d']).default(getChatProductivityHistoryQueryRangeDefault),
+  "tzOffsetMinutes": zod.coerce.number().int().min(getChatProductivityHistoryQueryTzOffsetMinutesMin).max(getChatProductivityHistoryQueryTzOffsetMinutesMax).optional().describe('Browser timezone offset in minutes (`Date.getTimezoneOffset()`). Used to bucket reviews into local calendar days; defaults to UTC.')
+})
+
+export const getChatProductivityHistoryResponseReviewCountMin = 0;
+
+export const getChatProductivityHistoryResponsePointsItemScoreMin = 0;
+export const getChatProductivityHistoryResponsePointsItemScoreMax = 10;
+
+export const getChatProductivityHistoryResponsePointsItemBreakdownProjectProgressMin = 0;
+export const getChatProductivityHistoryResponsePointsItemBreakdownProjectProgressMax = 10;
+
+export const getChatProductivityHistoryResponsePointsItemBreakdownPlanningCoordinationMin = 0;
+export const getChatProductivityHistoryResponsePointsItemBreakdownPlanningCoordinationMax = 10;
+
+export const getChatProductivityHistoryResponsePointsItemBreakdownFocusDisciplineMin = 0;
+export const getChatProductivityHistoryResponsePointsItemBreakdownFocusDisciplineMax = 10;
+
+export const getChatProductivityHistoryResponsePointsMax = 1500;
+
+export const getChatProductivityHistoryResponseDailyItemDateRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
+export const getChatProductivityHistoryResponseDailyItemAverageScoreMin = 0;
+export const getChatProductivityHistoryResponseDailyItemAverageScoreMax = 10;
+
+export const getChatProductivityHistoryResponseDailyItemMaxScoreMin = 0;
+export const getChatProductivityHistoryResponseDailyItemMaxScoreMax = 10;
+
+
+
+
+export const GetChatProductivityHistoryResponse = zod.object({
+  "range": zod.enum(['7d', '30d', '90d']),
+  "reviewCount": zod.number().int().min(getChatProductivityHistoryResponseReviewCountMin).describe('Every retained review in the range, including ones not included in `points` when truncated'),
+  "truncated": zod.boolean().describe('True when the range held more than 1500 reviews; `points` then contains only the newest 1500. `daily` always covers the whole range.'),
+  "points": zod.array(zod.object({
+  "score": zod.number().int().min(getChatProductivityHistoryResponsePointsItemScoreMin).max(getChatProductivityHistoryResponsePointsItemScoreMax),
+  "summary": zod.string(),
+  "breakdown": zod.object({
+  "projectProgress": zod.number().int().min(getChatProductivityHistoryResponsePointsItemBreakdownProjectProgressMin).max(getChatProductivityHistoryResponsePointsItemBreakdownProjectProgressMax),
+  "planningCoordination": zod.number().int().min(getChatProductivityHistoryResponsePointsItemBreakdownPlanningCoordinationMin).max(getChatProductivityHistoryResponsePointsItemBreakdownPlanningCoordinationMax),
+  "focusDiscipline": zod.number().int().min(getChatProductivityHistoryResponsePointsItemBreakdownFocusDisciplineMin).max(getChatProductivityHistoryResponsePointsItemBreakdownFocusDisciplineMax)
+}),
+  "periodStart": zod.coerce.date().nullable(),
+  "periodEnd": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+})).max(getChatProductivityHistoryResponsePointsMax).describe('Retained reviews, ascending by creation time'),
+  "daily": zod.array(zod.object({
+  "date": zod.string().regex(getChatProductivityHistoryResponseDailyItemDateRegExp).describe('Local calendar day (or UTC when no timezone offset was provided), YYYY-MM-DD'),
+  "averageScore": zod.number().min(getChatProductivityHistoryResponseDailyItemAverageScoreMin).max(getChatProductivityHistoryResponseDailyItemAverageScoreMax).describe('Mean score across the day\'s retained reviews, rounded to one decimal'),
+  "maxScore": zod.number().int().min(getChatProductivityHistoryResponseDailyItemMaxScoreMin).max(getChatProductivityHistoryResponseDailyItemMaxScoreMax),
+  "reviewCount": zod.number().int().min(1)
+})).describe('Per-day averages for every retained review in the range, ascending by date')
+})
+
+
+/**
  * @summary Re-assess chat productivity over a selected time range
  */
 export const ReviewChatProductivityRangeBody = zod.object({
@@ -5108,11 +5177,11 @@ export const GetPartsDashboardResponse = zod.object({
   "vendors": zod.array(zod.object({
   "key": zod.string(),
   "name": zod.string(),
-  "group": zod.enum(['General Parts', 'Specific Parts', 'Machining Companies']),
+  "group": zod.enum(['General Parts', 'Specific Parts']),
   "website": zod.string().url(),
-  "catalogMode": zod.enum(['products', 'custom_fabrication']),
+  "catalogMode": zod.enum(['products']),
   "catalogSourceUrl": zod.string().url().describe('Official supplier catalog, product feed, or service source.'),
-  "coverageState": zod.enum(['feed_sync_required', 'discovery_only', 'access_restricted', 'custom_fabrication']).describe('Static source coverage classification; a public feed is complete only after sync verifies its final page.'),
+  "coverageState": zod.enum(['feed_sync_required', 'discovery_only']).describe('Static source coverage classification; a public feed is complete only after sync verifies its final page.'),
   "publicProductFeedUrl": zod.string().url().nullish().describe('Configured supplier-owned public product feed, if available.'),
   "lastSync": zod.union([zod.object({
   "status": zod.enum(['synced', 'search_only', 'unavailable', 'incomplete']),
@@ -5266,6 +5335,7 @@ export const listPartsCatalogResponseItemsItemFtcTeamPriceMin = 0;
 export const listPartsCatalogResponseItemsItemFtcTeamPriceMax = 99999999.99;
 
 export const listPartsCatalogResponseItemsItemSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const listPartsCatalogResponseItemsItemStockStatusRegExp = new RegExp('^(in_stock|backorder|preorder|out_of_stock|discontinued)$');
 export const listPartsCatalogResponseItemsItemStorageLocationMax = 120;
 
 export const listPartsCatalogResponseItemsItemInventoryNotesMax = 2000;
@@ -5298,6 +5368,7 @@ export const ListPartsCatalogResponse = zod.object({
   "supplierPrice": zod.number().min(listPartsCatalogResponseItemsItemSupplierPriceMin).max(listPartsCatalogResponseItemsItemSupplierPriceMax).nullable(),
   "ftcTeamPrice": zod.number().min(listPartsCatalogResponseItemsItemFtcTeamPriceMin).max(listPartsCatalogResponseItemsItemFtcTeamPriceMax).nullable(),
   "supplierPriceCurrency": zod.string().regex(listPartsCatalogResponseItemsItemSupplierPriceCurrencyRegExp).nullable(),
+  "stockStatus": zod.string().regex(listPartsCatalogResponseItemsItemStockStatusRegExp).nullish().describe('Supplier-published purchase availability of the sellable variant. Populated from the vendor\'s machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.'),
   "storageLocation": zod.string().max(listPartsCatalogResponseItemsItemStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(listPartsCatalogResponseItemsItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(listPartsCatalogResponseItemsItemUnitCostMin).max(listPartsCatalogResponseItemsItemUnitCostMax).nullish(),
@@ -5344,6 +5415,7 @@ export const createPartsCatalogItemResponseFtcTeamPriceMin = 0;
 export const createPartsCatalogItemResponseFtcTeamPriceMax = 99999999.99;
 
 export const createPartsCatalogItemResponseSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const createPartsCatalogItemResponseStockStatusRegExp = new RegExp('^(in_stock|backorder|preorder|out_of_stock|discontinued)$');
 export const createPartsCatalogItemResponseStorageLocationMax = 120;
 
 export const createPartsCatalogItemResponseInventoryNotesMax = 2000;
@@ -5375,6 +5447,7 @@ export const CreatePartsCatalogItemResponse = zod.object({
   "supplierPrice": zod.number().min(createPartsCatalogItemResponseSupplierPriceMin).max(createPartsCatalogItemResponseSupplierPriceMax).nullable(),
   "ftcTeamPrice": zod.number().min(createPartsCatalogItemResponseFtcTeamPriceMin).max(createPartsCatalogItemResponseFtcTeamPriceMax).nullable(),
   "supplierPriceCurrency": zod.string().regex(createPartsCatalogItemResponseSupplierPriceCurrencyRegExp).nullable(),
+  "stockStatus": zod.string().regex(createPartsCatalogItemResponseStockStatusRegExp).nullish().describe('Supplier-published purchase availability of the sellable variant. Populated from the vendor\'s machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.'),
   "storageLocation": zod.string().max(createPartsCatalogItemResponseStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(createPartsCatalogItemResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(createPartsCatalogItemResponseUnitCostMin).max(createPartsCatalogItemResponseUnitCostMax).nullish(),
@@ -5460,6 +5533,7 @@ export const searchPartsCatalogResponseCatalogItemsItemFtcTeamPriceMin = 0;
 export const searchPartsCatalogResponseCatalogItemsItemFtcTeamPriceMax = 99999999.99;
 
 export const searchPartsCatalogResponseCatalogItemsItemSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const searchPartsCatalogResponseCatalogItemsItemStockStatusRegExp = new RegExp('^(in_stock|backorder|preorder|out_of_stock|discontinued)$');
 export const searchPartsCatalogResponseCatalogItemsItemStorageLocationMax = 120;
 
 export const searchPartsCatalogResponseCatalogItemsItemInventoryNotesMax = 2000;
@@ -5507,6 +5581,7 @@ export const SearchPartsCatalogResponse = zod.object({
   "supplierPrice": zod.number().min(searchPartsCatalogResponseCatalogItemsItemSupplierPriceMin).max(searchPartsCatalogResponseCatalogItemsItemSupplierPriceMax).nullable(),
   "ftcTeamPrice": zod.number().min(searchPartsCatalogResponseCatalogItemsItemFtcTeamPriceMin).max(searchPartsCatalogResponseCatalogItemsItemFtcTeamPriceMax).nullable(),
   "supplierPriceCurrency": zod.string().regex(searchPartsCatalogResponseCatalogItemsItemSupplierPriceCurrencyRegExp).nullable(),
+  "stockStatus": zod.string().regex(searchPartsCatalogResponseCatalogItemsItemStockStatusRegExp).nullish().describe('Supplier-published purchase availability of the sellable variant. Populated from the vendor\'s machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.'),
   "storageLocation": zod.string().max(searchPartsCatalogResponseCatalogItemsItemStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(searchPartsCatalogResponseCatalogItemsItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(searchPartsCatalogResponseCatalogItemsItemUnitCostMin).max(searchPartsCatalogResponseCatalogItemsItemUnitCostMax).nullish(),
@@ -5635,6 +5710,7 @@ export const updatePartsCatalogStockResponseFtcTeamPriceMin = 0;
 export const updatePartsCatalogStockResponseFtcTeamPriceMax = 99999999.99;
 
 export const updatePartsCatalogStockResponseSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const updatePartsCatalogStockResponseStockStatusRegExp = new RegExp('^(in_stock|backorder|preorder|out_of_stock|discontinued)$');
 export const updatePartsCatalogStockResponseStorageLocationMax = 120;
 
 export const updatePartsCatalogStockResponseInventoryNotesMax = 2000;
@@ -5666,6 +5742,7 @@ export const UpdatePartsCatalogStockResponse = zod.object({
   "supplierPrice": zod.number().min(updatePartsCatalogStockResponseSupplierPriceMin).max(updatePartsCatalogStockResponseSupplierPriceMax).nullable(),
   "ftcTeamPrice": zod.number().min(updatePartsCatalogStockResponseFtcTeamPriceMin).max(updatePartsCatalogStockResponseFtcTeamPriceMax).nullable(),
   "supplierPriceCurrency": zod.string().regex(updatePartsCatalogStockResponseSupplierPriceCurrencyRegExp).nullable(),
+  "stockStatus": zod.string().regex(updatePartsCatalogStockResponseStockStatusRegExp).nullish().describe('Supplier-published purchase availability of the sellable variant. Populated from the vendor\'s machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.'),
   "storageLocation": zod.string().max(updatePartsCatalogStockResponseStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(updatePartsCatalogStockResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(updatePartsCatalogStockResponseUnitCostMin).max(updatePartsCatalogStockResponseUnitCostMax).nullish(),
@@ -5702,6 +5779,7 @@ export const getPartsCatalogDetailsResponseItemFtcTeamPriceMin = 0;
 export const getPartsCatalogDetailsResponseItemFtcTeamPriceMax = 99999999.99;
 
 export const getPartsCatalogDetailsResponseItemSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const getPartsCatalogDetailsResponseItemStockStatusRegExp = new RegExp('^(in_stock|backorder|preorder|out_of_stock|discontinued)$');
 export const getPartsCatalogDetailsResponseItemStorageLocationMax = 120;
 
 export const getPartsCatalogDetailsResponseItemInventoryNotesMax = 2000;
@@ -5740,6 +5818,7 @@ export const GetPartsCatalogDetailsResponse = zod.object({
   "supplierPrice": zod.number().min(getPartsCatalogDetailsResponseItemSupplierPriceMin).max(getPartsCatalogDetailsResponseItemSupplierPriceMax).nullable(),
   "ftcTeamPrice": zod.number().min(getPartsCatalogDetailsResponseItemFtcTeamPriceMin).max(getPartsCatalogDetailsResponseItemFtcTeamPriceMax).nullable(),
   "supplierPriceCurrency": zod.string().regex(getPartsCatalogDetailsResponseItemSupplierPriceCurrencyRegExp).nullable(),
+  "stockStatus": zod.string().regex(getPartsCatalogDetailsResponseItemStockStatusRegExp).nullish().describe('Supplier-published purchase availability of the sellable variant. Populated from the vendor\'s machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.'),
   "storageLocation": zod.string().max(getPartsCatalogDetailsResponseItemStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(getPartsCatalogDetailsResponseItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(getPartsCatalogDetailsResponseItemUnitCostMin).max(getPartsCatalogDetailsResponseItemUnitCostMax).nullish(),
@@ -5810,6 +5889,7 @@ export const updatePartsCatalogDetailsResponseItemFtcTeamPriceMin = 0;
 export const updatePartsCatalogDetailsResponseItemFtcTeamPriceMax = 99999999.99;
 
 export const updatePartsCatalogDetailsResponseItemSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const updatePartsCatalogDetailsResponseItemStockStatusRegExp = new RegExp('^(in_stock|backorder|preorder|out_of_stock|discontinued)$');
 export const updatePartsCatalogDetailsResponseItemStorageLocationMax = 120;
 
 export const updatePartsCatalogDetailsResponseItemInventoryNotesMax = 2000;
@@ -5848,6 +5928,7 @@ export const UpdatePartsCatalogDetailsResponse = zod.object({
   "supplierPrice": zod.number().min(updatePartsCatalogDetailsResponseItemSupplierPriceMin).max(updatePartsCatalogDetailsResponseItemSupplierPriceMax).nullable(),
   "ftcTeamPrice": zod.number().min(updatePartsCatalogDetailsResponseItemFtcTeamPriceMin).max(updatePartsCatalogDetailsResponseItemFtcTeamPriceMax).nullable(),
   "supplierPriceCurrency": zod.string().regex(updatePartsCatalogDetailsResponseItemSupplierPriceCurrencyRegExp).nullable(),
+  "stockStatus": zod.string().regex(updatePartsCatalogDetailsResponseItemStockStatusRegExp).nullish().describe('Supplier-published purchase availability of the sellable variant. Populated from the vendor\'s machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.'),
   "storageLocation": zod.string().max(updatePartsCatalogDetailsResponseItemStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(updatePartsCatalogDetailsResponseItemInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(updatePartsCatalogDetailsResponseItemUnitCostMin).max(updatePartsCatalogDetailsResponseItemUnitCostMax).nullish(),
@@ -6112,6 +6193,7 @@ export const updatePartsCatalogCostResponseFtcTeamPriceMin = 0;
 export const updatePartsCatalogCostResponseFtcTeamPriceMax = 99999999.99;
 
 export const updatePartsCatalogCostResponseSupplierPriceCurrencyRegExp = new RegExp('^[A-Z]{3}$');
+export const updatePartsCatalogCostResponseStockStatusRegExp = new RegExp('^(in_stock|backorder|preorder|out_of_stock|discontinued)$');
 export const updatePartsCatalogCostResponseStorageLocationMax = 120;
 
 export const updatePartsCatalogCostResponseInventoryNotesMax = 2000;
@@ -6143,6 +6225,7 @@ export const UpdatePartsCatalogCostResponse = zod.object({
   "supplierPrice": zod.number().min(updatePartsCatalogCostResponseSupplierPriceMin).max(updatePartsCatalogCostResponseSupplierPriceMax).nullable(),
   "ftcTeamPrice": zod.number().min(updatePartsCatalogCostResponseFtcTeamPriceMin).max(updatePartsCatalogCostResponseFtcTeamPriceMax).nullable(),
   "supplierPriceCurrency": zod.string().regex(updatePartsCatalogCostResponseSupplierPriceCurrencyRegExp).nullable(),
+  "stockStatus": zod.string().regex(updatePartsCatalogCostResponseStockStatusRegExp).nullish().describe('Supplier-published purchase availability of the sellable variant. Populated from the vendor\'s machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.'),
   "storageLocation": zod.string().max(updatePartsCatalogCostResponseStorageLocationMax).nullable(),
   "inventoryNotes": zod.string().max(updatePartsCatalogCostResponseInventoryNotesMax).nullable(),
   "unitCost": zod.number().min(updatePartsCatalogCostResponseUnitCostMin).max(updatePartsCatalogCostResponseUnitCostMax).nullish(),

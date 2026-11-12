@@ -12,5 +12,4 @@ export type PartsVendorGroup = typeof PartsVendorGroup[keyof typeof PartsVendorG
 export const PartsVendorGroup = {
   General_Parts: 'General Parts',
   Specific_Parts: 'Specific Parts',
-  Machining_Companies: 'Machining Companies',
 } as const;

@@ -70,6 +70,7 @@ import {
   isPartsOrderQuantityAllowed,
   readMaxPartsOrderItems,
   saveMaxPartsOrderItems,
+  shopifyFeedVariantPrice,
 } from "../lib/partsPricing";
 import {
   catalogSearchVariants,
@@ -100,6 +101,17 @@ import {
   productUrlSlug,
   type SitemapCrawlTarget,
 } from "../lib/productSitemapCrawl";
+import {
+  fetchUcpCatalogSnapshot,
+  gidNumericId,
+  UCP_STOCK_STATUSES,
+  type UcpCatalogProduct,
+} from "../lib/ucpCatalog";
+import {
+  publicOriginFromHeaders,
+  agentProfileUrlFromOrigin,
+} from "../lib/publicOrigin";
+import { resolveAgentProfileUrl } from "../lib/agentProfile";
 import {
   calculateLineTotal,
   isPriceSnapshotStale,
@@ -526,6 +538,11 @@ function mapCatalogRow(row: Record<string, unknown>) {
       isValidCurrencyCode(row.supplierPriceCurrency)
         ? row.supplierPriceCurrency
         : null,
+    stockStatus:
+      typeof row.stockStatus === "string" &&
+      (UCP_STOCK_STATUSES as readonly string[]).includes(row.stockStatus)
+        ? row.stockStatus
+        : null,
     storageLocation: (row.storageLocation as string | null) ?? null,
     inventoryNotes: (row.inventoryNotes as string | null) ?? null,
     unitCost: costCurrency ? unitCost : null,
@@ -565,6 +582,7 @@ async function queryCatalogRows(
               c."supplier_price" as "supplierPrice",
               c."ftc_team_price" as "ftcTeamPrice",
               c."supplier_price_currency" as "supplierPriceCurrency",
+              c."stock_status" as "stockStatus",
               i."storage_location" as "storageLocation",
              i."inventory_notes" as "inventoryNotes", i."unit_cost" as "unitCost",
              i."cost_currency" as "costCurrency", c."created_at" as "createdAt",
@@ -798,13 +816,6 @@ function fallbackOfficialProductResult(
   candidate: PublicCatalogSearchCandidate,
   vendor: VendorConfig,
 ): PublicCatalogSearchResult | null {
-  if (
-    vendor.catalogMode !== "products" ||
-    vendor.coverageState === "access_restricted" ||
-    vendor.coverageState === "custom_fabrication"
-  ) {
-    return null;
-  }
   let url: URL;
   try {
     url = new URL(candidate.url);
@@ -1258,9 +1269,7 @@ export async function searchPublicCatalog(
   } = {},
 ) {
   const allowedVendors = (vendor ? [vendor] : VENDORS).filter(
-    (item) =>
-      item.coverageState !== "access_restricted" &&
-      !options.blockedVendorKeys?.has(item.key),
+    (item) => !options.blockedVendorKeys?.has(item.key),
   );
   if (allowedVendors.length === 0) {
     await options.onComplete?.({
@@ -1641,6 +1650,7 @@ type CatalogFeedRecord = {
   supplierPrice?: string | null;
   ftcTeamPrice?: string | null;
   supplierPriceCurrency?: string | null;
+  stockStatus?: string | null;
 };
 
 type CatalogFeedSyncVendor = {
@@ -1821,7 +1831,11 @@ function firstSecureImage(product: Record<string, unknown>) {
   }
 }
 
-function catalogRecordsFromShopifyProduct(vendor: VendorConfig, product: Record<string, unknown>) {
+function catalogRecordsFromShopifyProduct(
+  vendor: VendorConfig,
+  product: Record<string, unknown>,
+  ucpOverlay?: Map<string, { price: string | null; currency: string | null; stockStatus: string | null }>,
+) {
   const title = cleanText(product.title, 250);
   const handle = cleanText(product.handle, 300);
   if (!title || !handle || !vendor.publicProductFeedUrl) return [];
@@ -1861,6 +1875,19 @@ function catalogRecordsFromShopifyProduct(vendor: VendorConfig, product: Record<
       productUrl: productUrl.toString(),
       name,
     });
+    // The feed carries a coarse per-variant `available` flag (true = can be
+    // ordered now, possibly on backorder; false = not purchasable). The live
+    // UCP catalog overlay refreshes price, currency and stock status per
+    // productId:variantId when present; the feed values are the fallback.
+    const overlay = variantId ? ucpOverlay?.get(`${stableProductId}:${variantId}`) : undefined;
+    const available = typeof variant.available === "boolean" ? variant.available : null;
+    const stockStatus = overlay?.stockStatus
+      ?? (available === false ? "out_of_stock" : available === true ? "in_stock" : null);
+    const supplierPrice = overlay?.price
+      ?? (vendor.feedPriceCurrency ? shopifyFeedVariantPrice(variant.price) : null);
+    const supplierPriceCurrency = overlay?.price
+      ? overlay.currency
+      : supplierPrice ? vendor.feedPriceCurrency : null;
     return {
       vendorKey: vendor.key,
       externalKey,
@@ -1870,6 +1897,10 @@ function catalogRecordsFromShopifyProduct(vendor: VendorConfig, product: Record<
       description: stripProductHtml(product.body_html ?? product.description),
       productUrl: productUrl.toString(),
       imageUrl: firstSecureImage(product),
+      supplierPrice,
+      ftcTeamPrice: null,
+      supplierPriceCurrency,
+      stockStatus,
     };
   });
 }
@@ -1879,6 +1910,52 @@ function catalogRecordsFromShopifyProduct(vendor: VendorConfig, product: Record<
  * can both reach a sitemap supplier, and overlapping runs would double-fetch
  * every pending product page against a host that asks for a 10s delay.
  */
+/**
+ * Overlays live price/currency/stockStatus from the supplier's UCP catalog API
+ * onto the products.json feed. The feed is the completeness backbone (it
+ * lists every sellable page, including the store-hidden SKU pages), so it is
+ * always read; UCP refreshes the fields it covers so the catalog records what
+ * a buyer would actually pay and whether it can ship today. Keyed by
+ * `productId:variantId` so variant-level price differences survive.
+ */
+async function fetchUcpEnrichment(
+  vendor: VendorConfig,
+  requestHint?: string | null,
+): Promise<{ overlay: Map<string, { price: string | null; currency: string | null; stockStatus: string | null }>; note: string }> {
+  const profileUrl = await resolveAgentProfileUrl(requestHint);
+  if (!profileUrl) {
+    return { overlay: new Map(), note: "The UCP agent profile has not been discovered yet, so price and stock status come from the feed. (Any request to this deployment teaches it its public origin.)" };
+  }
+  try {
+    const snapshot = await fetchUcpCatalogSnapshot(vendor.ucpCatalogEndpoint!, profileUrl);
+    if (snapshot.products.length === 0) {
+      return { overlay: new Map(), note: "The supplier's UCP catalog API returned no products, so price and stock status come from the feed." };
+    }
+    const overlay = new Map<string, { price: string | null; currency: string | null; stockStatus: string | null }>();
+    for (const product of snapshot.products) {
+      const productId = gidNumericId(product.id);
+      for (const variant of product.variants) {
+        const variantId = gidNumericId(variant.id);
+        if (productId && variantId) {
+          overlay.set(`${productId}:${variantId}`, {
+            price: variant.price,
+            currency: variant.currency,
+            stockStatus: variant.stockStatus,
+          });
+        }
+      }
+    }
+    return {
+      overlay,
+      note: `Live UCP catalog overlay refreshed price and availability for ${overlay.size} variant(s) across ${snapshot.products.length} products; the rest keep feed values.`,
+    };
+  } catch (error) {
+    logger.warn({ err: error, vendorKey: vendor.key }, "UCP catalog overlay failed");
+    const message = error instanceof Error ? error.message : String(error);
+    return { overlay: new Map(), note: `The supplier's UCP catalog API could not be read (${message.slice(0, 160)}), so price and stock status come from the feed.` };
+  }
+}
+
 const sitemapCrawlInFlight = new Set<string>();
 
 /**
@@ -2076,6 +2153,7 @@ async function crawlSitemapSlice(
           supplierPrice: product.price,
           ftcTeamPrice: product.ftcTeamPrice,
           supplierPriceCurrency: product.currency,
+          stockStatus: product.inStock ? "in_stock" : "out_of_stock",
         });
       } else {
         // A page with no product JSON-LD is a settled answer rather than a
@@ -2168,12 +2246,24 @@ async function crawlSitemapSlice(
 async function collectPublicVendorCatalog(
   vendor: VendorConfig,
   sitemapBudget: number = PRODUCT_CRAWL_DEFAULT_BUDGET,
+  options: { agentProfileUrl?: string | null } = {},
 ) {
   // Sitemap-crawled suppliers have no feed to paginate; the sitemap diff above
   // supplies both the inventory and the incremental change signal.
   if (vendor.productSitemapUrl) {
     return collectSitemapCrawledCatalog(vendor, sitemapBudget);
   }
+  // WestCoast Products (and any future feed vendor with a UCP catalog API)
+  // publishes live price/currency/availability at its UCP endpoint. The feed
+  // is the completeness backbone — it lists every sellable page, including
+  // the store-hidden SKU pages — so it is always read; UCP only overlays the
+  // fields it covers. When it is missing or fails, the feed values stand and
+  // the sync message says so.
+  const ucp = vendor.ucpCatalogEndpoint
+    ? await fetchUcpEnrichment(vendor, options.agentProfileUrl)
+    : { overlay: new Map(), note: null as string | null };
+  const ucpOverlay = ucp.overlay;
+  const ucpNote = ucp.note;
   const feedUrl = defaultProductFeedUrl(vendor);
   const feedVendor = { ...vendor, publicProductFeedUrl: feedUrl };
   let firstPage: Record<string, unknown>[] | null = null;
@@ -2252,6 +2342,7 @@ async function collectPublicVendorCatalog(
       reachedEnd = true;
       break;
     }
+    const fetchedCount = products.length;
     let newProducts = 0;
     for (const product of products) {
       const id =
@@ -2261,7 +2352,7 @@ async function collectPublicVendorCatalog(
       if (id && seenProducts.has(id)) continue;
       if (id) seenProducts.add(id);
       newProducts += 1;
-      for (const record of catalogRecordsFromShopifyProduct(feedVendor, product)) {
+      for (const record of catalogRecordsFromShopifyProduct(feedVendor, product, ucpOverlay)) {
         records.set(record.externalKey, record);
       }
     }
@@ -2271,19 +2362,20 @@ async function collectPublicVendorCatalog(
       }
       throw new Error("Product feed pagination repeated an earlier page.");
     }
-    if (products.length < SHOPIFY_PAGE_SIZE) {
+    if (fetchedCount < SHOPIFY_PAGE_SIZE) {
       reachedEnd = true;
       break;
     }
   }
+  const ucpFallbackNote = ucpNote ? ` ${ucpNote}` : "";
   return {
     vendor: feedVendor,
     status: reachedEnd ? ("synced" as const) : ("incomplete" as const),
     source: feedUrl,
     records: [...records.values()],
     message: reachedEnd
-      ? "The public product feed was paginated to its end."
-      : "The feed page limit was reached before its end; this catalog may be incomplete.",
+      ? `The public product feed was paginated to its end (${records.size} variant rows).${ucpFallbackNote}`
+      : `The feed page limit was reached before its end; this catalog may be incomplete.${ucpFallbackNote}`,
   };
 }
 
@@ -2297,7 +2389,7 @@ export async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
       const batch = records.slice(start, start + batchSize);
       const values: unknown[] = [];
       const rows = batch.map((record, index) => {
-        const offset = index * 13;
+        const offset = index * 14;
         values.push(
           randomUUID(),
           record.vendorKey,
@@ -2311,13 +2403,14 @@ export async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
           record.supplierPrice ?? null,
           record.ftcTeamPrice ?? null,
           record.supplierPriceCurrency ?? null,
+          record.stockStatus ?? null,
           false,
         );
-        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13})`;
+        return `($${offset + 1}, $${offset + 2}, $${offset + 3}, $${offset + 4}, $${offset + 5}, $${offset + 6}, $${offset + 7}, $${offset + 8}, $${offset + 9}, $${offset + 10}, $${offset + 11}, $${offset + 12}, $${offset + 13}, $${offset + 14})`;
       });
       const saved = await client.query(
         `insert into "parts_catalog_items"
-           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "supplier_price", "ftc_team_price", "supplier_price_currency", "is_manual")
+           ("id", "vendor_key", "external_key", "name", "sku", "category", "description", "product_url", "image_url", "supplier_price", "ftc_team_price", "supplier_price_currency", "stock_status", "is_manual")
          values ${rows.join(", ")}
           on conflict ("vendor_key", "external_key")
             where "team_id" is null and "is_manual" = false
@@ -2331,6 +2424,7 @@ export async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
             "supplier_price" = excluded."supplier_price",
             "ftc_team_price" = excluded."ftc_team_price",
             "supplier_price_currency" = excluded."supplier_price_currency",
+            "stock_status" = coalesce(excluded."stock_status", "parts_catalog_items"."stock_status"),
            "is_manual" = "parts_catalog_items"."is_manual" or excluded."is_manual",
            "updated_at" = now()
          returning "id", (xmax = 0) as "created"`,
@@ -2819,7 +2913,7 @@ router.post("/parts/catalog", requireAdmin, async (req, res): Promise<void> => {
   }
 });
 
-export async function syncPublicPartsCatalogs() {
+export async function syncPublicPartsCatalogs(options: { agentProfileUrl?: string | null } = {}) {
   const vendorResults = new Array<CatalogFeedSyncVendor>(VENDORS.length);
   let nextVendorIndex = 0;
 
@@ -2831,7 +2925,7 @@ export async function syncPublicPartsCatalogs() {
       // host's 10s per-page delay would hold this request open for minutes. The
       // diff still reports how much is left, and the background crawler does the
       // fetching, so a manual sync stays fast and honest.
-      collection = await collectPublicVendorCatalog(vendor, 0);
+      collection = await collectPublicVendorCatalog(vendor, 0, options);
     } catch (error) {
       logger.warn({ err: error, vendorKey: vendor.key }, "Public product feed sync failed");
       collection = {
@@ -3083,7 +3177,12 @@ export function startSitemapCatalogCrawler(): void {
 
 router.post("/parts/catalog/sync", requireAdmin, async (req, res): Promise<void> => {
   try {
-    const synced = await syncPublicPartsCatalogs();
+    // The UCP overlay answers from the supplier's catalog API only when the
+    // deployment's public origin is known; any request already stored it.
+    const origin = publicOriginFromHeaders(req.headers);
+    const synced = await syncPublicPartsCatalogs(
+      origin ? { agentProfileUrl: agentProfileUrlFromOrigin(origin) } : {},
+    );
     pushRealtimeHint("parts_catalog_items", "INSERT");
     res.json(synced);
   } catch (error) {

@@ -107,6 +107,7 @@ import type {
   ChatPoll,
   ChatPollInput,
   ChatPollVoteInput,
+  ChatProductivityHistory,
   ChatProductivityRangeInput,
   ChatProductivitySettings,
   ChatProductivitySettingsInput,
@@ -178,6 +179,7 @@ import type {
   GetAssistantUsageParams,
   GetBroadcastCommandsParams,
   GetChatNotificationEventsParams,
+  GetChatProductivityHistoryParams,
   GetChatProductivityParams,
   GetDisplayStateParams,
   GetInterviewChatParams,
@@ -6248,6 +6250,91 @@ export function useGetChatProductivity<TData = Awaited<ReturnType<typeof getChat
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetChatProductivityQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetChatProductivityHistoryUrl = (params?: GetChatProductivityHistoryParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/queue/chat/productivity/history?${stringifiedParams}` : `/api/queue/chat/productivity/history`
+}
+
+/**
+ * Automatic reviews are retained as history. Returns slim review points and per-day averages for the selected range. On-demand range reviews are not stored.
+ * @summary List retained automatic productivity reviews for a conversation
+ */
+export const getChatProductivityHistory = async (params?: GetChatProductivityHistoryParams, options?: Parameters<typeof customFetch>[1]): Promise<ChatProductivityHistory> => {
+
+  return customFetch<ChatProductivityHistory>(getGetChatProductivityHistoryUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetChatProductivityHistoryQueryKey = (params?: GetChatProductivityHistoryParams,) => {
+    return [
+    `/api/queue/chat/productivity/history`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetChatProductivityHistoryQueryOptions = <TData = Awaited<ReturnType<typeof getChatProductivityHistory>>, TError = ErrorType<unknown>>(params?: GetChatProductivityHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatProductivityHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetChatProductivityHistoryQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getChatProductivityHistory>>> = ({ signal }) => getChatProductivityHistory(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getChatProductivityHistory>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetChatProductivityHistoryQueryResult = NonNullable<Awaited<ReturnType<typeof getChatProductivityHistory>>>
+export type GetChatProductivityHistoryQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List retained automatic productivity reviews for a conversation
+ */
+
+export function useGetChatProductivityHistory<TData = Awaited<ReturnType<typeof getChatProductivityHistory>>, TError = ErrorType<unknown>>(
+ params?: GetChatProductivityHistoryParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatProductivityHistory>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetChatProductivityHistoryQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

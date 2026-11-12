@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import "./parts-landing.css";
 
-type Vendor = "All sources" | "REV Robotics" | "AndyMark" | "McMaster-Carr";
+type Vendor = "All sources" | "REV Robotics" | "AndyMark" | "goBILDA";
 
 const pageMeta = [
   {
@@ -76,11 +76,11 @@ const illustrativeParts = [
     tone: "yellow",
   },
   {
-    id: "mm-spacer-08",
+    id: "gb-spacer-08",
     name: "Aluminum Spacer",
     detail: "8 mm ID · 12 mm OD",
-    vendor: "McMaster-Carr" as const,
-    sku: "90128A110",
+    vendor: "goBILDA" as const,
+    sku: "goBILDA-0908-0012",
     owned: 24,
     available: 18,
     tone: "blue",
@@ -300,7 +300,7 @@ export default function PartsLanding() {
 
               <div className="parts-console__filters" aria-label="Vendor filters">
                 <Filter size={13} aria-hidden="true" />
-                {(["All sources", "REV Robotics", "AndyMark", "McMaster-Carr"] as Vendor[]).map(
+                {(["All sources", "REV Robotics", "AndyMark", "goBILDA"] as Vendor[]).map(
                   (source) => (
                     <button
                       type="button"
@@ -448,8 +448,8 @@ export default function PartsLanding() {
               <span className="vendor-row__status vendor-row__status--search"><Search size={12} /> SEARCH</span>
             </div>
             <div className="vendor-row">
-              <span className="vendor-row__mark vendor-row__mark--mm">M</span>
-              <div><strong>McMaster-Carr</strong><small>Listing discovery</small></div>
+              <span className="vendor-row__mark vendor-row__mark--gb">G</span>
+              <div><strong>goBILDA</strong><small>Listing discovery</small></div>
               <span className="vendor-row__status vendor-row__status--search"><Search size={12} /> SEARCH</span>
             </div>
             <div className="parts-landing__vendor-board-foot">

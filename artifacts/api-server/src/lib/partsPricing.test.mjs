@@ -8,6 +8,7 @@ import {
   saveMaxPartsOrderItems,
   saveFtcPricingPreference,
   selectSupplierPrice,
+  shopifyFeedVariantPrice,
 } from "./partsPricing.ts";
 
 test("parses explicit FTC price labels and preserves each published amount", () => {
@@ -98,4 +99,26 @@ test("team order quantity limits persist independently and enforce the boundary"
   assert.equal(await isPartsOrderQuantityAllowed(query, "team-a", 500), true);
   assert.deepEqual(settings, new Map([["team-a", null]]));
   assert.ok(queries.every(({ statement }) => statement.includes('"team_id" = $1') || statement.includes('("team_id"')));
+});
+
+test("shopify feed variant prices are accepted only in major-unit decimal shape", () => {
+  assert.equal(shopifyFeedVariantPrice("399.99"), "399.99");
+  assert.equal(shopifyFeedVariantPrice("1249"), "1249");
+  assert.equal(shopifyFeedVariantPrice("0.99"), "0.99");
+  assert.equal(shopifyFeedVariantPrice(399.99), "399.99");
+  assert.equal(shopifyFeedVariantPrice("17.493"), "17.493");
+});
+
+test("shopify feed variant prices reject anything that could reach SQL malformed", () => {
+  assert.equal(shopifyFeedVariantPrice(""), null);
+  assert.equal(shopifyFeedVariantPrice("399,99"), null);
+  assert.equal(shopifyFeedVariantPrice("1,249.00"), null);
+  assert.equal(shopifyFeedVariantPrice("$399.99"), null);
+  assert.equal(shopifyFeedVariantPrice("USD 399.99"), null);
+  assert.equal(shopifyFeedVariantPrice("-5"), null);
+  assert.equal(shopifyFeedVariantPrice("NaN"), null);
+  assert.equal(shopifyFeedVariantPrice(null), null);
+  assert.equal(shopifyFeedVariantPrice(undefined), null);
+  assert.equal(shopifyFeedVariantPrice("99999999.99"), "99999999.99");
+  assert.equal(shopifyFeedVariantPrice("99999999999.99"), null);
 });

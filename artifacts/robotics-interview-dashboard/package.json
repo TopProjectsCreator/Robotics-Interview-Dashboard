@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "NODE_ENV=test vitest run --config vitest.config.ts",
     "test:mobile-chat-composer": "node browser-tests/mobile-chat-composer.browser.mjs",
     "test:mention-mid-message": "node browser-tests/mention-mid-message.browser.mjs",
     "test:channel-mention": "node browser-tests/channel-mention.browser.mjs",

@@ -134,6 +134,42 @@ test("a non-https image is dropped rather than stored", () => {
   assert.equal(parseSchemaOrgProduct(html).imageUrl, null);
 });
 
+test("Wix store product JSON-LD yields identity, price and image", () => {
+  // Shape captured from a live platypus-robotics.org product page. The Product
+  // block ships no top-level `url` (the offer carries it) and `image` is an
+  // array of ImageObjects rather than a plain string.
+  const html = `<script type="application/ld+json">
+{
+  "@context": "https://schema.org/",
+  "@type": "Product",
+  "name": "1120 Series U-Channel (17 Hole, 432mm Length)",
+  "description": "https://www.gobilda.com/1120-series-u-channel-17-hole-432mm-length/",
+  "sku": "1120-0017-0432",
+  "brand": { "@type": "Brand", "name": "Gobilda" },
+  "image": [
+    { "@type": "ImageObject", "height": "2081", "width": "2081",
+      "contentUrl": "https://static.wixstatic.com/media/5bfb77_e725fb4298ff426985be47bccf8960ca~mv2.jpg/v1/fit/w_500,h_500,q_90/file.jpg" }
+  ],
+  "offers": {
+    "@type": "Offer",
+    "url": "https://www.platypus-robotics.org/product-page/1120-series-u-channel-17-hole-432mm-length",
+    "priceCurrency": "USD",
+    "price": "20.99",
+    "availability": "https://schema.org/InStock"
+  }
+}
+</script>`;
+  const product = parseSchemaOrgProduct(html);
+  assert.ok(product, "expected a Product block");
+  assert.equal(product.name, "1120 Series U-Channel (17 Hole, 432mm Length)");
+  assert.equal(product.sku, "1120-0017-0432");
+  assert.equal(product.productUrl, "https://www.platypus-robotics.org/product-page/1120-series-u-channel-17-hole-432mm-length");
+  assert.equal(product.price, "20.99");
+  assert.equal(product.currency, "USD");
+  assert.equal(product.inStock, true);
+  assert.ok(product.imageUrl?.startsWith("https://static.wixstatic.com/"));
+});
+
 test("pages with no Product block return null instead of throwing", () => {
   assert.equal(parseSchemaOrgProduct("<html><body>Not a product</body></html>"), null);
   assert.equal(parseSchemaOrgProduct(""), null);

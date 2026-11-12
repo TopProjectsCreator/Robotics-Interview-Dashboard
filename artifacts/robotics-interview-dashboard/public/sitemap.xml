@@ -2,118 +2,118 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>http://localhost/</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/about</loc>
-    <lastmod>2026-10-24</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/applicants</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/assistant</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/attendance</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/auth</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/big-screen</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/cad</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/cad-landing</loc>
-    <lastmod>2026-10-10</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/chat</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/chat-landing</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/code</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/code-landing</loc>
-    <lastmod>2026-10-10</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/custom-workspaces</loc>
-    <lastmod>2026-10-20</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/demo</loc>
-    <lastmod>2026-11-06</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/dashboard</loc>
-    <lastmod>2026-10-09</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/display</loc>
-    <lastmod>2026-10-09</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/error/404</loc>
-    <lastmod>2026-10-09</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/interview</loc>
-    <lastmod>2026-10-09</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/interview-landing</loc>
-    <lastmod>2026-10-09</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/interview/assistant</loc>
-    <lastmod>2026-10-09</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/parts</loc>
-    <lastmod>2026-10-09</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/parts-landing</loc>
-    <lastmod>2026-10-09</lastmod>
-  </url>
-  <url>
-    <loc>http://localhost/pricing</loc>
-    <lastmod>2026-11-05</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/compare</loc>
-    <lastmod>2026-11-05</lastmod>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/custom-workspaces</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/dashboard</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/demo</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/display</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/error/404</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/interview</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/interview-landing</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/interview/assistant</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/parts</loc>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/parts-landing</loc>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/parts/assistant</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
+  </url>
+  <url>
+    <loc>http://localhost/pricing</loc>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/queue</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/sitemap.xml</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
   <url>
     <loc>http://localhost/spreadsheets/example</loc>
-    <lastmod>2026-10-09</lastmod>
+    <lastmod>2026-11-12</lastmod>
   </url>
 </urlset>

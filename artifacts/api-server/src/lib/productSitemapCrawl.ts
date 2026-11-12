@@ -146,6 +146,24 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Normalizes the JSON-LD `image` field across storefronts. BigCommerce ships a
+ * plain URL string; Wix ships an array of ImageObject entries (or plain URL
+ * strings). Returns the first usable https URL, or undefined when none is
+ * usable — callers treat missing images as unset, never as guessed.
+ */
+function productImageUrl(value: unknown): unknown {
+  if (typeof value === "string") return value;
+  const entries = Array.isArray(value) ? value : [value];
+  for (const entry of entries) {
+    if (typeof entry === "string" && entry.startsWith("https://")) return entry;
+    if (!isRecord(entry)) continue;
+    const url = entry.contentUrl ?? entry.url;
+    if (typeof url === "string" && url.startsWith("https://")) return url;
+  }
+  return undefined;
+}
+
 function trimmedString(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;
   const text = decodeEntities(value).replace(/\s+/g, " ").trim();
@@ -191,14 +209,20 @@ export function parseSchemaOrgProduct(
       if (!isProduct) continue;
 
       const name = trimmedString(candidate.name, 250);
-      const productUrl = trimmedString(candidate.url, 2000);
-      if (!name || !productUrl) continue;
-
       const offers = Array.isArray(candidate.offers) ? candidate.offers[0] : candidate.offers;
       const offer = isRecord(offers) ? offers : {};
+      // Wix store product pages ship no top-level `url`; the purchase offer
+      // carries the absolute page URL instead. The URL is stored and later
+      // fetched by the crawler, so only absolute https values are accepted.
+      const productUrlRaw =
+        trimmedString(candidate.url, 2000) ?? trimmedString(offer.url, 2000);
+      const productUrl =
+        productUrlRaw && productUrlRaw.startsWith("https://") ? productUrlRaw : null;
+      if (!name || !productUrl) continue;
+
       const price = trimmedString(offer.price, 40);
       const currency = trimmedString(offer.priceCurrency, 8);
-      const image = trimmedString(candidate.image, 2000);
+      const image = trimmedString(productImageUrl(candidate.image), 2000);
 
       return {
         name,

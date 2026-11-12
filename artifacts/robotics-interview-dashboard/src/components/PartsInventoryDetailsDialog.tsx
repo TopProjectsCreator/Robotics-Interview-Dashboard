@@ -34,6 +34,25 @@ function formatDate(value: string | Date): string {
   return Number.isNaN(date.getTime()) ? "Date unavailable" : date.toLocaleDateString();
 }
 
+const STOCK_STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  in_stock: { label: "In stock", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+  backorder: { label: "Backorder", className: "bg-amber-500/20 text-amber-800 dark:text-amber-400" },
+  preorder: { label: "Preorder", className: "bg-sky-500/15 text-sky-800 dark:text-sky-400" },
+  out_of_stock: { label: "Out of stock", className: "bg-rose-500/15 text-rose-800 dark:text-rose-400" },
+  discontinued: { label: "Discontinued", className: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-400" },
+};
+
+function stockStatusBadge(status: string | null | undefined) {
+  if (!status) return null;
+  const badge = STOCK_STATUS_BADGES[status];
+  if (!badge) return null;
+  return (
+    <Badge className={`border-transparent ${badge.className}`} variant="secondary">
+      {badge.label}
+    </Badge>
+  );
+}
+
 function getDetailsLoadError(error: unknown): { message: string; retryable: boolean } {
   const status = error && typeof error === "object" && "status" in error
     ? Number((error as { status?: unknown }).status)
@@ -205,6 +224,7 @@ export function PartsInventoryDetailsDialog({
                     <div className="flex flex-wrap gap-2">
                       <Badge variant="secondary">{details.item.vendorName}</Badge>
                       {details.item.category && <Badge variant="outline">{details.item.category}</Badge>}
+                      {stockStatusBadge(details.item.stockStatus)}
                     </div>
                     <dl className="grid gap-2 text-sm sm:grid-cols-2">
                       <div>

@@ -54,6 +54,7 @@ import {
   AssignSeatBody,
   AssignSeatResponse,
   GetInterviewChatResponse,
+  GetChatProductivityHistoryResponse,
   GetChatProductivityResponse,
   GetChatProductivitySettingsResponse,
   ReviewChatProductivityRangeBody,
@@ -206,7 +207,7 @@ import type { AssistantActivity } from "@workspace/api-zod";
 import { searchWebFallback, searchWeb, normalizeSearchProvider, formatSearchResults, fetchUrlText } from "../lib/websearch";
 import { runPythonCode } from "../lib/python";
 import { textToSpeech } from "@workspace/integrations-openai-ai-server/audio";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, ne, or } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, or } from "drizzle-orm";
 import { authenticatedInterviewerId, createInterviewerSession, requestAdminSession, requestTeamId, requireAdmin, requireCoordinator, requireStaff } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
 import { isAdminRole } from "../lib/roles";
@@ -6253,6 +6254,112 @@ router.get("/queue/chat/productivity", requireAdmin, async (req, res): Promise<v
       ? "The latest AI review failed. Another review is scheduled."
       : null,
     latest: latestForConversation,
+  }));
+});
+
+const PRODUCTIVITY_HISTORY_RANGE_DAYS: Record<string, number> = { "7d": 7, "30d": 30, "90d": 90 };
+const MAX_PRODUCTIVITY_HISTORY_POINTS = 1500;
+const MAX_PRODUCTIVITY_HISTORY_ROWS = 10_000;
+
+router.get("/queue/chat/productivity/history", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const rawScope = req.query.scope;
+  const scope = rawScope === undefined ? "shared" : rawScope;
+  const rawChannelId = req.query.channelId;
+  const rawRange = req.query.range;
+  const range = rawRange === undefined ? "30d" : rawRange;
+  const rawRangeDays = typeof range === "string" ? PRODUCTIVITY_HISTORY_RANGE_DAYS[range] : undefined;
+  const rawOffset = req.query.tzOffsetMinutes;
+  let tzOffsetMinutes = 0;
+  if (rawOffset !== undefined) {
+    const parsed = typeof rawOffset === "string" && /^-?\d{1,4}$/.test(rawOffset) ? Number(rawOffset) : Number.NaN;
+    if (!Number.isInteger(parsed) || parsed < -840 || parsed > 840) {
+      res.status(400).json({ error: "Invalid productivity history request." });
+      return;
+    }
+    tzOffsetMinutes = parsed;
+  }
+  if (
+    (scope !== "shared" && scope !== "channel") ||
+    (rawChannelId !== undefined && typeof rawChannelId !== "string") ||
+    rawRangeDays === undefined
+  ) {
+    res.status(400).json({ error: "Invalid productivity history request." });
+    return;
+  }
+  const channelId = typeof rawChannelId === "string" ? rawChannelId : undefined;
+  const teamId = await requestTeamId(req);
+  const viewer = channelViewerFor(account);
+  const conversation = await resolveChatConversation(scope, undefined, account.displayName, teamId, {
+    channelId,
+    viewer,
+  });
+  if ("error" in conversation) {
+    const status = conversation.error.includes("not a member") ? 403
+      : conversation.error.includes("not found") ? 404
+        : 400;
+    res.status(status).json({ error: conversation.error });
+    return;
+  }
+  const conversationKey = conversation.scope === "shared" ? "team" : conversation.channelId!;
+  const since = new Date(Date.now() - rawRangeDays * 24 * 60 * 60 * 1000);
+  const rows = await db.select({
+    score: chatProductivitySnapshotsTable.score,
+    summary: chatProductivitySnapshotsTable.summary,
+    breakdown: chatProductivitySnapshotsTable.breakdown,
+    periodStart: chatProductivitySnapshotsTable.periodStart,
+    periodEnd: chatProductivitySnapshotsTable.periodEnd,
+    createdAt: chatProductivitySnapshotsTable.createdAt,
+  }).from(chatProductivitySnapshotsTable)
+    .where(and(
+      eq(chatProductivitySnapshotsTable.teamId, teamId),
+      eq(chatProductivitySnapshotsTable.conversationScope, conversation.scope),
+      eq(chatProductivitySnapshotsTable.conversationKey, conversationKey),
+      gte(chatProductivitySnapshotsTable.createdAt, since),
+    ))
+    .orderBy(asc(chatProductivitySnapshotsTable.createdAt))
+    .limit(MAX_PRODUCTIVITY_HISTORY_ROWS);
+
+  const dayBuckets = new Map<string, { sum: number; max: number; count: number }>();
+  for (const row of rows) {
+    // Bucket into the caller's local calendar day so "most productive day"
+    // matches what people see on their own clocks; UTC when not provided.
+    const local = new Date(row.createdAt.getTime() - tzOffsetMinutes * 60_000);
+    const key = local.toISOString().slice(0, 10);
+    const bucket = dayBuckets.get(key) ?? { sum: 0, max: 0, count: 0 };
+    bucket.sum += row.score;
+    bucket.max = Math.max(bucket.max, row.score);
+    bucket.count += 1;
+    dayBuckets.set(key, bucket);
+  }
+  const daily = [...dayBuckets.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([date, bucket]) => ({
+      date,
+      averageScore: Math.round((bucket.sum / bucket.count) * 10) / 10,
+      maxScore: bucket.max,
+      reviewCount: bucket.count,
+    }));
+
+  const truncated = rows.length > MAX_PRODUCTIVITY_HISTORY_POINTS;
+  const points = (truncated ? rows.slice(-MAX_PRODUCTIVITY_HISTORY_POINTS) : rows).map((row) => ({
+    score: row.score,
+    summary: row.summary,
+    breakdown: row.breakdown,
+    periodStart: row.periodStart,
+    periodEnd: row.periodEnd,
+    createdAt: row.createdAt,
+  }));
+
+  res.json(GetChatProductivityHistoryResponse.parse({
+    range,
+    reviewCount: rows.length,
+    truncated,
+    points,
+    daily,
   }));
 });
 

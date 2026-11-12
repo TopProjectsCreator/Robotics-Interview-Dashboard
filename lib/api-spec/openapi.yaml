@@ -1743,6 +1743,50 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ChatProductivityStatus"
+  /queue/chat/productivity/history:
+    get:
+      operationId: getChatProductivityHistory
+      tags: [queue]
+      summary: List retained automatic productivity reviews for a conversation
+      description: >-
+        Automatic reviews are retained as history. Returns slim review points and
+        per-day averages for the selected range. On-demand range reviews are not stored.
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [shared, channel]
+            default: shared
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Invite-only channel id; the caller must be a member or have chat management permission.
+        - name: range
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [7d, 30d, 90d]
+            default: 30d
+        - name: tzOffsetMinutes
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: -840
+            maximum: 840
+          description: Browser timezone offset in minutes (`Date.getTimezoneOffset()`). Used to bucket reviews into local calendar days; defaults to UTC.
+      responses:
+        "200":
+          description: Retained automatic reviews and per-day averages for the selected range
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatProductivityHistory"
   /queue/chat/productivity/review:
     post:
       operationId: reviewChatProductivityRange
@@ -5754,20 +5798,20 @@ components:
           type: string
         group:
           type: string
-          enum: [General Parts, Specific Parts, Machining Companies]
+          enum: [General Parts, Specific Parts]
         website:
           type: string
           format: uri
         catalogMode:
           type: string
-          enum: [products, custom_fabrication]
+          enum: [products]
         catalogSourceUrl:
           type: string
           format: uri
           description: Official supplier catalog, product feed, or service source.
         coverageState:
           type: string
-          enum: [feed_sync_required, discovery_only, access_restricted, custom_fabrication]
+          enum: [feed_sync_required, discovery_only]
           description: Static source coverage classification; a public feed is complete only after sync verifies its final page.
         publicProductFeedUrl:
           type: [string, "null"]
@@ -6036,6 +6080,14 @@ components:
         supplierPriceCurrency:
           type: [string, "null"]
           pattern: "^[A-Z]{3}$"
+        stockStatus:
+          type: [string, "null"]
+          pattern: "^(in_stock|backorder|preorder|out_of_stock|discontinued)$"
+          description: >-
+            Supplier-published purchase availability of the sellable variant.
+            Populated from the vendor's machine-readable catalog API (e.g. the
+            WestCoast Products UCP catalog). Null when the supplier does not
+            report it; teams must not read null as in stock.
         storageLocation:
           type: [string, "null"]
           maxLength: 120
@@ -8478,6 +8530,72 @@ components:
           type: integer
           minimum: 0
           maximum: 10
+    ChatProductivityHistoryPoint:
+      type: object
+      required: [score, summary, breakdown, periodStart, periodEnd, createdAt]
+      properties:
+        score:
+          type: integer
+          minimum: 0
+          maximum: 10
+        summary:
+          type: string
+        breakdown:
+          $ref: "#/components/schemas/ChatProductivityBreakdown"
+        periodStart:
+          type: ["string", "null"]
+          format: date-time
+        periodEnd:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    ChatProductivityHistoryDay:
+      type: object
+      required: [date, averageScore, maxScore, reviewCount]
+      properties:
+        date:
+          type: string
+          pattern: "^\\d{4}-\\d{2}-\\d{2}$"
+          description: Local calendar day (or UTC when no timezone offset was provided), YYYY-MM-DD
+        averageScore:
+          type: number
+          minimum: 0
+          maximum: 10
+          description: Mean score across the day's retained reviews, rounded to one decimal
+        maxScore:
+          type: integer
+          minimum: 0
+          maximum: 10
+        reviewCount:
+          type: integer
+          minimum: 1
+    ChatProductivityHistory:
+      type: object
+      required: [range, reviewCount, truncated, points, daily]
+      properties:
+        range:
+          type: string
+          enum: [7d, 30d, 90d]
+        reviewCount:
+          type: integer
+          minimum: 0
+          description: Every retained review in the range, including ones not included in `points` when truncated
+        truncated:
+          type: boolean
+          description: True when the range held more than 1500 reviews; `points` then contains only the newest 1500. `daily` always covers the whole range.
+        points:
+          type: array
+          maxItems: 1500
+          description: Retained reviews, ascending by creation time
+          items:
+            $ref: "#/components/schemas/ChatProductivityHistoryPoint"
+        daily:
+          type: array
+          description: Per-day averages for every retained review in the range, ascending by date
+          items:
+            $ref: "#/components/schemas/ChatProductivityHistoryDay"
     ChatProductivitySnapshot:
       type: object
       required: [conversationName, score, summary, activities, breakdown, periodStart, periodEnd, createdAt]

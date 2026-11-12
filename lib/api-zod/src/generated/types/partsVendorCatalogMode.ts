@@ -11,5 +11,4 @@ export type PartsVendorCatalogMode = typeof PartsVendorCatalogMode[keyof typeof 
 
 export const PartsVendorCatalogMode = {
   products: 'products',
-  custom_fabrication: 'custom_fabrication',
 } as const;

@@ -82,10 +82,10 @@ describe("public parts discovery", () => {
     renderWithRouter(<PartsLanding />);
 
     fireEvent.change(screen.getByRole("searchbox", { name: "Search parts" }), {
-      target: { value: "mcmaster" },
+      target: { value: "gobilda" },
     });
 
-    expect(screen.getByTestId("card-part-result-mm-spacer-08")).toBeInTheDocument();
+    expect(screen.getByTestId("card-part-result-gb-spacer-08")).toBeInTheDocument();
     expect(screen.queryByTestId("card-part-result-rev-hex-12")).not.toBeInTheDocument();
     expect(screen.getByTestId("status-parts-results")).toHaveTextContent("1 matches");
     expect(fetchSpy).not.toHaveBeenCalled();

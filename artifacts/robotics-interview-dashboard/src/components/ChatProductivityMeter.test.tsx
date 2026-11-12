@@ -20,7 +20,31 @@ type ProductivityStatus = {
   };
 };
 
+type ProductivityHistory = {
+  range: "7d" | "30d" | "90d";
+  reviewCount: number;
+  truncated: boolean;
+  points: {
+    score: number;
+    summary: string;
+    breakdown: { projectProgress: number; planningCoordination: number; focusDiscipline: number };
+    periodStart: string | null;
+    periodEnd: string | null;
+    createdAt: string;
+  }[];
+  daily: { date: string; averageScore: number; maxScore: number; reviewCount: number }[];
+};
+
+const emptyHistory: ProductivityHistory = {
+  range: "30d",
+  reviewCount: 0,
+  truncated: false,
+  points: [],
+  daily: [],
+};
+
 let status: ProductivityStatus;
+let history: ProductivityHistory;
 const requests: { path: string; method: string; body?: Record<string, unknown> }[] = [];
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(String(input), window.location.origin);
@@ -34,6 +58,9 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
 
   if (url.pathname.endsWith("/queue/chat/productivity") && method === "GET") {
     return jsonResponse(status);
+  }
+  if (url.pathname.endsWith("/queue/chat/productivity/history") && method === "GET") {
+    return jsonResponse(history);
   }
   if (url.pathname.endsWith("/queue/chat/productivity/review") && method === "POST") {
     return jsonResponse({
@@ -70,9 +97,19 @@ function renderMeter(props: { scope: "shared" | "channel"; channelId?: string })
 
 beforeEach(() => {
   status = { enabled: false, canManage: true, lastRunAt: null, lastError: null, latest: null };
+  history = emptyHistory;
   requests.length = 0;
   fetchMock.mockClear();
   vi.stubGlobal("fetch", fetchMock);
+  // recharts' ResponsiveContainer measures with ResizeObserver, which jsdom does not provide.
+  if (typeof ResizeObserver === "undefined") {
+    class ResizeObserverStub {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", ResizeObserverStub);
+  }
 });
 
 describe("ChatProductivityMeter", () => {
@@ -162,6 +199,71 @@ describe("ChatProductivityMeter", () => {
       range: "1d",
     });
     expect(screen.getByTestId("panel-chat-productivity-details")).toBeInTheDocument();
+  });
+
+  it("charts retained automatic reviews and lists previous scores in the history tab", async () => {
+    status = {
+      enabled: true,
+      canManage: false,
+      lastRunAt: "2026-11-11T19:55:00.000Z",
+      lastError: null,
+      latest: null,
+    };
+    history = {
+      range: "30d",
+      reviewCount: 12,
+      truncated: false,
+      points: [
+        {
+          score: 5,
+          summary: "Mostly banter about drive tuning.",
+          breakdown: { projectProgress: 4, planningCoordination: 6, focusDiscipline: 5 },
+          periodStart: "2026-11-10T19:30:00.000Z",
+          periodEnd: "2026-11-10T20:00:00.000Z",
+          createdAt: "2026-11-10T20:00:00.000Z",
+        },
+        {
+          score: 9,
+          summary: "Shipped the intake validation fix.",
+          breakdown: { projectProgress: 9, planningCoordination: 8, focusDiscipline: 9 },
+          periodStart: "2026-11-11T19:30:00.000Z",
+          periodEnd: "2026-11-11T20:00:00.000Z",
+          createdAt: "2026-11-11T20:00:00.000Z",
+        },
+      ],
+      daily: [
+        { date: "2026-11-09", averageScore: 6, maxScore: 7, reviewCount: 7 },
+        { date: "2026-11-10", averageScore: 7, maxScore: 8, reviewCount: 3 },
+        { date: "2026-11-11", averageScore: 9, maxScore: 10, reviewCount: 2 },
+      ],
+    };
+    renderMeter({ scope: "channel", channelId: "drive-team" });
+    fireEvent.click(await screen.findByTestId("button-chat-productivity"));
+    fireEvent.click(await screen.findByTestId("tab-productivity-history"));
+
+    expect(await screen.findByTestId("panel-productivity-history")).toBeInTheDocument();
+    expect(await screen.findByTestId("stat-history-average")).toHaveTextContent("6.8/10");
+    expect(screen.getByTestId("stat-history-best-day")).toHaveTextContent("11");
+    expect(screen.getByTestId("stat-history-peak-score")).toHaveTextContent("10/10");
+    expect(screen.getByTestId("chart-productivity-daily")).toBeInTheDocument();
+    expect(screen.getByTestId("chart-productivity-trend")).toBeInTheDocument();
+    expect(screen.getByTestId("list-productivity-history")).toBeInTheDocument();
+    expect(screen.getByTestId("row-productivity-history-0")).toHaveTextContent("Shipped the intake validation fix.");
+    expect(screen.getByTestId("row-productivity-history-0")).toHaveTextContent("9/10");
+    expect(screen.getByTestId("row-productivity-history-1")).toHaveTextContent("Mostly banter about drive tuning.");
+    const historyRequest = requests.find((request) => request.method === "GET" && request.path.includes("/queue/chat/productivity/history"));
+    expect(historyRequest?.path).toContain("scope=channel");
+    expect(historyRequest?.path).toContain("channelId=drive-team");
+    expect(historyRequest?.path).toContain("range=30d");
+  });
+
+  it("shows the empty state in the history tab when no reviews are retained yet", async () => {
+    status = { enabled: true, canManage: false, lastRunAt: null, lastError: null, latest: null };
+    renderMeter({ scope: "shared" });
+    fireEvent.click(await screen.findByTestId("button-chat-productivity"));
+    fireEvent.click(await screen.findByTestId("tab-productivity-history"));
+
+    expect(await screen.findByTestId("status-productivity-history-empty")).toHaveTextContent("No reviews retained yet");
   });
 
   it("lets a coordinator retry a failed review without changing the opt-in setting", async () => {

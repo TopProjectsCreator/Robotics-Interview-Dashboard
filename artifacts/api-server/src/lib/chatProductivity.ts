@@ -270,23 +270,6 @@ async function persistResults(
       periodEnd,
       modelId,
       createdAt: new Date(),
-    }).onConflictDoUpdate({
-      target: [
-        chatProductivitySnapshotsTable.teamId,
-        chatProductivitySnapshotsTable.conversationScope,
-        chatProductivitySnapshotsTable.conversationKey,
-      ],
-      set: {
-        conversationName: definition.name,
-        score: result.score,
-        summary: result.summary,
-        activities: result.activities,
-        breakdown: result.breakdown,
-        periodStart,
-        periodEnd,
-        modelId,
-        createdAt: new Date(),
-      },
     });
   }
 }

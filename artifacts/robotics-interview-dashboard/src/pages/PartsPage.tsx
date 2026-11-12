@@ -79,7 +79,6 @@ const PARTS_REFRESH_INTERVAL_MS = 5_000;
 const VENDOR_GROUPS: PartsVendor["group"][] = [
   "General Parts",
   "Specific Parts",
-  "Machining Companies",
 ];
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -164,6 +163,25 @@ function formatMoney(amount: number, currency: string): string {
   } catch {
     return `${amount.toFixed(2)} ${currency}`;
   }
+}
+
+const STOCK_STATUS_BADGES: Record<string, { label: string; className: string }> = {
+  in_stock: { label: "In stock", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" },
+  backorder: { label: "Backorder", className: "bg-amber-500/20 text-amber-800 dark:text-amber-400" },
+  preorder: { label: "Preorder", className: "bg-sky-500/15 text-sky-800 dark:text-sky-400" },
+  out_of_stock: { label: "Out of stock", className: "bg-rose-500/15 text-rose-800 dark:text-rose-400" },
+  discontinued: { label: "Discontinued", className: "bg-zinc-500/15 text-zinc-700 dark:text-zinc-400" },
+};
+
+function stockStatusBadge(status: string | null | undefined) {
+  if (!status) return null;
+  const badge = STOCK_STATUS_BADGES[status];
+  if (!badge) return null;
+  return (
+    <span className={`rounded-md px-2.5 py-1 text-xs font-medium ${badge.className}`}>
+      {badge.label}
+    </span>
+  );
 }
 
 function selectedPrice(
@@ -351,6 +369,7 @@ function CatalogSearchCard({
             <Badge variant="secondary">{item.vendorName}</Badge>
             {item.sku && <span className="text-xs text-muted-foreground">SKU {item.sku}</span>}
             {item.category && <span className="text-xs text-muted-foreground">{item.category}</span>}
+            {stockStatusBadge(item.stockStatus)}
           </div>
           {item.description && (
             <p className="mt-2 line-clamp-3 text-sm text-muted-foreground">{item.description}</p>
@@ -377,9 +396,11 @@ function CatalogSearchCard({
               )}
             </p>
           )}
-          <p className="mt-2 text-xs text-muted-foreground">
-            Price and current supplier availability are not included in this saved item.
-          </p>
+          {(item.supplierPrice === null || !item.supplierPriceCurrency) && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Price and current supplier availability are not included in this saved item.
+            </p>
+          )}
         </div>
         <div className="mt-auto border-t border-border pt-3">
           {item.productUrl ? (
@@ -1524,7 +1545,7 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
                       <p className="text-sm text-foreground" data-testid="status-parts-source-coverage">
                         {vendors.some((item) => item.lastSync)
                           ? `Latest update: ${vendors.filter((item) => item.lastSync?.status === "synced").length} supplier list(s) finished, ${vendors.filter((item) => item.lastSync?.status === "incomplete").length} still loading, ${vendors.filter((item) => item.lastSync?.status === "search_only").length} available through search only, and ${vendors.filter((item) => item.lastSync?.status === "unavailable").length} could not be reached.`
-                          : `${vendors.filter((item) => item.coverageState === "feed_sync_required").length} supplier list(s) are ready to check. Other suppliers can be searched, require supplier access, or provide made-to-order work.`}
+                          : `${vendors.filter((item) => item.coverageState === "feed_sync_required").length} supplier list(s) are ready to check. Other suppliers can be searched but are not available for full list checks.`}
                       </p>
                       <details open={coverageSourcesOpen} className="parts-disclosure rounded-lg border border-border bg-background">
                         <summary
@@ -1552,14 +1573,10 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
                             : {
                                 feed_sync_required: "Ready to check",
                                 discovery_only: "Search only",
-                                access_restricted: "Supplier access required",
-                                custom_fabrication: "Made to order",
                               }[vendor.coverageState];
                           const stateDetail = syncResult?.message ?? {
                             feed_sync_required: "A public supplier list can be checked for saved products.",
                             discovery_only: "Supplier products can be found with search; no full product list is available here.",
-                            access_restricted: "A supplier-approved account is needed to load the full list. Public search may still find items.",
-                            custom_fabrication: "This supplier makes parts to order instead of listing standard stock items.",
                           }[vendor.coverageState];
                           return (
                             <article
@@ -1653,7 +1670,7 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
                 <div className="min-w-0 space-y-4">
                 {searchBusy && (
                   <div className="flex items-center gap-2 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-                    <Loader2 className="animate-spin" size={16} /> Searching across 19 suppliers…
+                    <Loader2 className="animate-spin" size={16} /> Searching across 14 suppliers…
                   </div>
                 )}
                 {!searchBusy && searchStatus && (

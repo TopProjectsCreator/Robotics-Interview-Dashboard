@@ -828,7 +828,7 @@
 
 .vendor-row__mark--rev { background: #dff2ec; color: #176b59; }
 .vendor-row__mark--am { background: #fff0c9; color: #805d07; }
-.vendor-row__mark--mm { background: #e3ebfb; color: #405b8a; }
+.vendor-row__mark--gb { background: #e3ebfb; color: #405b8a; }
 
 .vendor-row strong {
   display: block;
@@ -1583,7 +1583,7 @@ html.dark .parts-landing__vendor-board-foot {
 
 html.dark .vendor-row__mark--rev { background: #17443f; color: #7edbd0; }
 html.dark .vendor-row__mark--am { background: #4b3c1c; color: #f1cc67; }
-html.dark .vendor-row__mark--mm { background: #253958; color: #a9c5f0; }
+html.dark .vendor-row__mark--gb { background: #253958; color: #a9c5f0; }
 
 html.dark .reservation-story__quote {
   background: #3a3218;

@@ -266,7 +266,7 @@ export default function AgentsMdPage() {
               <p>
                 Sign in with your team’s access code and you get a cockpit, not a filing cabinet: a realtime chat that can hold files,
                 polls, and @ai; documents, whiteboards, boards and spreadsheets collaborators can edit together; a parts bench that
-                searches nineteen suppliers with live prices; a CAD library that previews STEP, IGES, Parasolid and mesh files in the
+                searches fourteen suppliers with live prices; a CAD library that previews STEP, IGES, Parasolid and mesh files in the
                 browser; a code workspace that edits FTC Java live and pushes it to a REV Hub over USB; and an AI assistant that can
                 see your team’s data, act on it, and report back honestly.
               </p>
@@ -335,7 +335,7 @@ export default function AgentsMdPage() {
             <Panel>
               <Ul>
                 <Li><strong>Stockroom:</strong> team inventory with quantities (−/+ steppers), storage locations, purchase/cost tracking, low-stock visibility, search + supplier filter, camera-based “Scan part” AI identification (capture → vision model → uncertainty shown → <em>nothing saved until you review</em>), one-click details dialogs with price/quote history.</Li>
-                <Li><strong>Find parts:</strong> streaming supplier search across ~19 vendors — AndyMark, goBILDA, Grainger, REV Robotics, ServoCity, Studica, Swyft, Axon, Melonbotics, BWTLink, Misumi, McMaster-Carr and more — with FTC team-price toggle, FTC catalog syncs, per-vendor block/unblock, sync-now button, and a coverage panel with per-vendor ETA status.</Li>
+                <Li><strong>Find parts:</strong> streaming supplier search across 14 vendors — AndyMark, goBILDA, REV Robotics, ServoCity, Studica, Swyft, WestCoast Products, Platypus Robotics, Ferra, Optii, Offset Robotics, Axon, Melonbotics and BWTLink — with FTC team-price toggle, FTC catalog syncs, per-vendor block/unblock, sync-now button, and a coverage panel with per-vendor ETA status.</Li>
                 <Li><strong>Price history:</strong> supplier price snapshots over time, so the team can see when a motor went up $4.</Li>
                 <Li><strong>Robot builds:</strong> create builds (e.g. “Off-season arm bot”), allocate stockroom parts by quantity (the server rejects allocating more than exists), per-build cost rollups, 3D preview images, rename/delete.</Li>
                 <Li><strong>Catalog management:</strong> manual entries, CSV/Excel bulk import, pagination, supplier sync state per vendor shown honestly in the UI.</Li>

@@ -18,6 +18,8 @@ import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted, workspac
 import { readWorkspaceVisibility, userCanSeeWorkspace } from "./lib/workspaceAccess";
 import { WORKSPACE_KEYS } from "./lib/workspaceVisibility";
 import { normalizePermissions, permissionsForBuiltInRole } from "@workspace/api-zod";
+import { UCP_AGENT_PROFILE_PATH, publicOriginFromHeaders } from "./lib/publicOrigin";
+import { rememberPublicOriginFromHeaders } from "./lib/agentProfile";
 
 const app: Express = express();
 
@@ -253,12 +255,61 @@ app.use("/api", async (req, res, next) => {
   }
 });
 
+// Learn this deployment's public origin from how requests actually arrive
+// (any proxy hop that terminates TLS sets X-Forwarded-*). The value powers
+// the agent profile the supplier catalogs rely on, with no per-domain config.
+app.use((req, _res, next) => {
+  rememberPublicOriginFromHeaders(req.headers);
+  next();
+});
+
 app.use("/api", router);
 
 // Canonical sitemap for crawlers. Registered before static + SPA fallback
 // so GET /sitemap.xml returns XML instead of index.html. The same handler
 // also serves GET /api/sitemap.xml via routes/index.ts.
 app.get("/sitemap.xml", sitemapHandler);
+
+// UCP agent profile. WestCoast Products (and any future supplier speaking
+// UCP) fetches this during sync to identify the calling platform — a
+// platform profile, served by this API itself so it works on any domain
+// without configuration. The endpoint advertised there is the origin this
+// deployment was reached at, mirroring the discovery headers above.
+app.get(UCP_AGENT_PROFILE_PATH, (req, res) => {
+  const origin = publicOriginFromHeaders(req.headers) ?? "https://localhost";
+  res.type("application/json").json({
+    ucp: {
+      version: "2026-08-25",
+      services: {
+        "dev.ucp.shopping": [
+          {
+            version: "2026-08-25",
+            spec: "https://ucp.dev/2026-08-25/specification/overview/",
+            transport: "rest",
+            schema: "https://ucp.dev/2026-08-25/services/shopping/rest.openapi.json",
+            endpoint: origin,
+          },
+        ],
+      },
+      capabilities: {
+        "dev.ucp.shopping.catalog.search": [
+          {
+            version: "2026-08-25",
+            spec: "https://ucp.dev/2026-08-25/specification/shopping/catalog/search/",
+            schema: "https://ucp.dev/2026-08-25/schemas/shopping/catalog_search.json",
+          },
+        ],
+        "dev.ucp.shopping.catalog.lookup": [
+          {
+            version: "2026-08-25",
+            spec: "https://ucp.dev/2026-08-25/specification/shopping/catalog/lookup/",
+            schema: "https://ucp.dev/2026-08-25/schemas/shopping/catalog_lookup.json",
+          },
+        ],
+      },
+    },
+  });
+});
 
 // Serve the production frontend build from the same origin so the
 // coordinator app can use relative `/api` URLs and cookie sessions.

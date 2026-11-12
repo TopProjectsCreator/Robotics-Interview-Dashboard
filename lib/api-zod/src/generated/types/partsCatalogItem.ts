@@ -40,6 +40,12 @@ export interface PartsCatalogItem {
      */
   supplierPriceCurrency: string | null;
   /**
+     * Supplier-published purchase availability of the sellable variant. Populated from the vendor's machine-readable catalog API (e.g. the WestCoast Products UCP catalog). Null when the supplier does not report it; teams must not read null as in stock.
+     * @nullable
+     * @pattern ^(in_stock|backorder|preorder|out_of_stock|discontinued)$
+     */
+  stockStatus?: string | null;
+  /**
      * @maxLength 120
      * @nullable
      */
