@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { UpdateTeamBrandingBackgroundMode } from './updateTeamBrandingBackgroundMode';
 
 export interface UpdateTeamBranding {
   /**
@@ -12,4 +13,15 @@ export interface UpdateTeamBranding {
      * @pattern ^#[0-9A-Fa-f]{6}$
      */
   primaryColor: string | null;
+  /**
+     * How the custom app background is fitted to the viewport
+     * @nullable
+     */
+  backgroundMode?: UpdateTeamBrandingBackgroundMode;
+  /**
+     * Percentage of dark overlay drawn over the custom app background
+     * @minimum 0
+     * @maximum 80
+     */
+  backgroundOverlay?: number;
 }

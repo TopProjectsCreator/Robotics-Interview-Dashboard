@@ -587,6 +587,23 @@ export class ObjectStorageService {
     return `${objectPathPrefix(instance)}${path}`;
   }
 
+  /**
+   * Store a team's custom app background under the same team-scoped
+   * `team-branding/<teamId>/` prefix, so the storage route's team check
+   * covers it exactly like the logo.
+   */
+  async uploadTeamBackground(data: Buffer, contentType: string, teamId: string): Promise<string> {
+    const id = randomUUID();
+    const path = `team-branding/${teamId}/${id}`;
+    const { instance } = await writeWithFailover("Failed to store team background", async (target) => {
+      const { error } = await supabaseFor(target)
+        .storage.from(storageBucket(target))
+        .upload(path, data, { contentType, upsert: false });
+      if (error) throw new Error(error.message);
+    });
+    return `${objectPathPrefix(instance)}${path}`;
+  }
+
   async deleteObject(objectPath: string): Promise<void> {
     const storagePath = toStoragePath(objectPath);
     let lastError: unknown = null;

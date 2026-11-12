@@ -373,7 +373,7 @@ paths:
       summary: Get branding for the signed-in team
       responses:
         "200":
-          description: Current team's logo path and primary color
+          description: Current team's logo path, primary color, and custom app background
           content:
             application/json:
               schema:
@@ -387,7 +387,7 @@ paths:
     patch:
       operationId: updateTeamBranding
       tags: [auth]
-      summary: Set or reset the signed-in team's primary color
+      summary: Set or reset the signed-in team's primary color and background options
       requestBody:
         required: true
         content:
@@ -465,6 +465,58 @@ paths:
       responses:
         "204":
           description: Team logo removed
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/team-branding/background:
+    post:
+      operationId: uploadTeamBackground
+      tags: [auth]
+      summary: Upload a custom app background for the signed-in team
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+          image/webp:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Team background saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadTeamBackground"
+        "400":
+          description: Unsupported or invalid image
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: resetTeamBackground
+      tags: [auth]
+      summary: Reset the signed-in team's custom app background
+      responses:
+        "204":
+          description: Team background removed
         "403":
           description: Coordinator access required
           content:
@@ -6519,7 +6571,7 @@ components:
           description: Session token for embedded clients that cannot use third-party cookies
     TeamBranding:
       type: object
-      required: [logoPath, primaryColor]
+      required: [logoPath, primaryColor, backgroundPath, backgroundMode, backgroundOverlay]
       properties:
         logoPath:
           type: [string, "null"]
@@ -6528,6 +6580,18 @@ components:
           type: [string, "null"]
           pattern: "^#[0-9A-Fa-f]{6}$"
           description: Team primary brand color
+        backgroundPath:
+          type: [string, "null"]
+          description: Private object path for this team's custom app background
+        backgroundMode:
+          type: [string, "null"]
+          enum: [cover, tile]
+          description: How the custom app background is fitted to the viewport
+        backgroundOverlay:
+          type: integer
+          minimum: 0
+          maximum: 80
+          description: Percentage of dark overlay drawn over the custom app background
     UpdateTeamBranding:
       type: object
       required: [primaryColor]
@@ -6535,6 +6599,15 @@ components:
         primaryColor:
           type: [string, "null"]
           pattern: "^#[0-9A-Fa-f]{6}$"
+        backgroundMode:
+          type: [string, "null"]
+          enum: [cover, tile]
+          description: How the custom app background is fitted to the viewport
+        backgroundOverlay:
+          type: integer
+          minimum: 0
+          maximum: 80
+          description: Percentage of dark overlay drawn over the custom app background
     UploadTeamLogo:
       type: object
       required: [logoPath]
@@ -6542,6 +6615,13 @@ components:
         logoPath:
           type: string
           description: Private object path for this team's logo
+    UploadTeamBackground:
+      type: object
+      required: [backgroundPath]
+      properties:
+        backgroundPath:
+          type: string
+          description: Private object path for this team's custom app background
     TeamVerifyResponse:
       type: object
       required: [message]

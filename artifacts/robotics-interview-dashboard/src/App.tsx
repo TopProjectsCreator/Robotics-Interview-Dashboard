@@ -776,10 +776,17 @@ function SettingsModal({
   const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
   const branding = useTeamBranding(session.data?.teamId, session.data?.authenticated === true);
   const [brandColorDraft, setBrandColorDraft] = useState("#16869a");
+  const [backgroundModeDraft, setBackgroundModeDraft] = useState<TeamBackgroundMode>("cover");
+  const [backgroundOverlayDraft, setBackgroundOverlayDraft] = useState(35);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const backgroundInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setBrandColorDraft(branding.data?.primaryColor ?? "#16869a");
   }, [branding.data?.primaryColor]);
+  useEffect(() => {
+    setBackgroundModeDraft(branding.data?.backgroundMode ?? "cover");
+    setBackgroundOverlayDraft(branding.data?.backgroundOverlay ?? 35);
+  }, [branding.data?.backgroundMode, branding.data?.backgroundOverlay]);
   const interviewerAccounts = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
   const teamAccounts = useMemo(
     () => [...(interviewerAccounts.data?.items ?? [])].sort((a, b) => a.displayName.localeCompare(b.displayName)),
@@ -1175,7 +1182,7 @@ function SettingsModal({
         </SettingRow>
         <SettingRow title="Team logo" detail="PNG, JPEG, or WebP · up to 2 MB">
           <div className="flex flex-wrap items-center gap-2">
-            {branding.data?.logoPath && <AuthenticatedChatImage key={branding.data.logoPath} src={teamLogoObjectUrl(branding.data.logoPath)} alt="Current team logo" className="h-10 w-10 rounded-lg border border-[#dce5e5] object-contain dark:border-[#31495a]" />}
+            {branding.data?.logoPath && <AuthenticatedChatImage key={branding.data.logoPath} src={teamBrandingObjectUrl(branding.data.logoPath)} alt="Current team logo" className="h-10 w-10 rounded-lg border border-[#dce5e5] object-contain dark:border-[#31495a]" />}
             <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose team logo" data-testid="input-team-logo" className="max-w-[220px] text-xs text-[#52666e] file:mr-2 file:rounded-lg file:border-0 file:bg-[#eaf2f1] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#385762] dark:text-[#c3d3db] dark:file:bg-[#243743] dark:file:text-[#c3d3db]" onChange={event => {
               const file = event.currentTarget.files?.[0];
               event.currentTarget.value = "";
@@ -1195,6 +1202,54 @@ function SettingsModal({
             })} data-testid="button-reset-team-logo" className={dangerButton}>Reset logo</button>}
           </div>
           {branding.updateColor.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateColor.error.message}</p>}
+        </SettingRow>
+        <SettingRow title="App background" detail="Shown behind every page for the whole team · PNG, JPEG, or WebP · up to 8 MB">
+          <div className="flex flex-wrap items-center gap-2">
+            {branding.data?.backgroundPath && <AuthenticatedChatImage key={branding.data.backgroundPath} src={teamBrandingObjectUrl(branding.data.backgroundPath)} alt="Current team background" className="h-16 w-24 rounded-lg border border-[#dce5e5] object-cover dark:border-[#31495a]" />}
+            <input ref={backgroundInputRef} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose team background" data-testid="input-team-background" className="max-w-[220px] text-xs text-[#52666e] file:mr-2 file:rounded-lg file:border-0 file:bg-[#eaf2f1] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#385762] dark:text-[#c3d3db] dark:file:bg-[#243743] dark:file:text-[#c3d3db]" onChange={event => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = "";
+              if (!file) return;
+              if (file.size > 8 * 1024 * 1024) {
+                notify({ title: "Background is too large", description: "Choose an image smaller than 8 MB." });
+                return;
+              }
+              branding.uploadBackground.mutate(file, {
+                onSuccess: () => notify({ title: "Team background saved" }),
+                onError: error => notify({ title: "Could not save team background", description: error.message }),
+              });
+            }} />
+            {branding.data?.backgroundPath && <button type="button" disabled={branding.resetBackground.isPending} onClick={() => branding.resetBackground.mutate(undefined, {
+              onSuccess: () => notify({ title: "Team background reset" }),
+              onError: error => notify({ title: "Could not reset team background", description: error.message }),
+            })} data-testid="button-reset-team-background" className={dangerButton}>Reset background</button>}
+          </div>
+          {branding.data?.backgroundPath && (
+            <div className="mt-3 space-y-3 border-t border-[#edf1f1] pt-3 dark:border-[#243743]" data-testid="team-background-options">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <label className="text-xs font-semibold text-[#63747c] dark:text-[#a9bcc6]" htmlFor="team-background-mode">Fit</label>
+                <select id="team-background-mode" aria-label="Background fit" value={backgroundModeDraft} onChange={event => setBackgroundModeDraft(event.target.value as TeamBackgroundMode)} data-testid="select-team-background-mode" className={field + " h-9 w-36 text-xs"}>
+                  <option value="cover">Cover</option>
+                  <option value="tile">Tile</option>
+                </select>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="text-xs font-semibold text-[#63747c] dark:text-[#a9bcc6]" htmlFor="team-background-overlay">Dark overlay</label>
+                <div className="flex items-center gap-2">
+                  <input id="team-background-overlay" type="range" min={0} max={80} step={5} value={backgroundOverlayDraft} onChange={event => setBackgroundOverlayDraft(Number(event.target.value))} aria-label="Background dark overlay" data-testid="input-team-background-overlay" className="h-2 w-40 cursor-pointer" />
+                  <code className="mono w-8 text-xs text-[#52666e] dark:text-[#c3d3db]">{backgroundOverlayDraft}%</code>
+                </div>
+              </div>
+              <button type="button" disabled={branding.updateBackgroundOptions.isPending
+                || (backgroundModeDraft === (branding.data?.backgroundMode ?? "cover")
+                  && backgroundOverlayDraft === (branding.data?.backgroundOverlay ?? 35))}
+                onClick={() => branding.updateBackgroundOptions.mutate({ backgroundMode: backgroundModeDraft, backgroundOverlay: backgroundOverlayDraft }, {
+                  onSuccess: () => notify({ title: "Background options saved" }),
+                  onError: error => notify({ title: "Could not save background options", description: error.message }),
+                })} data-testid="button-save-team-background-options" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a]">Save options</button>
+            </div>
+          )}
+          {branding.updateBackgroundOptions.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateBackgroundOptions.error.message}</p>}
         </SettingRow>
       </div>}
       {canManageNameRules && session.data?.teamId && <TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} />}
@@ -1422,12 +1477,13 @@ function appRelativeUrl(path: string): string {
   return `${base}${path}`;
 }
 
-type TeamBranding = { logoPath: string | null; primaryColor: string | null };
+type TeamBackgroundMode = "cover" | "tile";
+type TeamBranding = { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number };
 const TEAM_BRANDING_QUERY_KEY = ["/api/auth/team-branding"] as const;
 function teamBrandingQueryKey(teamId?: string) {
   return [...TEAM_BRANDING_QUERY_KEY, teamId ?? "unknown"];
 }
-function teamLogoObjectUrl(logoPath: string): string {
+function teamBrandingObjectUrl(logoPath: string): string {
   const safePath = logoPath.replace(/^\/objects\//, "");
   return `/api/storage/objects/${safePath.split("/").map(encodeURIComponent).join("/")}`;
 }
@@ -1476,7 +1532,31 @@ function useTeamBranding(teamId?: string, enabled = false) {
     },
     onSuccess: (data) => queryClient.setQueryData(queryKey, data),
   });
-  return { ...query, updateColor, uploadLogo, resetLogo };
+  const updateBackgroundOptions = useMutation({
+    mutationFn: async (options: { backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number }) => readTeamBranding(await teamBrandingApi("/api/auth/team-branding", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ primaryColor: query.data?.primaryColor ?? null, ...options }),
+    })),
+    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+  });
+  const uploadBackground = useMutation({
+    mutationFn: async (file: File) => {
+      const response = await teamBrandingApi("/api/auth/team-branding/background", { method: "POST", headers: { "Content-Type": file.type }, body: file });
+      if (!response.ok) throw new Error((await response.text()) || "Could not save the team background.");
+      return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
+    },
+    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+  });
+  const resetBackground = useMutation({
+    mutationFn: async () => {
+      const response = await teamBrandingApi("/api/auth/team-branding/background", { method: "DELETE" });
+      if (!response.ok) throw new Error((await response.text()) || "Could not reset the team background.");
+      return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
+    },
+    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+  });
+  return { ...query, updateColor, uploadLogo, resetLogo, updateBackgroundOptions, uploadBackground, resetBackground };
 }
 
 function AuthenticatedChatImage({ src, alt, inline = false, className }: { src: string; alt: string; inline?: boolean; className?: string }) {
@@ -3714,7 +3794,21 @@ function Shell({
   ];
   const nav = demoMode ? demoNav : regularNav;
   return (
-    <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] bg-[#f3f6f5] text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
+    <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] ${teamBranding.data?.backgroundPath ? "bg-transparent" : "bg-[#f3f6f5]"} text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
+      {teamBranding.data?.backgroundPath && (
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-0" data-testid="team-background">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `url(${teamBrandingObjectUrl(teamBranding.data.backgroundPath)})`,
+              backgroundRepeat: teamBranding.data.backgroundMode === "tile" ? "repeat" : "no-repeat",
+              backgroundSize: teamBranding.data.backgroundMode === "tile" ? "auto" : "cover",
+              backgroundPosition: "center",
+            }}
+          />
+          <div className="absolute inset-0" style={{ backgroundColor: `rgba(8, 14, 19, ${(teamBranding.data.backgroundOverlay ?? 35) / 100})` }} />
+        </div>
+      )}
       {mobileNav && <button type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-25 bg-black/45 backdrop-blur-[1px] xl:hidden" data-testid="button-close-mobile-navigation" />}
       <aside id="workspace-sidebar" aria-label="Workspace navigation" className={`fixed inset-y-0 left-0 z-30 flex w-[min(248px,88vw)] flex-col overflow-y-auto bg-[#172a3a] px-4 py-5 pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-[#d4e0e2] transition-transform xl:translate-x-0 ${mobileNav ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}>
         <div className="px-3"><Logo dark teamName={demoMode ? "Acme Robotics" : activeTeamName} /></div>
@@ -3831,7 +3925,7 @@ function Shell({
              ) : <AccountMenu onOpenSettings={() => setSettingsOpen(true)} />}
            </div>
         </header>
-        <main className={`mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9${isCadWorkspaceRoute ? " cad-workspace-main" : ""}${isChatWorkspaceRoute ? " chat-workspace-main" : ""}`}
+        <main className={`relative z-10 mx-auto max-w-[1500px] px-3 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:p-5 lg:p-9${isCadWorkspaceRoute ? " cad-workspace-main" : ""}${isChatWorkspaceRoute ? " chat-workspace-main" : ""}`}
           style={{ paddingLeft: "max(0.75rem, env(safe-area-inset-left))", paddingRight: "max(0.75rem, env(safe-area-inset-right))" }}>
           {settingsOpen && <SettingsModal
             onClose={() => setSettingsOpen(false)}
