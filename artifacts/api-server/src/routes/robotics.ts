@@ -287,6 +287,8 @@ import {
   type AssistantToolExposureMode,
 } from "../lib/assistantWorkspaceTools";
 import { runWorkspaceScript } from "../lib/workspaceScript";
+import { runSettingsAgent } from "../lib/assistantSettingsAgent";
+import { settingsCapabilityOperations } from "../lib/settingsCapabilityOperations";
 import {
   CUSTOM_WORKSPACE_TOOL_NAME_PATTERN,
   listAssistantCustomWorkspaceTools,
@@ -8929,6 +8931,50 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
     req.log.error({ err: error }, "Assistant chat completion failed");
     res.status(503).json({ error: "The assistant is unavailable right now. Try again shortly." });
     return;
+  }
+});
+
+router.post("/assistant/settings", requireAdmin, async (req, res): Promise<void> => {
+  const body = req.body && typeof req.body === "object" && !Array.isArray(req.body)
+    ? req.body as Record<string, unknown>
+    : {};
+  if (typeof body.question !== "string" || !body.question.trim() || body.question.length > 8000 ||
+      (body.confirmationToken !== undefined &&
+        (typeof body.confirmationToken !== "string" || body.confirmationToken.length > 8192))) {
+    res.status(400).json({ error: "Enter a settings question up to 8,000 characters." });
+    return;
+  }
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const teamId = account.teamId?.trim() || DEFAULT_TEAM_ID;
+  try {
+    const result = await runSettingsAgent({
+      question: body.question,
+      identity: {
+        accountId: account.id,
+        teamId,
+        role: account.role,
+        permissions: await permissionsForAccount({
+          role: account.role,
+          customRoleId: account.customRoleId,
+          teamId,
+        }),
+      },
+      adapter: settingsCapabilityOperations,
+      ...(typeof body.confirmationToken === "string" ? { confirmationToken: body.confirmationToken } : {}),
+    });
+    res.json(result);
+  } catch (error) {
+    if (typeof body.confirmationToken === "string") {
+      res.status(400).json({ error: error instanceof Error ? error.message : "The settings confirmation could not be applied." });
+      return;
+    }
+    req.log.error({ err: error }, "Settings assistant request failed");
+    res.status(503).json({ error: "The settings assistant is unavailable right now. Try again shortly." });
   }
 });
 

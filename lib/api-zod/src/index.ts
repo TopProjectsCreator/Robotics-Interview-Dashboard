@@ -1,5 +1,6 @@
 export * from "./generated/types/index";
 export * from "./permissions";
+export * from "./settingsCapabilities";
 // Orval emits GetAssistantConversationMessagesParams in both targets (path
 // params as a zod schema, query params as a type). The explicit export wins
 // over the star export above, and the query type stays reachable by alias.

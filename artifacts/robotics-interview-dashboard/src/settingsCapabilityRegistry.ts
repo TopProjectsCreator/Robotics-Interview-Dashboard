@@ -8,59 +8,19 @@ import {
   UpdateTeamNameRulesBody,
   hasPermission,
   permissionsForBuiltInRole,
+  SETTINGS_CAPABILITIES,
+  settingsCapabilitiesForPermissions,
+  type SettingsCapability,
+  type SettingsCapabilityId,
 } from "@workspace/api-zod";
 import type { AuthSession } from "@workspace/api-client-react";
 import { getStoredAuthToken } from "./authSession";
 import type { WorkspaceSettings } from "./workspaceSettings";
 
-export type SettingsCapabilityId =
-  | "profile.displayName"
-  | "profile.initials"
-  | "appearance.theme"
-  | "appearance.density"
-  | "appearance.showPhotos"
-  | "appearance.reduceMotion"
-  | "applicants.defaultSort"
-  | "live.autoRefresh"
-  | "live.realtime"
-  | "live.refreshMs"
-  | "team.chat.slowmode"
-  | "team.inbox"
-  | "team.nameRules"
-  | "team.branding.primaryColor"
-  | "team.branding.backgroundOptions";
-
-export type SettingsCapability = {
-  id: SettingsCapabilityId;
-  scope: "browser-local" | "signed-in-team";
-  readOperation: string;
-  updateOperation: string;
-  requiredPermission?: string;
-};
-
-const LOCAL_CAPABILITIES: SettingsCapability[] = [
-  { id: "profile.displayName", scope: "browser-local", readOperation: "readLocalDisplayName", updateOperation: "updateLocalDisplayName" },
-  { id: "profile.initials", scope: "browser-local", readOperation: "readLocalInitials", updateOperation: "updateLocalInitials" },
-  { id: "appearance.theme", scope: "browser-local", readOperation: "readBrowserTheme", updateOperation: "updateBrowserTheme" },
-  { id: "appearance.density", scope: "browser-local", readOperation: "readLocalDensity", updateOperation: "updateLocalDensity" },
-  { id: "appearance.showPhotos", scope: "browser-local", readOperation: "readLocalShowPhotos", updateOperation: "updateLocalShowPhotos" },
-  { id: "appearance.reduceMotion", scope: "browser-local", readOperation: "readLocalReduceMotion", updateOperation: "updateLocalReduceMotion" },
-  { id: "applicants.defaultSort", scope: "browser-local", readOperation: "readLocalDefaultSort", updateOperation: "updateLocalDefaultSort" },
-  { id: "live.autoRefresh", scope: "browser-local", readOperation: "readLocalAutoRefresh", updateOperation: "updateLocalAutoRefresh" },
-  { id: "live.realtime", scope: "browser-local", readOperation: "readLocalRealtime", updateOperation: "updateLocalRealtime" },
-  { id: "live.refreshMs", scope: "browser-local", readOperation: "readLocalRefreshInterval", updateOperation: "updateLocalRefreshInterval" },
-];
-
-const TEAM_CAPABILITIES: SettingsCapability[] = [
-  { id: "team.chat.slowmode", scope: "signed-in-team", readOperation: "GET /api/chat/settings", updateOperation: "POST /api/chat/settings", requiredPermission: "chat.manage" },
-  { id: "team.inbox", scope: "signed-in-team", readOperation: "GET /api/system/mailbox", updateOperation: "PUT /api/system/mailbox", requiredPermission: "team.mailbox.manage" },
-  { id: "team.nameRules", scope: "signed-in-team", readOperation: "GET /api/auth/name-rules", updateOperation: "PUT /api/auth/name-rules", requiredPermission: "team.nameRules.manage" },
-  { id: "team.branding.primaryColor", scope: "signed-in-team", readOperation: "GET /api/auth/team-branding", updateOperation: "PATCH /api/auth/team-branding", requiredPermission: "team.branding.manage" },
-  { id: "team.branding.backgroundOptions", scope: "signed-in-team", readOperation: "GET /api/auth/team-branding", updateOperation: "PATCH /api/auth/team-branding", requiredPermission: "team.branding.manage" },
-];
+export type { SettingsCapability, SettingsCapabilityId };
 
 const CAPABILITIES = new Map<SettingsCapabilityId, SettingsCapability>(
-  [...LOCAL_CAPABILITIES, ...TEAM_CAPABILITIES].map((capability) => [capability.id, capability]),
+  SETTINGS_CAPABILITIES.map((capability) => [capability.id, capability]),
 );
 const SORT_OPTIONS = new Set(["rank", "queue", "score", "name", "grade", "skill", "gender", "newest", "oldest"]);
 const REFRESH_INTERVALS = new Set([3000, 10000, 30000]);
@@ -90,9 +50,8 @@ function capabilityVisible(capability: SettingsCapability, session: AuthSession 
 
 /** Returns only capabilities the signed-in person can see in Settings. */
 export function listSettingsCapabilities(session: AuthSession | null | undefined): SettingsCapability[] {
-  return [...LOCAL_CAPABILITIES, ...TEAM_CAPABILITIES]
-    .filter((capability) => capabilityVisible(capability, session))
-    .map((capability) => ({ ...capability }));
+  if (session?.authenticated !== true) return [];
+  return settingsCapabilitiesForPermissions(sessionPermissions(session), true);
 }
 
 function getVisibleCapability(id: string, context: SettingsCapabilityContext): SettingsCapability {
