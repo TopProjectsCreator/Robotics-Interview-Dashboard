@@ -3,12 +3,12 @@ type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
 export const modules: ModuleMap = {
   "./components/mockups/interview-chat-emoji/Current.tsx": () => import("../components/mockups/interview-chat-emoji/Current.tsx"),
   "./components/mockups/interview-chat-emoji/Expanded.tsx": () => import("../components/mockups/interview-chat-emoji/Expanded.tsx"),
+  "./components/mockups/robotics-workspace-chooser/Current.tsx": () => import("../components/mockups/robotics-workspace-chooser/Current.tsx"),
+  "./components/mockups/robotics-workspace-chooser/RicherCards.tsx": () => import("../components/mockups/robotics-workspace-chooser/RicherCards.tsx"),
   "./components/mockups/landing-rebuild/BentoControl.tsx": () => import("../components/mockups/landing-rebuild/BentoControl.tsx"),
   "./components/mockups/landing-rebuild/Broadsheet.tsx": () => import("../components/mockups/landing-rebuild/Broadsheet.tsx"),
   "./components/mockups/landing-rebuild/CommandDeck.tsx": () => import("../components/mockups/landing-rebuild/CommandDeck.tsx"),
   "./components/mockups/landing-rebuild/Daylight.tsx": () => import("../components/mockups/landing-rebuild/Daylight.tsx"),
   "./components/mockups/landing-rebuild/Runbook.tsx": () => import("../components/mockups/landing-rebuild/Runbook.tsx"),
-  "./components/mockups/landing-rebuild/SignalSheet.tsx": () => import("../components/mockups/landing-rebuild/SignalSheet.tsx"),
-  "./components/mockups/robotics-workspace-chooser/Current.tsx": () => import("../components/mockups/robotics-workspace-chooser/Current.tsx"),
-  "./components/mockups/robotics-workspace-chooser/RicherCards.tsx": () => import("../components/mockups/robotics-workspace-chooser/RicherCards.tsx")
+  "./components/mockups/landing-rebuild/SignalSheet.tsx": () => import("../components/mockups/landing-rebuild/SignalSheet.tsx")
 };

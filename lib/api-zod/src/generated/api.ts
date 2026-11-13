@@ -1856,6 +1856,33 @@ export const SendInterviewChatResponse = zod.object({
 
 
 /**
+ * Streams the conversation as a downloadable UTF-8 transcript (CSV,
+ * Markdown, or plain text) in ascending chronological order. Defaults to
+ * the entire retained history — even millions of messages — not just the
+ * page currently loaded in the client. Pass `last` to export only the
+ * most recent N messages. Deleted messages are rendered as
+ * `[message deleted]`; the deleted/edited timestamps are kept. The
+ * response is streamed with no content-length, so clients should not
+ * assume the payload size up front. Used by the `/export` composer
+ * command.
+ * @summary Export the full chat history of the current conversation
+ */
+
+export const exportChatQueryScopeDefault = `shared`;
+
+export const ExportChatQueryParams = zod.object({
+  "format": zod.enum(['csv', 'md', 'txt']).describe('Transcript format. CSV is RFC-4180 with a header row.'),
+  "last": zod.coerce.number().int().min(1).optional().describe('When set, export only the most recent N messages (still chronological). Omit to export the full retained history.'),
+  "scope": zod.enum(['shared', 'direct', 'channel']).default(exportChatQueryScopeDefault).describe('Conversation scope, mirroring GET \/queue\/chat.'),
+  "author": zod.coerce.string().optional().describe('Configured interviewer label used to derive a direct conversation pair.'),
+  "peer": zod.coerce.string().optional().describe('Configured interviewer label for the direct conversation.'),
+  "channelId": zod.coerce.string().optional().describe('Invite-only channel id for the channel conversation; the caller must be a member (or an admin).')
+})
+
+export const ExportChatResponse = zod.string()
+
+
+/**
  * Admin-only bulk send used by the `/multimessage <count> <message>` chat
  * command. Posts `count` copies of the same message to the current
  * conversation in one request. There is no upper limit on `count`; it is

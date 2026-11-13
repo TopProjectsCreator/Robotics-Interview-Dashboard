@@ -1733,6 +1733,87 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/InterviewChatMessage"
+  /queue/chat/export:
+    get:
+      operationId: exportChat
+      tags: [queue]
+      summary: Export the full chat history of the current conversation
+      description: |
+        Streams the conversation as a downloadable UTF-8 transcript (CSV,
+        Markdown, or plain text) in ascending chronological order. Defaults to
+        the entire retained history — even millions of messages — not just the
+        page currently loaded in the client. Pass `last` to export only the
+        most recent N messages. Deleted messages are rendered as
+        `[message deleted]`; the deleted/edited timestamps are kept. The
+        response is streamed with no content-length, so clients should not
+        assume the payload size up front. Used by the `/export` composer
+        command.
+      parameters:
+        - name: format
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [csv, md, txt]
+          description: Transcript format. CSV is RFC-4180 with a header row.
+        - name: last
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: When set, export only the most recent N messages (still chronological). Omit to export the full retained history.
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [shared, direct, channel]
+            default: shared
+          description: Conversation scope, mirroring GET /queue/chat.
+        - name: author
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Configured interviewer label used to derive a direct conversation pair.
+        - name: peer
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Configured interviewer label for the direct conversation.
+        - name: channelId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Invite-only channel id for the channel conversation; the caller must be a member (or an admin).
+      responses:
+        "200":
+          description: Exported chat transcript (streamed)
+          content:
+            text/csv:
+              schema:
+                type: string
+            text/markdown:
+              schema:
+                type: string
+            text/plain:
+              schema:
+                type: string
+        "400":
+          description: Invalid format, last, or conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Not a member of this conversation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /queue/chat/multimessage:
     post:
       operationId: sendChatMultimessage

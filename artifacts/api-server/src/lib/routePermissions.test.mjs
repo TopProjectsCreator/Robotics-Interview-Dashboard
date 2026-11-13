@@ -16,6 +16,10 @@ test("route policy separates read, ordinary writes, and management actions", () 
   assert.equal(permissionForRoute("DELETE", "/api/cad/models/abc"), "cad.manage");
   assert.equal(permissionForRoute("PUT", "/api/code/files/abc"), "code.edit");
   assert.equal(permissionForRoute("POST", "/api/queue/chat"), "chat.send");
+  assert.equal(permissionForRoute("GET", "/api/queue/chat/export"), "chat.view");
+  assert.equal(workspaceVisibilityFallback("GET", "/api/queue/chat/export"), "chat");
+  assert.equal(routePermissionIsGranted(["chat.view"], "GET", "/api/queue/chat/export"), true);
+  assert.equal(routePermissionIsGranted(["applicants.view"], "GET", "/api/queue/chat/export"), false);
   assert.equal(permissionForRoute("POST", "/api/queue/chat/multimessage"), "chat.manage");
   assert.equal(routePermissionIsGranted(["chat.manage"], "POST", "/api/queue/chat/multimessage"), true);
   assert.equal(routePermissionIsGranted(["chat.send"], "POST", "/api/queue/chat/multimessage"), false);

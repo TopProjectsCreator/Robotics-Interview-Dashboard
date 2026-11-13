@@ -170,6 +170,7 @@ import type {
   DisplayState,
   ErrorResponse,
   EventPasswordInput,
+  ExportChatParams,
   FeatureRequest,
   FeatureRequestList,
   FeatureRequestMessageUpdate,
@@ -6246,6 +6247,99 @@ export const useSendInterviewChat = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getSendInterviewChatMutationOptions(options));
     }
+
+export const getExportChatUrl = (params: ExportChatParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/queue/chat/export?${stringifiedParams}` : `/api/queue/chat/export`
+}
+
+/**
+ * Streams the conversation as a downloadable UTF-8 transcript (CSV,
+ * Markdown, or plain text) in ascending chronological order. Defaults to
+ * the entire retained history — even millions of messages — not just the
+ * page currently loaded in the client. Pass `last` to export only the
+ * most recent N messages. Deleted messages are rendered as
+ * `[message deleted]`; the deleted/edited timestamps are kept. The
+ * response is streamed with no content-length, so clients should not
+ * assume the payload size up front. Used by the `/export` composer
+ * command.
+ * @summary Export the full chat history of the current conversation
+ */
+export const exportChat = async (params: ExportChatParams, options?: Parameters<typeof customFetch>[1]): Promise<string> => {
+
+  return customFetch<string>(getExportChatUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getExportChatQueryKey = (params?: ExportChatParams,) => {
+    return [
+    `/api/queue/chat/export`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getExportChatQueryOptions = <TData = Awaited<ReturnType<typeof exportChat>>, TError = ErrorType<ErrorResponse>>(params: ExportChatParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getExportChatQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof exportChat>>> = ({ signal }) => exportChat(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof exportChat>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ExportChatQueryResult = NonNullable<Awaited<ReturnType<typeof exportChat>>>
+export type ExportChatQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Export the full chat history of the current conversation
+ */
+
+export function useExportChat<TData = Awaited<ReturnType<typeof exportChat>>, TError = ErrorType<ErrorResponse>>(
+ params: ExportChatParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof exportChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getExportChatQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getSendChatMultimessageUrl = () => {
 

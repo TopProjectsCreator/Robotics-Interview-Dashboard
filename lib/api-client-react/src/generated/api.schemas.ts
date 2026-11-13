@@ -4866,6 +4866,52 @@ export const GetInterviewChatScope = {
   channel: 'channel',
 } as const;
 
+export type ExportChatParams = {
+/**
+ * Transcript format. CSV is RFC-4180 with a header row.
+ */
+format: ExportChatFormat;
+/**
+ * When set, export only the most recent N messages (still chronological). Omit to export the full retained history.
+ * @minimum 1
+ */
+last?: number;
+/**
+ * Conversation scope, mirroring GET /queue/chat.
+ */
+scope?: ExportChatScope;
+/**
+ * Configured interviewer label used to derive a direct conversation pair.
+ */
+author?: string;
+/**
+ * Configured interviewer label for the direct conversation.
+ */
+peer?: string;
+/**
+ * Invite-only channel id for the channel conversation; the caller must be a member (or an admin).
+ */
+channelId?: string;
+};
+
+export type ExportChatFormat = typeof ExportChatFormat[keyof typeof ExportChatFormat];
+
+
+export const ExportChatFormat = {
+  csv: 'csv',
+  md: 'md',
+  txt: 'txt',
+} as const;
+
+export type ExportChatScope = typeof ExportChatScope[keyof typeof ExportChatScope];
+
+
+export const ExportChatScope = {
+  shared: 'shared',
+  direct: 'direct',
+  channel: 'channel',
+} as const;
+
 export type GetChatProductivityParams = {
 scope?: GetChatProductivityScope;
 /**

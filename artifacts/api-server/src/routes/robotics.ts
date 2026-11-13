@@ -219,6 +219,7 @@ import { isAdminRole } from "../lib/roles";
 import { checkAiMentionAllowed, checkDuplicatePost, checkPostAllowed, recordPost } from "../lib/spamGuard";
 import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
 import { teamFilter, teamSqlCondition } from "../lib/teams";
+import { CHAT_EXPORT_CONTENT_TYPES, chatExportConversationLabel, chatExportFileName, chatExportHeader, parseChatExportFormat, parseChatExportLastParam, rowToChunk, type ChatExportRow } from "../lib/chatExport";
 import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
 import { presenceSessionHash, accountNamesById } from "./presence";
 import { getAccountStats } from "../lib/presence";
@@ -6361,6 +6362,132 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       channel: conversation.channelId ? { id: conversation.channelId, name: conversation.channelName ?? "" } : null,
     });
   });
+});
+
+// Streams the full retained conversation as a downloadable transcript for the
+// `/export` composer command. Memory stays flat no matter how long the thread
+// is — rows are keyset-paginated in batches and written straight to the
+// response, so even a multi-million-message history never materializes in
+// memory. `last` narrows the export to the most recent N messages via an
+// index-backed boundary row; deleted messages stream as `[message deleted]`.
+router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  const format = parseChatExportFormat(req.query.format);
+  if (!format) { res.status(400).json({ error: "Format must be csv, md, or txt." }); return; }
+  const last = parseChatExportLastParam(req.query.last);
+  if (last === "invalid") { res.status(400).json({ error: "`last` must be a whole number of at least 1." }); return; }
+  const teamId = await requestTeamId(req);
+  const conversation = await resolveChatConversation(req.query.scope, req.query.peer, account.displayName, teamId, {
+    channelId: req.query.channelId,
+    viewer: channelViewerFor(account),
+  });
+  if ("error" in conversation) {
+    const status = conversation.error.includes("not a member") ? 403 : 400;
+    res.status(status).json({ error: conversation.error });
+    return;
+  }
+  const teamCondition = teamSqlCondition("m.team_id", "$1");
+  const peerCondition = conversation.key === null
+    ? "m.conversation_peer is null"
+    : "m.conversation_peer = $3";
+  const peerParams = conversation.key === null ? [] : [conversation.key];
+  const label = chatExportConversationLabel(conversation);
+  const fileName = chatExportFileName(label, format, new Date());
+  res.status(200);
+  res.setHeader("Content-Type", CHAT_EXPORT_CONTENT_TYPES[format]);
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  const EXPORT_BATCH = 500;
+  try {
+    // Locate the oldest row that belongs in a `last: N` window. When the
+    // thread is shorter than N, no boundary row exists and the full history
+    // is exported instead.
+    let lowerBound: { createdAt: Date; id: string } | null = null;
+    if (last !== null) {
+      const { rows } = await pool.query(
+        `select m.created_at, m.id from interview_chat_messages m
+         where ${teamCondition} and m.conversation_scope = $2 and ${peerCondition}
+         order by m.created_at desc, m.id desc
+         limit 1 offset $${3 + peerParams.length}`,
+        [teamId, conversation.scope, ...peerParams, last - 1],
+      );
+      const boundary = rows[0] as { created_at: Date; id: string } | undefined;
+      lowerBound = boundary ? { createdAt: new Date(boundary.created_at), id: boundary.id } : null;
+    }
+    res.write(chatExportHeader(format, label, new Date()));
+    const baseParams: unknown[] = [teamId, conversation.scope, ...peerParams];
+    let nextPlaceholder = baseParams.length + 1;
+    let lowerBoundSql = "";
+    if (lowerBound) {
+      lowerBoundSql = ` and (m.created_at, m.id) >= ($${nextPlaceholder}, $${nextPlaceholder + 1})`;
+      baseParams.push(lowerBound.createdAt, lowerBound.id);
+      nextPlaceholder += 2;
+    }
+    let cursor: { createdAt: Date; id: string } | null = null;
+    for (;;) {
+      const params: unknown[] = [...baseParams];
+      let cursorSql = "";
+      if (cursor) {
+        cursorSql = ` and (m.created_at, m.id) > ($${nextPlaceholder}, $${nextPlaceholder + 1})`;
+        params.push(cursor.createdAt, cursor.id);
+      }
+      params.push(EXPORT_BATCH);
+      const { rows } = await pool.query(
+        `select m.id, m.author, m.message, m.parent_message_id, m.edited_at, m.deleted_at, m.activities, m.created_at
+         from interview_chat_messages m
+         where ${teamCondition} and m.conversation_scope = $2 and ${peerCondition}${lowerBoundSql}${cursorSql}
+         order by m.created_at asc, m.id asc
+         limit $${params.length}`,
+        params,
+      );
+      const batch = rows as Array<{
+        id: string;
+        author: string;
+        message: string;
+        parent_message_id: string | null;
+        edited_at: Date | null;
+        deleted_at: Date | null;
+        activities: string | null;
+        created_at: Date;
+      }>;
+      if (!batch.length) break;
+      for (const row of batch) {
+        const exportRow: ChatExportRow = {
+          id: row.id,
+          author: row.author,
+          message: row.message,
+          parentMessageId: row.parent_message_id,
+          editedAt: row.edited_at ? new Date(row.edited_at) : null,
+          deletedAt: row.deleted_at ? new Date(row.deleted_at) : null,
+          activities: row.activities ?? "[]",
+          createdAt: new Date(row.created_at),
+        };
+        if (!res.write(rowToChunk(exportRow, format))) {
+          await new Promise<void>((resolve, reject) => {
+            res.once("drain", resolve);
+            res.once("error", reject);
+          });
+        }
+      }
+      const tail = batch[batch.length - 1];
+      cursor = { createdAt: new Date(tail.created_at), id: tail.id };
+      if (batch.length < EXPORT_BATCH) break;
+    }
+    res.end();
+  } catch (error) {
+    req.log.error({ err: error }, "chat export failed");
+    if (res.headersSent) {
+      // The transcript is incomplete by now; killing the socket is the only
+      // honest signal left that the download did not finish.
+      res.destroy(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    res.status(500).json({ error: "Couldn't export the chat history. Try again." });
+  }
 });
 
 router.get("/queue/chat/productivity", requireAdmin, async (req, res): Promise<void> => {
