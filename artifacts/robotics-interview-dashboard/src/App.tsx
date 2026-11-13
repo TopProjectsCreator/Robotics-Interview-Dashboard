@@ -159,6 +159,7 @@ import { CustomWorkspaceOverviewCard, CustomWorkspaceSidebarLinks } from "./comp
 import WorkspaceUsageDashboard from "./components/WorkspaceUsageDashboard";
 import { TeamRoleManagement } from "./components/TeamRoleManagement";
 import { AssistantGovernanceSettings } from "./components/AssistantGovernanceSettings";
+import { getSettingsNavigationItems, SettingsWorkspaceNavigation, type SettingsSectionId } from "./components/SettingsWorkspaceNavigation";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
 const authenticatedSessionQueries = new WeakSet<object>();
@@ -689,6 +690,7 @@ function SettingsModal({
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
+  const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>("profile");
   const isAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
   const canManageMailbox = isAdmin || canSessionUsePermission(session.data, "team.mailbox.manage");
   const canSendBroadcast = isAdmin || canSessionUsePermission(session.data, "broadcasts.send");
@@ -1095,34 +1097,66 @@ function SettingsModal({
   const dangerButton = "rounded-lg border border-[#e0b8b4] bg-white px-3 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]";
   const sectionLabel = "mono mt-3 text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]";
   const divider = "mt-2 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]";
+  const settingsNavigationItems = getSettingsNavigationItems({
+    canManageAssistant: canManageAssistant || isAdmin,
+    canManageBranding,
+  });
+  const activeSettingsItem = settingsNavigationItems.find((item) => item.id === activeSettingsSection)
+    ?? settingsNavigationItems[0];
   return <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4 dark:bg-[#050d13]/80" onClick={onClose} data-testid="settings-modal">
-    <div {...panelProps} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#dce5e5] bg-white p-6 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2]">
-      <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p><h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2><p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Profile and view preferences stay on this device; team branding is shared with your teammates.</p></div><button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button></div>
-      <div className="mt-4 border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className={sectionLabel}>Profile</p>
+    <div {...panelProps} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="flex max-h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#dce5e5] bg-white p-3 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2] sm:p-5">
+      <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border pb-3">
+        <div className="min-w-0">
+          <p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p>
+          <h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2>
+          <p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Profile and view preferences stay on this device; team branding is shared with your teammates.</p>
+        </div>
+        <button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="shrink-0 rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button>
+      </div>
+      <div data-testid="settings-workspace-layout" className="mt-3 grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-background sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-1">
+        <SettingsWorkspaceNavigation
+          items={settingsNavigationItems}
+          activeSection={activeSettingsSection}
+          onSectionChange={setActiveSettingsSection}
+        />
+        <main
+          id="settings-section-panel"
+          role="tabpanel"
+          aria-labelledby={`settings-tab-${activeSettingsItem.id}`}
+          data-testid="settings-section-panel"
+          className="min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6"
+        >
+          <div className="mb-4 border-b border-border pb-3">
+            <h3 className="text-base font-semibold text-foreground">{activeSettingsItem.label}</h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{activeSettingsItem.description}</p>
+          </div>
+      {activeSettingsSection === "profile" && <div className="border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className={sectionLabel}>Profile</p>
         <SettingRow title="Display name" detail="Shown in the account menu"><input value={settings.displayName} onChange={e => update({ displayName: e.target.value })} data-testid="input-settings-name" placeholder="Your name" className={`${field} w-44`} /></SettingRow>
         <SettingRow title="Avatar initials" detail="Defaults to your name initials"><input value={settings.initials} onChange={e => update({ initials: e.target.value.toUpperCase().slice(0, 2) })} data-testid="input-settings-initials" placeholder={avatarInitials({ ...settings, initials: "" })} maxLength={2} className={`mono ${field} w-20 text-center font-bold uppercase`} /></SettingRow>
-      </div>
-      <div className={divider}><p className={sectionLabel}>Appearance</p>
+      </div>}
+      {activeSettingsSection === "appearance" && <div className={divider}><p className={sectionLabel}>Appearance</p>
         <SettingRow title="Theme" detail="Dark is easier on the eyes at night events"><Segmented options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={theme === "dark" ? "dark" : "light"} onChange={(v) => setTheme(v)} testId="segment-settings-theme" /></SettingRow>
         <SettingRow title="Row density" detail="Compact fits more applicants per screen"><Segmented options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]} value={settings.density} onChange={(v) => update({ density: v })} testId="segment-settings-density" /></SettingRow>
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
-      </div>
+      </div>}
+      <section hidden={activeSettingsSection !== "assistant"}>
       <AIProviderSettingsCategory canManageProvider={canManageAssistant && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
       {isAdmin && session.data?.teamId && <AssistantGovernanceSettings teamId={session.data.teamId} />}
       {isAdmin && session.data?.teamId && <ProductivityPromptSettings key={session.data.teamId} teamId={session.data.teamId} />}
-      {isAdmin && <div className={divider} data-testid="settings-live-now">
+      </section>
+      {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-live-now">
         <p className={sectionLabel}>Live now</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>
         <div className="mt-2"><PresencePanel /></div>
       </div>}
-      {isAdmin && session.data?.teamId && <PartsOrderLimitSetting key={session.data.teamId} teamId={session.data.teamId} />}
-      {canSendBroadcast && <div className={divider} data-testid="settings-broadcast">
+      {isAdmin && session.data?.teamId && <div hidden={activeSettingsSection !== "operations"}><PartsOrderLimitSetting key={session.data.teamId} teamId={session.data.teamId} /></div>}
+      {canSendBroadcast && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-broadcast">
         <p className={sectionLabel}>Broadcast</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Send a popup to everyone online, or to one person by name. It pops up in seconds — and with browser notifications on, even in another tab.</p>
         <div className="mt-2"><BroadcastCard /></div>
       </div>}
-      {canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
+      {activeSettingsSection === "team" && canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>
         <div className="mt-3 rounded-xl border border-[#dce5e5] bg-[#f8faf9] p-3 dark:border-[#31495a] dark:bg-[#0f1e27]">
@@ -1176,7 +1210,7 @@ function SettingsModal({
         </>}
         {mailboxResult && <p className="mt-2 text-[11px] text-[#7c8c91] dark:text-[#93a8b2]" data-testid="team-inbox-result">{mailboxResult}</p>}
       </div>}
-      {canManageBranding && <div className={divider} data-testid="settings-team-branding">
+      {activeSettingsSection === "branding" && canManageBranding && <div className={divider} data-testid="settings-team-branding">
         <p className={sectionLabel}>Team branding</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Shown to everyone in {session.data?.teamName?.trim() || "your team"}. Changes are saved for the team, not just this device.</p>
         <SettingRow title="Primary color" detail="Used for the team mark and selected workspace">
@@ -1259,20 +1293,20 @@ function SettingsModal({
           {branding.updateBackgroundOptions.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateBackgroundOptions.error.message}</p>}
         </SettingRow>
       </div>}
-      {session.data?.teamId && <TeamAccessCodeSettings key={session.data.teamId} canManage={isAdmin} />}
-      {canManageNameRules && session.data?.teamId && <TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} />}
-      <div className={divider}><p className={sectionLabel}>Applicants list</p>
+      {session.data?.teamId && <div hidden={activeSettingsSection !== "team"}><TeamAccessCodeSettings key={session.data.teamId} canManage={isAdmin} /></div>}
+      {canManageNameRules && session.data?.teamId && <div hidden={activeSettingsSection !== "team"}><TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} /></div>}
+      {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Applicants list</p>
         <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
-      </div>
-      <div className={divider}><p className={sectionLabel}>Live updates</p>
+      </div>}
+      {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Live updates</p>
         <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
         <SettingRow title="Instant updates" detail="Pushes changes to the team in about a second. Periodic refresh stays on as a backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
         <SettingRow title="Refresh interval" detail="How often live boards poll"><Segmented options={REFRESH_OPTIONS} value={REFRESH_OPTIONS.some(o => o.value === settings.refreshMs) ? settings.refreshMs : 3000} onChange={(v) => update({ refreshMs: v })} testId="segment-settings-interval" /></SettingRow>
-      </div>
-      <div className={divider}><p className={sectionLabel}>Notifications</p>
+      </div>}
+      {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Notifications</p>
        <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts and chat mentions pop up in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — enable to catch broadcasts and chat mentions"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f] dark:text-[#6fce8f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#102c3c] dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Enable</button>}</SettingRow>
-      </div>
-      <div className={divider} data-testid="settings-team-members"><p className={sectionLabel}>Team members</p>
+      </div>}
+      <div hidden={activeSettingsSection !== "team"} className={divider} data-testid="settings-team-members"><p className={sectionLabel}>Team members</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Passwords, names, and roles for the team. Type the new password next to a person and press <strong className="text-[#385762] dark:text-[#c8d8e0]">Enter</strong>. Add the team access code once per visit. Team member, Treasurer, and Admin are built in — the Role menu lists them alongside any custom roles.</p>
         <label className="mt-3 block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-[#63747c] dark:text-[#a9bcc6]">Team access code</span><input ref={eventPasscodeRef} type="password" autoComplete="current-password" value={passwordAdminCode} onChange={e => setPasswordAdminCode(e.target.value)} onKeyDown={e => { if (e.key !== "Enter") return; e.preventDefault(); const first = document.querySelector("[data-testid^='input-settings-password-']"); if (first instanceof HTMLElement) first.focus(); }} placeholder="Used once per visit" data-testid="input-settings-event-passcode" className={field} /></label>
         <div className="mt-3 divide-y divide-[#edf1f1] rounded-xl border border-[#e5ecec] bg-[#f8fbfa] dark:divide-[#243743] dark:border-[#2a3f4c] dark:bg-[#10202a]">
@@ -1316,7 +1350,7 @@ function SettingsModal({
         {roleError && <p className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="role-error">{roleError}</p>}
         {isAdmin && <TeamRoleManagement teamId={session.data?.teamId} />}
       </div>
-      <div className={divider}><p className={sectionLabel}>Workspace access</p>
+      <div hidden={activeSettingsSection !== "team"} className={divider}><p className={sectionLabel}>Workspace access</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Choose which person can open each workspace. Saved on the server per person — the dashboard, counts, and Workspace numbers follow each person's own access. Admins can always open everything.</p>
         <div className="mt-3 overflow-x-auto rounded-xl border border-[#e5ecec] dark:border-[#2a3f4c]">
           <table className="w-full min-w-[min(420px,100%)] text-left text-xs">
@@ -1383,7 +1417,7 @@ function SettingsModal({
           )}
         </div>
       </div>
-      <div className={divider}><p className={sectionLabel}>Passkeys</p>
+      {activeSettingsSection === "profile" && <div className={divider}><p className={sectionLabel}>Passkeys</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Sign in with your device (fingerprint, face, or PIN) instead of typing a password. Your password keeps working either way. Each passkey remembers the site it was made on, so it can also be used when the dashboard is reached through a mirror site.</p>
         {!passkeysAvailable && <p className="mt-3 rounded-lg border border-[#e0b8b4] bg-[#fff7f6] px-3 py-2 text-xs text-[#a34d46] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087]">This browser does not support passkeys. Use Chrome, Edge, Firefox 110+, or Safari 16+.</p>}
         {passkeysAvailable && <div className="mt-3 space-y-2">
@@ -1404,8 +1438,8 @@ function SettingsModal({
           {passkeyNotice && <p className="text-[11px] font-semibold text-[#247d63] dark:text-[#6fce8f]" data-testid="passkey-success">{passkeyNotice}</p>}
           {passkeyError && <p className="text-[11px] font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="passkey-error">{passkeyError}</p>}
         </div>}
-      </div>
-      {canManageChatSettings && <div className={divider}><p className={sectionLabel}>Chat slow mode</p>
+      </div>}
+      {activeSettingsSection === "chat" && canManageChatSettings && <div className={divider}><p className={sectionLabel}>Chat slow mode</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Like Discord: each person on the team chat may only send one message every N seconds. The send button counts down for them. Direct messages are never slowed.</p>
         <SettingRow title="Slow mode" detail={chatSettings.isLoading ? "Loading…" : `One message every ${(() => { const v = chatSettings.data?.slowmodeSeconds ?? 0; return v === 0 ? "no limit" : v < 60 ? `${v}s` : "1m"; })()}`}>
           <Segmented options={[{ value: 0, label: "Off" }, { value: 5, label: "5s" }, { value: 10, label: "10s" }, { value: 30, label: "30s" }, { value: 60, label: "1m" }]} value={chatSettings.data?.slowmodeSeconds ?? 0} onChange={(v) => setSlowmode(v)} testId="segment-settings-slowmode" />
@@ -1413,12 +1447,20 @@ function SettingsModal({
         {slowmodeBusy && <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Saving…</p>}
       </div>}
       {(canSessionUsePermission(session.data, "featureRequests.view") ||
-        canSessionUsePermission(session.data, "featureRequests.create")) && <FeatureRequestSection />}
-      <div className={divider}><p className={sectionLabel}>Data</p>
+        canSessionUsePermission(session.data, "featureRequests.create")) && <div hidden={activeSettingsSection !== "chat"}><FeatureRequestSection /></div>}
+      {activeSettingsSection === "chat" && <section data-testid="settings-chat-assistant-slot" className="mt-4 rounded-xl border border-dashed border-border bg-muted/30 p-4">
+        <h4 className="text-sm font-semibold text-foreground">Settings assistant</h4>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">Assistant chat settings will appear here.</p>
+      </section>}
+      {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
         <SettingRow title="Reset all settings" detail="Back to defaults on this device"><button onClick={reset} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> Reset</button></SettingRow>
+      </div>}
+        </main>
       </div>
-      <button onClick={onClose} data-testid="button-settings-done" className="mt-5 w-full rounded-xl bg-[#183a4b] py-3 text-sm font-semibold text-white transition hover:bg-[#102c3c] dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Done</button>
+      <div className="mt-3 flex shrink-0 justify-end border-t border-border pt-3">
+        <button onClick={onClose} data-testid="button-settings-done" className="rounded-xl bg-[#183a4b] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#102c3c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Done</button>
+      </div>
     </div>
   </div>;
 }
