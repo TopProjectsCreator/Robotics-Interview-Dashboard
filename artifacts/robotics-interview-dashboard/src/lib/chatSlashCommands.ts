@@ -11,7 +11,7 @@
 export interface ChatSlashCommand {
   /** Command name without the leading slash, e.g. "multimessage". */
   name: string;
-  /** Full usage string shown in the picker row, e.g. "/multimessage <count> <message>". */
+  /** Full usage string shown in the picker row, e.g. "/multimessage [{delayMs}] <count> <message>". */
   usage: string;
   /** One-line description of what the command does. */
   description: string;
@@ -25,8 +25,8 @@ export interface ChatSlashCommand {
 export const CHAT_SLASH_COMMANDS: readonly ChatSlashCommand[] = [
   {
     name: "multimessage",
-    usage: "/multimessage <count> <message>",
-    description: "Post the same message multiple times",
+    usage: "/multimessage [{delayMs}] <count> <message>",
+    description: "Post the same message multiple times, optionally {delayMs} apart — keeps the composer usable while it runs",
     adminOnly: true,
   },
 ];

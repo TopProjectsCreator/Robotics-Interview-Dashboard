@@ -169,6 +169,84 @@ describe("/multimessage chat command", () => {
     expect(screen.getByTestId("input-interviewer-chat")).toHaveValue("");
   });
 
+  it("spaces copies when {delayMs} is given and keeps the composer usable", async () => {
+    const { persistedMessages, requests } = installFetchMock("coordinator");
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+    const input = screen.getByTestId("input-interviewer-chat");
+    const sendButton = screen.getByTestId("button-send-interviewer-chat");
+    fireEvent.change(input, {
+      target: { value: "/multimessage {120} 3 Go team" },
+    });
+    const startedAt = performance.now();
+    fireEvent.click(sendButton);
+
+    // The draft is consumed immediately; the run never blocks the composer —
+    // typing a new draft re-enables send while copies are still pending.
+    expect(input).toHaveValue("");
+    fireEvent.change(input, { target: { value: "draft typed while running" } });
+    await waitFor(() => expect(sendButton).not.toBeDisabled());
+    await waitFor(
+      () => expect(screen.getByTestId("multimessage-notice")).toHaveTextContent("Posted 3 copies of your message."),
+      { timeout: 3000 },
+    );
+    // Two intervals at {120} ms must have elapsed — the copies really were spaced out.
+    expect(performance.now() - startedAt).toBeGreaterThanOrEqual(200);
+
+    const bulkRequests = requests.filter(request => request.url.pathname === "/api/queue/chat/multimessage");
+    expect(bulkRequests).toHaveLength(3);
+    for (const request of bulkRequests) {
+      expect(JSON.parse(String(request.init?.body))).toMatchObject({ message: "Go team", count: 1, scope: "shared" });
+    }
+    expect(persistedMessages).toHaveLength(3);
+  });
+
+  it("lets the admin send another message while a spaced run is in flight", async () => {
+    const { persistedMessages, requests } = installFetchMock("coordinator");
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+    const input = screen.getByTestId("input-interviewer-chat");
+    const sendButton = screen.getByTestId("button-send-interviewer-chat");
+    fireEvent.change(input, {
+      target: { value: "/multimessage {150} 2 Go team" },
+    });
+    fireEvent.click(sendButton);
+
+    // While copies are pending, an ordinary message can be typed and sent.
+    expect(input).toHaveValue("");
+    fireEvent.change(input, { target: { value: "Meanwhile, a normal message" } });
+    await waitFor(() => expect(sendButton).not.toBeDisabled());
+    fireEvent.click(sendButton);
+
+    await waitFor(() => {
+      expect(requests.filter(request => request.url.pathname === "/api/queue/chat" && request.init?.method === "POST")).toHaveLength(1);
+    });
+    await waitFor(
+      () => expect(screen.getByTestId("multimessage-notice")).toHaveTextContent("Posted 2 copies of your message."),
+      { timeout: 3000 },
+    );
+    expect(persistedMessages.filter(message => message.message === "Go team")).toHaveLength(2);
+    expect(persistedMessages.filter(message => message.message === "Meanwhile, a normal message")).toHaveLength(1);
+  });
+
+  it("{0} posts every copy at once through the bulk endpoint", async () => {
+    const { requests } = installFetchMock("coordinator");
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+    fireEvent.change(screen.getByTestId("input-interviewer-chat"), {
+      target: { value: "/multimessage {0} 3 Go team" },
+    });
+    fireEvent.click(screen.getByTestId("button-send-interviewer-chat"));
+
+    expect(await screen.findByTestId("multimessage-notice")).toHaveTextContent("Posted 3 copies of your message.");
+    const bulkRequests = requests.filter(request => request.url.pathname === "/api/queue/chat/multimessage");
+    expect(bulkRequests).toHaveLength(1);
+    expect(JSON.parse(String(bulkRequests[0].init?.body))).toMatchObject({ message: "Go team", count: 3 });
+  });
+
   it("blocks non-admins without sending anything", async () => {
     const { requests } = installFetchMock("interviewer");
     renderPanel();
@@ -186,7 +264,8 @@ describe("/multimessage chat command", () => {
   });
 
   it.each([
-    { draft: "/multimessage Go team", expected: "Usage: /multimessage <count> <message>" },
+    { draft: "/multimessage Go team", expected: "Usage: /multimessage [{delayMs}] <count> <message>" },
+    { draft: "/multimessage {99999999999999999999} 2 Go team", expected: "Delay must be a whole number of milliseconds" },
     { draft: "/multimessage 0 Go team", expected: "Count must be a whole number of at least 1." },
     { draft: "/multimessage 3", expected: "Add a message to send" },
   ])("shows a usage error for \"$draft\" without sending", async ({ draft, expected }) => {

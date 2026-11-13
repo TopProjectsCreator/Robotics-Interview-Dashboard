@@ -115,9 +115,12 @@ Every workspace and public surface, what it does, and how far it goes.
 - **Moderation:** authors edit/delete their own; coordinators & chat.moderate roles
   moderate everything; server-side spam guards against floods and duplicate posts.
 - **Admin bulk send:** coordinators can post the same message many times in one
-  command — `/multimessage <count> <message>` in the composer. The count is
-  admin-chosen and uncapped; everyone else is told admins only, and the server
-  enforces the same role check independently. Typing `/` in the composer opens a
+  command — `/multimessage [{delayMs}] <count> <message>` in the composer. The
+  count is admin-chosen and uncapped; the optional `{delayMs}` first argument
+  (milliseconds) spaces the copies out and keeps the composer usable while the
+  run is in flight (omit it to post every copy at once). Everyone else is told
+  admins only, and the server enforces the same role check independently.
+  Typing `/` in the composer opens a
   command picker (like Slack/Discord/Google Chat) listing the commands that
   exist, with keyboard (↑↓ + Enter/Tab) and mouse selection.
 - **Productivity meter:** optional AI review of team/channel conversation into a score,

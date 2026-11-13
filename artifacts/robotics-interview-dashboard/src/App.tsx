@@ -2435,35 +2435,46 @@ function isValidObjectId(value: string): boolean {
 /** Maximum chat message length, in characters. Kept in step with the server. */
 const CHAT_MESSAGE_MAX_CHARS = 4000;
 
-const MULTIMESSAGE_COMMAND = /^\/multimessage(?:\s+(\d+))?(?:\s+([\s\S]*))?$/i;
+const MULTIMESSAGE_COMMAND = /^\/multimessage(?:\s+\{(\d+)\})?(?:\s+(\d+))?(?:\s+([\s\S]*))?$/i;
 
 type MultiMessageCommand =
-  | { count: number; message: string }
+  | { count: number; message: string; delayMs: number }
   | { error: string };
 
 /**
- * Parses the admin-only `/multimessage <count> <message>` composer command.
+ * Parses the admin-only `/multimessage [{delayMs}] <count> <message>` composer command.
  * Returns null when the draft is not a multimessage command at all, and a
  * usage error (rather than posting anything) for malformed commands.
  * `count` has no upper limit by design — the admin chooses how many copies
- * are posted.
+ * are posted. The optional leading `{delayMs}` (milliseconds) spaces the
+ * copies out — `/multimessage {500} 5 Hello team` posts 5 copies, 500 ms
+ * apart — and lets the composer stay usable while the run is in flight.
+ * Omit it (or use `{0}`) to post every copy in one request as before.
  */
 function parseMultiMessageCommand(raw: string): MultiMessageCommand | null {
   const match = MULTIMESSAGE_COMMAND.exec(raw.trim());
   if (!match) return null;
-  const [, countText, bodyText] = match;
+  const [, delayText, countText, bodyText] = match;
   const body = (bodyText ?? "").trim();
+  const usage = "Usage: /multimessage [{delayMs}] <count> <message> — e.g. /multimessage {500} 5 Hello team";
   if (!countText) {
-    return { error: "Usage: /multimessage <count> <message> — e.g. /multimessage 5 Hello team" };
+    return { error: usage };
+  }
+  let delayMs = 0;
+  if (delayText !== undefined) {
+    delayMs = Number(delayText);
+    if (!Number.isSafeInteger(delayMs)) {
+      return { error: "Delay must be a whole number of milliseconds, e.g. /multimessage {500} 5 Hello team" };
+    }
   }
   const count = Number(countText);
   if (!Number.isSafeInteger(count) || count < 1) {
     return { error: "Count must be a whole number of at least 1." };
   }
   if (!body) {
-    return { error: "Add a message to send, e.g. /multimessage 5 Hello team" };
+    return { error: "Add a message to send, e.g. /multimessage {500} 5 Hello team" };
   }
-  return { count, message: body };
+  return { count, message: body, delayMs };
 }
 
 /** Server-scheduled chat uses the same local date/time inputs as the old client queue. */
@@ -6146,6 +6157,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   }, [settings.reduceMotion]);
   const sendChat = useSendInterviewChat();
   const sendMultiMessage = useSendChatMultimessage();
+  // Delayed (`{delayMs}`) runs use their own mutation instance so the shared
+  // isPending flag never blocks the composer while copies are being spaced out.
+  const sendDelayedMultiMessage = useSendChatMultimessage();
   const chatAttachmentUpload = useRequestUploadUrl();
   const ask = useAskAssistant();
   const toggleReaction = useToggleChatReaction();
@@ -7467,6 +7481,47 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       if (!isChatAdmin) { setChatError("Only admins can use /multimessage."); return; }
       setChatError("");
       setMultiMessageNotice("");
+      if (multiMessageCommand.delayMs > 0) {
+        // Spaced run: post one copy every delayMs. Runs in the background so
+        // the composer stays usable — the admin can keep chatting, and each
+        // copy rides the realtime channel into the transcript as it lands.
+        // The first copy posts immediately; the delay goes between copies.
+        const { count, message: copyText, delayMs } = multiMessageCommand;
+        clearChatDraft(chatDraftStorageKey);
+        setMessage("");
+        setReplyingTo(null);
+        setMentionOpen(false);
+        setChannelMentionOpen(false);
+        setSlashOpen(false);
+        setMentionQuery("");
+        setMultiMessageNotice(`Posted 0 of ${count} copies…`);
+        void (async () => {
+          let sent = 0;
+          try {
+            for (let index = 0; index < count; index += 1) {
+              if (index > 0) await new Promise<void>(resolve => { setTimeout(resolve, delayMs); });
+              // One copy per request: the bulk endpoint posts all copies at
+              // once, so spaced runs call it with count 1 each time. It still
+              // bypasses slow mode and duplicate suppression, like the instant path.
+              await sendDelayedMultiMessage.mutateAsync({
+                data: { message: copyText, count: 1, ...conversationTarget },
+              });
+              sent += 1;
+              setMultiMessageNotice(sent === count
+                ? `Posted ${count} ${count === 1 ? "copy" : "copies"} of your message.`
+                : `Posted ${sent} of ${count} copies…`);
+              void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+            }
+          } catch (error) {
+            const status = error && typeof error === "object" && "status" in error ? (error as { status?: number }).status : undefined;
+            setChatError(status === 403
+              ? "Only admins can use /multimessage."
+              : serverErrorMessage(error, `Stopped after posting ${sent} of ${count} copies.`));
+            void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+          }
+        })();
+        return;
+      }
       chatStickRef.current = true;
       chatForceScrollRef.current = true;
       setChatUploading(true);
