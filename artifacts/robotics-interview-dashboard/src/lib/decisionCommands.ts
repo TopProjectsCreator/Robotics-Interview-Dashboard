@@ -26,6 +26,12 @@ export const MAX_SPINNER_OPTIONS = 12;
 export const MAX_SPINNER_OPTION_CHARS = 48;
 export const DEFAULT_SPINNER_OPTIONS = ["Yes", "No"];
 
+/** True when the options are the default Yes/No decision wheel (case-insensitive). */
+export function isDefaultSpinnerOptions(options: string[]): boolean {
+  return options.length === DEFAULT_SPINNER_OPTIONS.length
+    && options.every((option, index) => option.trim().toLowerCase() === DEFAULT_SPINNER_OPTIONS[index].toLowerCase());
+}
+
 export type DecisionCommand =
   | { kind: "coin"; count: number }
   | { kind: "roll"; count: number; sides: number; modifier: number }
@@ -131,9 +137,6 @@ export function formatCoinResult(flips: boolean[]): string {
 /** The chat line posted after the spinner settles. */
 export function formatSpinnerResult(options: string[], winnerIndex: number): string {
   const winner = options[winnerIndex];
-  const label = options.length === DEFAULT_SPINNER_OPTIONS.length
-    && options.every((option, index) => option === DEFAULT_SPINNER_OPTIONS[index])
-    ? "Yes / No spinner"
-    : `from ${options.join(" · ")}`;
+  const label = isDefaultSpinnerOptions(options) ? "Yes / No spinner" : `from ${options.join(" · ")}`;
   return `🎡 Spinner landed on **${winner}** (${label})`;
 }

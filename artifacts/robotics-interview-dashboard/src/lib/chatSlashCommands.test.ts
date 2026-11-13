@@ -47,6 +47,7 @@ describe("filterSlashCommands", () => {
   it("matches command names case-insensitively", () => {
     expect(filterSlashCommands("MULTI")).toEqual([CHAT_SLASH_COMMANDS.find(c => c.name === "multimessage")]);
     expect(filterSlashCommands("multi")).toEqual([CHAT_SLASH_COMMANDS.find(c => c.name === "multimessage")]);
+    expect(filterSlashCommands("EXP")).toEqual([CHAT_SLASH_COMMANDS.find(c => c.name === "export")]);
   });
 
   it("returns no matches for an unknown query instead of guessing", () => {

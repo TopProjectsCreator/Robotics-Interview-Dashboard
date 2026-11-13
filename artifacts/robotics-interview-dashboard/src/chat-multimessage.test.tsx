@@ -307,8 +307,9 @@ describe("/multimessage chat command", () => {
       renderPanel();
 
       await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+      // Filter down to the multimessage row so it is the selected (index 0) option regardless of registry order.
       fireEvent.change(screen.getByTestId("input-interviewer-chat"), {
-        target: { value: "/" },
+        target: { value: "/multi" },
       });
 
       const menu = await screen.findByTestId("slash-command-menu");
@@ -317,7 +318,11 @@ describe("/multimessage chat command", () => {
       expect(menu).toHaveClass("dark:border-[#355663]");
       const option = screen.getByTestId("slash-command-option-multimessage");
       expect(option).toHaveTextContent("/multimessage");
-      expect(option).toHaveClass("dark:bg-[#1d3a47]");
+      // Exactly one option carries the selected styling — the picker starts on the first command.
+      const options = Array.from(menu.querySelectorAll<HTMLElement>("[data-testid^='slash-command-option-']"));
+      const selected = options.filter(candidate => candidate.className.includes("dark:bg-[#1d3a47]"));
+      expect(selected).toHaveLength(1);
+      expect(selected[0]).toBe(options[0]);
       expect(screen.getByTestId("slash-command-admin-badge-multimessage")).toHaveTextContent("Admins");
     });
 

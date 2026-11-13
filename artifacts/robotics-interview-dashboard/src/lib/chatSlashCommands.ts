@@ -24,10 +24,30 @@ export interface ChatSlashCommand {
 
 export const CHAT_SLASH_COMMANDS: readonly ChatSlashCommand[] = [
   {
+    name: "export",
+    usage: "/export [{last}] [csv|md|txt] [file|clipboard]",
+    description: "Export the full conversation — Markdown file by default; {last} limits it to the most recent messages; csv|txt and clipboard also available",
+  },
+  {
     name: "multimessage",
     usage: "/multimessage [{delayMs}] <count> <message>",
     description: "Post the same message multiple times, optionally {delayMs} apart — keeps the composer usable while it runs",
     adminOnly: true,
+  },
+  {
+    name: "coin",
+    usage: "/coin [count]",
+    description: "Flip a 3D coin to settle a decision — posts the result to chat",
+  },
+  {
+    name: "roll",
+    usage: "/roll [NdM[+/-modifier]]",
+    description: "Roll 3D dice — /roll for d6, /roll 20 for d20, /roll 2d6+1 for more",
+  },
+  {
+    name: "spinner",
+    usage: "/spinner [a, b, c…]",
+    description: "Spin a 2D wheel — /spinner picks Yes/No, or list comma-separated options to decide",
   },
 ];
 

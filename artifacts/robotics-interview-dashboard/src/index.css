@@ -1206,3 +1206,190 @@ to action falls below the fold on a phone. */
   .agents-marquee-track { animation: none; }
   .agents-md { scroll-behavior: auto; }
 }
+
+/* ===== Decision helpers (/roll, /coin, /spinner) ===== */
+.decision-overlay {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  padding: 1.25rem;
+  background: rgba(7, 18, 26, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: decision-overlay-in .25s ease-out;
+}
+@keyframes decision-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+
+.decision-card {
+  position: relative;
+  width: min(430px, 94vw);
+  border-radius: 1.75rem;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: linear-gradient(165deg, #15303f 0%, #0c1b26 100%);
+  color: #eef6f7;
+  padding: 1.4rem 1.5rem 1.15rem;
+  text-align: center;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .09);
+  overflow: hidden;
+  animation: decision-card-in .35s cubic-bezier(.34, 1.4, .64, 1);
+}
+@keyframes decision-card-in { from { opacity: 0; transform: translateY(26px) scale(.92); } to { opacity: 1; transform: none; } }
+.decision-card::before {
+  content: ""; position: absolute; top: -45%; left: 50%;
+  width: 520px; height: 520px; transform: translateX(-50%);
+  background: radial-gradient(closest-side, rgba(110, 231, 222, .16), transparent);
+  pointer-events: none;
+}
+
+.decision-close {
+  position: absolute; top: .6rem; right: .6rem; z-index: 1;
+  width: 2.25rem; height: 2.25rem; display: grid; place-items: center;
+  border-radius: 9999px; border: 0; background: transparent;
+  color: #9db8bf; cursor: pointer; transition: background .15s ease, color .15s ease;
+}
+.decision-close:hover { background: rgba(255, 255, 255, .1); color: #fff; }
+
+.decision-kicker {
+  position: relative; display: inline-flex; align-items: center; gap: .4rem;
+  margin: 0; font-size: .65rem; font-weight: 800; letter-spacing: .16em;
+  text-transform: uppercase; color: #7edbd0;
+}
+.decision-title {
+  position: relative; margin: .3rem 0 0;
+  font-size: 1.35rem; font-weight: 800; letter-spacing: -0.01em; color: #f4fbfc;
+}
+
+.decision-stage {
+  position: relative; min-height: 172px;
+  display: flex; align-items: center; justify-content: center;
+  perspective: 1000px; margin: .35rem 0 .1rem;
+  transform-style: preserve-3d;
+}
+
+.decision-result {
+  position: relative; min-height: 1.8rem; margin: .2rem 0 0;
+  font-size: .98rem; font-weight: 700; color: #ffd97a;
+  animation: decision-pop .5s cubic-bezier(.34, 1.56, .64, 1);
+}
+@keyframes decision-pop { 0% { opacity: 0; transform: scale(.55); } 60% { transform: scale(1.18); } 100% { opacity: 1; transform: scale(1); } }
+
+.decision-hint {
+  position: relative; margin: .5rem auto 0; display: block;
+  border: 0; background: transparent; cursor: pointer;
+  font-size: .65rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: #8fa9b0; padding: .35rem .9rem; border-radius: 9999px; transition: color .15s ease, background .15s ease;
+}
+.decision-hint:hover { color: #d7ecef; background: rgba(255, 255, 255, .06); }
+
+/* --- 3D coin --- */
+.coin-3d {
+  position: relative; width: 148px; height: 148px;
+  transform-style: preserve-3d;
+  animation: coin-flip 1.55s cubic-bezier(.25, .75, .3, 1.12) both;
+}
+.coin-static { animation: none !important; }
+@keyframes coin-flip {
+  0%   { transform: translateY(-175px) rotateY(0deg) scale(.72); }
+  55%  { transform: translateY(0) rotateY(calc(var(--coin-end) * .55)) scale(1.07); }
+  78%  { transform: translateY(-36px) rotateY(calc(var(--coin-end) * .82)) scale(.98); }
+  100% { transform: translateY(0) rotateY(var(--coin-end)) scale(1); }
+}
+.coin-face {
+  position: absolute; inset: 0; border-radius: 9999px;
+  display: grid; place-items: center;
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
+  border: 6px solid #a9740b;
+  background: radial-gradient(circle at 35% 30%, #ffe985, #f5c542 45%, #d4a017 78%, #a9740b);
+  color: #5f3f00;
+  box-shadow:
+    inset 0 0 0 6px rgba(95, 63, 0, .28),
+    inset 0 -14px 22px rgba(95, 63, 0, .45),
+    inset 0 12px 16px rgba(255, 255, 255, .65),
+    0 16px 36px rgba(0, 0, 0, .5);
+}
+.coin-face::after {
+  content: ""; position: absolute; inset: 13px; border-radius: 9999px;
+  border: 2px dashed rgba(95, 63, 0, .45);
+}
+.coin-face-tails { transform: rotateY(180deg); }
+.coin-glyph {
+  position: relative; z-index: 1;
+  font-size: 3.6rem; font-weight: 800; letter-spacing: .02em;
+  text-shadow: 0 2px 0 rgba(255, 255, 255, .55), 0 -2px 3px rgba(95, 63, 0, .5);
+}
+.coin-chip {
+  display: inline-grid; place-items: center; width: 1.7rem; height: 1.7rem;
+  border-radius: 9999px; font-size: .72rem; font-weight: 800;
+  border: 2px solid rgba(0, 0, 0, .35);
+}
+.coin-chip-heads { background: radial-gradient(circle at 35% 30%, #ffe985, #d4a017); color: #5f3f00; }
+.coin-chip-tails { background: radial-gradient(circle at 35% 30%, #f0d9a8, #8a6a2a); color: #2e2208; }
+
+/* --- 3D dice --- */
+.dice-row { display: flex; flex-wrap: wrap; justify-content: center; gap: .7rem; transform-style: preserve-3d; perspective: 900px; }
+.die-3d {
+  position: relative; width: 96px; height: 96px;
+  transform-style: preserve-3d;
+  animation: dice-tumble 1.3s cubic-bezier(.3, 1.45, .45, 1) both;
+  animation-delay: var(--die-delay, 0ms);
+}
+.die-static { animation: none !important; }
+@keyframes dice-tumble {
+  0%   { transform: translateY(-195px) rotateX(0deg) rotateY(0deg) scale(.62); }
+  58%  { transform: translateY(4px) rotateX(calc(var(--die-end-x) * .72)) rotateY(calc(var(--die-end-y) * .72)) scale(1.15); }
+  80%  { transform: translateY(-25px) rotateX(calc(var(--die-end-x) * .9)) rotateY(calc(var(--die-end-y) * .9)) scale(.97); }
+  100% { transform: translateY(0) rotateX(var(--die-end-x)) rotateY(var(--die-end-y)) scale(1); }
+}
+.die-face {
+  position: absolute; inset: 0; border-radius: 1.1rem;
+  display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr);
+  padding: 12%;
+  background: linear-gradient(145deg, #ffffff, #dfe7ee 60%, #b9c6d4);
+  box-shadow:
+    inset 0 0 0 1px rgba(15, 35, 50, .18),
+    inset 0 -9px 14px rgba(15, 35, 50, .25),
+    inset 0 7px 8px rgba(255, 255, 255, .9);
+  backface-visibility: hidden;
+}
+.die-pip {
+  align-self: center; justify-self: center;
+  width: 13px; height: 13px; border-radius: 9999px;
+  background: radial-gradient(circle at 38% 34%, #4b5a68, #131c24 72%);
+  box-shadow: inset 0 -1px 2px rgba(255, 255, 255, .35);
+}
+.die-pip-empty { background: none; box-shadow: none; }
+
+/* --- 2D spinner wheel --- */
+.spinner-stage { position: relative; display: flex; justify-content: center; perspective: none; }
+.spinner-wheel-svg { overflow: visible; filter: drop-shadow(0 14px 28px rgba(0, 0, 0, .5)); }
+.spinner-rotate { animation: spinner-spin 3.4s cubic-bezier(.12, .82, .17, 1) both; }
+@keyframes spinner-spin { from { transform: rotate(0deg); } to { transform: rotate(var(--spin-end)); } }
+.spinner-label {
+  font-size: 10.5px; font-weight: 800; fill: #fff;
+  paint-order: stroke; stroke: rgba(0, 0, 0, .4); stroke-width: 2.6px;
+  letter-spacing: .02em; pointer-events: none;
+}
+.spinner-pointer {
+  fill: #fbbf24; stroke: #0c1b26; stroke-width: 3px;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .55));
+}
+
+/* --- Higher-sided dice (d8/d10/d20/…): engraved octagon token with a 3D tumble --- */
+.die-token {
+  position: relative; width: 96px; height: 96px;
+  display: grid; place-items: center;
+  animation: token-tumble 1.3s cubic-bezier(.3, 1.45, .45, 1) both;
+  animation-delay: var(--die-delay, 0ms);
+  filter: drop-shadow(0 14px 22px rgba(0, 0, 0, .45));
+}
+.die-token-static { animation: none !important; }
+@keyframes token-tumble {
+  0%   { transform: translateY(-190px) rotateY(0deg) rotate(-150deg) scale(.7); }
+  60%  { transform: translateY(7px) rotateY(200deg) rotate(14deg) scale(1.16); }
+  80%  { transform: translateY(-24px) rotateY(340deg) rotate(-6deg); }
+  100% { transform: translateY(0) rotateY(360deg) rotate(0deg) scale(1); }
+}
+.die-token-svg { width: 100%; height: 100%; }
+.die-token-value { font-size: 30px; font-weight: 800; fill: #1c2b38; }
+.die-token-sides { font-size: 9px; font-weight: 800; fill: #5b707e; letter-spacing: .1em; }
+
+.die-3d .die-pip { width: 24%; height: 24%; }

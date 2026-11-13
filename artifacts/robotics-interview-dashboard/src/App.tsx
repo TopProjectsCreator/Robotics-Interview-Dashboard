@@ -5,7 +5,7 @@ import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, use
 import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
-   FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
+   Dices, Coins, Disc3, FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, SquareSlash, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -45,6 +45,7 @@ import {
    useGetTeamMailboxSettings, getGetTeamMailboxSettingsQueryKey, useUpdateTeamMailboxSettings, useSyncTeamMailbox, getGetTeamNameRulesQueryKey,
   useInterpretApplicantSearch,
   useCreateSpreadsheet,
+  getExportChatUrl,
   getInterviewChat,
   getAssistantConversationMessages,
   listApplicants,
@@ -69,13 +70,15 @@ import { loadDisabledTools, loadToolExposure, saveDisabledTools, saveToolExposur
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { getEmojiPickerFloatingPosition, type EmojiPickerFloatingPosition } from "./lib/emojiPickerPosition";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
+import { parseDecisionCommand, flipCoins, rollDice, pickWinnerIndex, formatCoinResult, formatRollResult, formatSpinnerResult } from "./lib/decisionCommands";
+import { DecisionOverlay, type DecisionOverlayState } from "./components/DecisionOverlay";
 import { readableBrandForeground } from "./lib/team-branding";
 import { useVisualViewport } from "./hooks/use-visual-viewport";
 import { resolveAssistantModelSelection } from "./lib/assistantModelSelection";
 import { assistantWorkspaceGridClass } from "./lib/assistantWorkspaceLayout";
 import { classifyFile } from "./lib/fileFormats";
 import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "./lib/officePreview";
-import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AssistantInput, AuthSession, DashboardCount, DashboardSummary, DisplayState, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AssistantInput, AuthSession, DashboardCount, DashboardSummary, DisplayState, ExportChatParams, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getChatDraftStorageKey, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, loadChatDraft, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, saveChatDraft, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
@@ -2515,6 +2518,9 @@ function isValidObjectId(value: string): boolean {
 /** Maximum chat message length, in characters. Kept in step with the server. */
 const CHAT_MESSAGE_MAX_CHARS = 4000;
 
+/** Composer commands that may bypass slow mode, like /multimessage. */
+const CHAT_COMPOSER_COMMAND_BYPASS = /^\/(?:export|multimessage)(\s|$)/i;
+
 const MULTIMESSAGE_COMMAND = /^\/multimessage(?:\s+\{(\d+)\})?(?:\s+(\d+))?(?:\s+([\s\S]*))?$/i;
 
 type MultiMessageCommand =
@@ -2555,6 +2561,58 @@ function parseMultiMessageCommand(raw: string): MultiMessageCommand | null {
     return { error: "Add a message to send, e.g. /multimessage {500} 5 Hello team" };
   }
   return { count, message: body, delayMs };
+}
+
+const EXPORT_COMMAND = /^\/export(?:\s+([\s\S]*))?$/i;
+
+const EXPORT_FORMAT_ALIASES: Record<string, "csv" | "md" | "txt"> = { csv: "csv", md: "md", markdown: "md", txt: "txt", text: "txt" };
+const EXPORT_DESTINATION_ALIASES: Record<string, "file" | "clipboard"> = { file: "file", download: "file", clipboard: "clipboard", copy: "clipboard" };
+
+type ExportCommand =
+  | { format: "csv" | "md" | "txt"; destination: "file" | "clipboard"; last: number | null }
+  | { error: string };
+
+/**
+ * Parses the `/export [{last}] [csv|md|txt] [file|clipboard]` composer command.
+ * Returns null when the draft is not an export command at all, and a usage
+ * error (rather than doing anything) for malformed options. Bare `/export`
+ * exports the full retained history as a Markdown download; `{last}` narrows
+ * it to the most recent N messages, and `clipboard` copies instead of
+ * downloading — e.g. `/export {50} csv clipboard`.
+ */
+function parseExportCommand(raw: string): ExportCommand | null {
+  const match = EXPORT_COMMAND.exec(raw.trim());
+  if (!match) return null;
+  const usage = "Usage: /export [{last}] [csv|md|txt] [file|clipboard] — e.g. /export {50} csv clipboard";
+  let format: "csv" | "md" | "txt" | null = null;
+  let destination: "file" | "clipboard" | null = null;
+  let last: number | null = null;
+  const body = (match[1] ?? "").trim();
+  if (body) {
+    for (const token of body.split(/\s+/)) {
+      const lower = token.toLowerCase();
+      const countMatch = /^\{(\d+)\}$/.exec(token);
+      if (countMatch) {
+        if (last !== null) return { error: `Only one {last} — ${usage}` };
+        const value = Number(countMatch[1]);
+        if (!Number.isSafeInteger(value) || value < 1) return { error: "{last} must be a whole number of at least 1." };
+        last = value;
+        continue;
+      }
+      if (EXPORT_FORMAT_ALIASES[lower]) {
+        if (format) return { error: `Only one format — ${usage}` };
+        format = EXPORT_FORMAT_ALIASES[lower];
+        continue;
+      }
+      if (EXPORT_DESTINATION_ALIASES[lower]) {
+        if (destination) return { error: `Only one destination — ${usage}` };
+        destination = EXPORT_DESTINATION_ALIASES[lower];
+        continue;
+      }
+      return { error: `Unknown option "${token}" — ${usage}` };
+    }
+  }
+  return { format: format ?? "md", destination: destination ?? "file", last };
 }
 
 /** Server-scheduled chat uses the same local date/time inputs as the old client queue. */
@@ -4991,6 +5049,35 @@ function downloadBlob(blob: Blob, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 
+/**
+ * Clipboard write with the same execCommand fallback the copy buttons use,
+ * so exporting to the clipboard also works where the async Clipboard API is
+ * unavailable. Throws when both paths fail so the caller can tell the user
+ * instead of claiming a copy that never happened.
+ */
+async function copyTextToClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    } finally {
+      document.body.removeChild(textarea);
+    }
+    if (!copied) throw new Error("Clipboard copy failed");
+  }
+}
+
 function ExportPanel({ applicants, onClose }: { applicants: Applicant[]; onClose: () => void }) {
   const [format, setFormat] = useState<ExportFormat>("csv");
   const [busy, setBusy] = useState(false);
@@ -6351,6 +6438,14 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   }, [chatDraftStorageKey, demoMode, loadedChatDraftKey, message]);
   const [chatError, setChatError] = useState("");
   const [multiMessageNotice, setMultiMessageNotice] = useState("");
+  // Decision helpers (/roll, /coin, /spinner): the outcome is decided when the
+  // overlay starts, the overlay plays the animation, then the result is posted.
+  const [decision, setDecision] = useState<DecisionOverlayState | null>(null);
+  const [decisionBusy, setDecisionBusy] = useState(false);
+  const decisionRef = useRef<DecisionOverlayState | null>(null);
+  decisionRef.current = decision;
+  const [exportNotice, setExportNotice] = useState("");
+  const [exportPending, setExportPending] = useState(false);
   const slowmodeConfig = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey(), enabled: !demoMode } });
   const [slowDeadline, setSlowDeadline] = useState(0);
   const [clock, setClock] = useState(() => Date.now());
@@ -7545,6 +7640,42 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       setAiReplyRetrying(false);
     }
   };
+  /**
+   * Posts a settled decision outcome (/roll, /coin, /spinner) to chat. Fires
+   * once the overlay finishes its animation or is dismissed. Slow mode still
+   * applies — a decision is a normal chat message.
+   */
+  const postDecisionResult = (settled: DecisionOverlayState) => {
+    const message = settled.kind === "coin"
+      ? formatCoinResult(settled.flips)
+      : settled.kind === "roll"
+        ? formatRollResult(settled.sides, settled.modifier, settled.dice)
+        : formatSpinnerResult(settled.options, settled.winnerIndex);
+    chatStickRef.current = true;
+    chatForceScrollRef.current = true;
+    void (async () => {
+      try {
+        await withTimeout(sendChat.mutateAsync({
+          data: { author: activeInterviewer, message, ...conversationTarget },
+        }), 15000, "decision-post");
+        void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+      } catch (error) {
+        chatForceScrollRef.current = false;
+        const status = error && typeof error === "object" && "status" in error ? (error as { status?: number }).status : undefined;
+        setChatError(status === 429
+          ? serverErrorMessage(error, "Slow mode is on — wait before posting a decision.")
+          : serverErrorMessage(error, "Couldn't post the result. Try again."));
+      } finally {
+        setDecisionBusy(false);
+      }
+    })();
+  };
+  const handleDecisionDone = () => {
+    const settled = decisionRef.current;
+    if (!settled) { setDecisionBusy(false); return; }
+    setDecision(null);
+    postDecisionResult(settled);
+  };
   const submitChat = async (event: React.FormEvent) => {
     event.preventDefault();
     if (demoMode) { setChatError("Messaging is disabled in this read-only demo."); return; }
@@ -7561,6 +7692,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       if (!isChatAdmin) { setChatError("Only admins can use /multimessage."); return; }
       setChatError("");
       setMultiMessageNotice("");
+      setExportNotice("");
       if (multiMessageCommand.delayMs > 0) {
         // Spaced run: post one copy every delayMs. Runs in the background so
         // the composer stays usable — the admin can keep chatting, and each
@@ -7633,6 +7765,109 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       }
       return;
     }
+    const decisionCommand = parseDecisionCommand(draft);
+    if (decisionCommand) {
+      // Local decision helpers: no admin gate — anyone can flip a coin.
+      // The outcome is decided now, the overlay plays the animation, and
+      // the result posts to chat exactly once when the overlay reports done.
+      if (chatFiles.length) { setChatError("Remove attachments to use /roll, /coin or /spinner."); return; }
+      if ("error" in decisionCommand) { setChatError(decisionCommand.error); return; }
+      if (decisionBusy) return;
+      setChatError("");
+      setMultiMessageNotice("");
+      clearChatDraft(chatDraftStorageKey);
+      setMessage("");
+      setReplyingTo(null);
+      setMentionOpen(false);
+      setChannelMentionOpen(false);
+      setSlashOpen(false);
+      setMentionQuery("");
+      setDecisionBusy(true);
+      if (decisionCommand.kind === "coin") {
+        const flips = flipCoins(decisionCommand.count);
+        const heads = flips.filter(Boolean).length;
+        setDecision({ kind: "coin", flips, heads, tails: flips.length - heads });
+      } else if (decisionCommand.kind === "roll") {
+        const dice = rollDice(decisionCommand.count, decisionCommand.sides);
+        const total = dice.reduce((sum, die) => sum + die, 0) + decisionCommand.modifier;
+        setDecision({ kind: "roll", sides: decisionCommand.sides, modifier: decisionCommand.modifier, dice, total });
+      } else {
+        const winnerIndex = pickWinnerIndex(decisionCommand.options.length);
+        setDecision({ kind: "spinner", options: decisionCommand.options, winnerIndex });
+      }
+      return;
+    }
+    const exportCommand = parseExportCommand(draft);
+    if (exportCommand) {
+      // Read-only command: streams the whole retained conversation from the
+      // server (never just the page currently loaded) as a Markdown/CSV/TXT
+      // download or clipboard copy. The server re-checks conversation access.
+      if (chatFiles.length) { setChatError("Remove attachments to use /export."); return; }
+      if ("error" in exportCommand) { setChatError(exportCommand.error); return; }
+      setChatError("");
+      setAiReplySavedNotice("");
+      setMultiMessageNotice("");
+      setExportNotice("");
+      clearChatDraft(chatDraftStorageKey);
+      setMessage("");
+      setReplyingTo(null);
+      setMentionOpen(false);
+      setChannelMentionOpen(false);
+      setSlashOpen(false);
+      setMentionQuery("");
+      const exportParams: ExportChatParams = {
+        format: exportCommand.format,
+        scope: conversationScope,
+        ...(conversationScope === "direct"
+          ? { author: activeInterviewer, ...(conversationPeer ? { peer: conversationPeer } : {}) }
+          : conversationScope === "channel" && conversationChannelId ? { channelId: conversationChannelId } : {}),
+        ...(exportCommand.last !== null ? { last: exportCommand.last } : {}),
+      };
+      const exportUrl = getExportChatUrl(exportParams);
+      if (exportCommand.destination === "file") {
+        // The browser streams the response straight to disk; JavaScript never
+        // holds the (potentially multi-million-message) transcript in memory.
+        const anchor = document.createElement("a");
+        anchor.href = exportUrl;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setExportNotice(`Chat export started — check your downloads for the ${exportCommand.format.toUpperCase()} file.`);
+        return;
+      }
+      setExportPending(true);
+      setExportNotice("Copying the full chat history to the clipboard — this can take a moment for long threads…");
+      void (async () => {
+        try {
+          const response = await fetch(exportUrl, { credentials: "include" });
+          if (!response.ok) {
+            let detail = "Couldn't export the chat history.";
+            try {
+              const body = await response.json() as { error?: unknown };
+              if (body && typeof body.error === "string" && body.error.trim()) detail = body.error;
+            } catch { /* keep the fallback message */ }
+            throw new Error(detail);
+          }
+          const text = await response.text();
+          try {
+            await copyTextToClipboard(text);
+          } catch {
+            setExportNotice("");
+            setChatError("The export was generated, but the clipboard rejected it — it may be too large. Try /export with file download instead.");
+            return;
+          }
+          setExportNotice(`Chat history copied to the clipboard (${text.length.toLocaleString()} characters).`);
+        } catch (error) {
+          setExportNotice("");
+          setChatError(error instanceof Error && error.message && error.message !== "Failed to fetch"
+            ? error.message
+            : "Couldn't export the chat history. Check your connection and try again.");
+        } finally {
+          setExportPending(false);
+        }
+      })();
+      return;
+    }
     if (failedAiReply && /@ai\b/i.test(draft)) {
       setChatError("Retry the saved AI reply before sending another @ai prompt.");
       return;
@@ -7640,6 +7875,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setChatError("");
     setAiReplySavedNotice("");
     setMultiMessageNotice("");
+    setExportNotice("");
     chatStickRef.current = true;
     const author = activeInterviewer;
     const uploadedIds: string[] = [];
@@ -7910,6 +8146,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
        .filter(member => !known.has(member.id));
    }, [channelAccounts, channels, channelDialogId]);
     return <section className={`chat-panel relative rounded-3xl border border-[#dce5e5] bg-white p-3 sm:p-4 ${tall ? "chat-panel-tall" : ""}`}>
+       {decision && <DecisionOverlay state={decision} reduceMotion={settings.reduceMotion} onDone={handleDecisionDone} />}
        {/* One slim header row: title, conversation picker, and identity share a
            single line so the message history keeps its space at desktop zoom. */}
        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -8154,7 +8391,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                  <button type="button" onClick={() => chatFileInputRef.current?.click()} title="Attach files" aria-label="Attach files" data-testid="button-attach-chat" className="chat-composer-control flex h-8 w-8 items-center justify-center rounded-md text-[#52666e] transition hover:bg-white hover:text-[#16869a]"><Paperclip size={17} /></button>
                 <button type="button" onClick={() => { if (isRecording) stopVoiceRecording(); else if (isDictating) stopDictation(); else { setVoiceMenuOpen(open => !open); setEmojiOpen(false); setFormattingOpen(false); setComposerMenuOpen(false); setScheduleOpen(false); setSlashOpen(false); } }} aria-label={isRecording ? "Stop recording" : isDictating ? "Stop dictation" : "Choose voice input mode"} aria-expanded={voiceMenuOpen} data-testid="button-chat-mic" className={`chat-composer-control flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-white ${isRecording || isDictating ? "text-[#b34a42]" : "text-[#52666e] hover:text-[#16869a]"}`}><Mic size={17} /></button>
               </div>
-              <button disabled={(slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim())) || (!message.trim() && !chatFiles.length) || sendChat.isPending || sendMultiMessage.isPending || ask.isPending || chatUploading || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`chat-composer-send flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 && !/^\/multimessage(\s|$)/i.test(message.trim()) ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
+              <button disabled={(slowmodeRemaining > 0 && !CHAT_COMPOSER_COMMAND_BYPASS.test(message.trim())) || (!message.trim() && !chatFiles.length) || sendChat.isPending || sendMultiMessage.isPending || ask.isPending || chatUploading || exportPending || isRecording || isDictating} type="submit" aria-label={slowmodeRemaining > 0 && !CHAT_COMPOSER_COMMAND_BYPASS.test(message.trim()) ? `Send in ${slowmodeRemaining} seconds (slow mode)` : "Send message"} data-testid="button-send-interviewer-chat" className={`chat-composer-send flex h-9 shrink-0 items-center justify-center rounded-full text-white transition disabled:opacity-40 ${slowmodeRemaining > 0 && !CHAT_COMPOSER_COMMAND_BYPASS.test(message.trim()) ? "min-w-9 bg-[#9bb2b8] px-2" : "w-9 bg-[#16869a] hover:bg-[#106d7a]"}`}>{slowmodeRemaining > 0 && !CHAT_COMPOSER_COMMAND_BYPASS.test(message.trim()) ? <span className="mono text-[10px] font-bold">{slowmodeRemaining}</span> : chatUploading ? <span className="text-[10px]">…</span> : <Send size={16} />}</button>
            </div>
          </div>
        </div>
@@ -8175,6 +8412,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         </div>}
         {aiReplySavedNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="ai-reply-retry-success">{aiReplySavedNotice}</p>}
         {multiMessageNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="multimessage-notice">{multiMessageNotice}</p>}
+        {exportNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="export-notice">{exportNotice}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
         {pollOpen && <div onKeyDown={event => { if (event.key === "Enter" && (event.target as HTMLElement)?.tagName === "INPUT") { event.preventDefault(); event.stopPropagation(); void submitPoll(); } }} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
           <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a] dark:text-[#6fc3cf]">New poll</p>

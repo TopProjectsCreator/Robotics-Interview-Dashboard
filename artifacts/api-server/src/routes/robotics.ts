@@ -6402,6 +6402,8 @@ router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> =
   res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders();
   const EXPORT_BATCH = 500;
+  let clientGone = false;
+  res.on("close", () => { clientGone = true; });
   try {
     // Locate the oldest row that belongs in a `last: N` window. When the
     // thread is shorter than N, no boundary row exists and the full history
@@ -6429,6 +6431,7 @@ router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> =
     }
     let cursor: { createdAt: Date; id: string } | null = null;
     for (;;) {
+      if (clientGone) return; // the download died with the client; stop querying
       const params: unknown[] = [...baseParams];
       let cursorSql = "";
       if (cursor) {
@@ -6456,6 +6459,7 @@ router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> =
       }>;
       if (!batch.length) break;
       for (const row of batch) {
+        if (clientGone) return;
         const exportRow: ChatExportRow = {
           id: row.id,
           author: row.author,
@@ -6468,8 +6472,14 @@ router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> =
         };
         if (!res.write(rowToChunk(exportRow, format))) {
           await new Promise<void>((resolve, reject) => {
-            res.once("drain", resolve);
-            res.once("error", reject);
+            const cleanup = () => {
+              res.off("drain", onDrain);
+              res.off("error", onError);
+            };
+            const onDrain = () => { cleanup(); resolve(); };
+            const onError = (err: Error) => { cleanup(); reject(err); };
+            res.once("drain", onDrain);
+            res.once("error", onError);
           });
         }
       }

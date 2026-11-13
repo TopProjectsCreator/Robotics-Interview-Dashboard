@@ -123,6 +123,17 @@ Every workspace and public surface, what it does, and how far it goes.
   Typing `/` in the composer opens a
   command picker (like Slack/Discord/Google Chat) listing the commands that
   exist, with keyboard (↑↓ + Enter/Tab) and mouse selection.
+- **Export history:** `/export [{last}] [csv|md|txt] [file|clipboard]` in the composer
+  downloads (or copies) the conversation as a transcript. It exports the full
+  retained history by default — streamed from the server straight to disk, even
+  for million-message threads — never just the page currently loaded. `{last}`
+  narrows it to the most recent N messages (still chronological). Bare `/export`
+  writes a Markdown file; `csv` and `txt` pick other formats, `clipboard` copies
+  instead of downloading (e.g. `/export {50} csv clipboard`). Deleted messages are
+  exported as `[message deleted]` with their timestamps kept.
+- **Decision helpers:** `/roll` (d6 default; `/roll 20`, `/roll 2d6+1`), `/coin [count]`
+  and `/spinner [a, b, c…]` (comma-separated options, or Yes/No by default) animate a
+  3D die/coin (2D wheel) right in the chat and post the result for everyone.
 - **Productivity meter:** optional AI review of team/channel conversation into a score,
   breakdown (project progress / planning / focus) and activity assessments —
   admin-toggleable, admin can switch it off any time.
