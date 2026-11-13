@@ -3,7 +3,6 @@ import { hasPermission, SETTINGS_CAPABILITIES, type SettingsCapabilityId } from 
 import { getAssistantModel } from "./assistantModel";
 import { teamAssistantAI } from "./teamAssistantAi";
 
-const TEAM_CAPABILITIES = SETTINGS_CAPABILITIES.filter((capability) => capability.scope === "signed-in-team");
 const CONFIRMATION_REQUIRED = new Set<SettingsCapabilityId>(["team.inbox"]);
 const CONFIRMATION_TTL_MS = 10 * 60 * 1000;
 const MAX_AGENT_ROUNDS = 6;
@@ -37,16 +36,18 @@ type ConfirmationClaims = {
   expiresAt: number;
 };
 
-function visibleCapabilities(identity: SettingsAgentIdentity): SettingsCapabilityId[] {
-  return TEAM_CAPABILITIES
+function visibleCapabilities(identity: SettingsAgentIdentity, includeBrowserLocal = true): SettingsCapabilityId[] {
+  if (identity.role !== "coordinator" && identity.role !== "admin") return [];
+  return SETTINGS_CAPABILITIES
+    .filter((capability) => includeBrowserLocal || capability.scope !== "browser-local")
     .filter((capability) =>
       !capability.requiredPermission || hasPermission(identity.permissions, capability.requiredPermission),
     )
     .map((capability) => capability.id);
 }
 
-function ensureVisible(settingId: string, identity: SettingsAgentIdentity): SettingsCapabilityId {
-  if (!visibleCapabilities(identity).includes(settingId as SettingsCapabilityId)) {
+function ensureVisible(settingId: string, identity: SettingsAgentIdentity, includeBrowserLocal = true): SettingsCapabilityId {
+  if (!visibleCapabilities(identity, includeBrowserLocal).includes(settingId as SettingsCapabilityId)) {
     throw new Error("That setting is unavailable or you do not have permission to change it.");
   }
   return settingId as SettingsCapabilityId;
@@ -54,6 +55,23 @@ function ensureVisible(settingId: string, identity: SettingsAgentIdentity): Sett
 
 function jsonSchemaValue(settingId: SettingsCapabilityId): Record<string, unknown> {
   switch (settingId) {
+    case "profile.displayName":
+      return { type: "string", maxLength: 120 };
+    case "profile.initials":
+      return { type: "string", maxLength: 2, pattern: "^[a-zA-Z]*$" };
+    case "appearance.theme":
+      return { type: "string", enum: ["light", "dark"] };
+    case "appearance.density":
+      return { type: "string", enum: ["comfortable", "compact"] };
+    case "appearance.showPhotos":
+    case "appearance.reduceMotion":
+    case "live.autoRefresh":
+    case "live.realtime":
+      return { type: "boolean" };
+    case "applicants.defaultSort":
+      return { type: "string", enum: ["rank", "queue", "score", "name", "grade", "skill", "gender", "newest", "oldest"] };
+    case "live.refreshMs":
+      return { type: "integer", enum: [3000, 10000, 30000] };
     case "team.chat.slowmode":
       return { type: "object", properties: { slowmodeSeconds: { type: "integer", enum: [0, 5, 10, 30, 60] } }, required: ["slowmodeSeconds"], additionalProperties: false };
     case "team.inbox":
@@ -108,8 +126,8 @@ function settingIdSchema(ids: SettingsCapabilityId[]): Record<string, unknown> {
   return { type: "string", enum: ids };
 }
 
-export function settingsAgentTools(identity: SettingsAgentIdentity) {
-  const ids = visibleCapabilities(identity);
+export function settingsAgentTools(identity: SettingsAgentIdentity, includeBrowserLocal = true) {
+  const ids = visibleCapabilities(identity, includeBrowserLocal);
   if (ids.length === 0) return [];
   const valueSchemas = Object.fromEntries(ids.map((id) => [id, jsonSchemaValue(id)]));
   const valueSchema = {
@@ -225,29 +243,49 @@ function summarizeChange(settingId: SettingsCapabilityId, value: unknown): strin
     const settings = value as { enabled: boolean; allowedSenders: string[] };
     return `Update team inbox settings: ${settings.enabled ? "enable" : "disable"} inbox and set ${settings.allowedSenders.length} approved sender${settings.allowedSenders.length === 1 ? "" : "s"}.`;
   }
-  return `Update ${settingId}.`;
+  return `Update ${settingId}: ${JSON.stringify(value)}.`;
 }
 
 export type SettingsAgentRunOptions = {
   question: string;
+  history?: { role: "user" | "assistant"; content: string }[];
   identity: SettingsAgentIdentity;
   adapter: SettingsAgentAdapter;
   confirmationToken?: string;
   model?: string;
   resolveModel?: (teamId: string) => Promise<string>;
   complete?: (input: Record<string, unknown>) => Promise<Record<string, any>>;
+  onProgress?: (activity: SettingsAgentProgress) => void;
+  includeBrowserLocal?: boolean;
+};
+
+export type SettingsAgentProgress = {
+  action: "read_setting" | "propose_setting_change" | "update_setting";
+  settingId: SettingsCapabilityId;
+  status: "started" | "complete" | "saved" | "confirmation" | "error";
+  error?: string;
+};
+
+export type SettingsAgentChange = {
+  settingId: SettingsCapabilityId;
+  value: unknown;
 };
 
 export type SettingsAgentRunResult = {
   answer: string;
   confirmations: SettingsAgentConfirmation[];
+  changes: SettingsAgentChange[];
+  localUpdates: Partial<Record<SettingsCapabilityId, unknown>>;
   model: string;
 };
 
 export async function runSettingsAgent(options: SettingsAgentRunOptions): Promise<SettingsAgentRunResult> {
   const { identity, adapter } = options;
-  const capabilities = visibleCapabilities(identity);
+  const includeBrowserLocal = options.includeBrowserLocal ?? true;
+  const capabilities = visibleCapabilities(identity, includeBrowserLocal);
   const confirmations: SettingsAgentConfirmation[] = [];
+  const changes: SettingsAgentChange[] = [];
+  const localUpdates: Partial<Record<SettingsCapabilityId, unknown>> = {};
   const reads = new Map<SettingsCapabilityId, unknown>();
   let model = options.model ?? await (options.resolveModel ?? getAssistantModel)(identity.teamId);
   const complete = options.complete ?? (async (input) =>
@@ -265,6 +303,7 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
     }
     const saved = await adapter.update(claims.settingId, proposedValue, identity);
     reads.set(claims.settingId, saved);
+    changes.push({ settingId: claims.settingId, value: saved });
     const completion = await complete({
       model,
       temperature: 0.2,
@@ -278,6 +317,8 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
         ? completion.choices[0].message.content
         : "The confirmed setting was updated.",
       confirmations,
+      changes,
+      localUpdates,
       model,
     };
   }
@@ -296,6 +337,10 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
         `Visible setting catalog: ${capabilities.join(", ") || "none"}.`,
       ].join("\n"),
     },
+    ...(options.history ?? []).slice(-20).map((message) => ({
+      role: message.role,
+      content: message.content.slice(0, 8000),
+    })),
     { role: "user", content: options.question },
   ];
 
@@ -304,7 +349,7 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
       model,
       temperature: 0.2,
       messages,
-      tools: settingsAgentTools(identity),
+      tools: settingsAgentTools(identity, includeBrowserLocal),
       tool_choice: "auto",
     });
     const message = completion.choices?.[0]?.message ?? {};
@@ -313,6 +358,8 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
       return {
         answer: typeof message.content === "string" ? message.content : "I couldn't produce a settings response.",
         confirmations,
+        changes,
+        localUpdates,
         model,
       };
     }
@@ -324,6 +371,8 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
     for (const call of calls) {
       const callId = typeof call.id === "string" ? call.id : `settings_call_${round}`;
       let result: unknown;
+      let progressSettingId: SettingsCapabilityId | undefined;
+      let progressAction: SettingsAgentProgress["action"] = "read_setting";
       try {
         if (call.type !== "function" || !call.function || typeof call.function.name !== "string") {
           throw new Error("Unsupported settings tool call.");
@@ -334,7 +383,14 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
         } else {
           requireArgumentKeys(args, ["settingId", "value"]);
         }
-        const settingId = ensureVisible(String(args.settingId ?? ""), identity);
+        const settingId = ensureVisible(String(args.settingId ?? ""), identity, includeBrowserLocal);
+        const action = call.function.name;
+        if (action !== "read_setting" && action !== "propose_setting_change" && action !== "update_setting") {
+          throw new Error("Unsupported settings tool.");
+        }
+        progressSettingId = settingId;
+        progressAction = action;
+        options.onProgress?.({ action, settingId, status: "started" });
         if (call.function.name === "read_setting") {
           result = await adapter.read(settingId, identity);
           reads.set(settingId, result);
@@ -370,6 +426,10 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
           } else {
             result = await adapter.update(settingId, proposedValue, identity);
             reads.set(settingId, result);
+            changes.push({ settingId, value: result });
+            if (!SETTINGS_CAPABILITIES.find((capability) => capability.id === settingId && capability.scope === "signed-in-team")) {
+              localUpdates[settingId] = result;
+            }
           }
         } else {
           throw new Error("Unsupported settings tool.");
@@ -377,8 +437,23 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
       } catch (error) {
         result = { error: error instanceof Error ? error.message : "The setting action failed." };
       }
+      if (progressSettingId) {
+        const resultRecord = result && typeof result === "object" ? result as Record<string, unknown> : {};
+        options.onProgress?.({
+          action: progressAction,
+          settingId: progressSettingId,
+          status: typeof resultRecord.error === "string"
+            ? "error"
+            : resultRecord.confirmationRequired === true
+              ? "confirmation"
+              : progressAction === "update_setting"
+                ? "saved"
+                : "complete",
+          ...(typeof resultRecord.error === "string" ? { error: resultRecord.error } : {}),
+        });
+      }
       messages.push({ role: "tool", tool_call_id: callId, content: JSON.stringify(result) });
     }
   }
-  return { answer: "I couldn't complete that settings request in one pass. Please restate the requested change.", confirmations, model };
+  return { answer: "I couldn't complete that settings request in one pass. Please restate the requested change.", confirmations, changes, localUpdates, model };
 }

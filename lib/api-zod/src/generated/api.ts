@@ -3805,6 +3805,33 @@ export const AskAssistantResponse = zod.object({
 
 
 /**
+ * Streams read and change progress for the active account and team. Browser-local values are supplied only for the current settings view.
+ * @summary Ask the signed-in admin's settings-only assistant
+ */
+export const streamSettingsAssistantBodyQuestionMax = 8000;
+
+export const streamSettingsAssistantBodyConfirmationTokenMax = 8192;
+
+export const streamSettingsAssistantBodyHistoryItemContentMax = 8000;
+
+export const streamSettingsAssistantBodyHistoryMax = 20;
+
+
+
+export const StreamSettingsAssistantBody = zod.object({
+  "question": zod.string().min(1).max(streamSettingsAssistantBodyQuestionMax),
+  "confirmationToken": zod.string().max(streamSettingsAssistantBodyConfirmationTokenMax).optional(),
+  "localSettings": zod.record(zod.string(), zod.unknown()),
+  "history": zod.array(zod.object({
+  "role": zod.enum(['user', 'assistant']),
+  "content": zod.string().max(streamSettingsAssistantBodyHistoryItemContentMax)
+})).max(streamSettingsAssistantBodyHistoryMax).optional()
+})
+
+export const StreamSettingsAssistantResponse = zod.unknown()
+
+
+/**
  * @summary List recurring assistant tasks owned by the signed-in account
  */
 export const listOwnedAssistantScheduledTasksResponseItemsItemRecurrenceHourMin = 0;

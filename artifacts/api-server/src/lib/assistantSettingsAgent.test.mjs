@@ -99,7 +99,8 @@ describe("settings-only assistant execution", () => {
     ]);
     const text = JSON.stringify(tools);
     assert.match(text, /team\.inbox/);
-    assert.doesNotMatch(text, /apiKey|password|web_search|list_team_chat_messages|applicant/);
+    assert.match(text, /applicants\.defaultSort/);
+    assert.doesNotMatch(text, /apiKey|password|web_search|list_team_chat_messages|search_applicants|applicantId/);
 
     const memberTools = settingsAgentTools({
       accountId: "member-a",
@@ -131,6 +132,61 @@ describe("settings-only assistant execution", () => {
       "write:team.chat.slowmode:team-a",
     ]);
     assert.deepEqual(api.stored, { slowmodeSeconds: 30 });
+  });
+
+  it("reads browser-local settings first, streams progress, and returns only scoped updates", async () => {
+    let stored = "light";
+    const replies = [
+      withCalls(call("read_setting", { settingId: "appearance.theme" })),
+      withCalls(call("update_setting", { settingId: "appearance.theme", value: "dark" })),
+      finalAnswer("Your theme is now dark."),
+    ];
+    const progress = [];
+    const inputs = [];
+    const result = await runSettingsAgent({
+      question: "Change it to dark.",
+      history: [
+        { role: "user", content: "What theme am I using?" },
+        { role: "assistant", content: "Your theme is light." },
+      ],
+      identity: coordinator,
+      adapter: {
+        validate(settingId, value) {
+          assert.equal(settingId, "appearance.theme");
+          assert.ok(value === "light" || value === "dark");
+          return value;
+        },
+        async read(settingId, identity) {
+          assert.equal(identity.accountId, "account-a");
+          assert.equal(identity.teamId, "team-a");
+          return stored;
+        },
+        async update(_settingId, value) {
+          stored = value;
+          return stored;
+        },
+      },
+      model: "test-model",
+      complete: async (input) => {
+        inputs.push(structuredClone(input));
+        return replies.shift();
+      },
+      onProgress: (activity) => progress.push(activity),
+    });
+    assert.equal(stored, "dark");
+    assert.deepEqual(result.localUpdates, { "appearance.theme": "dark" });
+    assert.deepEqual(result.changes, [{ settingId: "appearance.theme", value: "dark" }]);
+    assert.deepEqual(progress.map(({ action, status }) => `${action}:${status}`), [
+      "read_setting:started",
+      "read_setting:complete",
+      "update_setting:started",
+      "update_setting:saved",
+    ]);
+    assert.deepEqual(inputs[0].messages.slice(-3), [
+      { role: "user", content: "What theme am I using?" },
+      { role: "assistant", content: "Your theme is light." },
+      { role: "user", content: "Change it to dark." },
+    ]);
   });
 
   it("refuses a write if the model skips the required read", async () => {

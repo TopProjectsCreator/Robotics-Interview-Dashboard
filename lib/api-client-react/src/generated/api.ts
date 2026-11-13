@@ -274,6 +274,8 @@ import type {
   SeatingAssignInput,
   SeatingSettings,
   SeatingSettingsInput,
+  SettingsAssistantError,
+  SettingsAssistantInput,
   SetupInterviewerPasswordInput,
   SharedAssistantConversation,
   SiteStats,
@@ -9740,6 +9742,78 @@ export const useAskAssistant = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAskAssistantMutationOptions(options));
+    }
+
+export const getStreamSettingsAssistantUrl = () => {
+
+
+
+
+  return `/api/assistant/settings/stream`
+}
+
+/**
+ * Streams read and change progress for the active account and team. Browser-local values are supplied only for the current settings view.
+ * @summary Ask the signed-in admin's settings-only assistant
+ */
+export const streamSettingsAssistant = async (settingsAssistantInput: SettingsAssistantInput, options?: Parameters<typeof customFetch>[1]): Promise<string> => {
+
+  return customFetch<string>(getStreamSettingsAssistantUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(settingsAssistantInput)
+  }
+);}
+
+
+
+
+
+export const getStreamSettingsAssistantMutationOptions = <TError = ErrorType<SettingsAssistantError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof streamSettingsAssistant>>, TError,{data: BodyType<SettingsAssistantInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof streamSettingsAssistant>>, TError,{data: BodyType<SettingsAssistantInput>}, TContext> => {
+
+const mutationKey = ['streamSettingsAssistant'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof streamSettingsAssistant>>, {data: BodyType<SettingsAssistantInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  streamSettingsAssistant(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StreamSettingsAssistantMutationResult = NonNullable<Awaited<ReturnType<typeof streamSettingsAssistant>>>
+    export type StreamSettingsAssistantMutationBody = BodyType<SettingsAssistantInput>
+    export type StreamSettingsAssistantMutationError = ErrorType<SettingsAssistantError>
+
+    /**
+ * @summary Ask the signed-in admin's settings-only assistant
+ */
+export const useStreamSettingsAssistant = <TError = ErrorType<SettingsAssistantError>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof streamSettingsAssistant>>, TError,{data: BodyType<SettingsAssistantInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof streamSettingsAssistant>>,
+        TError,
+        {data: BodyType<SettingsAssistantInput>},
+        TContext
+      > => {
+      return useMutation(getStreamSettingsAssistantMutationOptions(options));
     }
 
 export const getListOwnedAssistantScheduledTasksUrl = () => {

@@ -42,7 +42,7 @@ import {
   useListFeatureRequests, getListFeatureRequestsQueryKey, useCreateFeatureRequest, useUpdateFeatureRequest,
   useEditOwnFeatureRequest, useDeleteOwnFeatureRequest,
   useGetSiteStats, getGetSiteStatsQueryKey,
-   useGetTeamMailboxSettings, getGetTeamMailboxSettingsQueryKey, useUpdateTeamMailboxSettings, useSyncTeamMailbox,
+   useGetTeamMailboxSettings, getGetTeamMailboxSettingsQueryKey, useUpdateTeamMailboxSettings, useSyncTeamMailbox, getGetTeamNameRulesQueryKey,
   useInterpretApplicantSearch,
   useCreateSpreadsheet,
   getInterviewChat,
@@ -160,6 +160,8 @@ import WorkspaceUsageDashboard from "./components/WorkspaceUsageDashboard";
 import { TeamRoleManagement } from "./components/TeamRoleManagement";
 import { AssistantGovernanceSettings } from "./components/AssistantGovernanceSettings";
 import { getSettingsNavigationItems, SettingsWorkspaceNavigation, type SettingsSectionId } from "./components/SettingsWorkspaceNavigation";
+import { SettingsAssistantChat } from "./components/SettingsAssistantChat";
+import { updateSettingsCapability } from "./settingsCapabilityRegistry";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
 const authenticatedSessionQueries = new WeakSet<object>();
@@ -1101,6 +1103,35 @@ function SettingsModal({
     canManageAssistant: canManageAssistant || isAdmin,
     canManageBranding,
   });
+  const settingsAssistantLocalSettings = {
+    "profile.displayName": settings.displayName,
+    "profile.initials": settings.initials,
+    "appearance.theme": theme === "dark" ? "dark" : "light",
+    "appearance.density": settings.density,
+    "appearance.showPhotos": settings.showPhotos,
+    "appearance.reduceMotion": settings.reduceMotion,
+    "applicants.defaultSort": settings.defaultSort,
+    "live.autoRefresh": settings.autoRefresh,
+    "live.realtime": settings.realtime,
+    "live.refreshMs": settings.refreshMs,
+  };
+  const applySettingsAssistantLocalUpdates = async (updates: Record<string, unknown>) => {
+    const context = {
+      session: session.data,
+      local: { settings, theme, updateSettings: update, setTheme },
+    };
+    for (const [settingId, value] of Object.entries(updates)) {
+      await updateSettingsCapability(settingId, value, context);
+    }
+  };
+  const refreshSettingsAssistantTeamValues = () => {
+    void Promise.all([
+      qc.invalidateQueries({ queryKey: getGetChatSettingsQueryKey() }),
+      qc.invalidateQueries({ queryKey: getGetTeamMailboxSettingsQueryKey() }),
+      qc.invalidateQueries({ queryKey: getGetTeamNameRulesQueryKey() }),
+      qc.invalidateQueries({ queryKey: teamBrandingQueryKey(session.data?.teamId) }),
+    ]);
+  };
   const activeSettingsItem = settingsNavigationItems.find((item) => item.id === activeSettingsSection)
     ?? settingsNavigationItems[0];
   return <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4 dark:bg-[#050d13]/80" onClick={onClose} data-testid="settings-modal">
@@ -1145,6 +1176,15 @@ function SettingsModal({
       {isAdmin && session.data?.teamId && <AssistantGovernanceSettings teamId={session.data.teamId} />}
       {isAdmin && session.data?.teamId && <ProductivityPromptSettings key={session.data.teamId} teamId={session.data.teamId} />}
       </section>
+      <div hidden={activeSettingsSection !== "chat"}>
+        <SettingsAssistantChat
+          key={`${session.data?.interviewerId ?? "account"}:${session.data?.teamId ?? "team"}`}
+          session={session.data}
+          localSettings={settingsAssistantLocalSettings}
+          onApplyLocalUpdates={applySettingsAssistantLocalUpdates}
+          onTeamSettingsSaved={refreshSettingsAssistantTeamValues}
+        />
+      </div>
       {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-live-now">
         <p className={sectionLabel}>Live now</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>
@@ -1448,10 +1488,6 @@ function SettingsModal({
       </div>}
       {(canSessionUsePermission(session.data, "featureRequests.view") ||
         canSessionUsePermission(session.data, "featureRequests.create")) && <div hidden={activeSettingsSection !== "chat"}><FeatureRequestSection /></div>}
-      {activeSettingsSection === "chat" && <section data-testid="settings-chat-assistant-slot" className="mt-4 rounded-xl border border-dashed border-border bg-muted/30 p-4">
-        <h4 className="text-sm font-semibold text-foreground">Settings assistant</h4>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">Assistant chat settings will appear here.</p>
-      </section>}
       {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
         <SettingRow title="Reset all settings" detail="Back to defaults on this device"><button onClick={reset} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> Reset</button></SettingRow>

@@ -176,6 +176,10 @@ import {
   UpdateSpreadsheetBody,
   UpdateSpreadsheetParams,
   UpdateSpreadsheetResponse,
+  SETTINGS_CAPABILITIES,
+  type SettingsCapabilityId,
+  StreamSettingsAssistantBody,
+  type SettingsAssistantInput,
 } from "@workspace/api-zod";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { getConfiguredTeamProviderModel, teamAssistantAI } from "../lib/teamAssistantAi";
@@ -8966,6 +8970,7 @@ router.post("/assistant/settings", requireAdmin, async (req, res): Promise<void>
       },
       adapter: settingsCapabilityOperations,
       ...(typeof body.confirmationToken === "string" ? { confirmationToken: body.confirmationToken } : {}),
+      includeBrowserLocal: false,
     });
     res.json(result);
   } catch (error) {
@@ -8975,6 +8980,142 @@ router.post("/assistant/settings", requireAdmin, async (req, res): Promise<void>
     }
     req.log.error({ err: error }, "Settings assistant request failed");
     res.status(503).json({ error: "The settings assistant is unavailable right now. Try again shortly." });
+  }
+});
+
+function validateBrowserSetting(settingId: SettingsCapabilityId, value: unknown): unknown {
+  switch (settingId) {
+    case "profile.displayName":
+      if (typeof value !== "string" || value.length > 120) throw new Error("Display name must be text up to 120 characters.");
+      return value;
+    case "profile.initials":
+      if (typeof value !== "string" || value.length > 2 || !/^[a-zA-Z]*$/.test(value)) throw new Error("Avatar initials must contain up to two letters.");
+      return value.toUpperCase();
+    case "appearance.theme":
+      if (value !== "light" && value !== "dark") throw new Error("Theme must be light or dark.");
+      return value;
+    case "appearance.density":
+      if (value !== "comfortable" && value !== "compact") throw new Error("Choose comfortable or compact density.");
+      return value;
+    case "appearance.showPhotos":
+    case "appearance.reduceMotion":
+    case "live.autoRefresh":
+    case "live.realtime":
+      if (typeof value !== "boolean") throw new Error("Choose true or false for this setting.");
+      return value;
+    case "applicants.defaultSort":
+      if (typeof value !== "string" || !["rank", "queue", "score", "name", "grade", "skill", "gender", "newest", "oldest"].includes(value)) {
+        throw new Error("Choose a supported applicant sort.");
+      }
+      return value;
+    case "live.refreshMs":
+      if (typeof value !== "number" || ![3000, 10000, 30000].includes(value)) throw new Error("Choose a supported refresh interval.");
+      return value;
+    default:
+      throw new Error("Unsupported browser setting.");
+  }
+}
+
+router.post("/assistant/settings/stream", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = StreamSettingsAssistantBody.safeParse(req.body);
+  if (!parsed.success || !parsed.data.question.trim()) {
+    res.status(400).json({ error: parsed.success ? "Enter a settings question." : parsed.error.message });
+    return;
+  }
+  const body: SettingsAssistantInput = parsed.data;
+  const localCapabilities = SETTINGS_CAPABILITIES.filter((item) => item.scope === "browser-local");
+  const expectedLocalKeys = new Set(localCapabilities.map((item) => item.id));
+  const suppliedLocalSettings = body.localSettings as Record<string, unknown>;
+  if (
+    Object.keys(suppliedLocalSettings).length !== expectedLocalKeys.size ||
+    Object.keys(suppliedLocalSettings).some((key) => !expectedLocalKeys.has(key as SettingsCapabilityId))
+  ) {
+    res.status(400).json({ error: "Reload Settings and try again so the current browser preferences can be read." });
+    return;
+  }
+  const localValues: Partial<Record<SettingsCapabilityId, unknown>> = {};
+  try {
+    for (const capability of localCapabilities) {
+      localValues[capability.id] = validateBrowserSetting(
+        capability.id,
+        suppliedLocalSettings[capability.id],
+      );
+    }
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : "Browser settings are invalid." });
+    return;
+  }
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const teamId = account.teamId?.trim() || DEFAULT_TEAM_ID;
+  const identity = {
+    accountId: account.id,
+    teamId,
+    role: account.role,
+    permissions: await permissionsForAccount({
+      role: account.role,
+      customRoleId: account.customRoleId,
+      teamId,
+    }),
+  };
+  const adapter = {
+    validate(settingId: SettingsCapabilityId, value: unknown) {
+      const capability = SETTINGS_CAPABILITIES.find((item) => item.id === settingId);
+      return capability?.scope === "browser-local"
+        ? validateBrowserSetting(settingId, value)
+        : settingsCapabilityOperations.validate(settingId, value);
+    },
+    async read(settingId: SettingsCapabilityId, agentIdentity: typeof identity) {
+      const capability = SETTINGS_CAPABILITIES.find((item) => item.id === settingId);
+      if (capability?.scope !== "browser-local") return settingsCapabilityOperations.read(settingId, agentIdentity);
+      if (!(settingId in localValues)) throw new Error("That browser setting is not available in this Settings view.");
+      return localValues[settingId];
+    },
+    async update(settingId: SettingsCapabilityId, value: unknown, agentIdentity: typeof identity) {
+      const capability = SETTINGS_CAPABILITIES.find((item) => item.id === settingId);
+      if (capability?.scope !== "browser-local") return settingsCapabilityOperations.update(settingId, value, agentIdentity);
+      const saved = validateBrowserSetting(settingId, value);
+      localValues[settingId] = saved;
+      return saved;
+    },
+  };
+  let disconnected = false;
+  res.on("close", () => { disconnected = true; });
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  const send = (message: Record<string, unknown>) => {
+    if (!disconnected && !res.writableEnded) {
+      res.write(`data: ${JSON.stringify(message)}\n\n`);
+      (res as ExpressResponse & { flush?: () => void }).flush?.();
+    }
+  };
+  try {
+    const result = await runSettingsAgent({
+      question: body.question,
+      history: body.history,
+      identity,
+      adapter,
+      ...(body.confirmationToken ? { confirmationToken: body.confirmationToken } : {}),
+      onProgress: (activity) => send({ activity }),
+    });
+    send({ done: true, result });
+  } catch (error) {
+    if (body.confirmationToken) {
+      send({ error: error instanceof Error ? error.message : "The settings confirmation could not be applied." });
+    } else {
+      req.log.error({ err: error }, "Settings assistant request failed");
+      send({ error: "The settings assistant is unavailable right now. Try again shortly." });
+    }
+  } finally {
+    if (!res.writableEnded) res.end();
   }
 });
 

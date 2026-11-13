@@ -2734,6 +2734,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AssistantResponse"
+  /assistant/settings/stream:
+    post:
+      operationId: streamSettingsAssistant
+      tags: [assistant]
+      summary: Ask the signed-in admin's settings-only assistant
+      description: Streams read and change progress for the active account and team. Browser-local values are supplied only for the current settings view.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsAssistantInput"
+      responses:
+        "200":
+          description: Server-sent settings assistant events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Invalid request or expired confirmation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsAssistantError"
+        "403":
+          description: Admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SettingsAssistantError"
   /assistant/scheduled-tasks:
     get:
       operationId: listOwnedAssistantScheduledTasks
@@ -5757,6 +5788,44 @@ components:
       schema:
         type: integer
   schemas:
+    SettingsAssistantInput:
+      type: object
+      additionalProperties: false
+      required: [question, localSettings]
+      properties:
+        question:
+          type: string
+          minLength: 1
+          maxLength: 8000
+        confirmationToken:
+          type: string
+          maxLength: 8192
+        localSettings:
+          type: object
+          additionalProperties: true
+        history:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/SettingsAssistantMessage"
+    SettingsAssistantMessage:
+      type: object
+      additionalProperties: false
+      required: [role, content]
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          maxLength: 8000
+    SettingsAssistantError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
     TeamNameRule:
       type: object
       additionalProperties: false

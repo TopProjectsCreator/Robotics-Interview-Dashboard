@@ -5,6 +5,39 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type SettingsAssistantInputLocalSettings = { [key: string]: unknown };
+
+export type SettingsAssistantMessageRole = typeof SettingsAssistantMessageRole[keyof typeof SettingsAssistantMessageRole];
+
+
+export const SettingsAssistantMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+} as const;
+
+export interface SettingsAssistantMessage {
+  role: SettingsAssistantMessageRole;
+  /** @maxLength 8000 */
+  content: string;
+}
+
+export interface SettingsAssistantInput {
+  /**
+     * @minLength 1
+     * @maxLength 8000
+     */
+  question: string;
+  /** @maxLength 8192 */
+  confirmationToken?: string;
+  localSettings: SettingsAssistantInputLocalSettings;
+  /** @maxItems 20 */
+  history?: SettingsAssistantMessage[];
+}
+
+export interface SettingsAssistantError {
+  error: string;
+}
+
 export type TeamNameRuleMatchType = typeof TeamNameRuleMatchType[keyof typeof TeamNameRuleMatchType];
 
 
