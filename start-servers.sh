@@ -21,6 +21,11 @@ export PORT=8080
 # Clear stale servers from a previous run
 pkill -f "dist/index.mjs" 2>/dev/null || true
 pkill -f "vite --config vite.codespaces.ts" 2>/dev/null || true
+# Drop Vite's dependency-optimizer cache: on wake, the workspace can be
+# re-materialized while node_modules/.vite still holds the pre-bundled copy,
+# and the browser then crashes on missing/renamed exports
+# ("module does not provide an export named ...").
+rm -rf node_modules/.vite artifacts/robotics-interview-dashboard/node_modules/.vite
 sleep 2
 
 nohup pnpm --filter @workspace/api-server run start > /tmp/api.log 2>&1 &
