@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AuthSession } from "@workspace/api-client-react";
 import { SettingsAssistantChat } from "./SettingsAssistantChat";
@@ -35,7 +36,10 @@ function sseResponse(frames: unknown[], options: { split?: boolean } = {}): Resp
   return new Response(body, { status: 200, headers: { "Content-Type": "text/event-stream" } });
 }
 
-function renderPanel(session: AuthSession | undefined = coordinator) {
+function renderPanel(
+  session: AuthSession | undefined = coordinator,
+  renderMarkdown: (source: string) => ReactNode = (source) => <p>{source}</p>,
+) {
   const onApplyLocalUpdates = vi.fn();
   const onTeamSettingsSaved = vi.fn();
   render(
@@ -55,6 +59,7 @@ function renderPanel(session: AuthSession | undefined = coordinator) {
       }}
       onApplyLocalUpdates={onApplyLocalUpdates}
       onTeamSettingsSaved={onTeamSettingsSaved}
+      renderMarkdown={renderMarkdown}
     />,
   );
   return { onApplyLocalUpdates, onTeamSettingsSaved };
@@ -80,6 +85,7 @@ describe("SettingsAssistantChat", () => {
         localSettings={{}}
         onApplyLocalUpdates={vi.fn()}
         onTeamSettingsSaved={vi.fn()}
+        renderMarkdown={(source) => <p>{source}</p>}
       />,
     );
     expect(screen.getByTestId("settings-assistant-denied")).toHaveTextContent("coordinator or admin");
@@ -89,6 +95,7 @@ describe("SettingsAssistantChat", () => {
         localSettings={{}}
         onApplyLocalUpdates={vi.fn()}
         onTeamSettingsSaved={vi.fn()}
+        renderMarkdown={(source) => <p>{source}</p>}
       />,
     );
     expect(screen.getByTestId("settings-assistant-denied")).toBeInTheDocument();
@@ -127,6 +134,32 @@ describe("SettingsAssistantChat", () => {
     expect(releaseStream).toBeDefined();
     releaseStream?.();
     expect(await screen.findByText("Theme checked.")).toBeInTheDocument();
+    expect(screen.getAllByText("read_setting · appearance.theme")).toHaveLength(2);
+    expect(screen.getAllByText("Done").length).toBeGreaterThan(0);
+  });
+
+  it("renders assistant replies through the Markdown renderer", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(sseResponse([{
+      done: true,
+      result: {
+        answer: "**Dark** theme\n\n- Compact density",
+        confirmations: [],
+        changes: [],
+        localUpdates: {},
+        model: "settings",
+      },
+    }]));
+    renderPanel(coordinator, (source) => (
+      <div data-testid="markdown-renderer-output">
+        <strong>{source.match(/\*\*(.*?)\*\*/)?.[1]}</strong>
+        <ul><li>Compact density</li></ul>
+      </div>
+    ));
+    ask("What theme am I using?");
+
+    const rendered = await screen.findByTestId("markdown-renderer-output");
+    expect(rendered.querySelector("strong")).toHaveTextContent("Dark");
+    expect(rendered.querySelector("li")).toHaveTextContent("Compact density");
   });
 
   it("waits for explicit approval before posting a confirmation token", async () => {

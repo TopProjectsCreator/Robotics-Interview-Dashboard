@@ -1134,7 +1134,8 @@ function SettingsModal({
   };
   const activeSettingsItem = settingsNavigationItems.find((item) => item.id === activeSettingsSection)
     ?? settingsNavigationItems[0];
-  return <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/70 p-4 dark:bg-[#050d13]/80" onClick={onClose} data-testid="settings-modal">
+  if (typeof document === "undefined") return null;
+  return createPortal(<div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[#112433]/70 p-2 dark:bg-[#050d13]/80 sm:p-4" onClick={onClose} data-testid="settings-modal">
     <div {...panelProps} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="flex max-h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#dce5e5] bg-white p-3 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2] sm:p-5">
       <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border pb-3">
         <div className="min-w-0">
@@ -1155,7 +1156,7 @@ function SettingsModal({
           role="tabpanel"
           aria-labelledby={`settings-tab-${activeSettingsItem.id}`}
           data-testid="settings-section-panel"
-          className="min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6"
+          className={`flex min-h-0 flex-col overscroll-contain p-4 sm:p-6 ${activeSettingsSection === "chat" ? "overflow-hidden" : "overflow-y-auto"}`}
         >
           <div className="mb-4 border-b border-border pb-3">
             <h3 className="text-base font-semibold text-foreground">{activeSettingsItem.label}</h3>
@@ -1176,13 +1177,14 @@ function SettingsModal({
       {isAdmin && session.data?.teamId && <AssistantGovernanceSettings teamId={session.data.teamId} />}
       {isAdmin && session.data?.teamId && <ProductivityPromptSettings key={session.data.teamId} teamId={session.data.teamId} />}
       </section>
-      <div hidden={activeSettingsSection !== "chat"}>
+      <div hidden={activeSettingsSection !== "chat"} className={activeSettingsSection === "chat" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
         <SettingsAssistantChat
           key={`${session.data?.interviewerId ?? "account"}:${session.data?.teamId ?? "team"}`}
           session={session.data}
           localSettings={settingsAssistantLocalSettings}
           onApplyLocalUpdates={applySettingsAssistantLocalUpdates}
           onTeamSettingsSaved={refreshSettingsAssistantTeamValues}
+          renderMarkdown={(source) => <MarkdownContent source={source} className="break-words text-sm leading-5 text-foreground" />}
         />
       </div>
       {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-live-now">
@@ -1498,7 +1500,7 @@ function SettingsModal({
         <button onClick={onClose} data-testid="button-settings-done" className="rounded-xl bg-[#183a4b] px-6 py-2.5 text-sm font-semibold text-white transition hover:bg-[#102c3c] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Done</button>
       </div>
     </div>
-  </div>;
+  </div>, document.body);
 }
 function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compact?: boolean }) {
   return <div className={`flex ${compact ? "min-h-[160px]" : "min-h-[320px]"} flex-col items-center justify-center gap-3 text-center`} data-testid="status-error"><AlertCircle className="text-[#bd5047]" /><p className="font-semibold">Control link unavailable</p><p className="text-sm text-[#63747c]">The live event data could not be reached.</p>{onRetry && <button onClick={onRetry} data-testid="button-retry" className="rounded-lg bg-[#183a4b] px-4 py-2 text-sm font-semibold text-white">Retry connection</button>}</div>;

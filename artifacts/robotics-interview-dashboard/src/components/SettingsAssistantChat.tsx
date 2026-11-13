@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AuthSession } from "@workspace/api-client-react";
 import { ArrowUp, Check, CircleAlert, LoaderCircle, LockKeyhole, RotateCcw, Settings2, ShieldCheck, X } from "lucide-react";
 import { getStoredAuthToken } from "../authSession";
@@ -36,6 +36,7 @@ export interface SettingsAssistantChatProps {
   localSettings: Record<string, unknown>;
   onApplyLocalUpdates: (updates: Record<string, unknown>) => void;
   onTeamSettingsSaved: () => void;
+  renderMarkdown: (source: string) => ReactNode;
 }
 
 const suggestions = [
@@ -86,6 +87,13 @@ function progressLabel(activity: ProgressActivity): string {
   return `${subject}: updated`;
 }
 
+function progressStateLabel(activity: ProgressActivity): string {
+  if (activity.status === "started") return "Running";
+  if (activity.status === "confirmation") return "Needs approval";
+  if (activity.status === "error") return "Failed";
+  return "Done";
+}
+
 async function readSse(
   response: Response,
   onFrame: (frame: Record<string, unknown>) => void | Promise<void>,
@@ -127,6 +135,7 @@ export function SettingsAssistantChat({
   localSettings,
   onApplyLocalUpdates,
   onTeamSettingsSaved,
+  renderMarkdown,
 }: SettingsAssistantChatProps) {
   const allowed = session?.authenticated === true && (session.role === "coordinator" || session.role === "admin");
   const [draft, setDraft] = useState("");
@@ -274,7 +283,7 @@ export function SettingsAssistantChat({
   return (
     <section
       aria-labelledby="settings-assistant-title"
-      className="flex min-h-[390px] flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground"
+      className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground"
       data-testid="settings-assistant-panel"
     >
       <header className="flex items-center justify-between gap-3 border-b border-border bg-muted/35 px-4 py-3">
@@ -295,7 +304,7 @@ export function SettingsAssistantChat({
 
       <div
         ref={transcriptRef}
-        className="flex min-h-[230px] flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-4 py-4"
+        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto overscroll-contain px-4 py-4"
         aria-label="Settings assistant conversation"
         role="log"
         aria-live="polite"
@@ -340,7 +349,9 @@ export function SettingsAssistantChat({
                 <p className="mb-1 text-[10px] font-semibold uppercase tracking-[.1em] text-muted-foreground">
                   {turn.kind === "user" ? "You" : "Settings assistant"}
                 </p>
-                <p className="whitespace-pre-wrap break-words text-sm leading-5">{turn.text}</p>
+                {turn.kind === "assistant"
+                  ? renderMarkdown(turn.text)
+                  : <p className="whitespace-pre-wrap break-words text-sm leading-5">{turn.text}</p>}
                 {turn.kind === "assistant" && turn.changes && turn.changes.length > 0 && (
                   <div className="mt-3 rounded-lg border border-primary/20 bg-primary/5 p-3" data-testid="settings-assistant-saved-summary">
                     <p className="flex items-center gap-1.5 text-[11px] font-semibold text-primary">
@@ -361,7 +372,7 @@ export function SettingsAssistantChat({
             {progress.map((item) => (
               <div
                 key={item.id}
-                className="mr-auto flex max-w-[92%] items-center gap-2 rounded-lg border border-border/80 bg-muted/35 px-3 py-2 text-xs text-muted-foreground"
+                className="mr-auto flex w-full max-w-[92%] items-start gap-2 rounded-lg border border-border/80 bg-muted/35 px-3 py-2 text-xs text-muted-foreground"
                 role="status"
                 data-testid={`settings-assistant-progress-${item.id}`}
               >
@@ -372,7 +383,15 @@ export function SettingsAssistantChat({
                 ) : (
                   <Check size={13} className="shrink-0 text-primary" aria-hidden="true" />
                 )}
-                <span>{progressLabel(item)}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block font-medium text-foreground">{progressLabel(item)}</span>
+                  <span className="mt-0.5 block break-all font-mono text-[10px] text-muted-foreground">
+                    {item.action} · {item.settingId}
+                  </span>
+                </span>
+                <span className="shrink-0 rounded-full border border-border bg-background px-2 py-0.5 text-[10px] font-medium">
+                  {progressStateLabel(item)}
+                </span>
               </div>
             ))}
             {busy && (
