@@ -564,6 +564,23 @@ export class ObjectStorageService {
     return `${objectPathPrefix(instance)}generated/${id}`;
   }
 
+  /**
+   * Store a generated CAD file under a team-scoped generated/cad/<teamId>/ path.
+   * The storage route scopes reads of that prefix to the same team, so one
+   * team's CAD files cannot be fetched by another team.
+   */
+  async uploadGeneratedCadFile(data: Buffer, contentType: string, teamId: string): Promise<string> {
+    const id = randomUUID();
+    const path = `generated/cad/${teamId}/${id}`;
+    const { instance } = await writeWithFailover("Failed to store generated CAD file", async (target) => {
+      const { error } = await supabaseFor(target)
+        .storage.from(storageBucket(target))
+        .upload(path, data, { contentType, upsert: false });
+      if (error) throw new Error(error.message);
+    });
+    return `${objectPathPrefix(instance)}${path}`;
+  }
+
   async uploadChatImage(data: Buffer, contentType: string): Promise<string> {
     const id = randomUUID();
     const { instance } = await writeWithFailover("Failed to store chat attachment", async (target) => {
@@ -579,6 +596,23 @@ export class ObjectStorageService {
     const id = randomUUID();
     const path = `team-branding/${teamId}/${id}`;
     const { instance } = await writeWithFailover("Failed to store team logo", async (target) => {
+      const { error } = await supabaseFor(target)
+        .storage.from(storageBucket(target))
+        .upload(path, data, { contentType, upsert: false });
+      if (error) throw new Error(error.message);
+    });
+    return `${objectPathPrefix(instance)}${path}`;
+  }
+
+  /**
+   * Store a team's custom app background under the same team-scoped
+   * `team-branding/<teamId>/` prefix, so the storage route's team check
+   * covers it exactly like the logo.
+   */
+  async uploadTeamBackground(data: Buffer, contentType: string, teamId: string): Promise<string> {
+    const id = randomUUID();
+    const path = `team-branding/${teamId}/${id}`;
+    const { instance } = await writeWithFailover("Failed to store team background", async (target) => {
       const { error } = await supabaseFor(target)
         .storage.from(storageBucket(target))
         .upload(path, data, { contentType, upsert: false });

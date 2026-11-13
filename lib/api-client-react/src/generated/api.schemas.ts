@@ -945,6 +945,18 @@ export interface AuthSession {
   token?: string;
 }
 
+/**
+ * How the custom app background is fitted to the viewport
+ * @nullable
+ */
+export type TeamBrandingBackgroundMode = typeof TeamBrandingBackgroundMode[keyof typeof TeamBrandingBackgroundMode] | null;
+
+
+export const TeamBrandingBackgroundMode = {
+  cover: 'cover',
+  tile: 'tile',
+} as const;
+
 export interface TeamBranding {
   /**
      * Private object path for this team's logo
@@ -957,7 +969,35 @@ export interface TeamBranding {
      * @pattern ^#[0-9A-Fa-f]{6}$
      */
   primaryColor: string | null;
+  /**
+     * Private object path for this team's custom app background
+     * @nullable
+     */
+  backgroundPath: string | null;
+  /**
+     * How the custom app background is fitted to the viewport
+     * @nullable
+     */
+  backgroundMode: TeamBrandingBackgroundMode;
+  /**
+     * Percentage of dark overlay drawn over the custom app background
+     * @minimum 0
+     * @maximum 80
+     */
+  backgroundOverlay: number;
 }
+
+/**
+ * How the custom app background is fitted to the viewport
+ * @nullable
+ */
+export type UpdateTeamBrandingBackgroundMode = typeof UpdateTeamBrandingBackgroundMode[keyof typeof UpdateTeamBrandingBackgroundMode] | null;
+
+
+export const UpdateTeamBrandingBackgroundMode = {
+  cover: 'cover',
+  tile: 'tile',
+} as const;
 
 export interface UpdateTeamBranding {
   /**
@@ -965,11 +1005,27 @@ export interface UpdateTeamBranding {
      * @pattern ^#[0-9A-Fa-f]{6}$
      */
   primaryColor: string | null;
+  /**
+     * How the custom app background is fitted to the viewport
+     * @nullable
+     */
+  backgroundMode?: UpdateTeamBrandingBackgroundMode;
+  /**
+     * Percentage of dark overlay drawn over the custom app background
+     * @minimum 0
+     * @maximum 80
+     */
+  backgroundOverlay?: number;
 }
 
 export interface UploadTeamLogo {
   /** Private object path for this team's logo */
   logoPath: string;
+}
+
+export interface UploadTeamBackground {
+  /** Private object path for this team's custom app background */
+  backgroundPath: string;
 }
 
 export interface TeamVerifyResponse {

@@ -10,4 +10,4 @@ export type { GetInterviewWhiteboardByIdParams as GetInterviewWhiteboardByIdQuer
 export { SearchModelsByProviderParams } from "./generated/api";
 export type { SearchModelsByProviderParams as SearchModelsByProviderQuery } from "./generated/types/searchModelsByProviderParams";
 export * from './generated/api';
-export * from './generated/types';
+export * from './generated/types/index';

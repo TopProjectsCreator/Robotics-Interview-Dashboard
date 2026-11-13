@@ -16,6 +16,7 @@ import {
   AlertDialogTitle,
 } from "../components/ui/alert-dialog";
 import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
+import { loadToolExposure } from "../components/assistantTools";
 import { compileWorkspaceSourceFiles, sandboxDocument, type WorkspaceSourceFile } from "../lib/customWorkspaceRuntime";
 import { notify } from "../lib/dialogs";
 
@@ -582,6 +583,7 @@ function builderActivityLabel(activity: BuilderRun["activities"][number]): strin
     }
   }
   if (activity.tool === "preview_custom_workspace") return "Preview draft";
+  if (activity.tool === "execute_workspace_tools") return "Script tool batch";
   return tool;
 }
 
@@ -944,9 +946,14 @@ export function CustomWorkspacesPage() {
   }, [active]);
 
   const runBuilderAgent = async (question: string, beforeIds: Set<string>): Promise<BuilderRun | null> => {
+    const toolExposure = loadToolExposure();
     const { run: queued } = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs", {
       method: "POST",
-      body: JSON.stringify({ question, ...(selectedModel ? { model: selectedModel } : {}) }),
+      body: JSON.stringify({
+        question,
+        ...(selectedModel ? { model: selectedModel } : {}),
+        ...(toolExposure === "execute" ? { toolExposure } : {}),
+      }),
     });
     let normalizedRun = normalizeBuilderRun(queued);
     if (!normalizedRun) throw new Error("The builder job was queued without a run record.");

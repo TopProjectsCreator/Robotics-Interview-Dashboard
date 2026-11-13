@@ -8,6 +8,7 @@ import {
   ALL_ASSISTANT_TOOL_NAMES,
   ASSISTANT_TOOL_GROUPS,
   ASSISTANT_TOOLS_STORAGE_KEY,
+  ASSISTANT_TOOL_EXPOSURE_STORAGE_KEY,
 } from "./assistantTools";
 
 function renderWithQuery(ui: ReactNode) {
@@ -401,11 +402,12 @@ describe("AssistantModelPicker", () => {
   });
 
   it("covers the complete static assistant tool catalog, including image and workspace actions", () => {
-    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(83);
+    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(85);
     expect(new Set(ALL_ASSISTANT_TOOL_NAMES).size).toBe(ALL_ASSISTANT_TOOL_NAMES.length);
     const names = new Set(ALL_ASSISTANT_TOOL_NAMES);
     for (const name of [
       "generate_image",
+      "generate_cad_model",
       "show_svg",
       "create_chat_mini_tool",
       "get_parts_inventory_details",
@@ -427,6 +429,7 @@ describe("AssistantModelPicker", () => {
       "delete_custom_workspace",
       "list_code_project_files",
       "write_code_file",
+      "execute_workspace_tools",
     ]) {
       expect(names.has(name), `${name} should have an individual setting`).toBe(true);
     }
@@ -449,6 +452,48 @@ describe("AssistantModelPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: "Generate image tool" }));
     expect(window.localStorage.getItem(ASSISTANT_TOOLS_STORAGE_KEY)).toBe('["generate_image"]');
+  });
+
+  it("offers direct and scripted tool exposure and persists the choice", async () => {
+    window.localStorage.removeItem(ASSISTANT_TOOL_EXPOSURE_STORAGE_KEY);
+    const onToolExposureChange = vi.fn();
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+        toolExposure="direct"
+        onToolExposureChange={onToolExposureChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    const direct = await screen.findByTestId("assistant-tool-exposure-direct");
+    const scripted = screen.getByTestId("assistant-tool-exposure-execute");
+    expect(direct).toHaveAttribute("aria-checked", "true");
+    expect(scripted).toHaveAttribute("aria-checked", "false");
+
+    fireEvent.click(scripted);
+    expect(onToolExposureChange).toHaveBeenCalledWith("execute");
+  });
+
+  it("stores the scripted exposure mode in local storage when uncontrolled", async () => {
+    window.localStorage.removeItem(ASSISTANT_TOOL_EXPOSURE_STORAGE_KEY);
+    renderWithQuery(
+      <AssistantModelPicker
+        model="openrouter/free"
+        models={[{ id: "openrouter/free" }]}
+        loading={false}
+        error={false}
+        onChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Assistant settings" }));
+    fireEvent.click(await screen.findByTestId("assistant-tool-exposure-execute"));
+    expect(window.localStorage.getItem(ASSISTANT_TOOL_EXPOSURE_STORAGE_KEY)).toBe("execute");
   });
 
   it("shows connected MCP tools as individual controls and retains disabled selections", async () => {

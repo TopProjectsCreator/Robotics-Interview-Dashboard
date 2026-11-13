@@ -310,6 +310,7 @@ import type {
   UploadInput,
   UploadPartsRobotPreviewFileParams,
   UploadResponse,
+  UploadTeamBackground,
   UploadTeamLogo,
   WorkspaceUsageSummary,
   WorkspaceVisibility,
@@ -1683,7 +1684,7 @@ export const getUpdateTeamBrandingUrl = () => {
 }
 
 /**
- * @summary Set or reset the signed-in team's primary color
+ * @summary Set or reset the signed-in team's primary color and background options
  */
 export const updateTeamBranding = async (updateTeamBranding: UpdateTeamBranding, options?: Parameters<typeof customFetch>[1]): Promise<TeamBranding> => {
 
@@ -1732,7 +1733,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateTeamBrandingMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Set or reset the signed-in team's primary color
+ * @summary Set or reset the signed-in team's primary color and background options
  */
 export const useUpdateTeamBranding = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamBranding>>, TError,{data: BodyType<UpdateTeamBranding>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -1885,6 +1886,148 @@ export const useResetTeamLogo = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getResetTeamLogoMutationOptions(options));
+    }
+
+export const getUploadTeamBackgroundUrl = () => {
+
+
+
+
+  return `/api/auth/team-branding/background`
+}
+
+/**
+ * @summary Upload a custom app background for the signed-in team
+ */
+export const uploadTeamBackground = async (uploadTeamBackgroundBody: Blob, options?: Parameters<typeof customFetch>[1]): Promise<UploadTeamBackground> => {
+
+  return customFetch<UploadTeamBackground>(getUploadTeamBackgroundUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png', ...options?.headers },
+    body: uploadTeamBackgroundBody
+  }
+);}
+
+
+
+
+
+export const getUploadTeamBackgroundMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamBackground>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadTeamBackground>>, TError,{data: BodyType<Blob>}, TContext> => {
+
+const mutationKey = ['uploadTeamBackground'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadTeamBackground>>, {data: BodyType<Blob>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  uploadTeamBackground(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadTeamBackgroundMutationResult = NonNullable<Awaited<ReturnType<typeof uploadTeamBackground>>>
+    export type UploadTeamBackgroundMutationBody = BodyType<Blob>
+    export type UploadTeamBackgroundMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Upload a custom app background for the signed-in team
+ */
+export const useUploadTeamBackground = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamBackground>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadTeamBackground>>,
+        TError,
+        {data: BodyType<Blob>},
+        TContext
+      > => {
+      return useMutation(getUploadTeamBackgroundMutationOptions(options));
+    }
+
+export const getResetTeamBackgroundUrl = () => {
+
+
+
+
+  return `/api/auth/team-branding/background`
+}
+
+/**
+ * @summary Reset the signed-in team's custom app background
+ */
+export const resetTeamBackground = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getResetTeamBackgroundUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getResetTeamBackgroundMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,void, TContext> => {
+
+const mutationKey = ['resetTeamBackground'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetTeamBackground>>, void> = () => {
+
+
+          return  resetTeamBackground(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResetTeamBackgroundMutationResult = NonNullable<Awaited<ReturnType<typeof resetTeamBackground>>>
+
+    export type ResetTeamBackgroundMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Reset the signed-in team's custom app background
+ */
+export const useResetTeamBackground = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resetTeamBackground>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getResetTeamBackgroundMutationOptions(options));
     }
 
 export const getGetTeamNameRulesUrl = () => {

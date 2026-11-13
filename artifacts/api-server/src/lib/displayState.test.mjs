@@ -3,6 +3,8 @@ import { once } from "node:events";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
 
+import { dbMockExports } from "./testDbExports.mjs";
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     try {
@@ -136,9 +138,12 @@ test("public display state scopes by event code and exposes only approved fields
     teamsTable: {},
     interviewerAccountsTable: {},
     revokedSessionsTable: {},
+    chatProductivitySettingsTable: {},
+    chatProductivitySnapshotsTable: {},
+    runWithInstance: (_instance, fn) => fn(),
     normalizeTeamName: (name) => name.toLowerCase(),
   });
-  mock.module("@workspace/db", { namedExports: database });
+  mock.module("@workspace/db", { namedExports: { ...dbMockExports(), ...database } });
 
   const dataNames = [
     "applicantResponse", "assignSeat", "csvToApplicant", "displaySettingsResponse",

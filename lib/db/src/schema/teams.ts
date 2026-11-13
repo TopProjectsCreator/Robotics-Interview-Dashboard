@@ -1,6 +1,13 @@
 import { createInsertSchema } from "drizzle-zod";
-import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
+
+/** How the team's custom app background is fitted to the viewport. */
+export const TEAM_BACKGROUND_MODES = ["cover", "tile"] as const;
+export type TeamBackgroundMode = (typeof TEAM_BACKGROUND_MODES)[number];
+
+export const TEAM_BACKGROUND_OVERLAY_MIN = 0;
+export const TEAM_BACKGROUND_OVERLAY_MAX = 80;
 
 /**
  * A team is a completely isolated workspace: its own team access code,
@@ -20,6 +27,9 @@ export const teamsTable = pgTable("teams", {
   codeHash: text("code_hash").notNull(),
   logoPath: text("logo_path"),
   primaryColor: text("primary_color"),
+  backgroundPath: text("background_path"),
+  backgroundMode: text("background_mode"),
+  backgroundOverlay: integer("background_overlay").notNull().default(35),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

@@ -80,6 +80,7 @@ import {
   GetTeamBrandingResponse,
   UpdateTeamBrandingBody,
   UploadTeamLogoResponse,
+  UploadTeamBackgroundResponse,
   GetPersonalNotepadResponse,
   UpdatePersonalNotepadBody,
   UpdatePersonalNotepadResponse,
@@ -315,16 +316,29 @@ function clearCredentialFailures(kind: string, value: string): void {
   credentialFailures.delete(credentialKey(kind, value));
 }
 
+function normalizedBrandingRow(row: { logoPath?: string | null; primaryColor?: string | null; backgroundPath?: string | null; backgroundMode?: string | null; backgroundOverlay?: number | null } | undefined): { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgroundMode: "cover" | "tile" | null; backgroundOverlay: number } {
+  const mode = row?.backgroundMode;
+  return {
+    logoPath: row?.logoPath ?? null,
+    primaryColor: row?.primaryColor ?? null,
+    backgroundPath: row?.backgroundPath ?? null,
+    backgroundMode: mode === "cover" || mode === "tile" ? mode : null,
+    backgroundOverlay: typeof row?.backgroundOverlay === "number" && Number.isFinite(row.backgroundOverlay)
+      ? Math.min(80, Math.max(0, Math.round(row.backgroundOverlay)))
+      : 35,
+  };
+}
+
 router.get("/auth/team-branding", requireAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
   const [team] = await db.select({
     logoPath: teamsTable.logoPath,
     primaryColor: teamsTable.primaryColor,
+    backgroundPath: teamsTable.backgroundPath,
+    backgroundMode: teamsTable.backgroundMode,
+    backgroundOverlay: teamsTable.backgroundOverlay,
   }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
-  res.json(GetTeamBrandingResponse.parse({
-    logoPath: team?.logoPath ?? null,
-    primaryColor: team?.primaryColor ?? null,
-  }));
+  res.json(GetTeamBrandingResponse.parse(normalizedBrandingRow(team)));
 });
 
 router.patch("/auth/team-branding", requireCoordinator, async (req, res): Promise<void> => {
@@ -334,22 +348,32 @@ router.patch("/auth/team-branding", requireCoordinator, async (req, res): Promis
     return;
   }
   const teamId = await requestTeamId(req);
+  const update: Partial<typeof teamsTable.$inferInsert> = { primaryColor: parsed.data.primaryColor };
+  if (parsed.data.backgroundMode !== undefined) update.backgroundMode = parsed.data.backgroundMode;
+  if (parsed.data.backgroundOverlay !== undefined) update.backgroundOverlay = parsed.data.backgroundOverlay;
   const [team] = await db.update(teamsTable)
-    .set({ primaryColor: parsed.data.primaryColor })
+    .set(update)
     .where(eq(teamsTable.id, teamId))
-    .returning({ primaryColor: teamsTable.primaryColor });
+    .returning({
+      logoPath: teamsTable.logoPath,
+      primaryColor: teamsTable.primaryColor,
+      backgroundPath: teamsTable.backgroundPath,
+      backgroundMode: teamsTable.backgroundMode,
+      backgroundOverlay: teamsTable.backgroundOverlay,
+    });
   if (!team) {
     res.status(404).json({ error: "Team not found" });
     return;
   }
-  res.json(GetTeamBrandingResponse.parse({
-    logoPath: (await db.select({ logoPath: teamsTable.logoPath }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1))[0]?.logoPath ?? null,
-    primaryColor: team.primaryColor ?? null,
-  }));
+  res.json(GetTeamBrandingResponse.parse(normalizedBrandingRow(team)));
 });
 
 const TEAM_LOGO_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const TEAM_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+// Backgrounds carry more detail, so they get a larger budget while
+// keeping the same small, verified image types.
+const TEAM_BACKGROUND_TYPES = TEAM_LOGO_TYPES;
+const TEAM_BACKGROUND_MAX_BYTES = 8 * 1024 * 1024;
 
 function isValidTeamLogo(data: Buffer, contentType: string): boolean {
   if (contentType === "image/png") {
@@ -416,6 +440,62 @@ router.delete("/auth/team-branding/logo", requireCoordinator, async (req, res): 
   }
   if (existing?.logoPath) await objectStorageService.deleteObject(existing.logoPath).catch((error) => {
     req.log.warn({ err: error }, "Could not remove the reset team logo");
+  });
+  res.status(204).end();
+});
+
+router.post(
+  "/auth/team-branding/background",
+  requireCoordinator,
+  express.raw({ type: [...TEAM_LOGO_TYPES], limit: TEAM_BACKGROUND_MAX_BYTES }),
+  async (req: Request, res: Response): Promise<void> => {
+    const data = req.body as Buffer | undefined;
+    const contentType = req.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!Buffer.isBuffer(data) || data.length === 0 || data.length > TEAM_BACKGROUND_MAX_BYTES || !TEAM_BACKGROUND_TYPES.has(contentType) || !isValidTeamLogo(data, contentType)) {
+      res.status(400).json({ error: "Choose a valid PNG, JPEG, or WebP image up to 8 MB." });
+      return;
+    }
+    const teamId = await requestTeamId(req);
+    const [existing] = await db.select({ backgroundPath: teamsTable.backgroundPath }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    let backgroundPath: string;
+    try {
+      backgroundPath = await objectStorageService.uploadTeamBackground(data, contentType, teamId);
+    } catch (error) {
+      req.log.error({ err: error }, "Could not store team background");
+      res.status(503).json({ error: "Background storage is temporarily unavailable. Try again shortly." });
+      return;
+    }
+    try {
+      await db.update(teamsTable).set({ backgroundPath }).where(eq(teamsTable.id, teamId));
+    } catch (error) {
+      await objectStorageService.deleteObject(backgroundPath).catch(() => undefined);
+      throw error;
+    }
+    if (existing.backgroundPath) await objectStorageService.deleteObject(existing.backgroundPath).catch((error) => {
+      req.log.warn({ err: error }, "Could not remove the replaced team background");
+    });
+    res.status(201).json(UploadTeamBackgroundResponse.parse({ backgroundPath }));
+  },
+);
+
+router.delete("/auth/team-branding/background", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const [existing] = await db.select({ backgroundPath: teamsTable.backgroundPath })
+    .from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  const [team] = await db.update(teamsTable)
+    .set({ backgroundPath: null })
+    .where(eq(teamsTable.id, teamId))
+    .returning({ id: teamsTable.id });
+  if (!team) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  if (existing?.backgroundPath) await objectStorageService.deleteObject(existing.backgroundPath).catch((error) => {
+    req.log.warn({ err: error }, "Could not remove the reset team background");
   });
   res.status(204).end();
 });

@@ -281,7 +281,8 @@ Every workspace and public surface, what it does, and how far it goes.
   graph — a manage permission implies its matching view/edit permissions. Built-ins:
   coordinator (everything), treasurer (read-mostly), member (basic).
 - **Team settings worth knowing:** team name rules (block listed names, e.g. prank
-  names), team branding (primary color + logo upload ≤2 MB, checked file type), team
+  names), team branding (primary color + logo upload ≤2 MB, checked file type), custom
+  app background (PNG, JPEG, or WebP, team-shared, coordinator-only), team
   inbox (inbound email → team chat, encrypted key, approved-sender list).
 - **Password hygiene:** new passwords are screened against the Pwned Passwords corpus
   (low-exposure confirm, high-exposure reject); per-account reset, rename, role change,

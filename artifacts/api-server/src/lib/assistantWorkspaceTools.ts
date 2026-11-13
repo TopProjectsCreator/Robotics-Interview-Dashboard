@@ -32,6 +32,7 @@ import {
   type WorkspaceTheme,
   type WorkspaceViewport,
 } from "./customWorkspacePreview";
+import { runWorkspaceScript } from "./workspaceScript";
 
 const assistantTaskTool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
   type: "function" as const,
@@ -558,11 +559,95 @@ export const ASSISTANT_WORKSPACE_TOOLS = [
     },
     ["fileId", "content"],
   ),
+  tool(
+    "execute_workspace_tools",
+    "Run a script that orchestrates multiple workspace tools in one call — loops, conditionals, and data transforms between calls instead of burning an LLM turn per tool. Scripts may call any workspace tool except this one recursively (no nested execute). Use for batch file-system automation, multi-file patching, and scripted critique verification. Available tools are listed by `tools.catalog()` inside the script.",
+    {
+      code: { type: "string", description: "JavaScript that calls workspace tools via `tools.<name>(args)` or `tools.catalog()`. Max 8000 characters; max 50 tool calls per run.", maxLength: 8000 },
+    },
+    ["code"],
+  ),
 ] as const;
 
 export const ASSISTANT_WORKSPACE_TOOL_NAMES = new Set<string>(
   ASSISTANT_WORKSPACE_TOOLS.map((item) => item.function.name),
 );
+
+/**
+ * How tools are exposed to the model (Assistant settings):
+ * - "direct": every tool is exposed individually; execute_workspace_tools is
+ *   withheld so the model never has two ways to reach the same action.
+ * - "execute" (beta): only execute_workspace_tools is exposed; the model
+ *   scripts every other tool through it in a single call.
+ */
+export type AssistantToolExposureMode = "direct" | "execute";
+
+export const ASSISTANT_EXECUTE_TOOLS_NAME = "execute_workspace_tools";
+
+export function parseAssistantToolExposure(value: unknown): AssistantToolExposureMode {
+  return value === "execute" ? "execute" : "direct";
+}
+
+/**
+ * Split a tool list into what the model sees and what a script may call.
+ * "direct" exposes everything but the script gateway; "execute" exposes only
+ * the gateway and hands the rest to the script catalog.
+ */
+export function splitAssistantToolsByExposure<T extends { function: { name: string } }>(
+  tools: T[],
+  exposure: AssistantToolExposureMode,
+): { exposed: T[]; scriptCatalog: T[] } {
+  const withoutGateway = tools.filter((tool) => tool.function.name !== ASSISTANT_EXECUTE_TOOLS_NAME);
+  if (exposure === "execute") {
+    return {
+      exposed: tools.filter((tool) => tool.function.name === ASSISTANT_EXECUTE_TOOLS_NAME),
+      scriptCatalog: withoutGateway,
+    };
+  }
+  return { exposed: withoutGateway, scriptCatalog: withoutGateway };
+}
+
+export type AssistantScriptToolEntry = {
+  name: string;
+  description: string;
+  parameters?: unknown;
+};
+
+/**
+ * Tools a script may not call: the gateway itself (no nested scripts) and
+ * tools whose effect leaves the script (interactive prompts, answer
+ * attachments, generated images, conversation titles, connection prompts).
+ */
+export const ASSISTANT_SCRIPT_EXCLUDED_TOOLS = new Set([
+  ASSISTANT_EXECUTE_TOOLS_NAME,
+  "ask_user",
+  "create_chat_mini_tool",
+  "generate_image",
+  "generate_cad_model",
+  "request_custom_mcp_connection",
+  "rename_conversation",
+]);
+
+/**
+ * Build the `execute_workspace_tools` description for one request. In beta
+ * mode this is the ONLY tool the model sees, so it must list every tool the
+ * script may call, with its argument schema.
+ */
+export function buildExecuteToolsDescription(catalog: AssistantScriptToolEntry[]): string {
+  const lines = catalog.map((entry) => {
+    const parameters = entry.parameters
+      ? JSON.stringify(entry.parameters).slice(0, 1200)
+      : "no arguments";
+    return `- ${entry.name}(${parameters}) — ${entry.description.slice(0, 400)}`;
+  });
+  return [
+    "Run a JavaScript script that calls other assistant tools through `tools.<toolName>(args)`, so many tool calls cost one model turn instead of many.",
+    "The script body may use `await` and `return` (return a JSON-serializable value). Use `tools.catalog()` to list callable tools and `tools.help(name)` for one tool's signature.",
+    "Do not call execute_workspace_tools from inside a script.",
+    "Callable tools:",
+    ...lines,
+  ].join("\n");
+}
 
 type ToolContext = {
   accountId: string;
@@ -706,7 +791,7 @@ export async function runAssistantWorkspaceTool(
       : name.includes("cad_")
         ? "cad"
         : "code";
-  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "spawn_workspace_subagent_team" || name === "collect_workspace_subagent_results" || name === "ask_user" || name === "preview_custom_workspace" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files" || name === "list_custom_workspaces" || name === "delete_custom_workspace" || name === "suggest_custom_workspace_tools") {
+  if (name === "create_custom_workspace" || name === "critique_custom_workspace" || name === "verify_custom_workspace_fixes" || name === "spawn_workspace_subagent" || name === "spawn_workspace_subagent_team" || name === "collect_workspace_subagent_results" || name === "ask_user" || name === "preview_custom_workspace" || name === "execute_workspace_tools" || name.endsWith("_custom_workspace_file") || name === "list_custom_workspace_files" || name === "list_custom_workspaces" || name === "delete_custom_workspace" || name === "suggest_custom_workspace_tools") {
     if (!(await canManageCustomWorkspaces(context))) {
       return { content: "This account does not have permission to manage custom workspaces.", detail: "access denied" };
     }

@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
+
+import { dbMockExports } from "./testDbExports.mjs";
 import { UpdateBoardResponse } from "../../../../lib/api-zod/src/generated/api.ts";
 import { interviewerAccountsTable } from "../../../../lib/db/src/schema/interviewerAccounts.ts";
 import { revokedSessionsTable } from "../../../../lib/db/src/schema/sessions.ts";
@@ -444,6 +446,7 @@ test("coordinator board and assistant skill operations remain persisted and team
   const mockedTables = Object.fromEntries(databaseTableNames.map((name) => [name, {}]));
   mock.module("@workspace/db", {
     namedExports: {
+      ...dbMockExports(),
       ...mockedTables,
       db,
       primaryDb: db,

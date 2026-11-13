@@ -1431,6 +1431,23 @@ router.get(
 );
 
 /**
+ * Whether the requesting account may read or delete an object under a
+ * team-scoped prefix. `team-branding/<teamId>/…` is the team's logo and app
+ * background; `generated/cad/<teamId>/…` holds CAD files produced by the
+ * assistant. Paths outside those prefixes are public to the team.
+ */
+async function teamScopedObjectAllowed(wildcardPath: string, teamId: string): Promise<boolean> {
+  const parts = wildcardPath.replace(/^secondary\//, "").split("/");
+  if (parts[0] === "team-branding") {
+    return parts.length === 3 && parts[1] === teamId;
+  }
+  if (parts[0] === "generated" && parts[1] === "cad") {
+    return parts.length === 4 && parts[2] === teamId;
+  }
+  return true;
+}
+
+/**
  * GET /storage/objects/*
  *
  * Serve files from Supabase Storage. Admin-only; browsers send the session
@@ -1443,11 +1460,7 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
 
-    const teamBrandingParts = wildcardPath.replace(/^secondary\//, '').split('/');
-    if (
-      teamBrandingParts[0] === 'team-branding' &&
-      (teamBrandingParts.length !== 3 || teamBrandingParts[1] !== await requestTeamId(req))
-    ) {
+    if (!(await teamScopedObjectAllowed(wildcardPath, await requestTeamId(req)))) {
       res.status(404).json({ error: 'Object not found' });
       return;
     }
@@ -1525,11 +1538,7 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
 
-    const teamBrandingParts = wildcardPath.replace(/^secondary\//, '').split('/');
-    if (
-      teamBrandingParts[0] === 'team-branding' &&
-      (teamBrandingParts.length !== 3 || teamBrandingParts[1] !== await requestTeamId(req))
-    ) {
+    if (!(await teamScopedObjectAllowed(wildcardPath, await requestTeamId(req)))) {
       res.status(404).json({ error: 'Object not found' });
       return;
     }

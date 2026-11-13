@@ -1,0 +1,33 @@
+# Optional Render blueprint for the CAD generation worker.
+#
+# Your API server is managed in the Render dashboard — this blueprint does
+# NOT redefine it. It only adds the `cad-worker` private service the API
+# calls for geometry generation (Render cannot run docker-in-docker, so the
+# local docker sandbox used in development cannot run there).
+#
+# Apply with: Render Dashboard -> Blueprints -> New Blueprint Instance ->
+# point it at this repository. Or create the service manually with the same
+# settings:
+#   - Type: Private Service (not publicly reachable; paid plan required)
+#   - Runtime: Docker, Dockerfile path: ./scripts/cad-worker/Dockerfile
+#   - Health check path: /healthz
+#   - Env var CAD_WORKER_SECRET: any long random string
+#
+# Then set TWO env vars on your api-server web service (same value):
+#   CAD_WORKER_URL=http://cad-worker:10000
+#   CAD_WORKER_SECRET=<the same secret as the worker>
+#
+# After that, the assistant's generate_cad_model tool works exactly as it
+# does in local development (where the API spawns the local docker sandbox
+# instead). See replit.md for the full setup.
+services:
+  - type: private
+    name: cad-worker
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./scripts/cad-worker/Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: CAD_WORKER_SECRET
+        generateValue: true
+    # The worker holds no other secrets. Do not add Supabase or admin keys here.

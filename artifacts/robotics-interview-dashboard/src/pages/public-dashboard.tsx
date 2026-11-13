@@ -126,6 +126,7 @@ export default function PublicDashboard() {
             </a>
             <a
               href="#capabilities"
+              data-testid="link-hero-capabilities"
               onClick={closeMenu}
               className="rounded-lg px-3 py-2 text-xs font-semibold text-[#43616a] hover:text-[#168b94] dark:text-[#b6ceca] dark:hover:text-[#7edbd0]"
             >

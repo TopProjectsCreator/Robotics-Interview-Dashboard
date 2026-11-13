@@ -15,6 +15,8 @@ Private, multi-team robotics operations software for coordinating tryouts and te
 
 Required runtime services and secrets:
 
+CAD generation setup (the assistant's `generate_cad_model` tool, see `artifacts/api-server/src/lib/cadPython.ts`): two backends exist — the API picks based on env. Local dev spawns docker (`docker build -t robotics-dashboard/cad-sandbox:latest -f scripts/cad-sandbox.Dockerfile .`; `python:3.12-slim` + OCCT). Render has no docker-in-docker, so there you deploy a separate **private service** built from `scripts/cad-worker/Dockerfile`. That worker holds no secrets — no Supabase/admin keys exist inside its environment, so there is nothing to exfiltrate — and it runs the model's code as a locked-down subprocess (rlimits, a hard timeout, non-root; network is removed when the kernel permits user namespaces, otherwise it keeps network access — a tolerable residual risk because it holds no credentials). `render.yaml` declares only the worker; the existing dashboard-managed API service is untouched. Render deploy: create the `cad-worker` private service from that Dockerfile (health check `/healthz`; private services need a paid plan), set `CAD_WORKER_SECRET` on it, then set `CAD_WORKER_URL=http://cad-worker:10000` and the same `CAD_WORKER_SECRET` on the API web service. Alternatively apply `render.yaml` as a Blueprint to create just the worker, then set the two vars on the API service yourself.
+
 - `DATABASE_URL` — PostgreSQL connection
 - `ADMIN_PASSWORD` — shared coordinator passcode; server-only
 - `SESSION_SECRET` — session signing secret (required in production)
@@ -23,6 +25,9 @@ Required runtime services and secrets:
 - `DISABLE_DEMO_SEED` — set `true` to stop sample applicants from seeding an empty roster
 - `ALLOWED_ORIGINS` — comma-separated origins allowed to call the API (default reflects any origin for iframe embedding; lock down in production)
 - `PYTHON_SANDBOX` — `auto` (default), `docker` (full stdlib, needs daemon + `python:3.12-slim` image), or `restricted`
+- `PYTHON_CAD_IMAGE` — optional override for the local docker sandbox image used by the assistant's `generate_cad_model` (default `robotics-dashboard/cad-sandbox:latest`; build with `docker build -t robotics-dashboard/cad-sandbox:latest -f scripts/cad-sandbox.Dockerfile .`). Ignored when `CAD_WORKER_URL` is set.
+- `CAD_WORKER_URL` — when set, `generate_cad_model` POSTs the model's cadquery code to this CAD worker service instead of spawning docker. This is the production path for Render, which cannot run docker-in-docker (e.g. `http://cad-worker:10000`).
+- `CAD_WORKER_SECRET` — shared secret sent to the CAD worker as the `X-Cad-Secret` header (also required on the worker itself; it fails closed when unset).
 - `TAVILY_API_KEY`, `FIRECRAWL_API_KEY`, `EXA_API_KEY`, `PARALLEL_API_KEY` — optional, raise web-search limits (all four work keyless without them)
 - `POLLINATIONS_API_KEY` — optional, server-only, never expose to the frontend. Authenticates image generation (honors `nologo`, higher RPM). Falls back to anonymous automatically on 401/402 with an hourly retry. Rotate immediately if ever pasted anywhere.
 - `POLLINATIONS_IMAGE_MODEL` — image model name (default `z-image-turbo`)

@@ -326,30 +326,47 @@ export const UpdatePersonalNotepadResponse = zod.object({
  * @summary Get branding for the signed-in team
  */
 export const getTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const getTeamBrandingResponseBackgroundOverlayMin = 0;
+export const getTeamBrandingResponseBackgroundOverlayMax = 80;
+
 
 
 export const GetTeamBrandingResponse = zod.object({
   "logoPath": zod.string().nullable().describe('Private object path for this team\'s logo'),
-  "primaryColor": zod.string().regex(getTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color')
+  "primaryColor": zod.string().regex(getTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
+  "backgroundPath": zod.string().nullable().describe('Private object path for this team\'s custom app background'),
+  "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the custom app background is fitted to the viewport'),
+  "backgroundOverlay": zod.number().int().min(getTeamBrandingResponseBackgroundOverlayMin).max(getTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background')
 })
 
 
 /**
- * @summary Set or reset the signed-in team's primary color
+ * @summary Set or reset the signed-in team's primary color and background options
  */
 export const updateTeamBrandingBodyPrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const updateTeamBrandingBodyBackgroundOverlayMin = 0;
+export const updateTeamBrandingBodyBackgroundOverlayMax = 80;
+
 
 
 export const UpdateTeamBrandingBody = zod.object({
-  "primaryColor": zod.string().regex(updateTeamBrandingBodyPrimaryColorRegExp).nullable()
+  "primaryColor": zod.string().regex(updateTeamBrandingBodyPrimaryColorRegExp).nullable(),
+  "backgroundMode": zod.enum(['cover', 'tile']).nullish().describe('How the custom app background is fitted to the viewport'),
+  "backgroundOverlay": zod.number().int().min(updateTeamBrandingBodyBackgroundOverlayMin).max(updateTeamBrandingBodyBackgroundOverlayMax).optional().describe('Percentage of dark overlay drawn over the custom app background')
 })
 
 export const updateTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const updateTeamBrandingResponseBackgroundOverlayMin = 0;
+export const updateTeamBrandingResponseBackgroundOverlayMax = 80;
+
 
 
 export const UpdateTeamBrandingResponse = zod.object({
   "logoPath": zod.string().nullable().describe('Private object path for this team\'s logo'),
-  "primaryColor": zod.string().regex(updateTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color')
+  "primaryColor": zod.string().regex(updateTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
+  "backgroundPath": zod.string().nullable().describe('Private object path for this team\'s custom app background'),
+  "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the custom app background is fitted to the viewport'),
+  "backgroundOverlay": zod.number().int().min(updateTeamBrandingResponseBackgroundOverlayMin).max(updateTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background')
 })
 
 
@@ -365,6 +382,20 @@ export const UploadTeamLogoResponse = zod.object({
  * @summary Reset the signed-in team's logo
  */
 export const ResetTeamLogoResponse = zod.void()
+
+
+/**
+ * @summary Upload a custom app background for the signed-in team
+ */
+export const UploadTeamBackgroundResponse = zod.object({
+  "backgroundPath": zod.string().describe('Private object path for this team\'s custom app background')
+})
+
+
+/**
+ * @summary Reset the signed-in team's custom app background
+ */
+export const ResetTeamBackgroundResponse = zod.void()
 
 
 /**
