@@ -20,10 +20,10 @@ export type SettingsNavigationItem = {
 const BASE_SECTIONS: SettingsNavigationItem[] = [
   { id: "profile", label: "Profile", description: "Your name, passkeys, and sign-in options.", keywords: "account identity avatar initials password passkey" },
   { id: "appearance", label: "Appearance", description: "Theme and personal dashboard preferences.", keywords: "theme dark light density photos motion" },
-  { id: "assistant", label: "Assistant", description: "Team AI provider, usage, and tool controls.", keywords: "ai model provider governance tools productivity" },
+  { id: "assistant", label: "AI", description: "AI settings, assistant chat, providers, usage, and tool controls.", keywords: "assistant model provider governance tools productivity chat" },
   { id: "team", label: "Team", description: "Team members, access, inbox, and naming rules.", keywords: "members roles passwords access workspace mailbox email rules" },
   { id: "branding", label: "Branding", description: "Shared team colors, logo, and background.", keywords: "color logo background image" },
-  { id: "chat", label: "Chat", description: "Chat behavior and assistant conversation settings.", keywords: "slow mode messages assistant" },
+  { id: "chat", label: "Chat", description: "Team chat behavior and app adjustments.", keywords: "slow mode messages app adjustments feature requests" },
   { id: "operations", label: "Operations", description: "Live updates, broadcasts, and data controls.", keywords: "refresh notifications broadcast data reset parts order" },
 ];
 

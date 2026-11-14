@@ -53,10 +53,10 @@ describe("SettingsWorkspaceNavigation", () => {
     expect(screen.getByRole("tab", { name: "Appearance" })).toHaveAttribute("aria-selected", "true");
 
     fireEvent.keyDown(screen.getByRole("tab", { name: "Appearance" }), { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "Assistant" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Assistant" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "AI" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "AI" })).toHaveFocus();
 
-    fireEvent.keyDown(screen.getByRole("tab", { name: "Assistant" }), { key: "End" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "AI" }), { key: "End" });
     expect(screen.getByRole("tab", { name: "Operations" })).toHaveAttribute("aria-selected", "true");
     fireEvent.keyDown(screen.getByRole("tab", { name: "Operations" }), { key: "Home" });
     expect(profile).toHaveAttribute("aria-selected", "true");

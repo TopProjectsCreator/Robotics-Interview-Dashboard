@@ -697,6 +697,10 @@ function SettingsModal({
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>("profile");
+  const settingsSectionPanelRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    settingsSectionPanelRef.current?.scrollTo({ top: 0 });
+  }, [activeSettingsSection]);
   const isAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
   const canManageMailbox = isAdmin || canSessionUsePermission(session.data, "team.mailbox.manage");
   const canSendBroadcast = isAdmin || canSessionUsePermission(session.data, "broadcasts.send");
@@ -1170,11 +1174,12 @@ function SettingsModal({
           onSectionChange={setActiveSettingsSection}
         />
         <main
+          ref={settingsSectionPanelRef}
           id="settings-section-panel"
           role="tabpanel"
           aria-labelledby={`settings-tab-${activeSettingsItem.id}`}
           data-testid="settings-section-panel"
-          className={`flex min-h-0 flex-col overscroll-contain p-4 sm:p-6 ${activeSettingsSection === "chat" ? "overflow-hidden" : "overflow-y-auto"}`}
+          className="flex min-h-0 flex-col overflow-y-auto overscroll-contain p-4 sm:p-6"
         >
           <div className="mb-4 border-b border-border pb-3">
             <h3 className="text-base font-semibold text-foreground">{activeSettingsItem.label}</h3>
@@ -1194,8 +1199,7 @@ function SettingsModal({
       <AIProviderSettingsCategory canManageProvider={canManageAssistant && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
       {isAdmin && session.data?.teamId && <AssistantGovernanceSettings teamId={session.data.teamId} />}
       {isAdmin && session.data?.teamId && <ProductivityPromptSettings key={session.data.teamId} teamId={session.data.teamId} />}
-      </section>
-      <div hidden={activeSettingsSection !== "chat"} className={activeSettingsSection === "chat" ? "flex min-h-0 flex-1 flex-col" : "hidden"}>
+      <div className="my-4 min-h-[22rem]" style={{ height: "min(55dvh, 32rem)" }}>
         <SettingsAssistantChat
           key={`${session.data?.interviewerId ?? "account"}:${session.data?.teamId ?? "team"}`}
           session={session.data}
@@ -1205,6 +1209,7 @@ function SettingsModal({
           renderMarkdown={(source) => <MarkdownContent source={source} className="break-words text-sm leading-5 text-foreground" />}
         />
       </div>
+      </section>
       {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-live-now">
         <p className={sectionLabel}>Live now</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>
