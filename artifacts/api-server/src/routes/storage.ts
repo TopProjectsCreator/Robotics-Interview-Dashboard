@@ -15,7 +15,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream, readFileSync } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
-import { cadPreviewJobsTable, currentInstance, db, chunkedUploadsTable } from '@workspace/db';
+import { cadPreviewJobsTable, currentInstance, db, chunkedUploadsTable, teamsTable } from '@workspace/db';
 import { materializeChunkedUpload } from '../lib/chunkedUploads';
 import { logger } from "../lib/logger";
 import { storageInstanceRestricted } from '../lib/objectStorage';
@@ -62,6 +62,7 @@ import {
   streamChunkedUpload,
 } from "../lib/chunkedUploads";
 import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
+import { canReadTeamBrandingObject } from "../lib/teamBackgroundVisibility";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -1447,6 +1448,30 @@ async function teamScopedObjectAllowed(wildcardPath: string, teamId: string): Pr
   return true;
 }
 
+async function teamBrandingObjectAllowed(
+  wildcardPath: string,
+  teamId: string,
+  interviewerId: string | undefined,
+  canManageBranding: boolean,
+): Promise<boolean> {
+  if (!interviewerId) return false;
+  const [team] = await db.select({
+    logoPath: teamsTable.logoPath,
+    backgroundPath: teamsTable.backgroundPath,
+    backgroundAudience: teamsTable.backgroundAudience,
+    backgroundMemberIds: teamsTable.backgroundMemberIds,
+  }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  return canReadTeamBrandingObject({
+    requestedPath: wildcardPath,
+    logoPath: team?.logoPath,
+    backgroundPath: team?.backgroundPath,
+    backgroundAudience: team?.backgroundAudience,
+    backgroundMemberIds: team?.backgroundMemberIds,
+    interviewerId,
+    canManageBranding,
+  });
+}
+
 /**
  * GET /storage/objects/*
  *
@@ -1459,8 +1484,24 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
     const raw = req.params.path;
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
+    const teamId = await requestTeamId(req);
 
-    if (!(await teamScopedObjectAllowed(wildcardPath, await requestTeamId(req)))) {
+    if (wildcardPath.replace(/^secondary\//, "").startsWith("team-branding/")) {
+      const role = (req as Request & { interviewerRole?: string }).interviewerRole;
+      const customPermissions = (req as Request & { customRolePermissions?: string[] }).customRolePermissions ?? [];
+      const canManageBranding = role === "coordinator" || role === "admin" || customPermissions.includes("team.branding.manage");
+      if (!(await teamBrandingObjectAllowed(
+        wildcardPath,
+        teamId,
+        authenticatedInterviewerId(req),
+        canManageBranding,
+      ))) {
+        res.status(404).json({ error: 'Object not found' });
+        return;
+      }
+    }
+
+    if (!(await teamScopedObjectAllowed(wildcardPath, teamId))) {
       res.status(404).json({ error: 'Object not found' });
       return;
     }

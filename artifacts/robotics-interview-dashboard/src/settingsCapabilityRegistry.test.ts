@@ -104,6 +104,8 @@ describe("Settings capability registry", () => {
         backgroundPath: "private/team-a/background.webp",
         backgroundMode: "cover",
         backgroundOverlay: 35,
+        backgroundAudience: "selected",
+        backgroundMemberIds: ["member-a"],
       }));
     const ctx = context(admin, fetcher);
 
@@ -124,6 +126,7 @@ describe("Settings capability registry", () => {
       backgroundOptions: { backgroundMode: "cover", backgroundOverlay: 35 },
     });
     expect(JSON.stringify(branding)).not.toContain("private/");
+    expect(JSON.stringify(branding)).not.toContain("member-a");
   });
 
   it("does not expose background controls before a background image exists", async () => {
@@ -133,6 +136,8 @@ describe("Settings capability registry", () => {
       backgroundPath: null,
       backgroundMode: "tile",
       backgroundOverlay: 65,
+      backgroundAudience: "everyone",
+      backgroundMemberIds: [],
     }));
     const ctx = context(admin, fetcher);
     await expect(readSettingsCapability("team.branding.backgroundOptions", ctx)).resolves.toEqual({

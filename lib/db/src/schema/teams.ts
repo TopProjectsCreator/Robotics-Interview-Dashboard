@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { integer, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 /** How the team's custom app background is fitted to the viewport. */
@@ -30,6 +30,8 @@ export const teamsTable = pgTable("teams", {
   backgroundPath: text("background_path"),
   backgroundMode: text("background_mode"),
   backgroundOverlay: integer("background_overlay").notNull().default(35),
+  backgroundAudience: text("background_audience").notNull().default("everyone"),
+  backgroundMemberIds: jsonb("background_member_ids").$type<string[]>().notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()

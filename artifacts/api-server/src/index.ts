@@ -736,6 +736,8 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `alter table "teams" add column if not exists "background_path" text`,
     `alter table "teams" add column if not exists "background_mode" text`,
     `alter table "teams" add column if not exists "background_overlay" integer not null default 35`,
+    `alter table "teams" add column if not exists "background_audience" text not null default 'everyone'`,
+    `alter table "teams" add column if not exists "background_member_ids" jsonb not null default '[]'::jsonb`,
     `alter table "applicants" add column if not exists "team_id" text`,
     `alter table "application_imports" add column if not exists "team_id" text`,
     `alter table "assistant_conversations" add column if not exists "team_id" text`,

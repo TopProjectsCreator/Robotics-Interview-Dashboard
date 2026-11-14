@@ -330,13 +330,18 @@ export const getTeamBrandingResponseBackgroundOverlayMin = 0;
 export const getTeamBrandingResponseBackgroundOverlayMax = 80;
 
 
+export const getTeamBrandingResponseBackgroundMemberIdsMax = 500;
+
+
 
 export const GetTeamBrandingResponse = zod.object({
   "logoPath": zod.string().nullable().describe('Private object path for this team\'s logo'),
   "primaryColor": zod.string().regex(getTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
   "backgroundPath": zod.string().nullable().describe('Private object path for this team\'s custom app background'),
   "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the custom app background is fitted to the viewport'),
-  "backgroundOverlay": zod.number().int().min(getTeamBrandingResponseBackgroundOverlayMin).max(getTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background')
+  "backgroundOverlay": zod.number().int().min(getTeamBrandingResponseBackgroundOverlayMin).max(getTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background'),
+  "backgroundAudience": zod.enum(['everyone', 'selected']).describe('Whether the background is visible to every team member or only selected members'),
+  "backgroundMemberIds": zod.array(zod.string().min(1)).max(getTeamBrandingResponseBackgroundMemberIdsMax).describe('Team-local member account IDs selected to see the background')
 })
 
 
@@ -348,16 +353,24 @@ export const updateTeamBrandingBodyBackgroundOverlayMin = 0;
 export const updateTeamBrandingBodyBackgroundOverlayMax = 80;
 
 
+export const updateTeamBrandingBodyBackgroundMemberIdsMax = 500;
+
+
 
 export const UpdateTeamBrandingBody = zod.object({
   "primaryColor": zod.string().regex(updateTeamBrandingBodyPrimaryColorRegExp).nullable(),
   "backgroundMode": zod.enum(['cover', 'tile']).nullish().describe('How the custom app background is fitted to the viewport'),
-  "backgroundOverlay": zod.number().int().min(updateTeamBrandingBodyBackgroundOverlayMin).max(updateTeamBrandingBodyBackgroundOverlayMax).optional().describe('Percentage of dark overlay drawn over the custom app background')
+  "backgroundOverlay": zod.number().int().min(updateTeamBrandingBodyBackgroundOverlayMin).max(updateTeamBrandingBodyBackgroundOverlayMax).optional().describe('Percentage of dark overlay drawn over the custom app background'),
+  "backgroundAudience": zod.enum(['everyone', 'selected']).optional().describe('Whether the background is visible to every team member or only selected members'),
+  "backgroundMemberIds": zod.array(zod.string().min(1)).max(updateTeamBrandingBodyBackgroundMemberIdsMax).optional().describe('Team-local member account IDs selected to see the background')
 })
 
 export const updateTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
 export const updateTeamBrandingResponseBackgroundOverlayMin = 0;
 export const updateTeamBrandingResponseBackgroundOverlayMax = 80;
+
+
+export const updateTeamBrandingResponseBackgroundMemberIdsMax = 500;
 
 
 
@@ -366,7 +379,27 @@ export const UpdateTeamBrandingResponse = zod.object({
   "primaryColor": zod.string().regex(updateTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
   "backgroundPath": zod.string().nullable().describe('Private object path for this team\'s custom app background'),
   "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the custom app background is fitted to the viewport'),
-  "backgroundOverlay": zod.number().int().min(updateTeamBrandingResponseBackgroundOverlayMin).max(updateTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background')
+  "backgroundOverlay": zod.number().int().min(updateTeamBrandingResponseBackgroundOverlayMin).max(updateTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background'),
+  "backgroundAudience": zod.enum(['everyone', 'selected']).describe('Whether the background is visible to every team member or only selected members'),
+  "backgroundMemberIds": zod.array(zod.string().min(1)).max(updateTeamBrandingResponseBackgroundMemberIdsMax).describe('Team-local member account IDs selected to see the background')
+})
+
+
+/**
+ * Returns the signed-in member's effective team branding without revealing the background audience configuration.
+ * @summary Get branding visible to the signed-in team member
+ */
+export const getEffectiveTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const getEffectiveTeamBrandingResponseBackgroundOverlayMin = 0;
+export const getEffectiveTeamBrandingResponseBackgroundOverlayMax = 80;
+
+
+
+export const GetEffectiveTeamBrandingResponse = zod.object({
+  "primaryColor": zod.string().regex(getEffectiveTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
+  "backgroundPath": zod.string().nullable().describe('Private object path for this member\'s custom app background, or null when excluded'),
+  "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the visible custom app background is fitted to the viewport'),
+  "backgroundOverlay": zod.number().int().min(getEffectiveTeamBrandingResponseBackgroundOverlayMin).max(getEffectiveTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the visible custom app background')
 })
 
 

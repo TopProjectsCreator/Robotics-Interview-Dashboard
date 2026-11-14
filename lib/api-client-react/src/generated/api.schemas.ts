@@ -990,6 +990,17 @@ export const TeamBrandingBackgroundMode = {
   tile: 'tile',
 } as const;
 
+/**
+ * Whether the background is visible to every team member or only selected members
+ */
+export type TeamBrandingBackgroundAudience = typeof TeamBrandingBackgroundAudience[keyof typeof TeamBrandingBackgroundAudience];
+
+
+export const TeamBrandingBackgroundAudience = {
+  everyone: 'everyone',
+  selected: 'selected',
+} as const;
+
 export interface TeamBranding {
   /**
      * Private object path for this team's logo
@@ -1018,6 +1029,51 @@ export interface TeamBranding {
      * @maximum 80
      */
   backgroundOverlay: number;
+  /** Whether the background is visible to every team member or only selected members */
+  backgroundAudience: TeamBrandingBackgroundAudience;
+  /**
+     * Team-local member account IDs selected to see the background
+     * @maxItems 500
+     * @items.minLength 1
+     */
+  backgroundMemberIds: string[];
+}
+
+/**
+ * How the visible custom app background is fitted to the viewport
+ * @nullable
+ */
+export type EffectiveTeamBrandingBackgroundMode = typeof EffectiveTeamBrandingBackgroundMode[keyof typeof EffectiveTeamBrandingBackgroundMode] | null;
+
+
+export const EffectiveTeamBrandingBackgroundMode = {
+  cover: 'cover',
+  tile: 'tile',
+} as const;
+
+export interface EffectiveTeamBranding {
+  /**
+     * Team primary brand color
+     * @nullable
+     * @pattern ^#[0-9A-Fa-f]{6}$
+     */
+  primaryColor: string | null;
+  /**
+     * Private object path for this member's custom app background, or null when excluded
+     * @nullable
+     */
+  backgroundPath: string | null;
+  /**
+     * How the visible custom app background is fitted to the viewport
+     * @nullable
+     */
+  backgroundMode: EffectiveTeamBrandingBackgroundMode;
+  /**
+     * Percentage of dark overlay drawn over the visible custom app background
+     * @minimum 0
+     * @maximum 80
+     */
+  backgroundOverlay: number;
 }
 
 /**
@@ -1030,6 +1086,17 @@ export type UpdateTeamBrandingBackgroundMode = typeof UpdateTeamBrandingBackgrou
 export const UpdateTeamBrandingBackgroundMode = {
   cover: 'cover',
   tile: 'tile',
+} as const;
+
+/**
+ * Whether the background is visible to every team member or only selected members
+ */
+export type UpdateTeamBrandingBackgroundAudience = typeof UpdateTeamBrandingBackgroundAudience[keyof typeof UpdateTeamBrandingBackgroundAudience];
+
+
+export const UpdateTeamBrandingBackgroundAudience = {
+  everyone: 'everyone',
+  selected: 'selected',
 } as const;
 
 export interface UpdateTeamBranding {
@@ -1049,6 +1116,14 @@ export interface UpdateTeamBranding {
      * @maximum 80
      */
   backgroundOverlay?: number;
+  /** Whether the background is visible to every team member or only selected members */
+  backgroundAudience?: UpdateTeamBrandingBackgroundAudience;
+  /**
+     * Team-local member account IDs selected to see the background
+     * @maxItems 500
+     * @items.minLength 1
+     */
+  backgroundMemberIds?: string[];
 }
 
 export interface UploadTeamLogo {

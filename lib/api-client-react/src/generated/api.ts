@@ -168,6 +168,7 @@ import type {
   DisplaySettings,
   DisplaySettingsInput,
   DisplayState,
+  EffectiveTeamBranding,
   ErrorResponse,
   EventPasswordInput,
   ExportChatParams,
@@ -1748,6 +1749,84 @@ export const useUpdateTeamBranding = <TError = ErrorType<ErrorResponse>,
       > => {
       return useMutation(getUpdateTeamBrandingMutationOptions(options));
     }
+
+export const getGetEffectiveTeamBrandingUrl = () => {
+
+
+
+
+  return `/api/auth/team-branding/effective`
+}
+
+/**
+ * Returns the signed-in member's effective team branding without revealing the background audience configuration.
+ * @summary Get branding visible to the signed-in team member
+ */
+export const getEffectiveTeamBranding = async ( options?: Parameters<typeof customFetch>[1]): Promise<EffectiveTeamBranding> => {
+
+  return customFetch<EffectiveTeamBranding>(getGetEffectiveTeamBrandingUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEffectiveTeamBrandingQueryKey = () => {
+    return [
+    `/api/auth/team-branding/effective`
+    ] as const;
+    }
+
+
+export const getGetEffectiveTeamBrandingQueryOptions = <TData = Awaited<ReturnType<typeof getEffectiveTeamBranding>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEffectiveTeamBranding>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEffectiveTeamBrandingQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEffectiveTeamBranding>>> = ({ signal }) => getEffectiveTeamBranding({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEffectiveTeamBranding>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEffectiveTeamBrandingQueryResult = NonNullable<Awaited<ReturnType<typeof getEffectiveTeamBranding>>>
+export type GetEffectiveTeamBrandingQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get branding visible to the signed-in team member
+ */
+
+export function useGetEffectiveTeamBranding<TData = Awaited<ReturnType<typeof getEffectiveTeamBranding>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEffectiveTeamBranding>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEffectiveTeamBrandingQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getUploadTeamLogoUrl = () => {
 

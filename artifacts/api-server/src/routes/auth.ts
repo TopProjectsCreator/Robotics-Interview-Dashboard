@@ -53,6 +53,7 @@ import {
   VerifyEventPasscodeResponse,
 } from "@workspace/api-zod";
 import {
+  authenticatedInterviewerId,
   clearAdminCookie,
   createInterviewerSession,
   interviewerIdFromSession,
@@ -78,6 +79,7 @@ import { ObjectStorageService } from "../lib/objectStorage";
 import { requestTeamId } from "../middlewares/adminAuth";
 import {
   GetTeamBrandingResponse,
+  GetEffectiveTeamBrandingResponse,
   UpdateTeamBrandingBody,
   UploadTeamLogoResponse,
   UploadTeamBackgroundResponse,
@@ -100,6 +102,7 @@ import {
 } from "@workspace/api-zod";
 import { teamRolesTable } from "@workspace/db";
 import { findAssignedTeamRole, normalizeRoleTeamId, parsePermissionSelection, publicTeamRole } from "../lib/teamRoles";
+import { backgroundVisibleToMember } from "../lib/teamBackgroundVisibility";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -316,7 +319,7 @@ function clearCredentialFailures(kind: string, value: string): void {
   credentialFailures.delete(credentialKey(kind, value));
 }
 
-function normalizedBrandingRow(row: { logoPath?: string | null; primaryColor?: string | null; backgroundPath?: string | null; backgroundMode?: string | null; backgroundOverlay?: number | null } | undefined): { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgroundMode: "cover" | "tile" | null; backgroundOverlay: number } {
+function normalizedBrandingRow(row: { logoPath?: string | null; primaryColor?: string | null; backgroundPath?: string | null; backgroundMode?: string | null; backgroundOverlay?: number | null; backgroundAudience?: string | null; backgroundMemberIds?: unknown } | undefined): { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgroundMode: "cover" | "tile" | null; backgroundOverlay: number; backgroundAudience: "everyone" | "selected"; backgroundMemberIds: string[] } {
   const mode = row?.backgroundMode;
   return {
     logoPath: row?.logoPath ?? null,
@@ -326,6 +329,10 @@ function normalizedBrandingRow(row: { logoPath?: string | null; primaryColor?: s
     backgroundOverlay: typeof row?.backgroundOverlay === "number" && Number.isFinite(row.backgroundOverlay)
       ? Math.min(80, Math.max(0, Math.round(row.backgroundOverlay)))
       : 35,
+    backgroundAudience: row?.backgroundAudience === "selected" ? "selected" : "everyone",
+    backgroundMemberIds: Array.isArray(row?.backgroundMemberIds)
+      ? [...new Set(row.backgroundMemberIds.filter((id): id is string => typeof id === "string" && id.length > 0))]
+      : [],
   };
 }
 
@@ -337,8 +344,40 @@ router.get("/auth/team-branding", requireAdmin, async (req, res): Promise<void> 
     backgroundPath: teamsTable.backgroundPath,
     backgroundMode: teamsTable.backgroundMode,
     backgroundOverlay: teamsTable.backgroundOverlay,
+    backgroundAudience: teamsTable.backgroundAudience,
+    backgroundMemberIds: teamsTable.backgroundMemberIds,
   }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
   res.json(GetTeamBrandingResponse.parse(normalizedBrandingRow(team)));
+});
+
+router.get("/auth/team-branding/effective", requireAdmin, async (req, res): Promise<void> => {
+  const interviewerId = authenticatedInterviewerId(req);
+  if (!interviewerId) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const [team] = await db.select({
+    logoPath: teamsTable.logoPath,
+    primaryColor: teamsTable.primaryColor,
+    backgroundPath: teamsTable.backgroundPath,
+    backgroundMode: teamsTable.backgroundMode,
+    backgroundOverlay: teamsTable.backgroundOverlay,
+    backgroundAudience: teamsTable.backgroundAudience,
+    backgroundMemberIds: teamsTable.backgroundMemberIds,
+  }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  const branding = normalizedBrandingRow(team);
+  const canSeeBackground = backgroundVisibleToMember(
+    branding.backgroundAudience,
+    branding.backgroundMemberIds,
+    interviewerId,
+  );
+  res.json(GetEffectiveTeamBrandingResponse.parse({
+    primaryColor: branding.primaryColor,
+    backgroundPath: canSeeBackground ? branding.backgroundPath : null,
+    backgroundMode: canSeeBackground ? branding.backgroundMode : null,
+    backgroundOverlay: canSeeBackground ? branding.backgroundOverlay : 35,
+  }));
 });
 
 router.patch("/auth/team-branding", requireCoordinator, async (req, res): Promise<void> => {
@@ -349,6 +388,33 @@ router.patch("/auth/team-branding", requireCoordinator, async (req, res): Promis
   }
   const teamId = await requestTeamId(req);
   const update: Partial<typeof teamsTable.$inferInsert> = { primaryColor: parsed.data.primaryColor };
+  const hasAudience = parsed.data.backgroundAudience !== undefined;
+  const hasMemberIds = parsed.data.backgroundMemberIds !== undefined;
+  if (hasAudience !== hasMemberIds) {
+    res.status(400).json({ error: "Background audience and member list must be updated together." });
+    return;
+  }
+  if (hasAudience && hasMemberIds) {
+    const memberIds = parsed.data.backgroundMemberIds ?? [];
+    if (new Set(memberIds).size !== memberIds.length) {
+      res.status(400).json({ error: "Choose each team member only once." });
+      return;
+    }
+    if (parsed.data.backgroundAudience === "selected" && memberIds.length > 0) {
+      const currentMembers = await db.select({ id: interviewerAccountsTable.id })
+        .from(interviewerAccountsTable)
+        .where(and(
+          inArray(interviewerAccountsTable.id, memberIds),
+          teamFilter(interviewerAccountsTable.teamId, teamId),
+        ));
+      if (currentMembers.length !== memberIds.length) {
+        res.status(400).json({ error: "Choose only current members of your team." });
+        return;
+      }
+    }
+    update.backgroundAudience = parsed.data.backgroundAudience;
+    update.backgroundMemberIds = parsed.data.backgroundAudience === "everyone" ? [] : memberIds;
+  }
   if (parsed.data.backgroundMode !== undefined) update.backgroundMode = parsed.data.backgroundMode;
   if (parsed.data.backgroundOverlay !== undefined) update.backgroundOverlay = parsed.data.backgroundOverlay;
   const [team] = await db.update(teamsTable)
@@ -360,6 +426,8 @@ router.patch("/auth/team-branding", requireCoordinator, async (req, res): Promis
       backgroundPath: teamsTable.backgroundPath,
       backgroundMode: teamsTable.backgroundMode,
       backgroundOverlay: teamsTable.backgroundOverlay,
+      backgroundAudience: teamsTable.backgroundAudience,
+      backgroundMemberIds: teamsTable.backgroundMemberIds,
     });
   if (!team) {
     res.status(404).json({ error: "Team not found" });

@@ -5,7 +5,7 @@ import { hasPermission, normalizePermissions, permissionsForBuiltInRole } from "
 
 mock.module("@workspace/api-zod", { namedExports: { hasPermission } });
 
-const { permissionForRoute, permissionIsGranted, routePermissionIsGranted, workspaceVisibilityFallback } = await import("./routePermissions.ts");
+const { isUnauthenticatedOrSelfServiceRoute, permissionForRoute, permissionIsGranted, routePermissionIsGranted, workspaceVisibilityFallback } = await import("./routePermissions.ts");
 
 test("route policy separates read, ordinary writes, and management actions", () => {
   assert.equal(permissionForRoute("GET", "/api/applicants"), "applicants.view");
@@ -36,6 +36,14 @@ test("unknown routes and unrecognized permissions deny access", () => {
   assert.equal(permissionIsGranted(["applicants.view", "future.permission"], null), false);
   assert.equal(hasPermission(["future.permission"], "applicants.view"), false);
   assert.deepEqual(normalizePermissions(["applicants.view", "future.permission"]), ["applicants.view"]);
+});
+
+test("effective branding is a signed-in self-service read, not a team settings read", () => {
+  assert.equal(isUnauthenticatedOrSelfServiceRoute("GET", "/api/auth/team-branding/effective"), true);
+  assert.equal(isUnauthenticatedOrSelfServiceRoute("PATCH", "/api/auth/team-branding/effective"), false);
+  assert.equal(isUnauthenticatedOrSelfServiceRoute("GET", "/api/storage/objects/team-branding/team-a/background.webp"), false);
+  assert.equal(routePermissionIsGranted([], "GET", "/api/storage/objects/team-branding/team-a/background.webp"), true);
+  assert.equal(permissionForRoute("GET", "/api/auth/team-branding"), "team.branding.manage");
 });
 
 test("built-in role defaults preserve the three supported role tiers", () => {

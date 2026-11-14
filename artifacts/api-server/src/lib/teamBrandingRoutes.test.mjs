@@ -29,6 +29,8 @@ const teamsTable = {
   backgroundPath: "background_path",
   backgroundMode: "background_mode",
   backgroundOverlay: "background_overlay",
+  backgroundAudience: "background_audience",
+  backgroundMemberIds: "background_member_ids",
 };
 const accountsTable = {
   id: "id",
@@ -46,10 +48,23 @@ const teamRows = new Map([
 const accounts = new Map([
   ["coordinator-a", { id: "coordinator-a", passwordHash: "configured", role: "coordinator", teamId: "team-a", customRoleId: null, hasPassword: true }],
   ["member-a", { id: "member-a", passwordHash: "configured", role: "interviewer", teamId: "team-a", customRoleId: null, hasPassword: true }],
+  ["member-a-2", { id: "member-a-2", passwordHash: "configured", role: "interviewer", teamId: "team-a", customRoleId: null, hasPassword: true }],
   ["coordinator-b", { id: "coordinator-b", passwordHash: "configured", role: "coordinator", teamId: "team-b", customRoleId: null, hasPassword: true }],
 ]);
 const uploadedBackgrounds = [];
 const deletedObjects = [];
+
+function rowMatches(row, table, condition) {
+  if (!condition) return true;
+  if (condition.kind === "and") return condition.conditions.every((child) => rowMatches(row, table, child));
+  if (condition.kind === "or") return condition.conditions.some((child) => rowMatches(row, table, child));
+  const columnName = Object.keys(table).find((key) => table[key] === condition.field);
+  if (!columnName) return false;
+  if (condition.kind === "eq") return (row[columnName] ?? null) === condition.value;
+  if (condition.kind === "inArray") return condition.values.includes(row[columnName]);
+  if (condition.kind === "isNull") return row[columnName] == null;
+  return false;
+}
 
 const db = {
   select(selection) {
@@ -57,10 +72,9 @@ const db = {
       from(table) {
         return {
           where(condition) {
-            const value = Array.isArray(condition) ? condition[0]?.value : condition?.value;
             const rows = table === teamsTable
-              ? [...teamRows.values()].filter((row) => row.id === value)
-              : [...accounts.values()].filter((row) => row.id === value);
+              ? [...teamRows.values()].filter((row) => rowMatches(row, table, condition))
+              : [...accounts.values()].filter((row) => rowMatches(row, table, condition));
             const project = (row) => selection
               ? Object.fromEntries(Object.entries(selection).map(([key, column]) => {
                 const name = Object.keys(table).find((key) => table[key] === column);
@@ -81,8 +95,7 @@ const db = {
       set(patch) {
         return {
           where(condition) {
-            const value = Array.isArray(condition) ? condition[0]?.value : condition?.value;
-            const row = [...teamRows.values()].find((candidate) => candidate.id === value);
+            const row = [...teamRows.values()].find((candidate) => rowMatches(candidate, table, condition));
             if (!row) {
               return { returning: async () => [] };
             }
@@ -100,13 +113,13 @@ const db = {
 
 mock.module("drizzle-orm", {
   namedExports: {
-    eq: (field, value) => ({ field, value }),
-    lt: (field, value) => ({ field, value }),
-    and: (...conditions) => conditions,
-    or: (...conditions) => conditions,
+    eq: (field, value) => ({ kind: "eq", field, value }),
+    lt: (field, value) => ({ kind: "lt", field, value }),
+    and: (...conditions) => ({ kind: "and", conditions }),
+    or: (...conditions) => ({ kind: "or", conditions }),
     count: () => ({ count: true }),
-    inArray: (field, values) => ({ field, values }),
-    isNull: (field) => ({ field, null: true }),
+    inArray: (field, values) => ({ kind: "inArray", field, values }),
+    isNull: (field) => ({ kind: "isNull", field }),
     sql: () => { throw new Error("unexpected SQL lock request in team branding test"); },
   },
 });
@@ -255,6 +268,8 @@ test("team branding exposes and updates the app background within coordinator co
 
   const unauthenticated = await call("/auth/team-branding");
   assert.equal(unauthenticated.status, 401);
+  const unauthenticatedEffective = await call("/auth/team-branding/effective");
+  assert.equal(unauthenticatedEffective.status, 401);
 
   // Any signed-in account can read the team branding (it is shared with the whole team).
   const memberBranding = await call("/auth/team-branding", { accountId: "member-a" });
@@ -265,6 +280,12 @@ test("team branding exposes and updates the app background within coordinator co
   assert.equal(JSON.parse(brandingB.text).backgroundMode, "tile");
   assert.equal(JSON.parse(brandingB.text).backgroundOverlay, 20);
   assert.equal(JSON.parse(brandingB.text).backgroundPath, "secondary/team-branding/team-b/old-bg");
+  assert.equal(JSON.parse(brandingB.text).backgroundAudience, "everyone");
+  assert.deepEqual(JSON.parse(brandingB.text).backgroundMemberIds, []);
+  const legacyEffective = await call("/auth/team-branding/effective", { accountId: "coordinator-b" });
+  assert.equal(JSON.parse(legacyEffective.text).backgroundPath, "secondary/team-branding/team-b/old-bg");
+  assert.equal("backgroundMemberIds" in JSON.parse(legacyEffective.text), false);
+  assert.equal("backgroundAudience" in JSON.parse(legacyEffective.text), false);
 
   const memberUpload = await call("/auth/team-branding/background", {
     accountId: "member-a",
@@ -299,9 +320,46 @@ test("team branding exposes and updates the app background within coordinator co
   const brandingA = await call("/auth/team-branding", { accountId: "coordinator-a" });
   assert.equal(brandingA.status, 200);
   assert.equal(JSON.parse(brandingA.text).backgroundPath, saved.backgroundPath);
+  const defaultAudienceMember = await call("/auth/team-branding/effective", { accountId: "member-a" });
+  assert.equal(JSON.parse(defaultAudienceMember.text).backgroundPath, saved.backgroundPath);
   // The background is scoped to team-a; team-b still sees its own.
   const crossBranding = await call("/auth/team-branding", { accountId: "coordinator-b" });
   assert.equal(JSON.parse(crossBranding.text).backgroundPath, "secondary/team-branding/team-b/old-bg");
+
+  const audience = await call("/auth/team-branding", {
+    accountId: "coordinator-a",
+    method: "PATCH",
+    body: {
+      primaryColor: "#16869a",
+      backgroundAudience: "selected",
+      backgroundMemberIds: ["member-a"],
+    },
+  });
+  assert.equal(audience.status, 200);
+  assert.equal(JSON.parse(audience.text).backgroundAudience, "selected");
+  assert.deepEqual(JSON.parse(audience.text).backgroundMemberIds, ["member-a"]);
+  const included = await call("/auth/team-branding/effective", { accountId: "member-a" });
+  assert.equal(JSON.parse(included.text).backgroundPath, saved.backgroundPath);
+  const excluded = await call("/auth/team-branding/effective", { accountId: "member-a-2" });
+  assert.equal(JSON.parse(excluded.text).backgroundPath, null);
+  assert.equal(JSON.parse(excluded.text).backgroundMode, null);
+  const excludedManager = await call("/auth/team-branding/effective", { accountId: "coordinator-a" });
+  assert.equal(JSON.parse(excludedManager.text).backgroundPath, null);
+  const managerStillSeesConfiguredBackground = await call("/auth/team-branding", { accountId: "coordinator-a" });
+  assert.equal(JSON.parse(managerStillSeesConfiguredBackground.text).backgroundPath, saved.backgroundPath);
+  const crossTeamSelection = await call("/auth/team-branding", {
+    accountId: "coordinator-a",
+    method: "PATCH",
+    body: {
+      primaryColor: "#16869a",
+      backgroundAudience: "selected",
+      backgroundMemberIds: ["coordinator-b"],
+    },
+  });
+  assert.equal(crossTeamSelection.status, 400);
+  assert.match(crossTeamSelection.text, /current members of your team/);
+  const switchedTeamEffective = await call("/auth/team-branding/effective", { accountId: "coordinator-b" });
+  assert.equal(JSON.parse(switchedTeamEffective.text).backgroundPath, "secondary/team-branding/team-b/old-bg");
 
   const options = await call("/auth/team-branding", {
     accountId: "coordinator-a",

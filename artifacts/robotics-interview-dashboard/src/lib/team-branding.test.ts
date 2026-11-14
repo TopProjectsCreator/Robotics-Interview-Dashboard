@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readableBrandForeground } from "./team-branding";
+import { effectiveTeamBrandingCacheKey, readableBrandForeground } from "./team-branding";
 
 function contrastRatio(foreground: string, background: string): number {
   const luminance = (hex: string) => {
@@ -24,5 +24,14 @@ describe("team brand foreground contrast", () => {
 
   it("uses a safe default for malformed stored values", () => {
     expect(readableBrandForeground("invalid")).toBe("#182232");
+  });
+});
+
+describe("effective team branding cache scope", () => {
+  it("keeps branding separate across teams and signed-in members", () => {
+    expect(effectiveTeamBrandingCacheKey("team-a", "member-a"))
+      .not.toEqual(effectiveTeamBrandingCacheKey("team-b", "member-a"));
+    expect(effectiveTeamBrandingCacheKey("team-a", "member-a"))
+      .not.toEqual(effectiveTeamBrandingCacheKey("team-a", "member-b"));
   });
 });

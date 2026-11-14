@@ -471,6 +471,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /auth/team-branding/effective:
+    get:
+      operationId: getEffectiveTeamBranding
+      tags: [auth]
+      summary: Get branding visible to the signed-in team member
+      description: Returns the signed-in member's effective team branding without revealing the background audience configuration.
+      responses:
+        "200":
+          description: Branding visible to this member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EffectiveTeamBranding"
+        "401":
+          description: Sign-in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/team-branding/logo:
     post:
       operationId: uploadTeamLogo
@@ -6996,7 +7015,7 @@ components:
           description: Session token for embedded clients that cannot use third-party cookies
     TeamBranding:
       type: object
-      required: [logoPath, primaryColor, backgroundPath, backgroundMode, backgroundOverlay]
+      required: [logoPath, primaryColor, backgroundPath, backgroundMode, backgroundOverlay, backgroundAudience, backgroundMemberIds]
       properties:
         logoPath:
           type: [string, "null"]
@@ -7017,6 +7036,38 @@ components:
           minimum: 0
           maximum: 80
           description: Percentage of dark overlay drawn over the custom app background
+        backgroundAudience:
+          type: string
+          enum: [everyone, selected]
+          description: Whether the background is visible to every team member or only selected members
+        backgroundMemberIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+          description: Team-local member account IDs selected to see the background
+    EffectiveTeamBranding:
+      type: object
+      required: [primaryColor, backgroundPath, backgroundMode, backgroundOverlay]
+      properties:
+        primaryColor:
+          type: [string, "null"]
+          pattern: "^#[0-9A-Fa-f]{6}$"
+          description: Team primary brand color
+        backgroundPath:
+          type: [string, "null"]
+          description: Private object path for this member's custom app background, or null when excluded
+        backgroundMode:
+          type: [string, "null"]
+          enum: [cover, tile]
+          description: How the visible custom app background is fitted to the viewport
+        backgroundOverlay:
+          type: integer
+          minimum: 0
+          maximum: 80
+          description: Percentage of dark overlay drawn over the visible custom app background
     UpdateTeamBranding:
       type: object
       required: [primaryColor]
@@ -7033,6 +7084,18 @@ components:
           minimum: 0
           maximum: 80
           description: Percentage of dark overlay drawn over the custom app background
+        backgroundAudience:
+          type: string
+          enum: [everyone, selected]
+          description: Whether the background is visible to every team member or only selected members
+        backgroundMemberIds:
+          type: array
+          maxItems: 500
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+          description: Team-local member account IDs selected to see the background
     UploadTeamLogo:
       type: object
       required: [logoPath]

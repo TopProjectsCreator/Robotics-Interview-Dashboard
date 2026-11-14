@@ -216,6 +216,7 @@ export function routePermissionIsGranted(permissions: readonly string[], method:
       : ["chat.send", "applicants.manage", "parts.edit", "cad.edit"];
     return candidates.some((permission) => hasPermission(permissions, permission));
   }
+  if (verb === "GET" && /^\/storage\/objects\/(?:secondary\/)?team-branding\//.test(path)) return true;
   if (verb === "PATCH" && /^\/applicants\/[^/]+$/.test(path)) {
     const fields = body && typeof body === "object" && !Array.isArray(body)
       ? Object.keys(body)
@@ -249,6 +250,7 @@ export function routePermissionIsGranted(permissions: readonly string[], method:
 export function isUnauthenticatedOrSelfServiceRoute(method: string, rawPath: string): boolean {
   const path = rawPath.split("?", 1)[0].replace(/^\/api(?=\/|$)/, "") || "/";
   const verb = method.toUpperCase();
+  if (verb === "GET" && path === "/auth/team-branding/effective") return true;
   return path === "/healthz" || path === "/display/state" || path === "/display/announcement" ||
     path === "/auth/session" || path === "/auth/logout" ||
     path === "/auth/login" || path === "/auth/verify-event-passcode" ||

@@ -193,7 +193,7 @@ export function requireAdmin(
       res.status(401).json({ error: "Interviewer session is invalid" });
       return;
     }
-    db.select({ passwordHash: interviewerAccountsTable.passwordHash })
+    db.select({ passwordHash: interviewerAccountsTable.passwordHash, role: interviewerAccountsTable.role })
       .from(interviewerAccountsTable)
       .where(eq(interviewerAccountsTable.id, interviewerId))
       .limit(1)
@@ -203,6 +203,7 @@ export function requireAdmin(
           return;
         }
         (req as Request & { interviewerId?: string }).interviewerId = interviewerId;
+        (req as Request & { interviewerRole?: string }).interviewerRole = account.role;
         next();
       })
       .catch((error) => {

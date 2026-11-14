@@ -13,6 +13,7 @@ import {
    getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey, getGetAssistantModelPolicyHistoryQueryKey, getGetAssistantProviderConfigurationQueryKey, getGetAssistantIntegrationPolicyQueryKey,
    getListAssistantConversationsQueryKey, getGetAssistantConversationShareQueryKey,
    getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
+   getEffectiveTeamBranding,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
    getListInterviewWhiteboardsQueryKey, getGetInterviewWhiteboardByIdQueryKey,
    useAskAssistant, useQueueAssistantPrompt, useStopAssistantPrompt, useGetAssistantPromptQueue, useAdvanceQueue, useCommitImport, useCreateAssistantConversation, useDeleteAssistantConversation, useGetApplicant, useGetAssistantConfig, useGetAssistantConversationMessages, useGetDashboardSummary,
@@ -51,7 +52,7 @@ import {
   listApplicants,
   regenerateApplicant,
 } from "@workspace/api-client-react";
-import type { FeatureRequest, InterviewerAccount } from "@workspace/api-client-react";
+import type { EffectiveTeamBranding, FeatureRequest, InterviewerAccount } from "@workspace/api-client-react";
 import { permissionsForBuiltInRole, hasPermission as hasCatalogPermission } from "@workspace/api-zod";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { ChatProductivityMeter } from "./components/ChatProductivityMeter";
@@ -72,7 +73,7 @@ import { getEmojiPickerFloatingPosition, type EmojiPickerFloatingPosition } from
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
 import { parseDecisionCommand, flipCoins, rollDice, pickWinnerIndex, formatCoinResult, formatRollResult, formatSpinnerResult } from "./lib/decisionCommands";
 import { DecisionOverlay, type DecisionOverlayState } from "./components/DecisionOverlay";
-import { readableBrandForeground } from "./lib/team-branding";
+import { effectiveTeamBrandingCacheKey, readableBrandForeground } from "./lib/team-branding";
 import { useVisualViewport } from "./hooks/use-visual-viewport";
 import { resolveAssistantModelSelection } from "./lib/assistantModelSelection";
 import { assistantWorkspaceGridClass } from "./lib/assistantWorkspaceLayout";
@@ -786,10 +787,13 @@ function SettingsModal({
     });
   };
   const [workspaceVisibilityNotice, setWorkspaceVisibilityNotice] = useState("");
-  const branding = useTeamBranding(session.data?.teamId, session.data?.authenticated === true);
+  const branding = useTeamBranding(session.data?.teamId, canManageBranding && session.data?.authenticated === true);
   const [brandColorDraft, setBrandColorDraft] = useState("#16869a");
   const [backgroundModeDraft, setBackgroundModeDraft] = useState<TeamBackgroundMode>("cover");
   const [backgroundOverlayDraft, setBackgroundOverlayDraft] = useState(35);
+  const [backgroundAudienceDraft, setBackgroundAudienceDraft] = useState<"everyone" | "selected">("everyone");
+  const [backgroundMemberIdsDraft, setBackgroundMemberIdsDraft] = useState<string[]>([]);
+  const [backgroundAudienceNotice, setBackgroundAudienceNotice] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -799,11 +803,22 @@ function SettingsModal({
     setBackgroundModeDraft(branding.data?.backgroundMode ?? "cover");
     setBackgroundOverlayDraft(branding.data?.backgroundOverlay ?? 35);
   }, [branding.data?.backgroundMode, branding.data?.backgroundOverlay]);
-  const interviewerAccounts = useListInterviewers(undefined, { query: { queryKey: getListInterviewersQueryKey() } });
+  useEffect(() => {
+    setBackgroundAudienceDraft(branding.data?.backgroundAudience ?? "everyone");
+    setBackgroundMemberIdsDraft(branding.data?.backgroundMemberIds ?? []);
+  }, [branding.data?.backgroundAudience, branding.data?.backgroundMemberIds]);
+  const interviewerAccounts = useListInterviewers(undefined, {
+    query: { queryKey: [...getListInterviewersQueryKey(), "team", session.data?.teamId ?? "unknown"] },
+  });
   const teamAccounts = useMemo(
     () => [...(interviewerAccounts.data?.items ?? [])].sort((a, b) => a.displayName.localeCompare(b.displayName)),
     [interviewerAccounts.data],
   );
+  useEffect(() => {
+    if (!interviewerAccounts.isSuccess) return;
+    const currentIds = new Set(teamAccounts.map((account) => account.id));
+    setBackgroundMemberIdsDraft((ids) => ids.filter((id) => currentIds.has(id)));
+  }, [interviewerAccounts.isSuccess, teamAccounts]);
   const workspaceAccessAccounts = useMemo(
     () => [...teamAccounts].sort((a, b) => {
       const rolePriority = (role: string) => isAdminAccountRole(role) ? 0 : role === "treasurer" ? 1 : 2;
@@ -1257,7 +1272,7 @@ function SettingsModal({
       </div>}
       {activeSettingsSection === "branding" && canManageBranding && <div className={divider} data-testid="settings-team-branding">
         <p className={sectionLabel}>Team branding</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Shown to everyone in {session.data?.teamName?.trim() || "your team"}. Changes are saved for the team, not just this device.</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">The primary color is shared with the team. Choose who sees the app background below. Changes are saved for the team, not just this device.</p>
         <SettingRow title="Primary color" detail="Used for the team mark and selected workspace">
           <div className="flex items-center gap-2">
             <input aria-label="Team primary color" type="color" value={brandColorDraft} onChange={event => setBrandColorDraft(event.target.value)} data-testid="input-team-brand-color" className="h-10 w-14 cursor-pointer rounded-lg border border-[#dce5e5] bg-white p-1 dark:border-[#31495a] dark:bg-[#0f1e27]" />
@@ -1289,7 +1304,7 @@ function SettingsModal({
           </div>
           {branding.updateColor.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateColor.error.message}</p>}
         </SettingRow>
-        <SettingRow title="App background" detail="Shown behind every page for the whole team · PNG, JPEG, or WebP · up to 8 MB">
+        <SettingRow title="App background" detail={`Shown behind pages for ${backgroundAudienceDraft === "selected" ? "selected team members" : "everyone in the team"} · PNG, JPEG, or WebP · up to 8 MB`}>
           <div className="flex flex-wrap items-center gap-2">
             {branding.data?.backgroundPath && <AuthenticatedChatImage key={branding.data.backgroundPath} src={teamBrandingObjectUrl(branding.data.backgroundPath)} alt="Current team background" className="h-16 w-24 rounded-lg border border-[#dce5e5] object-cover dark:border-[#31495a]" />}
             <input ref={backgroundInputRef} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose team background" data-testid="input-team-background" className="max-w-[220px] text-xs text-[#52666e] file:mr-2 file:rounded-lg file:border-0 file:bg-[#eaf2f1] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#385762] dark:text-[#c3d3db] dark:file:bg-[#243743] dark:file:text-[#c3d3db]" onChange={event => {
@@ -1334,6 +1349,75 @@ function SettingsModal({
                   onError: error => notify({ title: "Could not save background options", description: error.message }),
                 })} data-testid="button-save-team-background-options" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a]">Save options</button>
             </div>
+          )}
+          {branding.data?.backgroundPath && (
+            <fieldset className="mt-3 space-y-3 border-t border-[#edf1f1] pt-3 dark:border-[#243743]" data-testid="team-background-audience">
+              <legend className="text-xs font-semibold">Who can see this background?</legend>
+              <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
+                <label className="flex min-h-11 items-center gap-2">
+                  <input type="radio" name="team-background-audience" value="everyone" checked={backgroundAudienceDraft === "everyone"} onChange={() => {
+                    setBackgroundAudienceDraft("everyone");
+                    setBackgroundAudienceNotice("");
+                  }} data-testid="radio-team-background-everyone" />
+                  Everyone in the team
+                </label>
+                <label className="flex min-h-11 items-center gap-2">
+                  <input type="radio" name="team-background-audience" value="selected" checked={backgroundAudienceDraft === "selected"} onChange={() => {
+                    setBackgroundAudienceDraft("selected");
+                    setBackgroundAudienceNotice("");
+                  }} data-testid="radio-team-background-selected" />
+                  Selected members
+                </label>
+              </div>
+              {backgroundAudienceDraft === "selected" && (
+                <div className="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-[#dce5e5] p-2 dark:border-[#31495a]" aria-label="Choose team members for the background">
+                  {interviewerAccounts.isLoading && <p className="p-2 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Loading current team members…</p>}
+                  {interviewerAccounts.isError && <p role="alert" className="p-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">Could not load current team members. Try again before saving.</p>}
+                  {!interviewerAccounts.isLoading && !interviewerAccounts.isError && teamAccounts.length === 0 && <p className="p-2 text-xs text-[#7c8c91] dark:text-[#93a8b2]">No current team members were found.</p>}
+                  {teamAccounts.map((account) => (
+                    <label key={account.id} className="flex min-h-11 items-center gap-2 rounded-md px-2 text-xs hover:bg-[#f3f6f5] dark:hover:bg-[#1e3340]">
+                      <input
+                        type="checkbox"
+                        checked={backgroundMemberIdsDraft.includes(account.id)}
+                        onChange={(event) => {
+                          setBackgroundAudienceNotice("");
+                          setBackgroundMemberIdsDraft((current) => event.target.checked
+                            ? [...new Set([...current, account.id])]
+                            : current.filter((id) => id !== account.id));
+                        }}
+                        data-testid={`checkbox-team-background-member-${account.id}`}
+                      />
+                      <span className="min-w-0 flex-1 truncate">{account.displayName}</span>
+                      {account.id === session.data?.interviewerId && <span className="text-[10px] text-[#7c8c91] dark:text-[#93a8b2]">You</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                disabled={branding.updateBackgroundAudience.isPending
+                  || interviewerAccounts.isLoading
+                  || interviewerAccounts.isError
+                  || (backgroundAudienceDraft === branding.data.backgroundAudience
+                    && (backgroundAudienceDraft === "everyone"
+                      || [...backgroundMemberIdsDraft].sort().join("|") === [...branding.data.backgroundMemberIds].sort().join("|")))}
+                onClick={() => {
+                  setBackgroundAudienceNotice("");
+                  branding.updateBackgroundAudience.mutate({
+                    backgroundAudience: backgroundAudienceDraft,
+                    backgroundMemberIds: backgroundAudienceDraft === "everyone" ? [] : backgroundMemberIdsDraft,
+                  }, {
+                    onSuccess: () => setBackgroundAudienceNotice("Background audience saved."),
+                    onError: (error) => setBackgroundAudienceNotice(error.message || "Could not save the background audience."),
+                  });
+                }}
+                data-testid="button-save-team-background-audience"
+                className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a]"
+              >
+                {branding.updateBackgroundAudience.isPending ? "Saving…" : "Save audience"}
+              </button>
+              {backgroundAudienceNotice && <p role={branding.updateBackgroundAudience.isError ? "alert" : "status"} className={`text-xs ${branding.updateBackgroundAudience.isError ? "font-semibold text-[#b34a42] dark:text-[#e89087]" : "text-[#28785c] dark:text-[#6fce8f]"}`} data-testid="team-background-audience-result">{backgroundAudienceNotice}</p>}
+            </fieldset>
           )}
           {branding.updateBackgroundOptions.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateBackgroundOptions.error.message}</p>}
         </SettingRow>
@@ -1580,10 +1664,13 @@ function appRelativeUrl(path: string): string {
 }
 
 type TeamBackgroundMode = "cover" | "tile";
-type TeamBranding = { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number };
+type TeamBranding = { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number; backgroundAudience: "everyone" | "selected"; backgroundMemberIds: string[] };
 const TEAM_BRANDING_QUERY_KEY = ["/api/auth/team-branding"] as const;
 function teamBrandingQueryKey(teamId?: string) {
   return [...TEAM_BRANDING_QUERY_KEY, teamId ?? "unknown"];
+}
+function effectiveTeamBrandingQueryKey(teamId?: string, interviewerId?: string) {
+  return effectiveTeamBrandingCacheKey(teamId, interviewerId);
 }
 function teamBrandingObjectUrl(logoPath: string): string {
   const safePath = logoPath.replace(/^\/objects\//, "");
@@ -1616,7 +1703,10 @@ function useTeamBranding(teamId?: string, enabled = false) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ primaryColor }),
     })),
-    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+      void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
+    },
   });
   const uploadLogo = useMutation({
     mutationFn: async (file: File) => {
@@ -1624,7 +1714,10 @@ function useTeamBranding(teamId?: string, enabled = false) {
       if (!response.ok) throw new Error((await response.text()) || "Could not save the team logo.");
       return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
     },
-    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+      void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
+    },
   });
   const resetLogo = useMutation({
     mutationFn: async () => {
@@ -1632,7 +1725,10 @@ function useTeamBranding(teamId?: string, enabled = false) {
       if (!response.ok) throw new Error((await response.text()) || "Could not reset the team logo.");
       return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
     },
-    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+      void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
+    },
   });
   const updateBackgroundOptions = useMutation({
     mutationFn: async (options: { backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number }) => readTeamBranding(await teamBrandingApi("/api/auth/team-branding", {
@@ -1640,7 +1736,25 @@ function useTeamBranding(teamId?: string, enabled = false) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ primaryColor: query.data?.primaryColor ?? null, ...options }),
     })),
-    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+      void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
+    },
+  });
+  const updateBackgroundAudience = useMutation({
+    mutationFn: async (audience: { backgroundAudience: "everyone" | "selected"; backgroundMemberIds: string[] }) => {
+      const current = query.data;
+      if (!current) throw new Error("Team branding is still loading. Try again.");
+      return readTeamBranding(await teamBrandingApi("/api/auth/team-branding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ primaryColor: current.primaryColor, ...audience }),
+      }));
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+      void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
+    },
   });
   const uploadBackground = useMutation({
     mutationFn: async (file: File) => {
@@ -1648,7 +1762,10 @@ function useTeamBranding(teamId?: string, enabled = false) {
       if (!response.ok) throw new Error((await response.text()) || "Could not save the team background.");
       return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
     },
-    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+      void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
+    },
   });
   const resetBackground = useMutation({
     mutationFn: async () => {
@@ -1656,9 +1773,30 @@ function useTeamBranding(teamId?: string, enabled = false) {
       if (!response.ok) throw new Error((await response.text()) || "Could not reset the team background.");
       return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
     },
-    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+    onSuccess: (data) => {
+      queryClient.setQueryData(queryKey, data);
+      void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
+    },
   });
-  return { ...query, updateColor, uploadLogo, resetLogo, updateBackgroundOptions, uploadBackground, resetBackground };
+  return { ...query, updateColor, uploadLogo, resetLogo, updateBackgroundOptions, updateBackgroundAudience, uploadBackground, resetBackground };
+}
+
+function useEffectiveTeamBranding(teamId?: string, interviewerId?: string, enabled = false) {
+  const queryKey = effectiveTeamBrandingQueryKey(teamId, interviewerId);
+  return useQuery({
+    queryKey,
+    enabled: enabled && Boolean(teamId) && Boolean(interviewerId),
+    queryFn: ({ signal }) => {
+      const token = getStoredAuthToken();
+      return getEffectiveTeamBranding({
+        signal,
+        ...(token ? { headers: { Authorization: `Bearer ${token}` } } : {}),
+      });
+    },
+    staleTime: 30_000,
+    refetchInterval: enabled ? 30_000 : false,
+    refetchOnWindowFocus: true,
+  });
 }
 
 function AuthenticatedChatImage({ src, alt, inline = false, className }: { src: string; alt: string; inline?: boolean; className?: string }) {
@@ -3732,7 +3870,7 @@ function Shell({
   };
   const fullscreen = useFullscreen();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode } });
-  const teamBranding = useTeamBranding(session.data?.teamId, !demoMode && session.data?.authenticated === true);
+  const teamBranding = useEffectiveTeamBranding(session.data?.teamId, session.data?.interviewerId, !demoMode && session.data?.authenticated === true);
   const logout = useLogout();
   usePresenceHeartbeat(!demoMode && session.data?.authenticated === true, location);
   useRealtimeSync(!demoMode && session.data?.authenticated === true);

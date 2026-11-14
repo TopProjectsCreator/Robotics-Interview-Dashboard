@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamBrandingBackgroundAudience } from './teamBrandingBackgroundAudience';
 import type { TeamBrandingBackgroundMode } from './teamBrandingBackgroundMode';
 
 export interface TeamBranding {
@@ -35,4 +36,12 @@ export interface TeamBranding {
      * @maximum 80
      */
   backgroundOverlay: number;
+  /** Whether the background is visible to every team member or only selected members */
+  backgroundAudience: TeamBrandingBackgroundAudience;
+  /**
+     * Team-local member account IDs selected to see the background
+     * @maxItems 500
+     * @items.minLength 1
+     */
+  backgroundMemberIds: string[];
 }

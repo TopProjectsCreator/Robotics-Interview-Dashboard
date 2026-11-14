@@ -10,3 +10,7 @@ export function readableBrandForeground(hex: string): string {
   const blackContrast = (luminance + 0.05) / 0.05;
   return whiteContrast >= blackContrast ? "#ffffff" : "#000000";
 }
+
+export function effectiveTeamBrandingCacheKey(teamId?: string | null, interviewerId?: string | null): readonly string[] {
+  return ["/api/auth/team-branding/effective", teamId ?? "unknown", interviewerId ?? "unknown"];
+}
