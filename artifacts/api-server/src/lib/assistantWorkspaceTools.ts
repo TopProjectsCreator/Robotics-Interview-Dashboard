@@ -20,6 +20,7 @@ import { nextAssistantTaskOccurrence, validateAssistantTaskSchedule, type Assist
 import { customWorkspaceDraftId } from "./assistantBuilderJobs";
 import { deleteCustomWorkspace } from "./customWorkspaceDeletion";
 import { permissionsForAccount } from "./teamRoles";
+import { normalizeCadIcons } from "./cadIconPolicy";
 import {
   applySearchReplace,
   diffSnippet,
@@ -1233,9 +1234,14 @@ export async function runAssistantWorkspaceTool(
     const notes = textArg(args, "notes", 2000) || null;
     const id = randomUUID();
     try {
+      const iconPolicy = await pool.query<{ enabledIcons: unknown }>(
+        `select "enabled_icons" as "enabledIcons" from "cad_icon_settings" where "team_id" = $1`,
+        [context.teamId],
+      );
+      const icon = normalizeCadIcons(iconPolicy.rows[0]?.enabledIcons)[0];
       await pool.query(
-        `insert into "cad_bots" ("id", "team_id", "name", "notes") values ($1, $2, $3, $4)`,
-        [id, context.teamId, botName, notes],
+        `insert into "cad_bots" ("id", "team_id", "name", "notes", "icon") values ($1, $2, $3, $4, $5)`,
+        [id, context.teamId, botName, notes, icon],
       );
       return { content: JSON.stringify({ botId: id, name: botName }), detail: `created CAD bot ${botName}` };
     } catch (error) {

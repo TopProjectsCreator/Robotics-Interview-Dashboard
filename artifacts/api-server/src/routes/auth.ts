@@ -1747,7 +1747,7 @@ router.delete("/auth/teams/:teamId", requireSiteOwner, async (req, res): Promise
     enterInstance((team as { instance: "primary" | "secondary" }).instance);
     const tables = [
       "applicants", "application_imports", "assistant_conversations",
-      "assistant_messages", "broadcasts", "cad_bots", "cad_folders",
+      "assistant_messages", "broadcasts", "cad_bots", "cad_folders", "cad_icon_settings",
       "cad_models", "chat_channel_members", "chat_channels", "chat_custom_emojis",
       "chat_message_reactions",
       "chat_poll_votes", "chat_polls", "chat_settings", "team_name_rules", "chunked_uploads",

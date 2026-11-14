@@ -7,6 +7,8 @@ import {
   CreateCadFolderResponse,
   CreateCadModelBody,
   CreateCadModelResponse,
+  CadIcon,
+  GetCadIconPolicyResponse,
   DeleteCadBotQueryParams,
   DeleteCadFolderParams,
   DeleteCadFolderResponse,
@@ -21,13 +23,15 @@ import {
   UpdateCadFolderBody,
   UpdateCadFolderParams,
   UpdateCadFolderResponse,
+  UpdateCadIconPolicyBody,
+  UpdateCadIconPolicyResponse,
   UpdateCadModelBody,
   UpdateCadModelParams,
   UpdateCadModelResponse,
 } from "@workspace/api-zod";
 import { chunkedUploadsTable, currentInstance, db, pool } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { requireWorkspaceAccess, requestTeamId } from "../middlewares/adminAuth";
+import { requireWorkspaceAccess, requestTeamId, requireCoordinator } from "../middlewares/adminAuth";
 import { cleanCadLabel, cadWorkspaceKind, isWorkspaceContentTypeCompatible, CAD_WORKSPACE_ACCEPT_MESSAGE } from "../lib/cadModels";
 import { deleteChunkParts, getChunkUpload, getChunkUploadForTeam } from "../lib/chunkedUploads";
 import { teamSqlCondition } from "../lib/teams";
@@ -35,6 +39,7 @@ import { pushRealtimeHint } from "../lib/realtime";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { authenticatedInterviewerId } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
+import { CAD_ICON_IDS, DEFAULT_CAD_ICONS, normalizeCadIcons, type CadIconId } from "../lib/cadIconPolicy";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -43,6 +48,16 @@ const objectStorageService = new ObjectStorageService();
 // route here is gated by the same admin-configurable workspace access check
 // rather than by a fixed role.
 const cadAccess = requireWorkspaceAccess("cad");
+
+const CAD_ICON_ID_SET = new Set<string>(CAD_ICON_IDS);
+
+async function readEnabledCadIcons(teamId: string): Promise<CadIconId[]> {
+  const result = await pool.query<{ enabledIcons: unknown }>(
+    `select "enabled_icons" as "enabledIcons" from "cad_icon_settings" where "team_id" = $1`,
+    [teamId],
+  );
+  return normalizeCadIcons(result.rows[0]?.enabledIcons);
+}
 
 const OBJECT_PATH_PATTERN = /^\/objects\/[A-Za-z0-9/-]{8,160}$/;
 /** Object path of a single stored file, as opposed to a chunked upload. */
@@ -104,9 +119,13 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 function mapBot(row: Record<string, unknown>) {
+  const icon = typeof row.icon === "string" && CAD_ICON_ID_SET.has(row.icon)
+    ? row.icon as CadIconId
+    : CadIcon.boxes;
   return {
     id: String(row.id),
     name: String(row.name),
+    icon,
     notes: row.notes === null || row.notes === undefined ? null : String(row.notes),
     createdAt: new Date(String(row.createdAt)).toISOString(),
     updatedAt: new Date(String(row.updatedAt)).toISOString(),
@@ -223,7 +242,7 @@ async function resolvePlacement(
 router.get("/cad/library", cadAccess, async (req, res): Promise<void> => {
   try {
     const teamId = await requestTeamId(req);
-    const bots = await pool.query(`select "id", "name", "notes", "created_at" as "createdAt", "updated_at" as "updatedAt"
+    const bots = await pool.query(`select "id", "name", "notes", "icon", "created_at" as "createdAt", "updated_at" as "updatedAt"
        from "cad_bots" where ${teamSqlCondition('"team_id"', "$1")} order by lower("name")`,
       [teamId],
     );
@@ -250,6 +269,42 @@ router.get("/cad/library", cadAccess, async (req, res): Promise<void> => {
   }
 });
 
+router.get("/cad/icon-policy", cadAccess, async (req, res): Promise<void> => {
+  try {
+    const enabledIcons = await readEnabledCadIcons(await requestTeamId(req));
+    res.json(GetCadIconPolicyResponse.parse({ enabledIcons }));
+  } catch (error) {
+    req.log.error({ err: error }, "CAD icon policy read failed");
+    res.status(500).json({ error: "Unable to read CAD icon choices." });
+  }
+});
+
+router.put("/cad/icon-policy", requireCoordinator, async (req, res): Promise<void> => {
+  const body = UpdateCadIconPolicyBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: "Keep at least one supported CAD icon enabled." });
+    return;
+  }
+  try {
+    const teamId = await requestTeamId(req);
+    const enabledIcons = normalizeCadIcons(body.data.enabledIcons);
+    const saved = await pool.query(
+      `insert into "cad_icon_settings" ("team_id", "enabled_icons")
+       values ($1, $2::jsonb)
+       on conflict ("team_id") do update
+         set "enabled_icons" = excluded."enabled_icons", "updated_at" = now()
+       returning "enabled_icons" as "enabledIcons"`,
+      [teamId, JSON.stringify(enabledIcons)],
+    );
+    const response = { enabledIcons: normalizeCadIcons(saved.rows[0]?.enabledIcons) };
+    pushRealtimeHint("cad_bots", "UPDATE");
+    res.json(UpdateCadIconPolicyResponse.parse(response));
+  } catch (error) {
+    req.log.error({ err: error }, "CAD icon policy update failed");
+    res.status(500).json({ error: "Unable to save CAD icon choices." });
+  }
+});
+
 router.post("/cad/bots", cadAccess, async (req, res): Promise<void> => {
   const body = CreateCadBotBody.safeParse(req.body);
   if (!body.success) {
@@ -262,14 +317,20 @@ router.post("/cad/bots", cadAccess, async (req, res): Promise<void> => {
     return;
   }
   const notes = cleanCadLabel(body.data.notes ?? null, 2000);
-  const id = randomUUID();
   try {
     const teamId = await requestTeamId(req);
+    const enabledIcons = await readEnabledCadIcons(teamId);
+    const icon = body.data.icon ?? enabledIcons[0] ?? CadIcon.boxes;
+    if (!enabledIcons.includes(icon)) {
+      res.status(400).json({ error: "Choose an icon enabled by your team's admin." });
+      return;
+    }
+    const id = randomUUID();
     const inserted = await pool.query(
-      `insert into "cad_bots" ("id", "team_id", "name", "notes")
-       values ($1, $2, $3, $4)
-       returning "id", "name", "notes", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [id, teamId, name, notes],
+      `insert into "cad_bots" ("id", "team_id", "name", "notes", "icon")
+       values ($1, $2, $3, $4, $5)
+       returning "id", "name", "notes", "icon", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+      [id, teamId, name, notes, icon],
     );
     pushRealtimeHint("cad_bots", "INSERT");
     res.status(201).json(CreateCadBotResponse.parse(mapBot(inserted.rows[0])));
@@ -291,7 +352,7 @@ router.patch("/cad/bots/:botId", cadAccess, async (req, res): Promise<void> => {
     return;
   }
   const patch = body.data;
-  if (patch.name === undefined && patch.notes === undefined) {
+  if (patch.name === undefined && patch.notes === undefined && patch.icon === undefined) {
     res.status(400).json({ error: "Nothing to change." });
     return;
   }
@@ -304,15 +365,20 @@ router.patch("/cad/bots/:botId", cadAccess, async (req, res): Promise<void> => {
     patch.notes === undefined ? undefined : patch.notes === null ? null : cleanCadLabel(patch.notes, 2000);
   try {
     const teamId = await requestTeamId(req);
+    if (patch.icon !== undefined && !(await readEnabledCadIcons(teamId)).includes(patch.icon)) {
+      res.status(400).json({ error: "Choose an icon enabled by your team's admin." });
+      return;
+    }
     const updated = await pool.query(
       // $4 distinguishes "not supplied" from "cleared", so notes can be emptied.
       `update "cad_bots"
        set "name" = coalesce($2, "name"),
            "notes" = case when $4 then $3 else "notes" end,
+           "icon" = coalesce($5, "icon"),
            "updated_at" = now()
-       where "id" = $1 and ${teamSqlCondition('"team_id"', "$5")}
-       returning "id", "name", "notes", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
-      [params.data.botId, name ?? null, notes ?? null, patch.notes !== undefined, teamId],
+       where "id" = $1 and ${teamSqlCondition('"team_id"', "$6")}
+       returning "id", "name", "notes", "icon", "created_at" as "createdAt", "updated_at" as "updatedAt"`,
+      [params.data.botId, name ?? null, notes ?? null, patch.notes !== undefined, patch.icon ?? null, teamId],
     );
     if (updated.rowCount === 0) {
       res.status(404).json({ error: "Bot not found." });

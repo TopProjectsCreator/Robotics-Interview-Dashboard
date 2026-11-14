@@ -79,6 +79,8 @@ import type {
   CadFolder,
   CadFolderInput,
   CadFolderUpdateInput,
+  CadIconPolicy,
+  CadIconPolicyUpdate,
   CadLibrary,
   CadModel,
   CadModelInput,
@@ -17149,6 +17151,155 @@ export function useListCadLibrary<TData = Awaited<ReturnType<typeof listCadLibra
 
 
 
+
+export const getGetCadIconPolicyUrl = () => {
+
+
+
+
+  return `/api/cad/icon-policy`
+}
+
+/**
+ * @summary Get the signed-in team's available CAD bot icons
+ */
+export const getCadIconPolicy = async ( options?: Parameters<typeof customFetch>[1]): Promise<CadIconPolicy> => {
+
+  return customFetch<CadIconPolicy>(getGetCadIconPolicyUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCadIconPolicyQueryKey = () => {
+    return [
+    `/api/cad/icon-policy`
+    ] as const;
+    }
+
+
+export const getGetCadIconPolicyQueryOptions = <TData = Awaited<ReturnType<typeof getCadIconPolicy>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCadIconPolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCadIconPolicyQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCadIconPolicy>>> = ({ signal }) => getCadIconPolicy({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCadIconPolicy>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCadIconPolicyQueryResult = NonNullable<Awaited<ReturnType<typeof getCadIconPolicy>>>
+export type GetCadIconPolicyQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the signed-in team's available CAD bot icons
+ */
+
+export function useGetCadIconPolicy<TData = Awaited<ReturnType<typeof getCadIconPolicy>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCadIconPolicy>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCadIconPolicyQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateCadIconPolicyUrl = () => {
+
+
+
+
+  return `/api/cad/icon-policy`
+}
+
+/**
+ * Only team admins can change which Lucide icons are available.
+ * @summary Update the available CAD bot icons
+ */
+export const updateCadIconPolicy = async (cadIconPolicyUpdate: CadIconPolicyUpdate, options?: Parameters<typeof customFetch>[1]): Promise<CadIconPolicy> => {
+
+  return customFetch<CadIconPolicy>(getUpdateCadIconPolicyUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cadIconPolicyUpdate)
+  }
+);}
+
+
+
+
+
+export const getUpdateCadIconPolicyMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCadIconPolicy>>, TError,{data: BodyType<CadIconPolicyUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateCadIconPolicy>>, TError,{data: BodyType<CadIconPolicyUpdate>}, TContext> => {
+
+const mutationKey = ['updateCadIconPolicy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateCadIconPolicy>>, {data: BodyType<CadIconPolicyUpdate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateCadIconPolicy(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateCadIconPolicyMutationResult = NonNullable<Awaited<ReturnType<typeof updateCadIconPolicy>>>
+    export type UpdateCadIconPolicyMutationBody = BodyType<CadIconPolicyUpdate>
+    export type UpdateCadIconPolicyMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Update the available CAD bot icons
+ */
+export const useUpdateCadIconPolicy = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateCadIconPolicy>>, TError,{data: BodyType<CadIconPolicyUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateCadIconPolicy>>,
+        TError,
+        {data: BodyType<CadIconPolicyUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateCadIconPolicyMutationOptions(options));
+    }
 
 export const getCreateCadBotUrl = () => {
 

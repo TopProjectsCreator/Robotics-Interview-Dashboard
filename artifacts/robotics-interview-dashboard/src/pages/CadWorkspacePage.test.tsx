@@ -2,13 +2,17 @@ import * as fs from "fs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { CadStorageStatus } from "@workspace/api-client-react";
+import { DEFAULT_CAD_ICON_IDS } from "@/lib/cadIcons";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CadWorkspacePage } from "./CadWorkspacePage";
 
 const mocks = vi.hoisted(() => ({
   listLibrary: vi.fn(),
+  iconPolicy: vi.fn(),
+  session: vi.fn(),
   getCadStorageStatus: vi.fn(),
+  updateIconPolicy: vi.fn(),
   createBot: vi.fn(),
   updateBot: vi.fn(),
   deleteBot: vi.fn(),
@@ -24,6 +28,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@workspace/api-client-react", () => ({
   getListCadLibraryQueryKey: () => ["/api/cad/library"],
+  getGetCadIconPolicyQueryKey: () => ["/api/cad/icon-policy"],
+  getGetSessionQueryKey: () => ["/api/auth/session"],
+  useGetCadIconPolicy: mocks.iconPolicy,
+  useGetSession: mocks.session,
+  updateCadIconPolicy: mocks.updateIconPolicy,
   getCadStorageStatus: mocks.getCadStorageStatus,
   useListCadLibrary: mocks.listLibrary,
   createCadBot: mocks.createBot,
@@ -55,6 +64,7 @@ vi.mock("@/components/CadModelViewer", () => ({
 const bot = {
   id: "bot-1",
   name: "Scout",
+  icon: "boxes" as const,
   notes: null,
   createdAt: "2026-09-01T00:00:00.000Z",
   updatedAt: "2026-09-01T00:00:00.000Z",
@@ -114,6 +124,11 @@ function renderPage(
   cachedCadStatus?: CadStorageStatus,
 ) {
   mocks.listLibrary.mockReturnValue({ data: library, isLoading: false });
+  mocks.iconPolicy.mockReturnValue({
+    data: { enabledIcons: [...DEFAULT_CAD_ICON_IDS] },
+    isLoading: false,
+    isError: false,
+  });
   if (statusError) mocks.getCadStorageStatus.mockRejectedValue(statusError);
   else mocks.getCadStorageStatus.mockResolvedValue(cadStatus);
   const queryClient = new QueryClient({
@@ -152,7 +167,10 @@ function dropTarget(element: Element, data: Record<string, string>, files: File[
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.session.mockReturnValue({ data: { role: "coordinator" } });
   mocks.createBot.mockResolvedValue(bot);
+  mocks.updateBot.mockResolvedValue(bot);
+  mocks.updateIconPolicy.mockImplementation(async (value) => value);
   mocks.createFolder.mockResolvedValue(intakeFolder);
   mocks.updateModel.mockResolvedValue(model());
   mocks.deleteModel.mockResolvedValue(undefined);
@@ -235,9 +253,35 @@ describe("CAD workspace tree", () => {
   it("lists bots and renders nested folders", async () => {
     renderPage();
     expect(await screen.findByTestId("cad-bot-bot-1")).toHaveTextContent("Scout");
+    expect(screen.getByTestId("cad-bot-icon-bot-1")).toHaveAttribute("data-icon", "boxes");
     expect(screen.getByTestId("cad-folder-folder-intake")).toHaveTextContent("Intake");
     // Chassis is nested under Intake, so it must appear without collapsing it.
     expect(screen.getByTestId("cad-folder-folder-chassis")).toHaveTextContent("Chassis");
+  });
+
+  it("lets a user choose an enabled Lucide icon for a bot", async () => {
+    renderPage();
+    fireEvent.click(await screen.findByTestId("cad-bot-icon-trigger-bot-1"));
+    fireEvent.click(screen.getByTestId("cad-bot-icon-option-bot-1-bot"));
+
+    await waitFor(() => expect(mocks.updateBot).toHaveBeenCalledWith("bot-1", { icon: "bot" }));
+  });
+
+  it("lets admins disable icon choices and hides that control from other roles", async () => {
+    const { unmount } = renderPage();
+    const componentIcon = screen.getByTestId("cad-icon-policy-component");
+    expect(componentIcon).toBeChecked();
+    fireEvent.click(componentIcon);
+    fireEvent.click(screen.getByTestId("button-save-cad-icon-policy"));
+
+    await waitFor(() => expect(mocks.updateIconPolicy).toHaveBeenCalledWith({
+      enabledIcons: DEFAULT_CAD_ICON_IDS.filter((icon) => icon !== "component"),
+    }));
+
+    unmount();
+    mocks.session.mockReturnValue({ data: { role: "interviewer" } });
+    renderPage();
+    expect(screen.queryByTestId("cad-icon-policy")).not.toBeInTheDocument();
   });
 
   it("shows only the models in the selected location", async () => {

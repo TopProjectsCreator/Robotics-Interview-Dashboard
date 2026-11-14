@@ -5063,6 +5063,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CadLibrary"
+  /cad/icon-policy:
+    get:
+      operationId: getCadIconPolicy
+      tags: [cad]
+      summary: Get the signed-in team's available CAD bot icons
+      responses:
+        "200":
+          description: Available Lucide icons
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadIconPolicy"
+    put:
+      operationId: updateCadIconPolicy
+      tags: [cad]
+      summary: Update the available CAD bot icons
+      description: Only team admins can change which Lucide icons are available.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CadIconPolicyUpdate"
+      responses:
+        "200":
+          description: Updated icon choices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CadIconPolicy"
+        "400":
+          description: At least one supported icon must remain enabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Only team admins can update icon choices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /cad/bots:
     post:
       operationId: createCadBot
@@ -10906,18 +10948,57 @@ components:
           type: integer
     CadBot:
       type: object
-      required: [id, name, createdAt, updatedAt]
+      required: [id, name, icon, createdAt, updatedAt]
       properties:
         id:
           type: string
         name:
           type: string
+        icon:
+          $ref: "#/components/schemas/CadIcon"
         notes:
           type: ["string", "null"]
         createdAt:
           type: string
         updatedAt:
           type: string
+    CadIcon:
+      type: string
+      enum:
+        - box
+        - boxes
+        - bot
+        - cog
+        - wrench
+        - cpu
+        - rocket
+        - lightbulb
+        - component
+        - drill
+        - circle-dot
+        - folder-tree
+    CadIconPolicy:
+      type: object
+      required: [enabledIcons]
+      properties:
+        enabledIcons:
+          type: array
+          minItems: 1
+          maxItems: 12
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/CadIcon"
+    CadIconPolicyUpdate:
+      type: object
+      required: [enabledIcons]
+      properties:
+        enabledIcons:
+          type: array
+          minItems: 1
+          maxItems: 12
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/CadIcon"
     CadLibrary:
       type: object
       required: [bots, folders, models]
@@ -10945,6 +11026,8 @@ components:
         notes:
           type: string
           maxLength: 2000
+        icon:
+          $ref: "#/components/schemas/CadIcon"
     CadBotUpdateInput:
       type: object
       properties:
@@ -10955,6 +11038,8 @@ components:
         notes:
           type: ["string", "null"]
           maxLength: 2000
+        icon:
+          $ref: "#/components/schemas/CadIcon"
     CadFolder:
       type: object
       required: [id, botId, name, createdAt, updatedAt]

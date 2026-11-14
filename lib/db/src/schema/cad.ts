@@ -26,6 +26,7 @@ export const cadBotsTable = pgTable(
     teamId: text("team_id"),
     name: text("name").notNull(),
     notes: text("notes"),
+    icon: text("icon").notNull().default("boxes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -106,6 +107,14 @@ export const cadModelsTable = pgTable(
   }),
 );
 
+export const cadIconSettingsTable = pgTable("cad_icon_settings", {
+  teamId: text("team_id").primaryKey(),
+  enabledIcons: jsonb("enabled_icons")
+    .notNull()
+    .default(sql`'["boxes","box","bot","cog","wrench","cpu","rocket","lightbulb","component","drill","circle-dot","folder-tree"]'::jsonb`),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 /**
  * Which roles may open each workspace. Single-row table (id 1) following the
  * `display_settings` convention. Stored as JSON because the workspace list is
@@ -128,4 +137,5 @@ export const workspaceSettingsTable = pgTable("workspace_settings", {
 export type CadBot = typeof cadBotsTable.$inferSelect;
 export type CadFolder = typeof cadFoldersTable.$inferSelect;
 export type CadModel = typeof cadModelsTable.$inferSelect;
+export type CadIconSettings = typeof cadIconSettingsTable.$inferSelect;
 export type WorkspaceSettings = typeof workspaceSettingsTable.$inferSelect;

@@ -205,6 +205,7 @@ const demoCadLibrary: CadLibrary = {
     {
       id: "demo-cad-robot",
       name: "Rover 2026",
+      icon: "boxes",
       notes: "Fictional robot for the public demo.",
       createdAt: DEMO_TIMESTAMP,
       updatedAt: DEMO_TIMESTAMP,

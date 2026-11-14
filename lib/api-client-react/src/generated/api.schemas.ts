@@ -4284,13 +4284,48 @@ export interface CadModelUpload {
   sizeBytes: number;
 }
 
+export type CadIcon = typeof CadIcon[keyof typeof CadIcon];
+
+
+export const CadIcon = {
+  box: 'box',
+  boxes: 'boxes',
+  bot: 'bot',
+  cog: 'cog',
+  wrench: 'wrench',
+  cpu: 'cpu',
+  rocket: 'rocket',
+  lightbulb: 'lightbulb',
+  component: 'component',
+  drill: 'drill',
+  'circle-dot': 'circle-dot',
+  'folder-tree': 'folder-tree',
+} as const;
+
 export interface CadBot {
   id: string;
   name: string;
+  icon: CadIcon;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CadIconPolicy {
+  /**
+     * @minItems 1
+     * @maxItems 12
+     */
+  enabledIcons: CadIcon[];
+}
+
+export interface CadIconPolicyUpdate {
+  /**
+     * @minItems 1
+     * @maxItems 12
+     */
+  enabledIcons: CadIcon[];
 }
 
 export interface CadFolder {
@@ -4342,6 +4377,7 @@ export interface CadBotInput {
   name: string;
   /** @maxLength 2000 */
   notes?: string;
+  icon?: CadIcon;
 }
 
 export interface CadBotUpdateInput {
@@ -4355,6 +4391,7 @@ export interface CadBotUpdateInput {
      * @nullable
      */
   notes?: string | null;
+  icon?: CadIcon;
 }
 
 export interface CadFolderInput {

@@ -1,9 +1,10 @@
-import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Box,
   Boxes,
+  Check,
   ChevronRight,
   Download,
   FileBox,
@@ -23,11 +24,17 @@ import {
   deleteCadFolder,
   deleteCadModel,
   getListCadLibraryQueryKey,
+  getGetCadIconPolicyQueryKey,
+  getGetSessionQueryKey,
+  updateCadIconPolicy,
   getCadStorageStatus,
   updateCadBot,
   updateCadFolder,
   updateCadModel,
   useListCadLibrary,
+  useGetCadIconPolicy,
+  useGetSession,
+  type CadIcon,
   type CadBot,
   type CadFolder,
   type CadModel,
@@ -41,6 +48,7 @@ import { CAD_ACCEPT, cadFormatLabel, cadRenderFormat } from "@/lib/cadFormats";
 import { useCadModelUpload, type CadDropTarget } from "@/lib/useCadModelUpload";
 import { askValue, confirmAction } from "@/lib/dialogs";
 import { useRealtimeHealthy } from "@/realtimeHealth";
+import { CAD_ICON_OPTIONS, DEFAULT_CAD_ICON_IDS, cadIconComponent } from "@/lib/cadIcons";
 
 /** Marks an internal drag so a drop can tell a model from an OS file. */
 const MODEL_DRAG_TYPE = "application/x-cad-model-id";
@@ -98,6 +106,14 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
       enabled: !demoMode,
     },
   });
+  const session = useGetSession({
+    query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode },
+  });
+  const iconPolicy = useGetCadIconPolicy({
+    query: { queryKey: getGetCadIconPolicyQueryKey(), enabled: !demoMode },
+  });
+  const isAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
+  const enabledIcons = iconPolicy.data?.enabledIcons ?? DEFAULT_CAD_ICON_IDS;
   const cadStorageStatus = useQuery({
     queryKey: ["/api/storage/cad-status"],
     queryFn: getCadStorageStatus,
@@ -114,9 +130,15 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
   const [dropTarget, setDropTarget] = useState<string | null>(null);
   const [addingBot, setAddingBot] = useState(false);
   const [newBotName, setNewBotName] = useState("");
+  const [iconPickerBotId, setIconPickerBotId] = useState<string | null>(null);
+  const [iconPolicyDraft, setIconPolicyDraft] = useState<CadIcon[]>([...DEFAULT_CAD_ICON_IDS]);
   const [pageDragActive, setPageDragActive] = useState(false);
   const dragDepth = useRef(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (iconPolicy.data) setIconPolicyDraft([...iconPolicy.data.enabledIcons]);
+  }, [iconPolicy.data]);
 
   const bots = library.data?.bots ?? [];
   const folders = library.data?.folders ?? [];
@@ -275,6 +297,22 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
     },
     [demoMode, refresh],
   );
+
+  const setBotIcon = (botId: string, icon: CadIcon) => {
+    setIconPickerBotId(null);
+    void runAction(() => updateCadBot(botId, { icon }), "Bot icon updated.");
+  };
+
+  const saveIconPolicy = () => {
+    const orderedIcons = CAD_ICON_OPTIONS
+      .filter(({ id }) => iconPolicyDraft.includes(id))
+      .map(({ id }) => id);
+    if (orderedIcons.length === 0) return;
+    void runAction(async () => {
+      await updateCadIconPolicy({ enabledIcons: orderedIcons });
+      await queryClient.invalidateQueries({ queryKey: getGetCadIconPolicyQueryKey() });
+    }, "CAD icon choices saved.");
+  };
 
   /** Uploads dropped files into whatever location the drop targeted. */
   const handleFiles = useCallback(
@@ -558,7 +596,7 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                   setNotice("Give this bot a name.");
                   return;
                 }
-                void runAction(() => createCadBot({ name }), "Bot created.").finally(() => {
+                 void runAction(() => createCadBot({ name, icon: enabledIcons[0] ?? "boxes" }), "Bot created.").finally(() => {
                   setNewBotName("");
                   setAddingBot(false);
                 });
@@ -654,8 +692,63 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
           </div>
 
           <div className="space-y-2">
+            {isAdmin && !demoMode && (
+              <details className="rounded-xl border border-border bg-card p-3" data-testid="cad-icon-policy">
+                <summary className="cursor-pointer text-xs font-semibold text-foreground">
+                  Manage bot icons
+                </summary>
+                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                  Choose which Lucide icons your team can use. Existing bots keep their current icon.
+                </p>
+                {iconPolicy.isError && (
+                  <p className="mt-2 text-xs text-destructive" role="alert" data-testid="cad-icon-policy-error">
+                    Could not load the team's icon choices.
+                  </p>
+                )}
+                <fieldset className="mt-3 grid grid-cols-2 gap-1.5" disabled={busy || iconPolicy.isLoading}>
+                  <legend className="sr-only">Available bot icons</legend>
+                  {CAD_ICON_OPTIONS.map(({ id, label, Icon }) => {
+                    const checked = iconPolicyDraft.includes(id);
+                    return (
+                      <label
+                        key={id}
+                        className="flex min-h-9 items-center gap-2 rounded-lg border border-border px-2 text-[11px] text-foreground"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={checked && iconPolicyDraft.length <= 1}
+                          onChange={(event) => {
+                            setIconPolicyDraft((current) => event.target.checked
+                              ? [...new Set([...current, id])]
+                              : current.filter((icon) => icon !== id));
+                          }}
+                          data-testid={`cad-icon-policy-${id}`}
+                          className="accent-primary"
+                        />
+                        <Icon size={14} aria-hidden="true" />
+                        <span>{label}</span>
+                      </label>
+                    );
+                  })}
+                </fieldset>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={saveIconPolicy}
+                  disabled={busy || iconPolicy.isLoading || iconPolicyDraft.length === 0 ||
+                    iconPolicyDraft.join(",") === (iconPolicy.data?.enabledIcons ?? DEFAULT_CAD_ICON_IDS).join(",")}
+                  data-testid="button-save-cad-icon-policy"
+                  className="mt-3 w-full"
+                >
+                  Save icon choices
+                </Button>
+              </details>
+            )}
             {bots.map((bot) => {
               const key = `bot:${bot.id}`;
+              const BotIcon = cadIconComponent(bot.icon);
               const isCollapsed = collapsed[key] ?? false;
               const selected = location.kind === "bot" && location.botId === bot.id;
               const topFolders = childrenOf(bot.id, null);
@@ -664,7 +757,7 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                 <div
                   key={bot.id}
                   {...treeDropProps(key, { botId: bot.id, folderId: null })}
-                  className={`rounded-xl border p-2 transition ${
+                  className={`relative rounded-xl border p-2 transition ${
                     dropTarget === key ? "border-primary ring-2 ring-primary" : "border-border"
                   }`}
                 >
@@ -681,6 +774,21 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                         className={`transition-transform ${isCollapsed ? "" : "rotate-90"}`}
                         aria-hidden="true"
                       />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIconPickerBotId((current) => current === bot.id ? null : bot.id)}
+                      disabled={busy || demoMode}
+                      aria-label={`Choose icon for ${bot.name}`}
+                      aria-expanded={iconPickerBotId === bot.id}
+                      aria-controls={`cad-bot-icon-picker-${bot.id}`}
+                      title="Choose bot icon"
+                      data-testid={`cad-bot-icon-trigger-${bot.id}`}
+                      className="rounded-lg p-1.5 text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                    >
+                      <span data-testid={`cad-bot-icon-${bot.id}`} data-icon={bot.icon ?? "boxes"}>
+                        <BotIcon size={19} className="shrink-0" aria-hidden="true" />
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -750,6 +858,38 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                       <Trash2 size={13} aria-hidden="true" />
                     </button>
                   </div>
+                  {iconPickerBotId === bot.id && (
+                    <div
+                      id={`cad-bot-icon-picker-${bot.id}`}
+                      role="group"
+                      aria-label={`Choose an icon for ${bot.name}`}
+                      className="absolute left-2 top-12 z-30 grid max-h-52 w-64 grid-cols-3 gap-1.5 overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl"
+                      data-testid={`cad-bot-icon-picker-${bot.id}`}
+                    >
+                      {enabledIcons.map((icon) => {
+                        const option = CAD_ICON_OPTIONS.find((item) => item.id === icon);
+                        if (!option) return null;
+                        const Icon = option.Icon;
+                        return (
+                          <button
+                            key={icon}
+                            type="button"
+                            onClick={() => setBotIcon(bot.id, icon)}
+                            aria-label={`Set ${bot.name} icon to ${option.label}`}
+                            aria-pressed={bot.icon === icon}
+                            data-testid={`cad-bot-icon-option-${bot.id}-${icon}`}
+                            className={`relative flex min-h-14 flex-col items-center justify-center gap-1 rounded-lg border px-1 text-[10px] transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                              bot.icon === icon ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground"
+                            }`}
+                          >
+                            {bot.icon === icon && <Check size={11} className="absolute right-1 top-1" aria-hidden="true" />}
+                            <Icon size={18} aria-hidden="true" />
+                            <span>{option.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                   {!isCollapsed && topFolders.length > 0 && (
                     <ul className="mt-1 space-y-0.5">
                       {topFolders.map((folder) => renderFolderRow(folder, bot.id, 1))}

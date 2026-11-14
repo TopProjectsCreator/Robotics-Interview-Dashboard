@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CadIcon } from './cadIcon';
 
 export interface CadBotUpdateInput {
   /**
@@ -17,4 +18,5 @@ export interface CadBotUpdateInput {
      * @nullable
      */
   notes?: string | null;
+  icon?: CadIcon;
 }

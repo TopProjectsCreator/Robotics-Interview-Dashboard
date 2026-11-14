@@ -130,6 +130,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "scheduled_chat_messages",
     "cad_bots",
     "cad_folders",
+    "cad_icon_settings",
     "cad_models",
     "code_projects",
     "code_files",
@@ -646,10 +647,16 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
        "id" text primary key,
        "name" text not null check (length("name") between 1 and 120),
        "notes" text,
+       "icon" text not null default 'boxes',
        "created_at" timestamptz not null default now(),
        "updated_at" timestamptz not null default now()
      )`,
     `create unique index if not exists "cad_bots_normalized_name_unique" on "cad_bots" (lower("name"))`,
+    `create table if not exists "cad_icon_settings" (
+       "team_id" text primary key,
+       "enabled_icons" jsonb not null default '["boxes","box","bot","cog","wrench","cpu","rocket","lightbulb","component","drill","circle-dot","folder-tree"]'::jsonb,
+       "updated_at" timestamptz not null default now()
+     )`,
     `create table if not exists "cad_folders" (
        "id" text primary key,
        "bot_id" text not null references "cad_bots"("id") on delete cascade,
@@ -745,6 +752,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `alter table "broadcasts" add column if not exists "team_id" text`,
     `alter table "broadcasts" add column if not exists "target_user_id" text not null default ''`,
     `alter table "cad_bots" add column if not exists "team_id" text`,
+    `alter table "cad_bots" add column if not exists "icon" text not null default 'boxes'`,
     `alter table "cad_folders" add column if not exists "team_id" text`,
     `alter table "cad_models" add column if not exists "team_id" text`,
     `alter table "chat_custom_emojis" add column if not exists "team_id" text`,

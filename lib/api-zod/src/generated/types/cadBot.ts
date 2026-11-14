@@ -5,10 +5,12 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CadIcon } from './cadIcon';
 
 export interface CadBot {
   id: string;
   name: string;
+  icon: CadIcon;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
