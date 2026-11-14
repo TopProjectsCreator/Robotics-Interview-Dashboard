@@ -219,3 +219,14 @@ export function saveToolExposure(mode: AssistantToolExposureMode): void {
     // Storage can be unavailable in private browsing.
   }
 }
+
+/** Removes the on-device assistant tool preferences so they fall back to
+ * their defaults. Used by the settings "Reset all settings" action. */
+export function resetOnDeviceAssistantToolPreferences(): void {
+  try {
+    window.localStorage.removeItem(ASSISTANT_TOOLS_STORAGE_KEY);
+    window.localStorage.removeItem(ASSISTANT_TOOL_EXPOSURE_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in private browsing.
+  }
+}

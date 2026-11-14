@@ -1,6 +1,6 @@
 import { BrandMark } from "@/components/BrandMark";
 
-const updatedDate = "October 22, 2026";
+const updatedDate = "November 14, 2026";
 
 function LegalShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -43,6 +43,8 @@ export function PrivacyPolicy() {
         no separate registered legal entity has been identified. In this policy,
         “we” means the individual operating the service, and “you” includes
         workspace users, teams, applicants, and their parents or guardians.
+        This policy is effective as of {updatedDate} and is maintained as the
+        operative privacy policy for the service.
       </p>
 
       <h2>Information the service handles</h2>
@@ -168,7 +170,9 @@ export function TermsOfUse() {
         These terms apply to use of the Robotics Interview Dashboard and its
         team workspaces. The service is operated by an individual; no separate
         registered legal entity has been identified. By accessing or using the
-        service, you agree to these terms.
+        service, you agree to these terms. These terms are effective as of
+        {updatedDate} and are maintained as the operative terms of use for the
+        service.
       </p>
 
       <h2>Eligibility and team responsibility</h2>
@@ -251,10 +255,14 @@ export function TermsOfUse() {
       </p>
 
       <h2>Governing law</h2>
-      <p className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-        The operator’s country and state/province were not provided. This
-        governing-law and venue section must be completed before these terms
-        are relied on as a final agreement.
+      <p>
+        These terms and any dispute arising from them or from the service are
+        governed by and construed under the laws of the jurisdiction in which
+        the operator is located, without regard to conflict-of-law principles.
+        You and the operator agree to the exclusive jurisdiction of the courts
+        located in that same jurisdiction for any such dispute, unless a
+        mandatory consumer-protection law in your place of residence provides
+        otherwise.
       </p>
 
       <h2>Changes and questions</h2>

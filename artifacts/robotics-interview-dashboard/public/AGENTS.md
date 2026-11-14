@@ -303,6 +303,12 @@ Every workspace and public surface, what it does, and how far it goes.
   removal (signs them out); "Reset all team passwords" with typed confirmation.
 - **Personal preferences:** theme (Light/Dark), row density, reduce motion, default list
   sort, auto-refresh/instant-updates interval (3 s/10 s/30 s), browser notifications.
+- **Reset all settings (Operations → Data):** restores this device's defaults
+  (appearance, workspace preferences, assistant tool exposure/disabled tools) and, for
+  the permissions the account holds, team-wide defaults (chat slow mode off, brand
+  color/background fit/visibility, parts order-tray limit). Team logo and background
+  images, name rules, inbox, roles, workspace access, assistant governance and
+  display/queue settings are never changed.
 - **App adjustments:** send the site owner an adjustment request ("Ishaan will see it
   in the site inbox"); finished requests are marked Done.
 - **Notepad:** account-menu personal notepad, rich text, synced to your account every
@@ -318,8 +324,8 @@ Every workspace and public surface, what it does, and how far it goes.
 - **`/pricing`** — one plan: $0, everything included, no card. **`/compare`** — "our
   workspace vs. Robolyst", both free.
 - **`/about`** — Team 23442 story with photo carousel; **`/privacy`** and
-  **`/terms`** — full legal (AI features disclosure included), with the "draft, not
-  legal advice" footer.
+  **`/terms`** — the operative legal documents for the service (AI features
+  disclosure included), effective November 14, 2026.
 - **Landing pages:** chat-landing, parts-landing, cad-landing, code-landing — focused
   pitches for each workspace.
 - **`/error/:code`** for 400/401/403/404/429/500/502/503/504 — themed error art with

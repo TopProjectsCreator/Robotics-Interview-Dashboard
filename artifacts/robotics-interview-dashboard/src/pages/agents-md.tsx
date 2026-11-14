@@ -413,6 +413,7 @@ export default function AgentsMdPage() {
                 <Li><strong>Team settings worth knowing:</strong> team name rules (block listed names, e.g. prank names), team branding (primary color + logo upload ≤2 MB, checked file type, plus a team-shared custom app background), team inbox (inbound email → team chat, encrypted key, approved-sender list).</Li>
                 <Li><strong>Password hygiene:</strong> new passwords are screened against the Pwned Passwords corpus (low-exposure confirm, high-exposure reject); per-account reset, rename, role change, removal (signs them out); “Reset all team passwords” with typed confirmation.</Li>
                 <Li><strong>Personal preferences:</strong> theme (Light/Dark), row density, reduce motion, default list sort, auto-refresh/instant-updates interval (3 s/10 s/30 s), browser notifications.</Li>
+                <Li><strong>Reset all settings (Operations → Data):</strong> restores this device’s defaults (appearance, workspace preferences, assistant tool exposure/disabled tools) and, for the permissions the account holds, team-wide defaults (chat slow mode off, brand color/background fit/visibility, parts order-tray limit); logo/background images, name rules, inbox, roles, workspace access, assistant governance and display/queue settings are never changed.</Li>
                 <Li><strong>App adjustments:</strong> send the site owner an adjustment request (“Ishaan will see it in the site inbox”); finished requests are marked Done.</Li>
                 <Li><strong>Notepad:</strong> account-menu personal notepad, rich text, synced to your account every few seconds.</Li>
               </Ul>
@@ -424,7 +425,7 @@ export default function AgentsMdPage() {
                 <Li><strong><Mono>/</Mono></strong> public dashboard — the front door: platform overview, product-area cards, “start your team — free” CTA.</Li>
                 <Li><strong><Mono>/demo</Mono></strong> — the full app, read-only, seeded with a fictional 2026–27 team (Maya, Leo, Sam, Nora), fictional parts/chat/CAD/code/custom apps; every control disabled with “read-only demo” notices; nothing touches a real team.</Li>
                 <Li><strong><Mono>/pricing</Mono></strong> — one plan: $0, everything included, no card. <Mono>/compare</Mono> — “our workspace vs. Robolyst”, both free.</Li>
-                <Li><strong><Mono>/about</Mono></strong> — Team 23442 story with photo carousel; <Mono>/privacy</Mono> and <Mono>/terms</Mono> — full legal (AI features disclosure included), with the “draft, not legal advice” footer.</Li>
+                <Li><strong><Mono>/about</Mono></strong> — Team 23442 story with photo carousel; <Mono>/privacy</Mono> and <Mono>/terms</Mono> — the operative legal documents for the service (AI features disclosure included), effective November 14, 2026.</Li>
                 <Li><strong>Landing pages:</strong> chat-landing, parts-landing, cad-landing, code-landing — focused pitches for each workspace.</Li>
                 <Li><strong><Mono>/error/:code</Mono></strong> for 400/401/403/404/429/500/502/503/504 — themed error art with quick links, plus a helpful catch-all 404.</Li>
               </Ul>

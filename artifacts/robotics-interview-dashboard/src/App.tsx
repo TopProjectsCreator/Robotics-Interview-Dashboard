@@ -67,7 +67,7 @@ import { AssistantModelPicker, type AssistantIntegrationPolicyView, type Assista
 import { AssistantProviderSetup } from "./components/AssistantProviderSetup";
 import { AssistantMcpConnectionPrompt, type AssistantMcpConnectionRequest } from "./components/AssistantMcpConnectionPrompt";
 import { BrandMark } from "./components/BrandMark";
-import { loadDisabledTools, loadToolExposure, saveDisabledTools, saveToolExposure, type AssistantToolExposureMode, type AssistantToolItem } from "./components/assistantTools";
+import { loadDisabledTools, loadToolExposure, saveDisabledTools, saveToolExposure, resetOnDeviceAssistantToolPreferences, type AssistantToolExposureMode, type AssistantToolItem } from "./components/assistantTools";
 import { addTeamEmojiMarkdown, getTeamEmojiStorageUrl } from "./lib/chat-custom-emojis";
 import { getEmojiPickerFloatingPosition, type EmojiPickerFloatingPosition } from "./lib/emojiPickerPosition";
 import { cleanupChatMessageAttachments } from "./lib/chat-attachment-cleanup";
@@ -687,6 +687,8 @@ function SettingsModal({
   const [, setLocation] = useLocation();
   const [notifyState, setNotifyState] = useState(() => browserNotifyPermission());
   const [refreshed, setRefreshed] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetNotice, setResetNotice] = useState("");
   const [passwordAdminCode, setPasswordAdminCode] = useState("");
   const eventPasscodeRef = useRef<HTMLInputElement>(null);
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
@@ -1038,6 +1040,73 @@ function SettingsModal({
     setNotifyState(browserNotifyPermission());
   };
   const refreshAll = () => { qc.invalidateQueries(); setRefreshed(true); };
+  // Combined reset ("all settings"): local device preferences, the on-device
+  // assistant tool preferences, and — for the ones this account can manage —
+  // the team-wide settings that have a clean default. Destructive or
+  // irreplaceable team data (branding images, name rules, inbox, roles,
+  // governance, workspace access) is never touched.
+  const resetAllSettings = async () => {
+    const deviceItems = [
+      "this device’s appearance and workspace preferences",
+      "assistant tool exposure and disabled tools on this device",
+    ];
+    const teamItems: string[] = [];
+    const slowmodeOn = (chatSettings.data?.slowmodeSeconds ?? 0) !== 0;
+    if (canManageChatSettings && slowmodeOn) teamItems.push("chat slow mode → Off");
+    const brandingDefaultsNeeded =
+      (branding.data?.primaryColor ?? null) !== null ||
+      (branding.data?.backgroundMode ?? "cover") !== "cover" ||
+      (branding.data?.backgroundOverlay ?? 35) !== 35 ||
+      (branding.data?.backgroundAudience ?? "everyone") !== "everyone" ||
+      (branding.data?.backgroundMemberIds?.length ?? 0) > 0;
+    if (canManageBranding && brandingDefaultsNeeded) teamItems.push("team brand color, background fit and background visibility → defaults (logo and background images are kept)");
+    if (isAdmin && session.data?.teamId) teamItems.push("parts order-tray limit → no limit");
+    const ok = await confirmAction({
+      title: teamItems.length > 0 ? "Reset all settings — including team-wide ones?" : "Reset all settings?",
+      detail: `Resets: ${[...deviceItems, ...teamItems].join("; ")}. Never changed: team logo and background images, name rules, team inbox, roles and workspace access, assistant governance, display/queue settings.`,
+      confirmLabel: "Reset all",
+      danger: true,
+    });
+    if (!ok) return;
+    setResetBusy(true);
+    setResetNotice("");
+    reset();
+    resetOnDeviceAssistantToolPreferences();
+    const failures: string[] = [];
+    const call = async (label: string, path: string, method: string, body: unknown) => {
+      try {
+        const response = await fetch(`${import.meta.env.BASE_URL}api${path}`, {
+          method,
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!response.ok) failures.push(label);
+      } catch {
+        failures.push(label);
+      }
+    };
+    if (canManageChatSettings && slowmodeOn) await call("chat slow mode", "/chat/settings", "POST", { slowmodeSeconds: 0 });
+    if (canManageBranding && brandingDefaultsNeeded) {
+      await call("team branding", "/auth/team-branding", "PATCH", {
+        primaryColor: null,
+        backgroundMode: "cover",
+        backgroundOverlay: 35,
+        backgroundAudience: "everyone",
+        backgroundMemberIds: [],
+      });
+    }
+    if (isAdmin && session.data?.teamId) await call("parts order-tray limit", "/parts/order-settings", "PUT", { maxOrderItems: null });
+    void qc.invalidateQueries();
+    setResetBusy(false);
+    if (failures.length > 0) {
+      setResetNotice(`Device defaults restored. Could not reset: ${failures.join(", ")} (you may not have permission, or try again).`);
+    } else if (teamItems.length > 0) {
+      setResetNotice("Defaults restored, including the team-wide settings listed above.");
+    } else {
+      setResetNotice("Device defaults restored.");
+    }
+  };
   const finishPasswordAction = (message: string, resetSession = false) => {
     setPasswordNotice(message);
     setPasswordError("");
@@ -1584,7 +1653,7 @@ function SettingsModal({
         canSessionUsePermission(session.data, "featureRequests.create")) && <div hidden={activeSettingsSection !== "chat"}><FeatureRequestSection /></div>}
       {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Data</p>
         <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
-        <SettingRow title="Reset all settings" detail="Back to defaults on this device"><button onClick={reset} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> Reset</button></SettingRow>
+        <SettingRow title="Reset all settings" detail={resetNotice || "Device defaults, plus the team-wide defaults you can manage"}><button disabled={resetBusy} onClick={() => void resetAllSettings()} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50 dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> {resetBusy ? "Resetting…" : "Reset"}</button></SettingRow>
       </div>}
         </main>
       </div>
