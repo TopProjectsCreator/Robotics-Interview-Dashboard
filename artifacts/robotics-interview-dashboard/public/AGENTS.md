@@ -325,7 +325,7 @@ Every workspace and public surface, what it does, and how far it goes.
   workspace vs. Robolyst", both free.
 - **`/about`** — Team 23442 story with photo carousel; **`/privacy`** and
   **`/terms`** — the operative legal documents for the service (AI features
-  disclosure included), effective November 14, 2026.
+  disclosure included), effective November 15, 2026.
 - **Landing pages:** chat-landing, parts-landing, cad-landing, code-landing — focused
   pitches for each workspace.
 - **`/error/:code`** for 400/401/403/404/429/500/502/503/504 — themed error art with

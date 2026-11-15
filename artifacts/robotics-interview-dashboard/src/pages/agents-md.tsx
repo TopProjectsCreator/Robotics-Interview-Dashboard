@@ -425,7 +425,7 @@ export default function AgentsMdPage() {
                 <Li><strong><Mono>/</Mono></strong> public dashboard — the front door: platform overview, product-area cards, “start your team — free” CTA.</Li>
                 <Li><strong><Mono>/demo</Mono></strong> — the full app, read-only, seeded with a fictional 2026–27 team (Maya, Leo, Sam, Nora), fictional parts/chat/CAD/code/custom apps; every control disabled with “read-only demo” notices; nothing touches a real team.</Li>
                 <Li><strong><Mono>/pricing</Mono></strong> — one plan: $0, everything included, no card. <Mono>/compare</Mono> — “our workspace vs. Robolyst”, both free.</Li>
-                <Li><strong><Mono>/about</Mono></strong> — Team 23442 story with photo carousel; <Mono>/privacy</Mono> and <Mono>/terms</Mono> — the operative legal documents for the service (AI features disclosure included), effective November 14, 2026.</Li>
+                <Li><strong><Mono>/about</Mono></strong> — Team 23442 story with photo carousel; <Mono>/privacy</Mono> and <Mono>/terms</Mono> — the operative legal documents for the service (AI features disclosure included), effective November 15, 2026.</Li>
                 <Li><strong>Landing pages:</strong> chat-landing, parts-landing, cad-landing, code-landing — focused pitches for each workspace.</Li>
                 <Li><strong><Mono>/error/:code</Mono></strong> for 400/401/403/404/429/500/502/503/504 — themed error art with quick links, plus a helpful catch-all 404.</Li>
               </Ul>
