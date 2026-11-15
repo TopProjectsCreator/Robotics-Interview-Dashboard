@@ -45,6 +45,7 @@ const emptyHistory: ProductivityHistory = {
 
 let status: ProductivityStatus;
 let history: ProductivityHistory;
+let rangeReviewHasNoMessages: boolean;
 const requests: { path: string; method: string; body?: Record<string, unknown> }[] = [];
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = new URL(String(input), window.location.origin);
@@ -65,7 +66,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
   if (url.pathname.endsWith("/queue/chat/productivity/review") && method === "POST") {
     return jsonResponse({
       ...status,
-      latest: {
+      latest: rangeReviewHasNoMessages ? null : {
         conversationName: "Drive team",
         score: 8,
         summary: "Recent range review.",
@@ -98,6 +99,7 @@ function renderMeter(props: { scope: "shared" | "channel"; channelId?: string })
 beforeEach(() => {
   status = { enabled: false, canManage: true, lastRunAt: null, lastError: null, latest: null };
   history = emptyHistory;
+  rangeReviewHasNoMessages = false;
   requests.length = 0;
   fetchMock.mockClear();
   vi.stubGlobal("fetch", fetchMock);
@@ -137,7 +139,7 @@ describe("ChatProductivityMeter", () => {
       acknowledgeNotice: true,
     });
     expect(await screen.findByTestId("button-disable-chat-productivity")).toBeInTheDocument();
-    expect(await screen.findByText("Review is queued to start shortly.")).toBeInTheDocument();
+    expect(await screen.findByText("A review will be created after chat messages are sent.")).toBeInTheDocument();
   });
 
   it("shows when an assessment has started instead of leaving the user with a queued state", async () => {
@@ -145,8 +147,9 @@ describe("ChatProductivityMeter", () => {
     renderMeter({ scope: "shared" });
     fireEvent.click(await screen.findByTestId("button-chat-productivity"));
 
-    expect(await screen.findByTestId("status-chat-productivity-empty")).toHaveTextContent("Review started at");
-    expect(screen.getByTestId("status-chat-productivity-empty")).not.toHaveTextContent("queued");
+    expect(await screen.findByTestId("status-chat-productivity-empty")).toHaveTextContent(
+      "Reviews are created only for periods with chat messages.",
+    );
   });
 
   it("shows the score details but never offers settings to a channel member", async () => {
@@ -199,6 +202,21 @@ describe("ChatProductivityMeter", () => {
       range: "1d",
     });
     expect(screen.getByTestId("panel-chat-productivity-details")).toBeInTheDocument();
+  });
+
+  it("shows no review when the selected period has no chat messages", async () => {
+    rangeReviewHasNoMessages = true;
+    status = { enabled: true, canManage: false, lastRunAt: null, lastError: null, latest: null };
+    renderMeter({ scope: "channel", channelId: "drive-team" });
+    fireEvent.click(await screen.findByTestId("button-chat-productivity"));
+    fireEvent.change(await screen.findByTestId("select-chat-productivity-range"), {
+      target: { value: "1d" },
+    });
+
+    expect(await screen.findByTestId("status-chat-productivity-no-messages")).toHaveTextContent(
+      "No chat messages were sent in this period, so no productivity review was created.",
+    );
+    expect(screen.queryByTestId("panel-chat-productivity-details")).not.toBeInTheDocument();
   });
 
   it("charts retained automatic reviews and lists previous scores in the history tab", async () => {

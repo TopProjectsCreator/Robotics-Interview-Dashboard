@@ -262,6 +262,14 @@ export function buildProductivityInput(
   };
 }
 
+export function activeProductivityConversationKeys(
+  includedMessages: Map<string, { at: string; text: string }[]>,
+): Set<string> {
+  return new Set([...includedMessages]
+    .filter(([, messages]) => messages.length > 0)
+    .map(([key]) => key));
+}
+
 function isIntegerInRange(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 10;
 }

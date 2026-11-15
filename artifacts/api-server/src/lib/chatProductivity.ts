@@ -20,6 +20,7 @@ import {
   buildProductivitySystemPrompt,
   buildProductivityInput,
   buildProductivityResponseFormat,
+  activeProductivityConversationKeys,
   chatProductivityRangeStart,
   noActivityAssessment,
   parseProductivityResults,
@@ -276,49 +277,44 @@ async function persistResults(
 }
 
 async function reviewTeam(teamId: string): Promise<void> {
-  let stage = "resolve model settings";
+  let stage = "load shared conversation history";
   try {
+    const windowEnd = new Date();
+    const windowStart = new Date(windowEnd.getTime() - REVIEW_INTERVAL_MS);
+    const { definitions, conversations } = await loadConversations(teamId, windowStart, windowEnd);
+    const conversationsWithMessages = conversations.filter((conversation) => conversation.messages.length > 0);
+    if (!conversationsWithMessages.length) return;
+
+    stage = "resolve model settings";
     const { modelId, contextLength, reasoningOptions } = await resolveModelSettings(teamId);
     const [settings] = await db.select({ customMessage: chatProductivitySettingsTable.customMessage })
       .from(chatProductivitySettingsTable)
       .where(eq(chatProductivitySettingsTable.teamId, teamId))
       .limit(1);
-    const windowEnd = new Date();
-    const windowStart = new Date(windowEnd.getTime() - REVIEW_INTERVAL_MS);
-    stage = "load shared conversation history";
-    const { definitions, conversations } = await loadConversations(teamId, windowStart, windowEnd);
     stage = "prepare context-bounded input";
     const input = buildProductivityInput(
-      conversations,
+      conversationsWithMessages,
       inputBudgetBytes(contextLength),
       windowStart,
       windowEnd,
     );
-    const hasActivity = [...input.includedMessages.values()].some((messages) => messages.length > 0);
-
-    if (!hasActivity) {
-      const emptyResults = Object.fromEntries(definitions.map((definition) => [
-        definition.key,
-        noActivityAssessment(),
-      ]));
-      stage = "save empty assessments";
-      await persistResults(teamId, modelId, definitions, input.includedMessages, emptyResults, windowStart, windowEnd);
-      return;
-    }
+    const activeKeys = activeProductivityConversationKeys(input.includedMessages);
+    const activeDefinitions = definitions.filter((definition) => activeKeys.has(definition.key));
+    if (!activeDefinitions.length) return;
 
     stage = "request AI assessment";
     const results = await requestProductivityResults(
       teamId,
       modelId,
       reasoningOptions,
-      definitions,
+      activeDefinitions,
       input,
       windowStart,
       windowEnd,
       settings?.customMessage ?? "",
     );
     stage = "save per-conversation assessments";
-    await persistResults(teamId, modelId, definitions, input.includedMessages, results, windowStart, windowEnd);
+    await persistResults(teamId, modelId, activeDefinitions, input.includedMessages, results, windowStart, windowEnd);
   } catch (error) {
     throw new ProductivityReviewError(stage, error);
   }
@@ -340,19 +336,21 @@ export async function reviewChatProductivityRange(
   periodStart: Date | null;
   periodEnd: Date | null;
   createdAt: Date;
-}> {
-  let stage = "resolve model settings";
+} | null> {
+  let stage = "load selected conversation history";
   try {
+    const windowEnd = new Date();
+    const windowStart = chatProductivityRangeStart(range, windowEnd);
+    const definition: ConversationDefinition = { scope, key: conversationKey, name: conversationName };
+    const { conversations } = await loadConversations(teamId, windowStart, windowEnd, definition);
+    if (!conversations[0]?.messages.length) return null;
+
+    stage = "resolve model settings";
     const { modelId, contextLength, reasoningOptions } = await resolveModelSettings(teamId);
     const [settings] = await db.select({ customMessage: chatProductivitySettingsTable.customMessage })
       .from(chatProductivitySettingsTable)
       .where(eq(chatProductivitySettingsTable.teamId, teamId))
       .limit(1);
-    const windowEnd = new Date();
-    const windowStart = chatProductivityRangeStart(range, windowEnd);
-    const definition: ConversationDefinition = { scope, key: conversationKey, name: conversationName };
-    stage = "load selected conversation history";
-    const { conversations } = await loadConversations(teamId, windowStart, windowEnd, definition);
     stage = "prepare selected-range context";
     const input = buildProductivityInput(
       conversations,
@@ -361,21 +359,20 @@ export async function reviewChatProductivityRange(
       windowEnd,
     );
     const includedMessages = input.includedMessages.get(conversationKey) ?? [];
-    let assessment = noActivityAssessment();
-    if (includedMessages.length) {
-      stage = "request selected-range AI assessment";
-      const results = await requestProductivityResults(
-        teamId,
-        modelId,
-        reasoningOptions,
-        [definition],
-        input,
-        windowStart,
-        windowEnd,
-        settings?.customMessage ?? "",
-      );
-      assessment = results[conversationKey] ?? noActivityAssessment();
-    }
+    if (!activeProductivityConversationKeys(input.includedMessages).has(conversationKey)) return null;
+
+    stage = "request selected-range AI assessment";
+    const results = await requestProductivityResults(
+      teamId,
+      modelId,
+      reasoningOptions,
+      [definition],
+      input,
+      windowStart,
+      windowEnd,
+      settings?.customMessage ?? "",
+    );
+    const assessment = results[conversationKey] ?? noActivityAssessment();
     const { periodStart, periodEnd } = analysisWindow(includedMessages, windowStart, windowEnd);
     return {
       conversationName,

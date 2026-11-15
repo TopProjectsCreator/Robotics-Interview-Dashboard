@@ -1952,7 +1952,10 @@ paths:
               $ref: "#/components/schemas/ChatProductivityRangeInput"
       responses:
         "200":
-          description: One-time assessment for the selected conversation and time range
+          description: >-
+            One-time assessment for the selected conversation and time range.
+            The latest field is null and no assessment is generated when no
+            chat messages were sent during the selected range.
           content:
             application/json:
               schema:
