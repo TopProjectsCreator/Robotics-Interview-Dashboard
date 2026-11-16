@@ -32,6 +32,8 @@ tags:
     description: CAD model library
   - name: workspaces
     description: Workspace visibility settings
+  - name: tinyUrls
+    description: Team tiny URL short links
 paths:
   /healthz:
     get:
@@ -546,7 +548,8 @@ paths:
     post:
       operationId: uploadTeamBackground
       tags: [auth]
-      summary: Upload a custom app background for the signed-in team
+      summary: Add an app background for the signed-in team
+      description: Appends the image to the team's app backgrounds (up to 10). When two or more backgrounds are set, clients rotate through them every `backgroundRotationSeconds`.
       requestBody:
         required: true
         content:
@@ -564,11 +567,11 @@ paths:
               format: binary
       responses:
         "201":
-          description: Team background saved
+          description: Background added; returns the updated team branding
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/UploadTeamBackground"
+                $ref: "#/components/schemas/TeamBranding"
         "400":
           description: Unsupported or invalid image
           content:
@@ -581,13 +584,73 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The team already has the maximum number of backgrounds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
     delete:
       operationId: resetTeamBackground
       tags: [auth]
-      summary: Reset the signed-in team's custom app background
+      summary: Remove one or all app backgrounds for the signed-in team
+      description: Deletes every team background, or just the one named by `path` when a JSON body is provided.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveTeamBackground"
       responses:
         "204":
-          description: Team background removed
+          description: Background(s) removed
+        "403":
+          description: Coordinator access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/team-theme:
+    get:
+      operationId: getTeamTheme
+      tags: [auth]
+      summary: Get the signed-in team's default theme and theme policy
+      responses:
+        "200":
+          description: Current team's default color theme and how strictly it applies
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamThemeSetting"
+        "401":
+          description: Sign-in required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateTeamTheme
+      tags: [auth]
+      summary: Set or clear the signed-in team's default theme and theme policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTeamThemeSetting"
+      responses:
+        "200":
+          description: Updated team theme setting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamThemeSetting"
+        "400":
+          description: Invalid theme setting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "403":
           description: Coordinator access required
           content:
@@ -1044,6 +1107,119 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MessageResponse"
+  /auth/blocked-ips:
+    get:
+      operationId: listBlockedIps
+      tags: [auth]
+      summary: List IP addresses blocked from signing in for the signed-in team
+      description: Team admin only. Returns the exact addresses on this team's sign-in blocklist. Blocked addresses cannot use the team access code, passwords, passkeys, or create accounts; already signed-in sessions are not affected.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Team sign-in blocklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedIpList"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Team admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: blockLoginIp
+      tags: [auth]
+      summary: Block an IP address from signing in to the signed-in team
+      description: Team admin only. The address is refused on every team-scoped sign-in path for this team (team access code, password and passkey sign-in, passkey options, the sign-in roster, account creation and setup). An admin cannot block the address they are connecting from.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BlockIpInput"
+      responses:
+        "201":
+          description: Address added to (or updated on) the team sign-in blocklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BlockedIp"
+        "400":
+          description: Invalid address, or the admin's own current address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Team admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The team's sign-in blocklist is full (200 addresses)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: unblockLoginIp
+      tags: [auth]
+      summary: Remove an IP address from the signed-in team's sign-in blocklist
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UnblockIpInput"
+      responses:
+        "204":
+          description: Address removed from the sign-in blocklist
+        "400":
+          description: Invalid address
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Team admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Address is not on the sign-in blocklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /auth/logout:
     post:
       operationId: logout
@@ -1501,7 +1677,7 @@ paths:
     get:
       operationId: getChatSettings
       tags: [queue]
-      summary: Read chat settings (slow mode)
+      summary: Read chat settings (slow mode and the /multimessage limit)
       responses:
         "200":
           description: Current chat settings
@@ -1513,6 +1689,9 @@ paths:
       operationId: updateChatSettings
       tags: [queue]
       summary: Update chat settings (coordinators only)
+      description: >-
+        Replaces both chat settings at once, so send the current
+        `slowmodeSeconds` and `multimessageLimit` together.
       requestBody:
         required: true
         content:
@@ -1841,8 +2020,9 @@ paths:
       description: |
         Admin-only bulk send used by the `/multimessage <count> <message>` chat
         command. Posts `count` copies of the same message to the current
-        conversation in one request. There is no upper limit on `count`; it is
-        whatever the admin asks for. Ordinary spam guards (slow mode, minimum
+        conversation in one request. `count` may not exceed the team's
+        configured multimessage limit (0 = no limit); requests over the limit
+        are rejected with 400. Ordinary spam guards (slow mode, minimum
         spacing, duplicate suppression) do not apply to this admin-only action.
       requestBody:
         required: true
@@ -1858,7 +2038,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatMultiMessageResult"
         "400":
-          description: Invalid input
+          description: Invalid input, or the count exceeds the team's configured multimessage limit
           content:
             application/json:
               schema:
@@ -5870,6 +6050,121 @@ paths:
                 properties:
                   answer:
                     type: string
+  /tiny-urls:
+    get:
+      operationId: listTinyUrls
+      tags: [tinyUrls]
+      summary: List this team's tiny URLs
+      description: Team admin only. Returns the short links this team created, newest first, including click counts. Every link resolves on this deployment's own domain at /t/<alias>.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      responses:
+        "200":
+          description: This team's tiny URLs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TinyUrlList"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Team admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    post:
+      operationId: createTinyUrl
+      tags: [tinyUrls]
+      summary: Create a tiny URL with a custom alias
+      description: Team admin only. The short link lives at /t/<alias> on this deployment's domain (aliases are unique across the deployment, case-insensitive, letters/numbers/hyphens/underscores). The target must be an absolute http(s) URL; bare domains are upgraded to https.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TinyUrlInput"
+      responses:
+        "201":
+          description: Tiny URL created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TinyUrl"
+        "400":
+          description: Invalid alias or target URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Team admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The alias is already taken, or the team already has the maximum number of tiny URLs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /tiny-urls/{tinyUrlId}:
+    delete:
+      operationId: deleteTinyUrl
+      tags: [tinyUrls]
+      summary: Delete a tiny URL
+      description: Team admin only. The link stops resolving immediately; the target page is unaffected.
+      security:
+        - cookieAuth: []
+        - bearerAuth: []
+      parameters:
+        - name: tinyUrlId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Tiny URL deleted
+        "400":
+          description: Missing tiny URL id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Team admin access required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Tiny URL not found for this team
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 components:
   parameters:
     ApplicantId:
@@ -7012,6 +7307,97 @@ components:
       properties:
         message:
           type: string
+    BlockedIp:
+      type: object
+      required: [ip, reason, createdBy, createdByName, createdAt]
+      properties:
+        ip:
+          type: string
+          description: The blocked address in canonical form.
+        reason:
+          type: string
+        createdBy:
+          type: [string, "null"]
+          description: Account id of the admin who blocked the address, when still known.
+        createdByName:
+          type: [string, "null"]
+          description: Display name of the admin who blocked the address, when still known.
+        createdAt:
+          type: string
+          format: date-time
+    BlockedIpList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/BlockedIp"
+    BlockIpInput:
+      type: object
+      required: [ip]
+      properties:
+        ip:
+          type: string
+          maxLength: 45
+          description: "IPv4 or IPv6 address to block. Bracketed IPv6 and ::ffff: IPv4 mappings are accepted and normalized."
+        reason:
+          type: string
+          maxLength: 120
+          description: Optional note shown in the blocklist.
+    UnblockIpInput:
+      type: object
+      required: [ip]
+      properties:
+        ip:
+          type: string
+          maxLength: 45
+    TinyUrl:
+      type: object
+      required: [id, alias, path, targetUrl, clickCount, createdAt]
+      properties:
+        id:
+          type: string
+        alias:
+          type: string
+          description: Stored lowercase alias; the link resolves at path.
+        path:
+          type: string
+          description: Path the redirect answers on for this alias (e.g. "/t/tryouts"). Auto-detect the domain by joining it with the deployment origin (e.g. window.location.origin).
+        targetUrl:
+          type: string
+          description: Absolute http(s) URL the short link redirects to.
+        clickCount:
+          type: integer
+          description: Real (GET) visits to the link, counted since creation.
+        createdByName:
+          type: [string, "null"]
+          description: Display name of the admin who created the link, when known.
+        createdAt:
+          type: string
+          format: date-time
+    TinyUrlList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TinyUrl"
+    TinyUrlInput:
+      type: object
+      required: [alias, targetUrl]
+      properties:
+        alias:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Custom alias, case-insensitive. Stored form is letters, numbers, hyphens and underscores (1–64 chars, starting with a letter or number); a pasted "/t/<alias>" or full short link is reduced to its alias.
+        targetUrl:
+          type: string
+          minLength: 1
+          maxLength: 2048
+          description: Absolute http(s) URL. Bare domains (e.g. "example.com/signup") are upgraded to https.
     LoginInput:
       type: object
       required: [interviewerId, eventPassword, password]
@@ -7060,7 +7446,7 @@ components:
           description: Session token for embedded clients that cannot use third-party cookies
     TeamBranding:
       type: object
-      required: [logoPath, primaryColor, backgroundPath, backgroundMode, backgroundOverlay, backgroundAudience, backgroundMemberIds]
+      required: [logoPath, primaryColor, backgroundPath, backgrounds, backgroundMode, backgroundOverlay, backgroundRotationSeconds, backgroundAudience, backgroundMemberIds]
       properties:
         logoPath:
           type: [string, "null"]
@@ -7071,7 +7457,13 @@ components:
           description: Team primary brand color
         backgroundPath:
           type: [string, "null"]
-          description: Private object path for this team's custom app background
+          description: Deprecated, kept for older clients. The first entry of `backgrounds`, or null when no background is set
+        backgrounds:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+          description: Private object paths for this team's app backgrounds, in rotation order. Clients pick one deterministically every `backgroundRotationSeconds`
         backgroundMode:
           type: [string, "null"]
           enum: [cover, tile]
@@ -7081,6 +7473,11 @@ components:
           minimum: 0
           maximum: 80
           description: Percentage of dark overlay drawn over the custom app background
+        backgroundRotationSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          description: Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
         backgroundAudience:
           type: string
           enum: [everyone, selected]
@@ -7095,7 +7492,7 @@ components:
           description: Team-local member account IDs selected to see the background
     EffectiveTeamBranding:
       type: object
-      required: [primaryColor, backgroundPath, backgroundMode, backgroundOverlay]
+      required: [primaryColor, backgroundPath, backgrounds, backgroundMode, backgroundOverlay, backgroundRotationSeconds]
       properties:
         primaryColor:
           type: [string, "null"]
@@ -7103,7 +7500,13 @@ components:
           description: Team primary brand color
         backgroundPath:
           type: [string, "null"]
-          description: Private object path for this member's custom app background, or null when excluded
+          description: Deprecated, kept for older clients. The first entry of `backgrounds`, or null when excluded
+        backgrounds:
+          type: array
+          maxItems: 10
+          items:
+            type: string
+          description: Private object paths for this member's visible app backgrounds, in rotation order. Empty when excluded
         backgroundMode:
           type: [string, "null"]
           enum: [cover, tile]
@@ -7113,6 +7516,11 @@ components:
           minimum: 0
           maximum: 80
           description: Percentage of dark overlay drawn over the visible custom app background
+        backgroundRotationSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          description: Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
     UpdateTeamBranding:
       type: object
       required: [primaryColor]
@@ -7129,6 +7537,11 @@ components:
           minimum: 0
           maximum: 80
           description: Percentage of dark overlay drawn over the custom app background
+        backgroundRotationSeconds:
+          type: integer
+          minimum: 0
+          maximum: 86400
+          description: Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
         backgroundAudience:
           type: string
           enum: [everyone, selected]
@@ -7141,6 +7554,29 @@ components:
             type: string
             minLength: 1
           description: Team-local member account IDs selected to see the background
+    TeamThemeSetting:
+      type: object
+      required: [defaultTheme, themePolicy]
+      properties:
+        defaultTheme:
+          type: [string, "null"]
+          enum: [light, dark]
+          description: Team default color theme; null means no team default (members choose, or follow their device)
+        themePolicy:
+          type: string
+          enum: [recommended, locked]
+          description: recommended — members land on the team default but may switch; locked — members cannot switch
+    UpdateTeamThemeSetting:
+      type: object
+      properties:
+        defaultTheme:
+          type: [string, "null"]
+          enum: [light, dark]
+          description: Set the team default theme, or null to clear it (members follow their device or last choice)
+        themePolicy:
+          type: string
+          enum: [recommended, locked]
+          description: recommended — members may switch; locked — members cannot switch
     UploadTeamLogo:
       type: object
       required: [logoPath]
@@ -7148,13 +7584,12 @@ components:
         logoPath:
           type: string
           description: Private object path for this team's logo
-    UploadTeamBackground:
+    RemoveTeamBackground:
       type: object
-      required: [backgroundPath]
       properties:
-        backgroundPath:
+        path:
           type: string
-          description: Private object path for this team's custom app background
+          description: Private object path of the background to remove (must be one of the team's `backgrounds`). Omit to remove every team background
     TeamVerifyResponse:
       type: object
       required: [message]
@@ -8130,7 +8565,7 @@ components:
               type: string
     ChatSettings:
       type: object
-      required: [slowmodeSeconds]
+      required: [slowmodeSeconds, multimessageLimit]
       properties:
         slowmodeSeconds:
           type: integer
@@ -8139,6 +8574,13 @@ components:
           description: >-
             Slow mode for the team chat: an author must wait this many seconds
             between messages. 0 turns it off.
+        multimessageLimit:
+          type: integer
+          minimum: 0
+          maximum: 500
+          description: >-
+            Maximum copies per `/multimessage` run. 0 means no limit. The
+            server rejects any run whose count exceeds this limit.
     FeatureRequest:
       type: object
       required: [id, authorName, message, status, createdAt, isMine]
@@ -8360,8 +8802,9 @@ components:
         count:
           type: integer
           minimum: 1
-          description: How many copies to post. Deliberately no upper limit —
-            admins may ask for as many as they need.
+          description: How many copies to post. Bounded only by the team's
+            configured multimessage limit (0 = no limit); over-limit requests
+            are rejected with 400.
         scope:
           type: string
           enum: [shared, direct, channel]

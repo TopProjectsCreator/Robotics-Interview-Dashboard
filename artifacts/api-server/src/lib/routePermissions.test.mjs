@@ -23,10 +23,17 @@ test("route policy separates read, ordinary writes, and management actions", () 
   assert.equal(permissionForRoute("POST", "/api/queue/chat/multimessage"), "chat.manage");
   assert.equal(routePermissionIsGranted(["chat.manage"], "POST", "/api/queue/chat/multimessage"), true);
   assert.equal(routePermissionIsGranted(["chat.send"], "POST", "/api/queue/chat/multimessage"), false);
+  assert.equal(permissionForRoute("GET", "/api/chat/settings"), "chat.view");
+  assert.equal(permissionForRoute("POST", "/api/chat/settings"), "chat.manage");
+  assert.equal(routePermissionIsGranted(["chat.view"], "GET", "/api/chat/settings"), true);
+  assert.equal(routePermissionIsGranted(["chat.view"], "POST", "/api/chat/settings"), false);
+  assert.equal(routePermissionIsGranted(["chat.manage"], "POST", "/api/chat/settings"), true);
   assert.equal(permissionForRoute("POST", "/api/queue/chat/abc/pin"), "chat.moderate");
   assert.equal(permissionForRoute("POST", "/api/queue/chat/channels"), "chat.manage");
   assert.equal(routePermissionIsGranted(["chat.manage"], "POST", "/api/queue/chat/channels"), true);
   assert.equal(routePermissionIsGranted(["chat.send"], "POST", "/api/queue/chat/channels"), false);
+  assert.equal(permissionForRoute("GET", "/api/auth/team-theme"), "team.branding.manage");
+  assert.equal(permissionForRoute("PATCH", "/api/auth/team-theme"), "team.branding.manage");
   assert.equal(permissionForRoute("GET", "/api/dashboard/workspace-usage"), "dashboard.view");
   assert.equal(routePermissionIsGranted(["dashboard.view"], "GET", "/api/dashboard/workspace-usage"), true);
 });
@@ -95,6 +102,9 @@ test("workspace visibility fallback maps granted workspaces to read permissions"
   assert.equal(workspaceVisibilityFallback("DELETE", "/api/queue/chat/message-1"), "chat");
   assert.equal(workspaceVisibilityFallback("POST", "/api/queue/chat/channels"), null);
   assert.equal(workspaceVisibilityFallback("POST", "/api/queue/chat/multimessage"), null);
+  // Reading chat settings is a chat-view thing; changing them is role-only.
+  assert.equal(workspaceVisibilityFallback("GET", "/api/chat/settings"), "chat");
+  assert.equal(workspaceVisibilityFallback("POST", "/api/chat/settings"), null);
   assert.equal(workspaceVisibilityFallback("POST", "/api/applicants/abc/regenerate"), null);
   assert.equal(workspaceVisibilityFallback("GET", "/api/not-in-the-catalog"), null);
 });

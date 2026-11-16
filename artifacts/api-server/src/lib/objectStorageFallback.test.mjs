@@ -18,12 +18,6 @@ registerHooks({
 
 function makeStorage(label, { restricted = false } = {}) {
   const calls = [];
-  const fail = () => {
-    if (restricted) {
-      throw new Error(`Could not create Supabase storage bucket "app-uploads": Service for this project is restricted due to the following violations: exceed_egress_quota`);
-    }
-    return null;
-  };
   const quota = () => ({ message: "Service for this project is restricted due to the following violations: exceed_egress_quota" });
   return {
     label,

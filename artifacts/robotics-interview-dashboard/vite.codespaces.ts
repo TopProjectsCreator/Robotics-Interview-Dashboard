@@ -122,6 +122,12 @@ export default defineConfig({
         secure: false,
         ws: true,
       },
+      // Short links redirect through the API server (/t/<alias>).
+      '/t': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        secure: false,
+      },
     },
     fs: {
       strict: true,

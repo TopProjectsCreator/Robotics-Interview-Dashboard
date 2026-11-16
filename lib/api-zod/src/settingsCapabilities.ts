@@ -12,6 +12,7 @@ export type SettingsCapabilityId =
   | "live.realtime"
   | "live.refreshMs"
   | "team.chat.slowmode"
+  | "team.chat.multimessageLimit"
   | "team.inbox"
   | "team.nameRules"
   | "team.branding.primaryColor"
@@ -37,6 +38,7 @@ export const SETTINGS_CAPABILITIES: readonly SettingsCapability[] = [
   { id: "live.realtime", scope: "browser-local", readOperation: "readLocalRealtime", updateOperation: "updateLocalRealtime" },
   { id: "live.refreshMs", scope: "browser-local", readOperation: "readLocalRefreshInterval", updateOperation: "updateLocalRefreshInterval" },
   { id: "team.chat.slowmode", scope: "signed-in-team", readOperation: "GET /api/chat/settings", updateOperation: "POST /api/chat/settings", requiredPermission: "chat.manage" },
+  { id: "team.chat.multimessageLimit", scope: "signed-in-team", readOperation: "GET /api/chat/settings", updateOperation: "POST /api/chat/settings", requiredPermission: "chat.manage" },
   { id: "team.inbox", scope: "signed-in-team", readOperation: "GET /api/system/mailbox", updateOperation: "PUT /api/system/mailbox", requiredPermission: "team.mailbox.manage" },
   { id: "team.nameRules", scope: "signed-in-team", readOperation: "GET /api/auth/name-rules", updateOperation: "PUT /api/auth/name-rules", requiredPermission: "team.nameRules.manage" },
   { id: "team.branding.primaryColor", scope: "signed-in-team", readOperation: "GET /api/auth/team-branding", updateOperation: "PATCH /api/auth/team-branding", requiredPermission: "team.branding.manage" },

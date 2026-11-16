@@ -288,7 +288,8 @@ async function ensureBucketForWrite(instance: StorageInstance): Promise<void> {
   }
 }
 
-function toStoragePath(objectPath: string): string {
+/** Exported for unit tests; validates and normalizes an internal object path. */
+export function toStoragePath(objectPath: string): string {
   if (!objectPath.startsWith('/objects/')) {
     throw new ObjectNotFoundError();
   }
@@ -307,6 +308,15 @@ function toStoragePath(objectPath: string): string {
   }
   if (parts.length === 2 && parts[0] === 'generated' && /^[A-Za-z0-9-]{8,128}$/.test(parts[1])) {
     return `generated/${parts[1]}`;
+  }
+  if (
+    parts.length === 4 &&
+    parts[0] === 'generated' &&
+    parts[1] === 'cad' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(parts[2]) &&
+    /^[A-Za-z0-9-]{8,128}$/.test(parts[3])
+  ) {
+    return `generated/cad/${parts[2]}/${parts[3]}`;
   }
   throw new ObjectNotFoundError();
 }

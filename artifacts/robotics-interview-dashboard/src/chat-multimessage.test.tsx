@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { InterviewChatMessage } from "@workspace/api-client-react";
 import { Router as WouterRouter } from "wouter";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,7 +54,7 @@ describe("/multimessage chat command", () => {
     vi.unstubAllGlobals();
   });
 
-  function installFetchMock(role: string) {
+  function installFetchMock(role: string, chatSettings: { slowmodeSeconds: number; multimessageLimit: number } = { slowmodeSeconds: 0, multimessageLimit: 0 }) {
     const persistedMessages: StoredMessage[] = [];
     const requests: Array<{ url: URL; init?: RequestInit }> = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -64,6 +64,9 @@ describe("/multimessage chat command", () => {
 
       if (url.pathname === "/api/auth/session") {
         return jsonResponse({ authenticated: true, label: "Alex", interviewerId: "alex-id", role });
+      }
+      if (url.pathname === "/api/chat/settings") {
+        return jsonResponse(chatSettings);
       }
       if (url.pathname === "/api/queue" && init?.method !== "POST") {
         return jsonResponse({ interviewerLabels: ["Alex", "Jordan"], currentApplicants: [] });
@@ -167,6 +170,42 @@ describe("/multimessage chat command", () => {
     expect(persistedMessages).toHaveLength(3);
     expect(await screen.findAllByText("Go team")).toHaveLength(3);
     expect(screen.getByTestId("input-interviewer-chat")).toHaveValue("");
+  });
+
+  it.each(["coordinator", "admin"])("blocks a run over the team multimessage limit for a %s", async (role) => {
+    const { persistedMessages, requests } = installFetchMock(role, { slowmodeSeconds: 0, multimessageLimit: 2 });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+    // Wait for the team chat-settings query (and its state update) to settle so the composer sees the limit.
+    await waitFor(() => expect(requests.some((request) => request.url.pathname === "/api/chat/settings")).toBe(true));
+    await act(async () => {});
+    fireEvent.change(screen.getByTestId("input-interviewer-chat"), {
+      target: { value: "/multimessage 5 Go team" },
+    });
+    fireEvent.click(screen.getByTestId("button-send-interviewer-chat"));
+
+    expect(await screen.findByTestId("chat-error")).toHaveTextContent("The team limit for /multimessage is 2 copies per run");
+    expect(requests.filter(request => request.url.pathname === "/api/queue/chat/multimessage")).toHaveLength(0);
+    expect(persistedMessages).toHaveLength(0);
+  });
+
+  it("posts a run exactly at the team multimessage limit", async () => {
+    const { requests } = installFetchMock("coordinator", { slowmodeSeconds: 0, multimessageLimit: 2 });
+    renderPanel();
+
+    await waitFor(() => expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Alex"));
+    await waitFor(() => expect(requests.some((request) => request.url.pathname === "/api/chat/settings")).toBe(true));
+    await act(async () => {});
+    fireEvent.change(screen.getByTestId("input-interviewer-chat"), {
+      target: { value: "/multimessage 2 Go team" },
+    });
+    fireEvent.click(screen.getByTestId("button-send-interviewer-chat"));
+
+    expect(await screen.findByTestId("multimessage-notice")).toHaveTextContent("Posted 2 copies of your message.");
+    const bulkRequests = requests.filter(request => request.url.pathname === "/api/queue/chat/multimessage");
+    expect(bulkRequests).toHaveLength(1);
+    expect(JSON.parse(String(bulkRequests[0].init?.body))).toMatchObject({ message: "Go team", count: 2 });
   });
 
   it("spaces copies when {delayMs} is given and keeps the composer usable", async () => {

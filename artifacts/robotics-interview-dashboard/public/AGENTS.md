@@ -116,7 +116,9 @@ Every workspace and public surface, what it does, and how far it goes.
   moderate everything; server-side spam guards against floods and duplicate posts.
 - **Admin bulk send:** coordinators can post the same message many times in one
   command — `/multimessage [{delayMs}] <count> <message>` in the composer. The
-  count is admin-chosen and uncapped; the optional `{delayMs}` first argument
+  count is bounded by a team-wide limit admins set in Settings → Chat ("Multimessage
+  limit"; 0 = no limit, the default); requests over the limit are rejected
+  server-side. The optional `{delayMs}` first argument
   (milliseconds) spaces the copies out and keeps the composer usable while the
   run is in flight (omit it to post every copy at once). Everyone else is told
   admins only, and the server enforces the same role check independently.
@@ -296,12 +298,15 @@ Every workspace and public surface, what it does, and how far it goes.
   coordinator (everything), treasurer (read-mostly), member (basic).
 - **Team settings worth knowing:** team name rules (block listed names, e.g. prank
   names), team branding (primary color + logo upload ≤2 MB, checked file type), custom
-  app background (PNG, JPEG, or WebP, team-shared, coordinator-only), team
+  app background (PNG, JPEG, or WebP, team-shared, coordinator-only), team default
+  theme (Light/Dark; members may switch with the team default marked recommended, or
+  members locked to the team default — coordinator-chosen), team
   inbox (inbound email → team chat, encrypted key, approved-sender list).
 - **Password hygiene:** new passwords are screened against the Pwned Passwords corpus
   (low-exposure confirm, high-exposure reject); per-account reset, rename, role change,
   removal (signs them out); "Reset all team passwords" with typed confirmation.
-- **Personal preferences:** theme (Light/Dark), row density, reduce motion, default list
+- **Personal preferences:** theme (Light/Dark; the team may set a recommended default or
+  lock everyone to it), row density, reduce motion, default list
   sort, auto-refresh/instant-updates interval (3 s/10 s/30 s), browser notifications.
 - **Reset all settings (Operations → Data):** restores this device's defaults
   (appearance, workspace preferences, assistant tool exposure/disabled tools) and, for

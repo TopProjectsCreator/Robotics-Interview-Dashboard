@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
+import { dbMockExports } from "./testDbExports.mjs";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -38,16 +39,14 @@ async function loadStorageObjectsRoute(t) {
   });
   const dbChain = { where: () => ({ limit: async () => [] }) };
   mock.module("@workspace/db", {
-    namedExports: {
-      cadPreviewJobsTable: {},
-      chunkedUploadsTable: {},
+    namedExports: dbMockExports({
       currentInstance: () => "primary",
       db: {
         select: () => ({ from: () => dbChain }),
         insert: () => ({ values: () => ({ onConflictDoUpdate: () => ({ returning: async () => [] }) }) }),
         update: () => ({ set: () => ({ where: async () => [] }) }),
       },
-    },
+    }),
   });
   mock.module("../lib/chunkedUploads", {
     namedExports: {

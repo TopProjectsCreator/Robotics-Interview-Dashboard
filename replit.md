@@ -88,7 +88,7 @@ Rust/Cargo 1.85 or newer is required for the API build; it compiles the bundled 
 - `/cad` — private CAD library with folders, large chunked uploads, and browser-side previews for supported CAD and mesh formats.
 - `/code` — in-browser code editor with AI-assisted edits, a terminal and problems panel, Git clone/pull/commit/push, FTC TeamCode export and REV Hub upload/build, plus USB ADB and Expansion Hub serial tools.
 - `/assistant` and `/interview/assistant` — AI assistance over team/interview information; the shared assistant supports tool-based workflows and saved conversations.
-- Settings — manage team accounts, passwords/passkeys, roles and workspace access, and chat settings; the site owner also has a feature-request inbox and site statistics.
+- Settings — manage team accounts, passwords/passkeys, roles and workspace access, and chat settings; team branding includes a team default theme (Light/Dark) that coordinators can mark "Recommended" (members land on it but may switch) or "Locked" (members cannot switch), plus up to ten backgrounds that every screen rotates through on a coordinator-set interval (seconds, minutes, or hours; 0 keeps the first); team admins can also mint tinyurls (custom alias, e.g. `/t/tryouts` on this deployment's auto-detected domain) from Settings → Operations; the site owner also has a feature-request inbox and site statistics.
 - Account menu — sign out or open a rich-text personal notepad saved locally per interviewer account.
 
 ## User preferences

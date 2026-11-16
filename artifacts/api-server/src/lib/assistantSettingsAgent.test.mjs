@@ -18,6 +18,8 @@ registerHooks({
 mock.module("@workspace/db", {
   namedExports: {
     DEFAULT_TEAM_ID: "default",
+    TEAM_BACKGROUNDS_MAX: 10,
+    TEAM_BACKGROUND_ROTATION_MAX_SECONDS: 86400,
     chatSettingsTable: {},
     teamNameRulesTable: {},
     teamsTable: {},
@@ -99,6 +101,7 @@ describe("settings-only assistant execution", () => {
     ]);
     const text = JSON.stringify(tools);
     assert.match(text, /team\.inbox/);
+    assert.match(text, /team\.chat\.multimessageLimit/);
     assert.match(text, /applicants\.defaultSort/);
     assert.doesNotMatch(text, /apiKey|password|web_search|list_team_chat_messages|search_applicants|applicantId/);
 
@@ -350,6 +353,22 @@ describe("settings-only assistant execution", () => {
       () => validateSettingsCapabilityValue("team.chat.slowmode", { slowmodeSeconds: 7 }),
       /interval shown/,
     );
+    assert.deepEqual(
+      validateSettingsCapabilityValue("team.chat.multimessageLimit", { multimessageLimit: 25 }),
+      { multimessageLimit: 25 },
+    );
+    assert.deepEqual(
+      validateSettingsCapabilityValue("team.chat.multimessageLimit", { multimessageLimit: 0 }),
+      { multimessageLimit: 0 },
+    );
+    assert.throws(
+      () => validateSettingsCapabilityValue("team.chat.multimessageLimit", { multimessageLimit: 7 }),
+      /multimessage limit/,
+    );
+    assert.throws(
+      () => validateSettingsCapabilityValue("team.chat.multimessageLimit", { slowmodeSeconds: 30 }),
+      /cannot change/,
+    );
     assert.throws(
       () => validateSettingsCapabilityValue("team.inbox", {
         enabled: false,
@@ -372,6 +391,30 @@ describe("settings-only assistant execution", () => {
         backgroundOverlay: 13,
       }),
       /steps of 5/,
+    );
+    assert.throws(
+      () => validateSettingsCapabilityValue("team.branding.backgroundOptions", {
+        backgroundMode: "cover",
+        backgroundOverlay: 30,
+        backgroundRotationSeconds: 90000,
+      }),
+      /whole number of seconds/,
+    );
+    assert.throws(
+      () => validateSettingsCapabilityValue("team.branding.backgroundOptions", {
+        backgroundMode: "cover",
+        backgroundOverlay: 30,
+        backgroundRotationSeconds: 1.5,
+      }),
+      /whole number of seconds/,
+    );
+    assert.deepEqual(
+      validateSettingsCapabilityValue("team.branding.backgroundOptions", {
+        backgroundMode: "tile",
+        backgroundOverlay: 25,
+        backgroundRotationSeconds: 600,
+      }),
+      { backgroundMode: "tile", backgroundOverlay: 25, backgroundRotationSeconds: 600 },
     );
   });
 });

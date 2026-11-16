@@ -532,7 +532,7 @@ function createDemoQueryClient() {
     });
     seed(getListInterviewWhiteboardsQueryKey(params), { items: [] });
   }
-  seed(getGetChatSettingsQueryKey(), { slowmodeSeconds: 0 });
+  seed(getGetChatSettingsQueryKey(), { slowmodeSeconds: 0, multimessageLimit: 0 });
   seed(getListScheduledChatsQueryKey(), { items: [] });
   seed(getGetPartsDashboardQueryKey(), demoPartsDashboard);
   seed(

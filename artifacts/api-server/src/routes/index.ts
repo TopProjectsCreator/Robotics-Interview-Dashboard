@@ -15,6 +15,7 @@ import featureRequestsRouter from "./featureRequests";
 import sitemapRouter from "./sitemap";
 import assistantProvidersRouter from "./assistantProviders";
 import teamAccessCodeRouter from "./teamAccessCode";
+import tinyUrlsRouter from "./tinyUrls";
 
 const router: IRouter = Router();
 
@@ -35,5 +36,6 @@ router.use(cadRouter);
 router.use(codeRouter);
 router.use(customWorkspacesRouter);
 router.use(featureRequestsRouter);
+router.use(tinyUrlsRouter);
 
 export default router;

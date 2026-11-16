@@ -6879,44 +6879,69 @@ router.post("/queue/chat/read", requireAdmin, async (req, res): Promise<void> =>
 const CHAT_MESSAGE_MAX_CHARS = 4000;
 
 const SLOWMODE_MAX_SECONDS = 600;
+const MULTIMESSAGE_LIMIT_MAX = 500;
 
-/** Slow mode window for the team chat, in seconds (0 = off). */
-async function chatSlowmodeSeconds(teamId?: string | null): Promise<number> {
+interface ChatSettingsSnapshot {
+  /** Slow mode window for the team chat, in seconds (0 = off). */
+  slowmodeSeconds: number;
+  /** Maximum copies per `/multimessage` run (0 = no limit). */
+  multimessageLimit: number;
+}
+
+/** Chat settings for a team; every reader fails open to the defaults. */
+async function chatSettingsSnapshot(teamId?: string | null): Promise<ChatSettingsSnapshot> {
   try {
     const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
     const [row] = await db.select().from(chatSettingsTable).where(teamFilter(chatSettingsTable.teamId, team)).limit(1);
-    const seconds = row?.slowmodeSeconds ?? 0;
-    return Number.isFinite(seconds) ? Math.max(0, Math.min(SLOWMODE_MAX_SECONDS, Math.floor(seconds))) : 0;
+    const clamp = (value: unknown, max: number): number => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? Math.max(0, Math.min(max, Math.floor(numeric))) : 0;
+    };
+    return {
+      slowmodeSeconds: clamp(row?.slowmodeSeconds ?? 0, SLOWMODE_MAX_SECONDS),
+      multimessageLimit: clamp(row?.multimessageLimit ?? 0, MULTIMESSAGE_LIMIT_MAX),
+    };
   } catch {
-    return 0;
+    return { slowmodeSeconds: 0, multimessageLimit: 0 };
   }
 }
 
+async function chatSlowmodeSeconds(teamId?: string | null): Promise<number> {
+  return (await chatSettingsSnapshot(teamId)).slowmodeSeconds;
+}
+
 router.get("/chat/settings", requireAdmin, async (req, res): Promise<void> => {
-  res.json({ slowmodeSeconds: await chatSlowmodeSeconds(await requestTeamId(req)) });
+  res.json(await chatSettingsSnapshot(await requestTeamId(req)));
 });
 
 router.post("/chat/settings", requireCoordinator, async (req, res): Promise<void> => {
-  const seconds = Number((req.body as Record<string, unknown> | undefined)?.slowmodeSeconds);
+  const body = req.body as Record<string, unknown> | undefined;
+  const seconds = Number(body?.slowmodeSeconds);
   if (!Number.isFinite(seconds) || seconds < 0 || seconds > SLOWMODE_MAX_SECONDS) {
     res.status(400).json({ error: `Slow mode must be between 0 and ${SLOWMODE_MAX_SECONDS} seconds.` });
     return;
   }
+  const limit = Number(body?.multimessageLimit);
+  if (!Number.isFinite(limit) || limit < 0 || limit > MULTIMESSAGE_LIMIT_MAX) {
+    res.status(400).json({ error: `The /multimessage limit must be between 0 and ${MULTIMESSAGE_LIMIT_MAX} copies (0 means no limit).` });
+    return;
+  }
   const value = Math.floor(seconds);
+  const limitValue = Math.floor(limit);
   const teamId = await requestTeamId(req);
   const [existing] = await db.select({ id: chatSettingsTable.id }).from(chatSettingsTable).where(teamFilter(chatSettingsTable.teamId, teamId)).limit(1);
   if (existing) {
-    await db.update(chatSettingsTable).set({ slowmodeSeconds: value, updatedAt: new Date() }).where(eq(chatSettingsTable.id, existing.id));
+    await db.update(chatSettingsTable).set({ slowmodeSeconds: value, multimessageLimit: limitValue, updatedAt: new Date() }).where(eq(chatSettingsTable.id, existing.id));
   } else {
-    await db.insert(chatSettingsTable).values({ id: randomUUID(), teamId, slowmodeSeconds: value }).onConflictDoNothing();
-    // Race: another request may have created the row first; ensure the value is applied.
+    await db.insert(chatSettingsTable).values({ id: randomUUID(), teamId, slowmodeSeconds: value, multimessageLimit: limitValue }).onConflictDoNothing();
+    // Race: another request may have created the row first; ensure the values are applied.
     const [raced] = await db.select({ id: chatSettingsTable.id }).from(chatSettingsTable).where(teamFilter(chatSettingsTable.teamId, teamId)).limit(1);
     if (raced) {
-      await db.update(chatSettingsTable).set({ slowmodeSeconds: value, updatedAt: new Date() }).where(eq(chatSettingsTable.id, raced.id));
+      await db.update(chatSettingsTable).set({ slowmodeSeconds: value, multimessageLimit: limitValue, updatedAt: new Date() }).where(eq(chatSettingsTable.id, raced.id));
     }
   }
   pushRealtimeHint("chat_settings");
-  res.json({ slowmodeSeconds: value });
+  res.json({ slowmodeSeconds: value, multimessageLimit: limitValue });
 });
 
 router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
@@ -7088,8 +7113,9 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
 // Unlike a manual post this bypasses slow mode, spacing, and duplicate
 // suppression — N identical copies are the whole point, and the strict
 // isAdminRole check in this handler is what keeps it from being a spam
-// vector. `count` is deliberately uncapped; inserts are chunked so one
-// statement stays small.
+// vector. `count` is bounded by the team's configured multimessage limit
+// (chat_settings.multimessage_limit, 0 = no limit); inserts are chunked so
+// one statement stays small.
 router.post("/queue/chat/multimessage", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId) : undefined;
@@ -7104,6 +7130,11 @@ router.post("/queue/chat/multimessage", requireAdmin, async (req, res): Promise<
     return;
   }
   const teamId = await requestTeamId(req);
+  const { multimessageLimit } = await chatSettingsSnapshot(teamId);
+  if (multimessageLimit > 0 && parsed.data.count > multimessageLimit) {
+    res.status(400).json({ error: `The team limit for /multimessage is ${multimessageLimit} ${multimessageLimit === 1 ? "copy" : "copies"} per run. An admin can raise it in Settings.` });
+    return;
+  }
   const conversation = await resolveChatConversation(
     parsed.data.scope,
     parsed.data.recipient,

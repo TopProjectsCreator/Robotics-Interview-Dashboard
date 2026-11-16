@@ -10,13 +10,26 @@ import {
 } from "@workspace/api-zod";
 import type { SettingsCapabilityId } from "@workspace/api-zod";
 import { and, eq } from "drizzle-orm";
-import { chatSettingsTable, db, DEFAULT_TEAM_ID, teamNameRulesTable, teamsTable } from "@workspace/db";
+import { chatSettingsTable, db, DEFAULT_TEAM_ID, teamNameRulesTable, teamsTable, TEAM_BACKGROUND_ROTATION_MAX_SECONDS } from "@workspace/db";
 import { getTeamMailboxSettings, forwardingAddress, saveTeamMailboxSettings } from "./maildrop";
 import { teamFilter } from "./teams";
 import { pushRealtimeHint } from "./realtime";
 import type { SettingsAgentAdapter, SettingsAgentIdentity } from "./assistantSettingsAgent";
 
+import { normalizedBackgrounds, clampRotationSeconds, normalizedBrandingRow } from "./teamBranding";
+
+const TEAM_BRANDING_SELECT = {
+  logoPath: teamsTable.logoPath,
+  primaryColor: teamsTable.primaryColor,
+  backgroundPath: teamsTable.backgroundPath,
+  backgroundPaths: teamsTable.backgroundPaths,
+  backgroundMode: teamsTable.backgroundMode,
+  backgroundOverlay: teamsTable.backgroundOverlay,
+  backgroundRotationSeconds: teamsTable.backgroundRotationSeconds,
+} as const;
+
 const SLOWMODE_OPTIONS = new Set([0, 5, 10, 30, 60]);
+const MULTIMESSAGE_LIMIT_OPTIONS = new Set([0, 5, 10, 25, 50, 100]);
 
 function objectValue(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Setting value must be an object.");
@@ -52,10 +65,10 @@ function brandingView(value: unknown) {
   return {
     primaryColor: parsed.primaryColor,
     hasLogo: parsed.logoPath !== null,
-    hasBackground: parsed.backgroundPath !== null,
-    backgroundOptions: parsed.backgroundPath === null
+    hasBackground: parsed.backgrounds.length > 0,
+    backgroundOptions: parsed.backgrounds.length === 0
       ? null
-      : { backgroundMode: parsed.backgroundMode, backgroundOverlay: parsed.backgroundOverlay },
+      : { backgroundMode: parsed.backgroundMode, backgroundOverlay: parsed.backgroundOverlay, backgroundRotationSeconds: parsed.backgroundRotationSeconds },
   };
 }
 
@@ -67,7 +80,14 @@ export function validateSettingsCapabilityValue(settingId: SettingsCapabilityId,
       if (typeof input.slowmodeSeconds !== "number" || !SLOWMODE_OPTIONS.has(input.slowmodeSeconds)) {
         throw new Error("Choose a slow-mode interval shown in Settings.");
       }
-      return GetChatSettingsResponse.parse({ slowmodeSeconds: input.slowmodeSeconds });
+      return { slowmodeSeconds: input.slowmodeSeconds };
+    }
+    case "team.chat.multimessageLimit": {
+      exactKeys(input, ["multimessageLimit"]);
+      if (typeof input.multimessageLimit !== "number" || !MULTIMESSAGE_LIMIT_OPTIONS.has(input.multimessageLimit)) {
+        throw new Error("Choose a /multimessage limit shown in Settings.");
+      }
+      return { multimessageLimit: input.multimessageLimit };
     }
     case "team.inbox": {
       exactKeys(input, ["enabled", "allowedSenders"]);
@@ -92,14 +112,18 @@ export function validateSettingsCapabilityValue(settingId: SettingsCapabilityId,
       return { primaryColor: parsed.data.primaryColor };
     }
     case "team.branding.backgroundOptions": {
-      exactKeys(input, ["backgroundMode", "backgroundOverlay"]);
+      exactKeys(input, ["backgroundMode", "backgroundOverlay", "backgroundRotationSeconds"]);
       const mode = input.backgroundMode;
       const overlay = input.backgroundOverlay;
+      const rotation = input.backgroundRotationSeconds;
       if ((mode !== "cover" && mode !== "tile") ||
           typeof overlay !== "number" || !Number.isInteger(overlay) || overlay < 0 || overlay > 80 || overlay % 5 !== 0) {
         throw new Error("Choose a supported background fit and overlay from 0 to 80 in steps of 5.");
       }
-      return { backgroundMode: mode, backgroundOverlay: overlay };
+      if (rotation !== undefined && (typeof rotation !== "number" || !Number.isInteger(rotation) || rotation < 0 || rotation > TEAM_BACKGROUND_ROTATION_MAX_SECONDS)) {
+        throw new Error(`Rotation must be a whole number of seconds from 0 to ${TEAM_BACKGROUND_ROTATION_MAX_SECONDS}.`);
+      }
+      return { backgroundMode: mode, backgroundOverlay: overlay, ...(rotation === undefined ? {} : { backgroundRotationSeconds: rotation }) };
     }
     default:
       throw new Error("Unsupported setting identifier.");
@@ -107,15 +131,9 @@ export function validateSettingsCapabilityValue(settingId: SettingsCapabilityId,
 }
 
 async function readBranding(teamId: string) {
-  const [team] = await db.select({
-    logoPath: teamsTable.logoPath,
-    primaryColor: teamsTable.primaryColor,
-    backgroundPath: teamsTable.backgroundPath,
-    backgroundMode: teamsTable.backgroundMode,
-    backgroundOverlay: teamsTable.backgroundOverlay,
-  }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  const [team] = await db.select(TEAM_BRANDING_SELECT).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
   if (!team) throw new Error("Team not found.");
-  return brandingView(team);
+  return brandingView(normalizedBrandingRow(team));
 }
 
 export const settingsCapabilityOperations: SettingsAgentAdapter = {
@@ -123,10 +141,20 @@ export const settingsCapabilityOperations: SettingsAgentAdapter = {
   async read(settingId, identity) {
     const teamId = normalizedTeamId(identity.teamId);
     switch (settingId) {
-      case "team.chat.slowmode": {
-        const [row] = await db.select({ slowmodeSeconds: chatSettingsTable.slowmodeSeconds })
+      case "team.chat.slowmode":
+      case "team.chat.multimessageLimit": {
+        const [row] = await db.select({
+          slowmodeSeconds: chatSettingsTable.slowmodeSeconds,
+          multimessageLimit: chatSettingsTable.multimessageLimit,
+        })
           .from(chatSettingsTable).where(teamFilter(chatSettingsTable.teamId, teamId)).limit(1);
-        return GetChatSettingsResponse.parse({ slowmodeSeconds: row?.slowmodeSeconds ?? 0 });
+        const snapshot = GetChatSettingsResponse.parse({
+          slowmodeSeconds: row?.slowmodeSeconds ?? 0,
+          multimessageLimit: row?.multimessageLimit ?? 0,
+        });
+        return settingId === "team.chat.slowmode"
+          ? { slowmodeSeconds: snapshot.slowmodeSeconds }
+          : { multimessageLimit: snapshot.multimessageLimit };
       }
       case "team.inbox":
         return mailboxView(await getTeamMailboxSettings(teamId));
@@ -146,24 +174,37 @@ export const settingsCapabilityOperations: SettingsAgentAdapter = {
     const teamId = normalizedTeamId(identity.teamId);
     const validated = validateSettingsCapabilityValue(settingId, value);
     switch (settingId) {
-      case "team.chat.slowmode": {
-        const seconds = (validated as { slowmodeSeconds: number }).slowmodeSeconds;
-        const [existing] = await db.select({ id: chatSettingsTable.id }).from(chatSettingsTable)
+      case "team.chat.slowmode":
+      case "team.chat.multimessageLimit": {
+        const validatedChat = validated as { slowmodeSeconds?: number; multimessageLimit?: number };
+        // chat_settings holds both chat settings in one row, so preserve the
+        // untouched field when applying only one of them.
+        const [existing] = await db.select({
+          id: chatSettingsTable.id,
+          slowmodeSeconds: chatSettingsTable.slowmodeSeconds,
+          multimessageLimit: chatSettingsTable.multimessageLimit,
+        }).from(chatSettingsTable)
           .where(teamFilter(chatSettingsTable.teamId, teamId)).limit(1);
+        const next = {
+          slowmodeSeconds: validatedChat.slowmodeSeconds ?? existing?.slowmodeSeconds ?? 0,
+          multimessageLimit: validatedChat.multimessageLimit ?? existing?.multimessageLimit ?? 0,
+        };
         if (existing) {
-          await db.update(chatSettingsTable).set({ slowmodeSeconds: seconds, updatedAt: new Date() })
+          await db.update(chatSettingsTable).set({ ...next, updatedAt: new Date() })
             .where(and(eq(chatSettingsTable.id, existing.id), teamFilter(chatSettingsTable.teamId, teamId)));
         } else {
-          await db.insert(chatSettingsTable).values({ id: randomUUID(), teamId, slowmodeSeconds: seconds }).onConflictDoNothing();
+          await db.insert(chatSettingsTable).values({ id: randomUUID(), teamId, ...next }).onConflictDoNothing();
           const [created] = await db.select({ id: chatSettingsTable.id }).from(chatSettingsTable)
             .where(teamFilter(chatSettingsTable.teamId, teamId)).limit(1);
           if (created) {
-            await db.update(chatSettingsTable).set({ slowmodeSeconds: seconds, updatedAt: new Date() })
+            await db.update(chatSettingsTable).set({ ...next, updatedAt: new Date() })
               .where(and(eq(chatSettingsTable.id, created.id), teamFilter(chatSettingsTable.teamId, teamId)));
           }
         }
         pushRealtimeHint("chat_settings");
-        return { slowmodeSeconds: seconds };
+        return settingId === "team.chat.slowmode"
+          ? { slowmodeSeconds: next.slowmodeSeconds }
+          : { multimessageLimit: next.multimessageLimit };
       }
       case "team.inbox": {
         const next = validated as { enabled: boolean; allowedSenders: string[] };
@@ -181,42 +222,34 @@ export const settingsCapabilityOperations: SettingsAgentAdapter = {
       case "team.branding.primaryColor": {
         const next = validated as { primaryColor: string | null };
         const [team] = await db.update(teamsTable).set({ primaryColor: next.primaryColor })
-          .where(eq(teamsTable.id, teamId)).returning({
-            logoPath: teamsTable.logoPath,
-            primaryColor: teamsTable.primaryColor,
-            backgroundPath: teamsTable.backgroundPath,
-            backgroundMode: teamsTable.backgroundMode,
-            backgroundOverlay: teamsTable.backgroundOverlay,
-          });
+          .where(eq(teamsTable.id, teamId)).returning(TEAM_BRANDING_SELECT);
         if (!team) throw new Error("Team not found.");
-        return brandingView(team);
+        return brandingView(normalizedBrandingRow(team));
       }
       case "team.branding.backgroundOptions": {
-        const next = validated as { backgroundMode: "cover" | "tile"; backgroundOverlay: number };
+        const next = validated as { backgroundMode: "cover" | "tile"; backgroundOverlay: number; backgroundRotationSeconds?: number };
         const [current] = await db.select({
           primaryColor: teamsTable.primaryColor,
           backgroundPath: teamsTable.backgroundPath,
+          backgroundPaths: teamsTable.backgroundPaths,
+          backgroundRotationSeconds: teamsTable.backgroundRotationSeconds,
         })
           .from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
         if (!current) throw new Error("Team not found.");
-        if (!current.backgroundPath) throw new Error("Add a team background before changing its display options.");
+        if (normalizedBackgrounds(current).length === 0) throw new Error("Add a team background before changing its display options.");
         const parsed = UpdateTeamBrandingBody.parse({
           primaryColor: current.primaryColor,
           backgroundMode: next.backgroundMode,
           backgroundOverlay: next.backgroundOverlay,
+          backgroundRotationSeconds: next.backgroundRotationSeconds ?? clampRotationSeconds(current.backgroundRotationSeconds),
         });
         const [team] = await db.update(teamsTable).set({
           backgroundMode: parsed.backgroundMode,
           backgroundOverlay: parsed.backgroundOverlay,
-        }).where(eq(teamsTable.id, teamId)).returning({
-          logoPath: teamsTable.logoPath,
-          primaryColor: teamsTable.primaryColor,
-          backgroundPath: teamsTable.backgroundPath,
-          backgroundMode: teamsTable.backgroundMode,
-          backgroundOverlay: teamsTable.backgroundOverlay,
-        });
+          backgroundRotationSeconds: parsed.backgroundRotationSeconds,
+        }).where(eq(teamsTable.id, teamId)).returning(TEAM_BRANDING_SELECT);
         if (!team) throw new Error("Team not found.");
-        return brandingView(team);
+        return brandingView(normalizedBrandingRow(team));
       }
       default:
         throw new Error("Unsupported setting identifier.");

@@ -150,6 +150,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "interview_queue",
     "interview_whiteboards",
     "interviewer_accounts",
+    "team_blocked_ips",
     "team_roles",
     "maildrop_inboxes",
     "personal_notepad",
@@ -402,6 +403,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `create unique index if not exists "chat_message_reads_message_reader_unique" on "chat_message_reads" ("message_id", "reader_id")`,
     `alter table "chat_message_reads" add column if not exists "team_id" text`,
     `create table if not exists "chat_settings" ("id" text primary key default '1', "team_id" text, "slowmode_seconds" integer not null default 0, "updated_at" timestamptz not null default now())`,
+    `alter table "chat_settings" add column if not exists "multimessage_limit" integer not null default 0`,
     `create table if not exists "chat_productivity_settings" (
        "team_id" text primary key,
        "enabled" boolean not null default false,
@@ -563,6 +565,17 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
         "vendor_key" text not null,
         "blocked_at" timestamptz not null default now(),
         primary key ("team_id", "vendor_key")
+      )`,
+    // Per-team sign-in blocklist: the team's admins blocked these addresses
+    // from using the team access code, passwords, passkeys, and account
+    // creation. Exact addresses only; see lib/blockedIps.ts.
+    `create table if not exists "team_blocked_ips" (
+        "team_id" text not null default 'default',
+        "ip" text not null check ("ip" ~ '^(\\d{1,3}(\\.\\d{1,3}){3}|[0-9a-f:]{2,45})$'),
+        "reason" text not null default '' check (length("reason") <= 120),
+        "created_by" text,
+        "created_at" timestamptz not null default now(),
+        primary key ("team_id", "ip")
       )`,
     `alter table "chat_productivity_settings"
        add column if not exists "custom_message" text not null default ''`,
@@ -745,6 +758,23 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `alter table "teams" add column if not exists "background_overlay" integer not null default 35`,
     `alter table "teams" add column if not exists "background_audience" text not null default 'everyone'`,
     `alter table "teams" add column if not exists "background_member_ids" jsonb not null default '[]'::jsonb`,
+    `alter table "teams" add column if not exists "background_paths" jsonb not null default '[]'::jsonb`,
+    `alter table "teams" add column if not exists "background_rotation_seconds" integer not null default 0`,
+    // Fold the legacy single background into the multi-background array.
+    // Runs on every boot but only touches rows never folded (empty array).
+    `update "teams" set "background_paths" = to_jsonb(array["background_path"]) where "background_path" is not null and "background_paths" = '[]'::jsonb`,
+    `do $teams_background_paths$ begin
+       if not exists (select 1 from pg_constraint where conname = 'teams_background_paths_valid') then
+         alter table "teams" add constraint "teams_background_paths_valid"
+           check (jsonb_typeof("background_paths") = 'array' and jsonb_array_length("background_paths") <= 10);
+       end if;
+       if not exists (select 1 from pg_constraint where conname = 'teams_background_rotation_valid') then
+         alter table "teams" add constraint "teams_background_rotation_valid"
+           check ("background_rotation_seconds" between 0 and 86400);
+       end if;
+     end $teams_background_paths$`,
+    `alter table "teams" add column if not exists "default_theme" text`,
+    `alter table "teams" add column if not exists "theme_policy" text not null default 'recommended'`,
     `alter table "applicants" add column if not exists "team_id" text`,
     `alter table "application_imports" add column if not exists "team_id" text`,
     `alter table "assistant_conversations" add column if not exists "team_id" text`,
@@ -873,6 +903,12 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `alter table "maildrop_inboxes" add column if not exists "encrypted_api_key" text`,
     `create unique index if not exists "maildrop_inboxes_mailbox_unique" on "maildrop_inboxes" ("mailbox")`,
     `create table if not exists "feature_requests" ("id" text primary key, "team_id" text, "author_id" text, "author_name" text not null, "message" text not null, "status" text not null default 'open', "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    // Short links for Settings → Operations (/t/<alias>). Aliases are unique
+    // across the whole deployment because the public redirect has no team
+    // context; team_id scopes management to the creating team.
+    `create table if not exists "tiny_urls" ("id" text primary key, "team_id" text, "alias" text not null, "target_url" text not null, "created_by" text, "click_count" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
+    `create unique index if not exists "tiny_urls_alias_unique" on "tiny_urls" ("alias")`,
+    `create index if not exists "tiny_urls_team_created_idx" on "tiny_urls" ("team_id", "created_at")`,
     `alter table "interviewer_accounts" add column if not exists "is_site_owner" boolean not null default false`,
     `update "interviewer_accounts" set "is_site_owner" = true, "updated_at" = now() where "is_site_owner" = false and "normalized_name" in ('ishaan bansal', 'ishaan') and ("team_id" is null or "team_id" = 'default')`,
     `alter table "applicants" add column if not exists "photo_thumb_url" text`,

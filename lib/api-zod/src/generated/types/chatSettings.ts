@@ -13,4 +13,10 @@ export interface ChatSettings {
      * @maximum 600
      */
   slowmodeSeconds: number;
+  /**
+     * Maximum copies per `/multimessage` run. 0 means no limit. The server rejects any run whose count exceeds this limit.
+     * @minimum 0
+     * @maximum 500
+     */
+  multimessageLimit: number;
 }

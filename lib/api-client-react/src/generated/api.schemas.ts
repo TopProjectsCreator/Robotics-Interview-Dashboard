@@ -950,6 +950,82 @@ export interface MessageResponse {
   message: string;
 }
 
+export interface BlockedIp {
+  /** The blocked address in canonical form. */
+  ip: string;
+  reason: string;
+  /**
+     * Account id of the admin who blocked the address, when still known.
+     * @nullable
+     */
+  createdBy: string | null;
+  /**
+     * Display name of the admin who blocked the address, when still known.
+     * @nullable
+     */
+  createdByName: string | null;
+  createdAt: string;
+}
+
+export interface BlockedIpList {
+  items: BlockedIp[];
+}
+
+export interface BlockIpInput {
+  /**
+     * IPv4 or IPv6 address to block. Bracketed IPv6 and ::ffff: IPv4 mappings are accepted and normalized.
+     * @maxLength 45
+     */
+  ip: string;
+  /**
+     * Optional note shown in the blocklist.
+     * @maxLength 120
+     */
+  reason?: string;
+}
+
+export interface UnblockIpInput {
+  /** @maxLength 45 */
+  ip: string;
+}
+
+export interface TinyUrl {
+  id: string;
+  /** Stored lowercase alias; the link resolves at path. */
+  alias: string;
+  /** Path the redirect answers on for this alias (e.g. "/t/tryouts"). Auto-detect the domain by joining it with the deployment origin (e.g. window.location.origin). */
+  path: string;
+  /** Absolute http(s) URL the short link redirects to. */
+  targetUrl: string;
+  /** Real (GET) visits to the link, counted since creation. */
+  clickCount: number;
+  /**
+     * Display name of the admin who created the link, when known.
+     * @nullable
+     */
+  createdByName?: string | null;
+  createdAt: string;
+}
+
+export interface TinyUrlList {
+  items: TinyUrl[];
+}
+
+export interface TinyUrlInput {
+  /**
+     * Custom alias, case-insensitive. Stored form is letters, numbers, hyphens and underscores (1–64 chars, starting with a letter or number); a pasted "/t/<alias>" or full short link is reduced to its alias.
+     * @minLength 1
+     * @maxLength 512
+     */
+  alias: string;
+  /**
+     * Absolute http(s) URL. Bare domains (e.g. "example.com/signup") are upgraded to https.
+     * @minLength 1
+     * @maxLength 2048
+     */
+  targetUrl: string;
+}
+
 export interface LoginInput {
   interviewerId: string;
   /** @minLength 1 */
@@ -1014,10 +1090,15 @@ export interface TeamBranding {
      */
   primaryColor: string | null;
   /**
-     * Private object path for this team's custom app background
+     * Deprecated, kept for older clients. The first entry of `backgrounds`, or null when no background is set
      * @nullable
      */
   backgroundPath: string | null;
+  /**
+     * Private object paths for this team's app backgrounds, in rotation order. Clients pick one deterministically every `backgroundRotationSeconds`
+     * @maxItems 10
+     */
+  backgrounds: string[];
   /**
      * How the custom app background is fitted to the viewport
      * @nullable
@@ -1029,6 +1110,12 @@ export interface TeamBranding {
      * @maximum 80
      */
   backgroundOverlay: number;
+  /**
+     * Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
+     * @minimum 0
+     * @maximum 86400
+     */
+  backgroundRotationSeconds: number;
   /** Whether the background is visible to every team member or only selected members */
   backgroundAudience: TeamBrandingBackgroundAudience;
   /**
@@ -1059,10 +1146,15 @@ export interface EffectiveTeamBranding {
      */
   primaryColor: string | null;
   /**
-     * Private object path for this member's custom app background, or null when excluded
+     * Deprecated, kept for older clients. The first entry of `backgrounds`, or null when excluded
      * @nullable
      */
   backgroundPath: string | null;
+  /**
+     * Private object paths for this member's visible app backgrounds, in rotation order. Empty when excluded
+     * @maxItems 10
+     */
+  backgrounds: string[];
   /**
      * How the visible custom app background is fitted to the viewport
      * @nullable
@@ -1074,6 +1166,12 @@ export interface EffectiveTeamBranding {
      * @maximum 80
      */
   backgroundOverlay: number;
+  /**
+     * Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
+     * @minimum 0
+     * @maximum 86400
+     */
+  backgroundRotationSeconds: number;
 }
 
 /**
@@ -1116,6 +1214,12 @@ export interface UpdateTeamBranding {
      * @maximum 80
      */
   backgroundOverlay?: number;
+  /**
+     * Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
+     * @minimum 0
+     * @maximum 86400
+     */
+  backgroundRotationSeconds?: number;
   /** Whether the background is visible to every team member or only selected members */
   backgroundAudience?: UpdateTeamBrandingBackgroundAudience;
   /**
@@ -1126,14 +1230,80 @@ export interface UpdateTeamBranding {
   backgroundMemberIds?: string[];
 }
 
+/**
+ * Team default color theme; null means no team default (members choose, or follow their device)
+ * @nullable
+ */
+export type TeamThemeSettingDefaultTheme = typeof TeamThemeSettingDefaultTheme[keyof typeof TeamThemeSettingDefaultTheme] | null;
+
+
+export const TeamThemeSettingDefaultTheme = {
+  light: 'light',
+  dark: 'dark',
+} as const;
+
+/**
+ * recommended — members land on the team default but may switch; locked — members cannot switch
+ */
+export type TeamThemeSettingThemePolicy = typeof TeamThemeSettingThemePolicy[keyof typeof TeamThemeSettingThemePolicy];
+
+
+export const TeamThemeSettingThemePolicy = {
+  recommended: 'recommended',
+  locked: 'locked',
+} as const;
+
+export interface TeamThemeSetting {
+  /**
+     * Team default color theme; null means no team default (members choose, or follow their device)
+     * @nullable
+     */
+  defaultTheme: TeamThemeSettingDefaultTheme;
+  /** recommended — members land on the team default but may switch; locked — members cannot switch */
+  themePolicy: TeamThemeSettingThemePolicy;
+}
+
+/**
+ * Set the team default theme, or null to clear it (members follow their device or last choice)
+ * @nullable
+ */
+export type UpdateTeamThemeSettingDefaultTheme = typeof UpdateTeamThemeSettingDefaultTheme[keyof typeof UpdateTeamThemeSettingDefaultTheme] | null;
+
+
+export const UpdateTeamThemeSettingDefaultTheme = {
+  light: 'light',
+  dark: 'dark',
+} as const;
+
+/**
+ * recommended — members may switch; locked — members cannot switch
+ */
+export type UpdateTeamThemeSettingThemePolicy = typeof UpdateTeamThemeSettingThemePolicy[keyof typeof UpdateTeamThemeSettingThemePolicy];
+
+
+export const UpdateTeamThemeSettingThemePolicy = {
+  recommended: 'recommended',
+  locked: 'locked',
+} as const;
+
+export interface UpdateTeamThemeSetting {
+  /**
+     * Set the team default theme, or null to clear it (members follow their device or last choice)
+     * @nullable
+     */
+  defaultTheme?: UpdateTeamThemeSettingDefaultTheme;
+  /** recommended — members may switch; locked — members cannot switch */
+  themePolicy?: UpdateTeamThemeSettingThemePolicy;
+}
+
 export interface UploadTeamLogo {
   /** Private object path for this team's logo */
   logoPath: string;
 }
 
-export interface UploadTeamBackground {
-  /** Private object path for this team's custom app background */
-  backgroundPath: string;
+export interface RemoveTeamBackground {
+  /** Private object path of the background to remove (must be one of the team's `backgrounds`). Omit to remove every team background */
+  path?: string;
 }
 
 export interface TeamVerifyResponse {
@@ -1824,6 +1994,12 @@ export interface ChatSettings {
      * @maximum 600
      */
   slowmodeSeconds: number;
+  /**
+     * Maximum copies per `/multimessage` run. 0 means no limit. The server rejects any run whose count exceeds this limit.
+     * @minimum 0
+     * @maximum 500
+     */
+  multimessageLimit: number;
 }
 
 export type FeatureRequestStatus = typeof FeatureRequestStatus[keyof typeof FeatureRequestStatus];
@@ -1997,7 +2173,7 @@ export interface ChatMultiMessageInput {
      */
   message: string;
   /**
-     * How many copies to post. Deliberately no upper limit — admins may ask for as many as they need.
+     * How many copies to post. Bounded only by the team's configured multimessage limit (0 = no limit); over-limit requests are rejected with 400.
      * @minimum 1
      */
   count: number;

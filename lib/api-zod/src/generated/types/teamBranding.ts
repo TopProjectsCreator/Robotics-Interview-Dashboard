@@ -21,10 +21,15 @@ export interface TeamBranding {
      */
   primaryColor: string | null;
   /**
-     * Private object path for this team's custom app background
+     * Deprecated, kept for older clients. The first entry of `backgrounds`, or null when no background is set
      * @nullable
      */
   backgroundPath: string | null;
+  /**
+     * Private object paths for this team's app backgrounds, in rotation order. Clients pick one deterministically every `backgroundRotationSeconds`
+     * @maxItems 10
+     */
+  backgrounds: string[];
   /**
      * How the custom app background is fitted to the viewport
      * @nullable
@@ -36,6 +41,12 @@ export interface TeamBranding {
      * @maximum 80
      */
   backgroundOverlay: number;
+  /**
+     * Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
+     * @minimum 0
+     * @maximum 86400
+     */
+  backgroundRotationSeconds: number;
   /** Whether the background is visible to every team member or only selected members */
   backgroundAudience: TeamBrandingBackgroundAudience;
   /**
