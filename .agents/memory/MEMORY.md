@@ -70,3 +70,4 @@
 - [Workflow orphaned processes](workflow-orphaned-processes.md) — inspect exact artifact process groups and ports before resolving managed Vite port collisions.
 - [Public capability links](public-capability-links.md) — redact bearer capabilities from request logs and disable caching/referrer sharing on public reads.
 - [Custom role compatibility](custom-role-compatibility.md) — keep custom permissions separate from the existing account role and resolve assignments only within their team.
+- [FIRST FTC API host](first-ftc-api-host.md) — authenticated FTC Events API calls use `ftc-api.firstinspires.org`; the similarly named `ftc-events` host rejects the same credentials.
