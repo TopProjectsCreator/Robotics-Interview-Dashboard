@@ -25,6 +25,8 @@ test("route policy separates read, ordinary writes, and management actions", () 
   assert.equal(routePermissionIsGranted(["chat.send"], "POST", "/api/queue/chat/multimessage"), false);
   assert.equal(permissionForRoute("POST", "/api/queue/chat/abc/pin"), "chat.moderate");
   assert.equal(permissionForRoute("POST", "/api/queue/chat/channels"), "chat.manage");
+  assert.equal(permissionForRoute("GET", "/api/queue/chat/ftc/search"), "chat.view");
+  assert.equal(permissionForRoute("GET", "/api/queue/chat/ftc/teams/23442"), "chat.view");
   assert.equal(routePermissionIsGranted(["chat.manage"], "POST", "/api/queue/chat/channels"), true);
   assert.equal(routePermissionIsGranted(["chat.send"], "POST", "/api/queue/chat/channels"), false);
   assert.equal(permissionForRoute("GET", "/api/dashboard/workspace-usage"), "dashboard.view");

@@ -177,6 +177,9 @@ import type {
   FeatureRequest,
   FeatureRequestList,
   FeatureRequestMessageUpdate,
+  FtcEventProfileResponse,
+  FtcMentionSearchResponse,
+  FtcTeamProfileResponse,
   GenerateImageInput,
   GenerateImageResult,
   GetAssistantConversationMessagesParams,
@@ -186,6 +189,8 @@ import type {
   GetChatProductivityHistoryParams,
   GetChatProductivityParams,
   GetDisplayStateParams,
+  GetFtcEventProfileParams,
+  GetFtcTeamProfileParams,
   GetInterviewChatParams,
   GetInterviewWhiteboardByIdParams,
   GetPresenceStatsParams,
@@ -272,6 +277,7 @@ import type {
   ScheduledChatMessage,
   ScheduledChatTime,
   ScheduledChatTimeInput,
+  SearchFtcMentionsParams,
   SearchModelsByProviderParams,
   SearchPartsCatalogParams,
   SearchPartsCatalogStreamParams,
@@ -7848,6 +7854,268 @@ export const useDeleteChatChannel = <TError = ErrorType<void>,
       > => {
       return useMutation(getDeleteChatChannelMutationOptions(options));
     }
+
+export const getSearchFtcMentionsUrl = (params: SearchFtcMentionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/queue/chat/ftc/search?${stringifiedParams}` : `/api/queue/chat/ftc/search`
+}
+
+/**
+ * @summary Search FIRST Tech Challenge teams and events for chat mentions
+ */
+export const searchFtcMentions = async (params: SearchFtcMentionsParams, options?: Parameters<typeof customFetch>[1]): Promise<FtcMentionSearchResponse> => {
+
+  return customFetch<FtcMentionSearchResponse>(getSearchFtcMentionsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getSearchFtcMentionsQueryKey = (params?: SearchFtcMentionsParams,) => {
+    return [
+    `/api/queue/chat/ftc/search`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getSearchFtcMentionsQueryOptions = <TData = Awaited<ReturnType<typeof searchFtcMentions>>, TError = ErrorType<void>>(params: SearchFtcMentionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchFtcMentions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getSearchFtcMentionsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof searchFtcMentions>>> = ({ signal }) => searchFtcMentions(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof searchFtcMentions>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type SearchFtcMentionsQueryResult = NonNullable<Awaited<ReturnType<typeof searchFtcMentions>>>
+export type SearchFtcMentionsQueryError = ErrorType<void>
+
+
+/**
+ * @summary Search FIRST Tech Challenge teams and events for chat mentions
+ */
+
+export function useSearchFtcMentions<TData = Awaited<ReturnType<typeof searchFtcMentions>>, TError = ErrorType<void>>(
+ params: SearchFtcMentionsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof searchFtcMentions>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getSearchFtcMentionsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetFtcTeamProfileUrl = (teamNumber: number,
+    params?: GetFtcTeamProfileParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/queue/chat/ftc/teams/${teamNumber}?${stringifiedParams}` : `/api/queue/chat/ftc/teams/${teamNumber}`
+}
+
+/**
+ * @summary Get an FTC team profile and its events
+ */
+export const getFtcTeamProfile = async (teamNumber: number,
+    params?: GetFtcTeamProfileParams, options?: Parameters<typeof customFetch>[1]): Promise<FtcTeamProfileResponse> => {
+
+  return customFetch<FtcTeamProfileResponse>(getGetFtcTeamProfileUrl(teamNumber,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFtcTeamProfileQueryKey = (teamNumber: number,
+    params?: GetFtcTeamProfileParams,) => {
+    return [
+    `/api/queue/chat/ftc/teams/${teamNumber}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetFtcTeamProfileQueryOptions = <TData = Awaited<ReturnType<typeof getFtcTeamProfile>>, TError = ErrorType<void>>(teamNumber: number,
+    params?: GetFtcTeamProfileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFtcTeamProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFtcTeamProfileQueryKey(teamNumber,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFtcTeamProfile>>> = ({ signal }) => getFtcTeamProfile(teamNumber,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: teamNumber !== null && teamNumber !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFtcTeamProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFtcTeamProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getFtcTeamProfile>>>
+export type GetFtcTeamProfileQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an FTC team profile and its events
+ */
+
+export function useGetFtcTeamProfile<TData = Awaited<ReturnType<typeof getFtcTeamProfile>>, TError = ErrorType<void>>(
+ teamNumber: number,
+    params?: GetFtcTeamProfileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFtcTeamProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFtcTeamProfileQueryOptions(teamNumber,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetFtcEventProfileUrl = (eventCode: string,
+    params?: GetFtcEventProfileParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/queue/chat/ftc/events/${eventCode}?${stringifiedParams}` : `/api/queue/chat/ftc/events/${eventCode}`
+}
+
+/**
+ * @summary Get an FTC event profile and its teams
+ */
+export const getFtcEventProfile = async (eventCode: string,
+    params?: GetFtcEventProfileParams, options?: Parameters<typeof customFetch>[1]): Promise<FtcEventProfileResponse> => {
+
+  return customFetch<FtcEventProfileResponse>(getGetFtcEventProfileUrl(eventCode,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFtcEventProfileQueryKey = (eventCode: string,
+    params?: GetFtcEventProfileParams,) => {
+    return [
+    `/api/queue/chat/ftc/events/${eventCode}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetFtcEventProfileQueryOptions = <TData = Awaited<ReturnType<typeof getFtcEventProfile>>, TError = ErrorType<void>>(eventCode: string,
+    params?: GetFtcEventProfileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFtcEventProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFtcEventProfileQueryKey(eventCode,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFtcEventProfile>>> = ({ signal }) => getFtcEventProfile(eventCode,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: eventCode !== null && eventCode !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFtcEventProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFtcEventProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getFtcEventProfile>>>
+export type GetFtcEventProfileQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get an FTC event profile and its teams
+ */
+
+export function useGetFtcEventProfile<TData = Awaited<ReturnType<typeof getFtcEventProfile>>, TError = ErrorType<void>>(
+ eventCode: string,
+    params?: GetFtcEventProfileParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFtcEventProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFtcEventProfileQueryOptions(eventCode,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getCreateChatPollUrl = (messageId: string,) => {
 

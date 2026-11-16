@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatMentions, messageMentionsInterviewer } from "./chat-mentions";
+import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatFtcMentions, findChatMentions, messageMentionsInterviewer } from "./chat-mentions";
 
 const people = [
   { token: "Maksim" },
@@ -53,6 +53,30 @@ describe("chat mentions", () => {
     expect(channels.map(channel => channel.token)).toEqual(["Design Eng", "press room"]);
     expect(channels[0]).toMatchObject({ id: "chan-1", emoji: "🔧", memberCount: 3, kind: "channel" });
     expect(channels[1].memberCount).toBe(0);
+  });
+
+  it("finds stable FTC team and event references without matching inside words", () => {
+    const text = "Visit @FTC Team 2026 23442, then see @FTC Event 2026 CAFO!";
+    expect(findChatFtcMentions(text)).toEqual([
+      {
+        kind: "team",
+        start: 6,
+        end: 26,
+        text: "@FTC Team 2026 23442",
+        season: 2026,
+        teamNumber: 23442,
+      },
+      {
+        kind: "event",
+        start: 37,
+        end: 57,
+        text: "@FTC Event 2026 CAFO",
+        season: 2026,
+        eventCode: "CAFO",
+      },
+    ]);
+    expect(findChatFtcMentions("x@FTC Team 2026 23442 and mail@FTC Event 2026 CAFO")).toHaveLength(0);
+    expect(findChatFtcMentions("@FTC Team 2020 23442 @FTC Team 2026 0 @FTC Event 2101 CAFO")).toHaveLength(0);
   });
 
   it("matches applicant references with a stable roster qualifier", () => {

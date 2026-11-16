@@ -2515,6 +2515,164 @@ export const DeleteChatChannelResponse = zod.void()
 
 
 /**
+ * @summary Search FIRST Tech Challenge teams and events for chat mentions
+ */
+export const searchFtcMentionsQueryQueryMin = 2;
+export const searchFtcMentionsQueryQueryMax = 100;
+
+export const searchFtcMentionsQuerySeasonMin = 2022;
+export const searchFtcMentionsQuerySeasonMax = 2100;
+
+
+
+export const SearchFtcMentionsQueryParams = zod.object({
+  "query": zod.coerce.string().min(searchFtcMentionsQueryQueryMin).max(searchFtcMentionsQueryQueryMax),
+  "season": zod.coerce.number().int().min(searchFtcMentionsQuerySeasonMin).max(searchFtcMentionsQuerySeasonMax).optional()
+})
+
+export const SearchFtcMentionsResponse = zod.object({
+  "season": zod.number().int(),
+  "teams": zod.array(zod.object({
+  "teamNumber": zod.number().int(),
+  "displayTeamNumber": zod.string().nullable(),
+  "nameFull": zod.string().nullable(),
+  "nameShort": zod.string().nullable(),
+  "schoolName": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "stateProv": zod.string().nullable(),
+  "country": zod.string().nullable(),
+  "website": zod.string().nullable(),
+  "rookieYear": zod.number().int().nullable(),
+  "robotName": zod.string().nullable(),
+  "homeRegion": zod.string().nullable()
+})),
+  "events": zod.array(zod.object({
+  "season": zod.number().int(),
+  "code": zod.string(),
+  "name": zod.string().nullable(),
+  "typeName": zod.string().nullable(),
+  "venue": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "stateProv": zod.string().nullable(),
+  "country": zod.string().nullable(),
+  "website": zod.string().nullable(),
+  "liveStreamUrl": zod.string().nullable(),
+  "dateStart": zod.coerce.date().nullable(),
+  "dateEnd": zod.coerce.date().nullable()
+}))
+})
+
+
+/**
+ * @summary Get an FTC team profile and its events
+ */
+export const getFtcTeamProfilePathTeamNumberMax = 99999;
+
+
+
+export const GetFtcTeamProfileParams = zod.object({
+  "teamNumber": zod.coerce.number().int().min(1).max(getFtcTeamProfilePathTeamNumberMax)
+})
+
+export const getFtcTeamProfileQuerySeasonMin = 2022;
+export const getFtcTeamProfileQuerySeasonMax = 2100;
+
+
+
+export const GetFtcTeamProfileQueryParams = zod.object({
+  "season": zod.coerce.number().int().min(getFtcTeamProfileQuerySeasonMin).max(getFtcTeamProfileQuerySeasonMax).optional()
+})
+
+export const GetFtcTeamProfileResponse = zod.object({
+  "season": zod.number().int(),
+  "team": zod.union([zod.object({
+  "teamNumber": zod.number().int(),
+  "displayTeamNumber": zod.string().nullable(),
+  "nameFull": zod.string().nullable(),
+  "nameShort": zod.string().nullable(),
+  "schoolName": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "stateProv": zod.string().nullable(),
+  "country": zod.string().nullable(),
+  "website": zod.string().nullable(),
+  "rookieYear": zod.number().int().nullable(),
+  "robotName": zod.string().nullable(),
+  "homeRegion": zod.string().nullable()
+}),zod.null()]),
+  "events": zod.array(zod.object({
+  "season": zod.number().int(),
+  "code": zod.string(),
+  "name": zod.string().nullable(),
+  "typeName": zod.string().nullable(),
+  "venue": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "stateProv": zod.string().nullable(),
+  "country": zod.string().nullable(),
+  "website": zod.string().nullable(),
+  "liveStreamUrl": zod.string().nullable(),
+  "dateStart": zod.coerce.date().nullable(),
+  "dateEnd": zod.coerce.date().nullable()
+}))
+})
+
+
+/**
+ * @summary Get an FTC event profile and its teams
+ */
+export const getFtcEventProfilePathEventCodeMin = 3;
+export const getFtcEventProfilePathEventCodeMax = 20;
+
+
+export const getFtcEventProfilePathEventCodeRegExp = new RegExp('^[A-Za-z0-9]+$');
+
+
+export const GetFtcEventProfileParams = zod.object({
+  "eventCode": zod.coerce.string().min(getFtcEventProfilePathEventCodeMin).max(getFtcEventProfilePathEventCodeMax).regex(getFtcEventProfilePathEventCodeRegExp)
+})
+
+export const getFtcEventProfileQuerySeasonMin = 2022;
+export const getFtcEventProfileQuerySeasonMax = 2100;
+
+
+
+export const GetFtcEventProfileQueryParams = zod.object({
+  "season": zod.coerce.number().int().min(getFtcEventProfileQuerySeasonMin).max(getFtcEventProfileQuerySeasonMax).optional()
+})
+
+export const GetFtcEventProfileResponse = zod.object({
+  "season": zod.number().int(),
+  "event": zod.union([zod.object({
+  "season": zod.number().int(),
+  "code": zod.string(),
+  "name": zod.string().nullable(),
+  "typeName": zod.string().nullable(),
+  "venue": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "stateProv": zod.string().nullable(),
+  "country": zod.string().nullable(),
+  "website": zod.string().nullable(),
+  "liveStreamUrl": zod.string().nullable(),
+  "dateStart": zod.coerce.date().nullable(),
+  "dateEnd": zod.coerce.date().nullable()
+}),zod.null()]),
+  "teams": zod.array(zod.object({
+  "teamNumber": zod.number().int(),
+  "displayTeamNumber": zod.string().nullable(),
+  "nameFull": zod.string().nullable(),
+  "nameShort": zod.string().nullable(),
+  "schoolName": zod.string().nullable(),
+  "city": zod.string().nullable(),
+  "stateProv": zod.string().nullable(),
+  "country": zod.string().nullable(),
+  "website": zod.string().nullable(),
+  "rookieYear": zod.number().int().nullable(),
+  "robotName": zod.string().nullable(),
+  "homeRegion": zod.string().nullable()
+}))
+})
+
+
+/**
  * @summary Attach a poll to a chat message
  */
 export const CreateChatPollParams = zod.object({

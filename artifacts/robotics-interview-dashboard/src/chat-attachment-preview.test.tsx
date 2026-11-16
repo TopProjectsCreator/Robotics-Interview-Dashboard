@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as XLSX from "xlsx";
 
 import { MarkdownContent, renderInlineMarkdown } from "./App";
+import { ChatFtcMentionProvider } from "./components/ChatFtcMention";
 import { officeAttachmentFixtures } from "./test-fixtures/officeAttachments";
 import { TooltipProvider } from "./components/ui/tooltip";
 
@@ -588,6 +589,15 @@ describe("chat attachment inline previews", () => {
 });
 
 describe("chat mention rendering", () => {
+  it("renders stable FTC message references as clickable details buttons", () => {
+    const { container } = render(
+      <ChatFtcMentionProvider>{renderInlineMarkdown("Meet @FTC Team 2026 23442 at @FTC Event 2026 CAFO.")}</ChatFtcMentionProvider>,
+    );
+
+    expect(container.querySelector('[data-testid="chat-ftc-mention-team-23442"]')).toHaveTextContent("@23442");
+    expect(container.querySelector('[data-testid="chat-ftc-mention-event-cafo"]')).toHaveTextContent("@CAFO");
+  });
+
   it("highlights a known interviewer and reveals their profile details on focus", async () => {
     const person = {
       token: "Ishaan",

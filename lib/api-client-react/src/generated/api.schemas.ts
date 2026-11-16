@@ -2357,6 +2357,75 @@ export interface ChatChannelUpdateInput {
   memberIds?: string[];
 }
 
+export interface FtcTeam {
+  teamNumber: number;
+  /** @nullable */
+  displayTeamNumber: string | null;
+  /** @nullable */
+  nameFull: string | null;
+  /** @nullable */
+  nameShort: string | null;
+  /** @nullable */
+  schoolName: string | null;
+  /** @nullable */
+  city: string | null;
+  /** @nullable */
+  stateProv: string | null;
+  /** @nullable */
+  country: string | null;
+  /** @nullable */
+  website: string | null;
+  /** @nullable */
+  rookieYear: number | null;
+  /** @nullable */
+  robotName: string | null;
+  /** @nullable */
+  homeRegion: string | null;
+}
+
+export interface FtcEvent {
+  season: number;
+  code: string;
+  /** @nullable */
+  name: string | null;
+  /** @nullable */
+  typeName: string | null;
+  /** @nullable */
+  venue: string | null;
+  /** @nullable */
+  city: string | null;
+  /** @nullable */
+  stateProv: string | null;
+  /** @nullable */
+  country: string | null;
+  /** @nullable */
+  website: string | null;
+  /** @nullable */
+  liveStreamUrl: string | null;
+  /** @nullable */
+  dateStart: string | null;
+  /** @nullable */
+  dateEnd: string | null;
+}
+
+export interface FtcMentionSearchResponse {
+  season: number;
+  teams: FtcTeam[];
+  events: FtcEvent[];
+}
+
+export interface FtcTeamProfileResponse {
+  season: number;
+  team: FtcTeam | null;
+  events: FtcEvent[];
+}
+
+export interface FtcEventProfileResponse {
+  season: number;
+  event: FtcEvent | null;
+  teams: FtcTeam[];
+}
+
 export type ChatProductivityActivityAssessment = typeof ChatProductivityActivityAssessment[keyof typeof ChatProductivityActivityAssessment];
 
 
@@ -5083,6 +5152,35 @@ cursor?: string;
  * @maximum 100
  */
 limit?: number;
+};
+
+export type SearchFtcMentionsParams = {
+/**
+ * @minLength 2
+ * @maxLength 100
+ */
+query: string;
+/**
+ * @minimum 2022
+ * @maximum 2100
+ */
+season?: number;
+};
+
+export type GetFtcTeamProfileParams = {
+/**
+ * @minimum 2022
+ * @maximum 2100
+ */
+season?: number;
+};
+
+export type GetFtcEventProfileParams = {
+/**
+ * @minimum 2022
+ * @maximum 2100
+ */
+season?: number;
 };
 
 export type ListInterviewWhiteboardsParams = {

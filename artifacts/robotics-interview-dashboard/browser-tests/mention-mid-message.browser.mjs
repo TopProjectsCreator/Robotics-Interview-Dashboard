@@ -74,12 +74,47 @@ try {
         scope: url.searchParams.get("scope") ?? "shared",
         peer: url.searchParams.get("peer"),
       };
+    } else if (url.pathname === "/api/queue/chat/ftc/search") {
+      body = {
+        season: 2026,
+        teams: [{
+          teamNumber: 23442,
+          displayTeamNumber: "23442",
+          nameFull: "BioBuzz Robotics",
+          nameShort: "BioBuzz",
+          schoolName: "Sammamish High School",
+          city: "Bellevue",
+          stateProv: "Washington",
+          country: "USA",
+          website: null,
+          rookieYear: 2019,
+          robotName: "Pollinator",
+          homeRegion: "Pacific Northwest",
+        }],
+        events: [{
+          season: 2026,
+          code: "CAFO",
+          name: "Cascade Open",
+          typeName: "Qualifier",
+          venue: "Sammamish High School",
+          city: "Bellevue",
+          stateProv: "Washington",
+          country: "USA",
+          website: null,
+          liveStreamUrl: null,
+          dateStart: null,
+          dateEnd: null,
+        }],
+      };
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
   });
 
   await page.goto(`${serverUrl}/chat`, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await page.getByText("Signed in as Browser Tester").waitFor({ state: "visible", timeout: 120_000 });
+  const darkTheme = page.locator("html.dark");
+  if (!(await darkTheme.count())) await page.getByTestId("button-theme-toggle").click();
+  await darkTheme.waitFor({ state: "attached", timeout: 5000 });
 
   const input = page.getByTestId("input-interviewer-chat");
   const mentionMenu = page.getByTestId("mention-menu");
@@ -132,6 +167,27 @@ try {
   await input.press("Escape");
   await mentionMenu.waitFor({ state: "hidden", timeout: 5000 });
   console.log("ok 6: Escape closes the picker");
+
+  // 7. FTC team names and numbers are keyboard-selectable in the dark-theme picker.
+  await input.fill("review @BioBuzz");
+  await mentionMenu.waitFor({ state: "visible", timeout: 5000 });
+  await page.getByTestId("mention-option-ftc-team-23442").waitFor({ state: "visible", timeout: 5000 });
+  const mentionMenuBackground = await mentionMenu.evaluate(element => getComputedStyle(element).backgroundColor);
+  assert.ok(
+    Number(mentionMenuBackground.match(/rgb\((\d+)/)?.[1] ?? 255) < 80,
+    `mention menu should use a dark surface, received ${mentionMenuBackground}`,
+  );
+  await input.press("Enter");
+  assert.equal(await input.inputValue(), "review @FTC Team 2026 23442 ");
+  console.log("ok 7: dark-theme suggestions support keyboard selection of FTC teams");
+
+  // 8. Competition names can also be selected and stored with season/code identity.
+  await input.fill("see @Cascade");
+  await mentionMenu.waitFor({ state: "visible", timeout: 5000 });
+  await page.getByTestId("mention-option-ftc-event-cafo").waitFor({ state: "visible", timeout: 5000 });
+  await page.getByTestId("mention-option-ftc-event-cafo").click();
+  assert.equal(await input.inputValue(), "see @FTC Event 2026 CAFO ");
+  console.log("ok 8: competition selection inserts a stable event reference");
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join("; ")}`);
   console.log("ALL MENTION PICKER CHECKS PASSED");

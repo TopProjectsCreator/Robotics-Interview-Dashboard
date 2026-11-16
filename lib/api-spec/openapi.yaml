@@ -2227,6 +2227,98 @@ paths:
           description: Channel and its messages deleted
         "404":
           description: Channel not found
+  /queue/chat/ftc/search:
+    get:
+      operationId: searchFtcMentions
+      tags: [queue]
+      summary: Search FIRST Tech Challenge teams and events for chat mentions
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 100
+        - name: season
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 2022
+            maximum: 2100
+      responses:
+        "200":
+          description: Matching FTC teams and events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FtcMentionSearchResponse"
+        "400":
+          description: Invalid search query
+  /queue/chat/ftc/teams/{teamNumber}:
+    get:
+      operationId: getFtcTeamProfile
+      tags: [queue]
+      summary: Get an FTC team profile and its events
+      parameters:
+        - name: teamNumber
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 99999
+        - name: season
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 2022
+            maximum: 2100
+      responses:
+        "200":
+          description: Team profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FtcTeamProfileResponse"
+        "400":
+          description: Invalid team number or season
+        "404":
+          description: Team not found
+  /queue/chat/ftc/events/{eventCode}:
+    get:
+      operationId: getFtcEventProfile
+      tags: [queue]
+      summary: Get an FTC event profile and its teams
+      parameters:
+        - name: eventCode
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 20
+            pattern: "^[A-Za-z0-9]+$"
+        - name: season
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 2022
+            maximum: 2100
+      responses:
+        "200":
+          description: Event profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FtcEventProfileResponse"
+        "400":
+          description: Invalid event code or season
+        "404":
+          description: Event not found
   /queue/chat/{messageId}/poll:
     post:
       operationId: createChatPoll
@@ -8843,6 +8935,78 @@ components:
           items:
             type: string
           description: Full replacement of the invited members.
+    FtcTeam:
+      type: object
+      additionalProperties: false
+      required: [teamNumber, displayTeamNumber, nameFull, nameShort, schoolName, city, stateProv, country, website, rookieYear, robotName, homeRegion]
+      properties:
+        teamNumber: { type: integer }
+        displayTeamNumber: { type: ["string", "null"] }
+        nameFull: { type: ["string", "null"] }
+        nameShort: { type: ["string", "null"] }
+        schoolName: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        stateProv: { type: ["string", "null"] }
+        country: { type: ["string", "null"] }
+        website: { type: ["string", "null"] }
+        rookieYear: { type: ["integer", "null"] }
+        robotName: { type: ["string", "null"] }
+        homeRegion: { type: ["string", "null"] }
+    FtcEvent:
+      type: object
+      additionalProperties: false
+      required: [season, code, name, typeName, venue, city, stateProv, country, website, liveStreamUrl, dateStart, dateEnd]
+      properties:
+        season: { type: integer }
+        code: { type: string }
+        name: { type: ["string", "null"] }
+        typeName: { type: ["string", "null"] }
+        venue: { type: ["string", "null"] }
+        city: { type: ["string", "null"] }
+        stateProv: { type: ["string", "null"] }
+        country: { type: ["string", "null"] }
+        website: { type: ["string", "null"] }
+        liveStreamUrl: { type: ["string", "null"] }
+        dateStart: { type: ["string", "null"], format: date-time }
+        dateEnd: { type: ["string", "null"], format: date-time }
+    FtcMentionSearchResponse:
+      type: object
+      additionalProperties: false
+      required: [season, teams, events]
+      properties:
+        season: { type: integer }
+        teams:
+          type: array
+          items: { $ref: "#/components/schemas/FtcTeam" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/FtcEvent" }
+    FtcTeamProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [season, team, events]
+      properties:
+        season: { type: integer }
+        team:
+          anyOf:
+            - $ref: "#/components/schemas/FtcTeam"
+            - type: "null"
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/FtcEvent" }
+    FtcEventProfileResponse:
+      type: object
+      additionalProperties: false
+      required: [season, event, teams]
+      properties:
+        season: { type: integer }
+        event:
+          anyOf:
+            - $ref: "#/components/schemas/FtcEvent"
+            - type: "null"
+        teams:
+          type: array
+          items: { $ref: "#/components/schemas/FtcTeam" }
     ChatProductivityActivity:
       type: object
       required: [activity, assessment]

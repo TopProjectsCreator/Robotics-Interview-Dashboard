@@ -4,7 +4,7 @@ import { MutationCache, QueryCache, QueryClient, QueryClientProvider, useMutatio
 import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, useSearch } from "wouter";
 import DOMPurify from "dompurify";
 import {
-   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
+   AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
    Dices, Coins, Disc3, FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, SquareSlash, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
 } from "lucide-react";
@@ -20,6 +20,7 @@ import {
    useListAssistantConversations, useListAssistantModels, useRenameAssistantConversation, useGetAssistantModelPolicy, useGetAssistantModelPolicyHistory, useUpdateAssistantModelPolicy, useGetAssistantIntegrationPolicy, useUpdateAssistantIntegrationPolicy,
    useGetAssistantConversationShare, useCreateAssistantConversationShare, useRevokeAssistantConversationShare, useGetPublicAssistantConversation,
    useGetChatConversations, getGetChatConversationsQueryKey, useGetDisplayState, useGetInterviewChat, useMarkInterviewChatRead, useGetQueue, useGetQueueLabels, useGetSession, useListApplicants, useListImportHistory,
+   useSearchFtcMentions, getSearchFtcMentionsQueryKey,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
    useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
@@ -134,11 +135,12 @@ const ChatParasolidViewer = lazy(() => import("./components/ChatParasolidViewer"
 const SpreadsheetEditor = lazy(() => import("./components/SpreadsheetEditor").then((m) => ({ default: m.SpreadsheetEditor })));
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { ChatChannelToken } from "./components/ChatChannelToken";
+import { ChatFtcMentionProvider, ChatFtcMentionToken } from "./components/ChatFtcMention";
 const ChatGlbViewer = lazy(() => import("./components/ChatGlbViewer").then((m) => ({ default: m.ChatGlbViewer })));
 const CadThreeMfViewer = lazy(() => import("./components/CadThreeMfViewer").then((m) => ({ default: m.CadThreeMfViewer })));
 const CadMeshViewer = lazy(() => import("./components/CadMeshViewer").then((m) => ({ default: m.CadMeshViewer })));
 const ChatStepViewer = lazy(() => import("./components/ChatStepViewer").then((m) => ({ default: m.ChatStepViewer })));
-import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatMentions, messageMentionsInterviewer, type ChatChannelMention, type ChatMentionMatch, type ChatMentionPerson } from "./lib/chat-mentions";
+import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatFtcMentions, findChatMentions, messageMentionsInterviewer, type ChatChannelMention, type ChatFtcMention, type ChatMentionMatch, type ChatMentionPerson } from "./lib/chat-mentions";
 import { filterSlashCommands, findSlashCommandTrigger, type ChatSlashCommand } from "./lib/chatSlashCommands";
 import { isDocumentData } from "./components/documentCollaboration";
 import {
@@ -1676,10 +1678,12 @@ function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionP
   const pushText = (segment: string) => {
     type InlineMatch =
       | (ChatMentionMatch<ChatMentionPerson> & { type: "person" })
-      | (ChatMentionMatch<ChatChannelMention> & { type: "channel" });
+      | (ChatMentionMatch<ChatChannelMention> & { type: "channel" })
+      | (ChatFtcMention & { type: "ftc" });
     const inlineMatches: InlineMatch[] = [
       ...findChatMentions(segment, mentionPeople).map(person => ({ ...person, type: "person" as const })),
       ...findChatChannelMentions(segment, channelRefs).map(channel => ({ ...channel, type: "channel" as const })),
+      ...findChatFtcMentions(segment).map(reference => ({ ...reference, type: "ftc" as const })),
     ].sort((left, right) => left.start - right.start || right.end - left.end);
     if (!inlineMatches.length) {
       nodes.push(segment);
@@ -1691,8 +1695,10 @@ function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionP
       if (entry.start > textCursor) nodes.push(segment.slice(textCursor, entry.start));
       if (entry.type === "person") {
         nodes.push(<ChatMentionToken key={`mention-${key++}`} mentionText={entry.text} person={entry.person} />);
-      } else {
+      } else if (entry.type === "channel") {
         nodes.push(<ChatChannelToken key={`channel-${key++}`} mentionText={entry.text} channel={entry.person} onOpen={onChannelOpen} />);
+      } else {
+        nodes.push(<ChatFtcMentionToken key={`ftc-${key++}`} reference={entry} />);
       }
       textCursor = entry.end;
     }
@@ -6974,6 +6980,31 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
+  const [debouncedFtcMentionQuery, setDebouncedFtcMentionQuery] = useState("");
+  useEffect(() => {
+    const query = mentionQuery.trim();
+    if (!mentionOpen || query.length < 2 || demoMode) {
+      setDebouncedFtcMentionQuery("");
+      return;
+    }
+    const timer = window.setTimeout(() => setDebouncedFtcMentionQuery(query), 250);
+    return () => window.clearTimeout(timer);
+  }, [demoMode, mentionOpen, mentionQuery]);
+  const ftcMentionSearchParams = useMemo(() => ({
+    query: debouncedFtcMentionQuery || "  ",
+    season: new Date().getUTCFullYear(),
+  }), [debouncedFtcMentionQuery]);
+  const ftcMentionSearch = useSearchFtcMentions(ftcMentionSearchParams, {
+    query: {
+      queryKey: getSearchFtcMentionsQueryKey(ftcMentionSearchParams),
+      enabled: !demoMode && mentionOpen && debouncedFtcMentionQuery.length >= 2,
+      staleTime: 5 * 60 * 1000,
+      retry: false,
+    },
+  });
+  const currentFtcMentionResults = debouncedFtcMentionQuery.toLowerCase() === mentionQuery.trim().toLowerCase()
+    ? ftcMentionSearch.data
+    : undefined;
   const [channelMentionOpen, setChannelMentionOpen] = useState(false);
   const [channelMentionQuery, setChannelMentionQuery] = useState("");
   const [channelMentionActiveIndex, setChannelMentionActiveIndex] = useState(0);
@@ -7022,7 +7053,34 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       ...matches.filter(person => person.kind === "applicant").slice(0, 8),
     ];
   }, [mentionPeople, mentionQuery]);
-  const selectedMentionIndex = Math.min(mentionActiveIndex, Math.max(0, filteredMentionPeople.length - 1));
+  const filteredMentionSuggestions = useMemo(() => [
+    ...filteredMentionPeople.map(person => ({
+      kind: "person" as const,
+      key: `person-${person.token.toLowerCase()}`,
+      token: person.token,
+      label: person.label,
+      detail: person.detail,
+      initials: person.initials,
+      person,
+    })),
+    ...(currentFtcMentionResults?.teams ?? []).map(team => ({
+      kind: "team" as const,
+      key: `team-${team.teamNumber}`,
+      token: `FTC Team ${currentFtcMentionResults?.season ?? new Date().getUTCFullYear()} ${team.teamNumber}`,
+      label: `Team ${team.displayTeamNumber ?? team.teamNumber} · ${team.nameFull ?? team.nameShort ?? team.schoolName ?? "FTC team"}`,
+      detail: [team.schoolName && team.schoolName !== team.nameFull ? team.schoolName : null, [team.city, team.stateProv].filter(Boolean).join(", ")].filter(Boolean).join(" · "),
+      team,
+    })),
+    ...(currentFtcMentionResults?.events ?? []).map(event => ({
+      kind: "event" as const,
+      key: `event-${event.season}-${event.code.toLowerCase()}`,
+      token: `FTC Event ${event.season} ${event.code}`,
+      label: event.name ?? event.code,
+      detail: `Event · ${event.code}${event.typeName ? ` · ${event.typeName}` : ""}${[event.city, event.stateProv].filter(Boolean).length ? ` · ${[event.city, event.stateProv].filter(Boolean).join(", ")}` : ""}`,
+      event,
+    })),
+  ], [filteredMentionPeople, currentFtcMentionResults]);
+  const selectedMentionIndex = Math.min(mentionActiveIndex, Math.max(0, filteredMentionSuggestions.length - 1));
   const channelMentions = useMemo<ChatChannelMention[]>(
     () => buildChannelMentions(channels.map(channel => ({ id: channel.id, name: channel.name, emoji: channel.emoji, memberCount: channel.members?.length ?? 0 }))),
     [channels],
@@ -7370,14 +7428,14 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       input.setSelectionRange(cursor, cursor);
     });
   };
-  const selectMention = (person: ChatMentionPerson) => {
+  const selectMentionToken = (token: string) => {
     const input = chatMessageInputRef.current;
     const caret = input?.selectionStart ?? message.length;
     const trigger = findMentionTrigger(message, caret);
     if (!trigger) return;
     const rest = message.slice(trigger.end);
     const hasFollowingSpace = /^\s/.test(rest);
-    const next = `${message.slice(0, trigger.start)}@${person.token}${hasFollowingSpace ? "" : " "}${rest}`;
+    const next = `${message.slice(0, trigger.start)}@${token}${hasFollowingSpace ? "" : " "}${rest}`;
     setMessage(next);
     setMentionOpen(false);
     setChannelMentionOpen(false);
@@ -7387,9 +7445,14 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     requestAnimationFrame(() => {
       const el = chatMessageInputRef.current;
       el?.focus();
-      const cursor = trigger.start + 1 + person.token.length + (hasFollowingSpace ? 0 : 1);
+      const cursor = trigger.start + 1 + token.length + (hasFollowingSpace ? 0 : 1);
       el?.setSelectionRange(cursor, cursor);
     });
+  };
+  const selectMention = (person: ChatMentionPerson) => selectMentionToken(person.token);
+  const selectMentionSuggestion = (suggestion: (typeof filteredMentionSuggestions)[number]) => {
+    if (suggestion.kind === "person") selectMention(suggestion.person);
+    else selectMentionToken(suggestion.token);
   };
   const selectChannelMention = (channel: ChatChannelMention) => {
     const input = chatMessageInputRef.current;
@@ -7469,20 +7532,20 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         return;
       }
     }
-    if (mentionOpen && filteredMentionPeople.length > 0) {
+    if (mentionOpen && filteredMentionSuggestions.length > 0) {
       if (event.key === "ArrowDown") {
         event.preventDefault();
-        setMentionActiveIndex(index => (Math.min(index, filteredMentionPeople.length - 1) + 1) % filteredMentionPeople.length);
+        setMentionActiveIndex(index => (Math.min(index, filteredMentionSuggestions.length - 1) + 1) % filteredMentionSuggestions.length);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
-        setMentionActiveIndex(index => (Math.min(index, filteredMentionPeople.length - 1) - 1 + filteredMentionPeople.length) % filteredMentionPeople.length);
+        setMentionActiveIndex(index => (Math.min(index, filteredMentionSuggestions.length - 1) - 1 + filteredMentionSuggestions.length) % filteredMentionSuggestions.length);
         return;
       }
       if ((event.key === "Enter" || event.key === "Tab") && !event.shiftKey) {
         event.preventDefault();
-        selectMention(filteredMentionPeople[selectedMentionIndex] ?? filteredMentionPeople[0]);
+        selectMentionSuggestion(filteredMentionSuggestions[selectedMentionIndex] ?? filteredMentionSuggestions[0]);
         return;
       }
     }
@@ -8470,27 +8533,33 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                {filteredSlashCommands.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">No matching commands.</p>}
             </div>
          </div>}
-           {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="mention-menu">
-            <div className="border-b border-[#edf1f1] px-4 py-2.5"><p className="text-xs font-semibold text-[#52666e]">People and applicants</p><p className="mt-0.5 text-[11px] text-[#8a999d]">Applicant mentions are chat references; applicants aren’t notified.</p></div>
+            {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#10212b] dark:shadow-[0_12px_32px_rgba(0,0,0,0.4)]" data-testid="mention-menu">
+             <div className="border-b border-[#edf1f1] px-4 py-2.5 dark:border-[#263e49]"><p className="text-xs font-semibold text-[#52666e] dark:text-[#d5e0e0]">People, teams, and events</p><p className="mt-0.5 text-[11px] text-[#8a999d] dark:text-[#a9bbc2]">Search by team number/name or competition. Applicant mentions don’t notify applicants.</p></div>
             <div className="max-h-64 overflow-y-auto p-1.5">
-               {filteredMentionPeople.map((person, index) => <button
-                  key={person.token}
+                {filteredMentionSuggestions.map((suggestion, index) => <button
+                   key={suggestion.key}
                   id={`chat-mention-option-${index}`}
                   role="option"
                   aria-selected={index === selectedMentionIndex}
                   type="button"
                   onMouseDown={event => event.preventDefault()}
                   onMouseEnter={() => setMentionActiveIndex(index)}
-                  onClick={() => selectMention(person)}
-                  className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition ${index === selectedMentionIndex ? "bg-[#edf4f3]" : "hover:bg-[#edf4f3]"}`}
-                  data-testid={`mention-option-${person.token.toLowerCase().replaceAll(" ", "-")}`}
+                   onClick={() => selectMentionSuggestion(suggestion)}
+                   className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition ${index === selectedMentionIndex ? "bg-[#edf4f3] dark:bg-[#1d3a47]" : "hover:bg-[#edf4f3] dark:hover:bg-[#1d3a47]"}`}
+                   data-testid={suggestion.kind === "person"
+                     ? `mention-option-${suggestion.token.toLowerCase().replaceAll(" ", "-")}`
+                     : `mention-option-ftc-${suggestion.kind}-${suggestion.kind === "team" ? suggestion.team.teamNumber : suggestion.event.code.toLowerCase()}`}
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dff4f2] text-[11px] font-bold text-[#12737d]">{person.initials}</span>
-                  <span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b]">{person.label}</span><span className="block truncate text-[11px] text-[#7c8c91]">{person.detail}</span></span>
+                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${suggestion.kind === "person" ? "bg-[#dff4f2] text-[#12737d] dark:bg-[#21434b] dark:text-[#a8e7e2]" : "bg-[#e4f3f1] text-[#137989] dark:bg-[#203f48] dark:text-[#8fd7e0]"}`}>
+                     {suggestion.kind === "person" ? suggestion.initials : suggestion.kind === "team" ? <Hash size={15} /> : <CalendarDays size={15} />}
+                   </span>
+                   <span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b] dark:text-[#e8eef2]">{suggestion.label}</span><span className="block truncate text-[11px] text-[#7c8c91] dark:text-[#a9bbc2]">{suggestion.detail || (suggestion.kind === "team" ? "Official FTC team" : "")}</span></span>
                  </button>)}
-               {applicantMentionsQuery.isFetching && <p className="px-3 py-3 text-center text-xs text-[#7c8c91]">Loading applicant suggestions…</p>}
-               {applicantMentionsQuery.isError && <p className="px-3 py-3 text-center text-xs text-[#a34d46]">Applicants couldn’t be loaded. Interviewer mentions still work.</p>}
-               {filteredMentionPeople.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && <p className="px-3 py-4 text-center text-xs text-[#7c8c91]">No matching people or applicants.</p>}
+               {applicantMentionsQuery.isFetching && <p className="px-3 py-3 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">Loading applicant suggestions…</p>}
+               {applicantMentionsQuery.isError && <p className="px-3 py-3 text-center text-xs text-[#a34d46] dark:text-[#ef948b]">Applicants couldn’t be loaded. Interviewer mentions still work.</p>}
+               {mentionQuery.trim().length >= 2 && (!currentFtcMentionResults || ftcMentionSearch.isFetching) && <p className="px-3 py-3 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">Searching FIRST teams and events…</p>}
+               {ftcMentionSearch.isError && mentionQuery.trim().length >= 2 && <p className="px-3 py-3 text-center text-xs text-[#a34d46] dark:text-[#ef948b]">FIRST teams and events couldn’t be loaded.</p>}
+               {filteredMentionSuggestions.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && !(mentionQuery.trim().length >= 2 && (!currentFtcMentionResults || ftcMentionSearch.isFetching)) && !(ftcMentionSearch.isError && mentionQuery.trim().length >= 2) && <p className="px-3 py-4 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">No matching people, teams, or events.</p>}
             </div>
          </div>}
            {channelMentionOpen && <div id="chat-channel-listbox" role="listbox" aria-label="Channel suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="channel-mention-menu">
@@ -8584,13 +8653,13 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                    aria-autocomplete="list"
                    aria-controls={slashOpen ? "chat-slash-listbox" : mentionOpen ? "chat-mention-listbox" : channelMentionOpen ? "chat-channel-listbox" : undefined}
                    aria-expanded={slashOpen || mentionOpen || channelMentionOpen}
-                   aria-activedescendant={slashOpen && filteredSlashCommands.length ? `chat-slash-option-${selectedSlashIndex}` : mentionOpen && filteredMentionPeople.length ? `chat-mention-option-${selectedMentionIndex}` : channelMentionOpen && filteredChannelMentions.length ? `chat-channel-mention-option-${selectedChannelMentionIndex}` : undefined}
+                   aria-activedescendant={slashOpen && filteredSlashCommands.length ? `chat-slash-option-${selectedSlashIndex}` : mentionOpen && filteredMentionSuggestions.length ? `chat-mention-option-${selectedMentionIndex}` : channelMentionOpen && filteredChannelMentions.length ? `chat-channel-mention-option-${selectedChannelMentionIndex}` : undefined}
                    data-testid="input-interviewer-chat"
                    maxLength={CHAT_MESSAGE_MAX_CHARS}
                    rows={1}
                    disabled={demoMode}
                    className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-base md:text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
-                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} — @ people, # channels, / commands` : "Message the team — @ people, # channels, / commands"}
+                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} — @ people, FTC teams/events, # channels, / commands` : "Message the team — @ people, FTC teams/events, # channels, / commands"}
                  />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-11 w-11 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-11 w-11 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-11 w-11 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown or {'<iframe>'} embeds supported</span></div>}
               </div>
@@ -11345,6 +11414,6 @@ function Router() {
     </ErrorBoundary>
   );
 }
-function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><RouteScrollReset /><SettingsProvider><Router /></SettingsProvider></WouterRouter><Toaster /><DialogHost /></TooltipProvider></QueryClientProvider>; }
+function App() { return <QueryClientProvider client={queryClient}><TooltipProvider><ChatFtcMentionProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}><RouteScrollReset /><SettingsProvider><Router /></SettingsProvider></WouterRouter></ChatFtcMentionProvider><Toaster /><DialogHost /></TooltipProvider></QueryClientProvider>; }
 export { ConversationAssistant, InterviewChatPanel, MarkdownContent, renderInlineMarkdown };
 export default App;

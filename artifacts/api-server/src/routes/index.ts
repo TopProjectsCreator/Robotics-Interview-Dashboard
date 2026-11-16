@@ -15,6 +15,7 @@ import featureRequestsRouter from "./featureRequests";
 import sitemapRouter from "./sitemap";
 import assistantProvidersRouter from "./assistantProviders";
 import teamAccessCodeRouter from "./teamAccessCode";
+import ftcEventsRouter from "./ftcEvents";
 
 const router: IRouter = Router();
 
@@ -23,6 +24,7 @@ router.use(sitemapRouter);
 router.use(healthRouter);
 router.use(authRouter);
 router.use(teamAccessCodeRouter);
+router.use(ftcEventsRouter);
 router.use(roboticsRouter);
 router.use(assistantProvidersRouter);
 router.use(storageRouter);

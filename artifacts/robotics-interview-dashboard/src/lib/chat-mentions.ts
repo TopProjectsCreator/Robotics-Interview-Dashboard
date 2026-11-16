@@ -22,6 +22,57 @@ export type ChatChannelMention = ChatMentionToken & {
   kind: "channel";
 };
 
+type ChatFtcMentionBase = {
+  start: number;
+  end: number;
+  text: string;
+  season: number;
+};
+export type ChatFtcMention =
+  | (ChatFtcMentionBase & { kind: "team"; teamNumber: number })
+  | (ChatFtcMentionBase & { kind: "event"; eventCode: string });
+
+/**
+ * FIRST references use a stable, searchable message token:
+ * `@FTC Team <season> <number>` or `@FTC Event <season> <event code>`.
+ * The rendered token can stay compact while its season and identifier remain
+ * available to every chat participant after reload.
+ */
+export function findChatFtcMentions(text: string): ChatFtcMention[] {
+  const pattern = /(^|[^\p{L}\p{N}_.+\-])(@FTC Team (\d{4}) (\d{1,5})|@FTC Event (\d{4}) ([A-Za-z0-9]{3,20}))(?=$|[^\p{L}\p{N}_-])/giu;
+  const mentions: ChatFtcMention[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) {
+    const token = match[2];
+    const start = match.index + match[1].length;
+    if (match[3] && match[4]) {
+      const season = Number(match[3]);
+      const teamNumber = Number(match[4]);
+      if (season < 2022 || season > 2100 || teamNumber < 1 || teamNumber > 99999) continue;
+      mentions.push({
+        kind: "team",
+        start,
+        end: start + token.length,
+        text: token,
+        season,
+        teamNumber,
+      });
+    } else if (match[5] && match[6]) {
+      const season = Number(match[5]);
+      if (season < 2022 || season > 2100) continue;
+      mentions.push({
+        kind: "event",
+        start,
+        end: start + token.length,
+        text: token,
+        season,
+        eventCode: match[6],
+      });
+    }
+  }
+  return mentions;
+}
+
 export type ApplicantMentionSource = {
   id: string;
   name: string;
