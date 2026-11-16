@@ -1,4 +1,4 @@
-const FTC_API_ROOT = "https://ftc-events.firstinspires.org/v2.0";
+const FTC_API_ROOT = "https://ftc-api.firstinspires.org/v2.0";
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const MAX_TEAM_PAGES = 100;
 const PAGE_CONCURRENCY = 4;
