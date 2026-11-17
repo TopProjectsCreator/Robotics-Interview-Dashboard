@@ -178,6 +178,7 @@ import type {
   FeatureRequestList,
   FeatureRequestMessageUpdate,
   FtcEventProfileResponse,
+  FtcGlobeResponse,
   FtcMentionSearchResponse,
   FtcTeamProfileResponse,
   GenerateImageInput,
@@ -190,6 +191,7 @@ import type {
   GetChatProductivityParams,
   GetDisplayStateParams,
   GetFtcEventProfileParams,
+  GetFtcGlobeDataParams,
   GetFtcTeamProfileParams,
   GetInterviewChatParams,
   GetInterviewWhiteboardByIdParams,
@@ -8105,6 +8107,90 @@ export function useGetFtcEventProfile<TData = Awaited<ReturnType<typeof getFtcEv
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetFtcEventProfileQueryOptions(eventCode,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetFtcGlobeDataUrl = (params?: GetFtcGlobeDataParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/public/ftc-globe?${stringifiedParams}` : `/api/public/ftc-globe`
+}
+
+/**
+ * @summary Get public FTC team and event locations for the world globe
+ */
+export const getFtcGlobeData = async (params?: GetFtcGlobeDataParams, options?: Parameters<typeof customFetch>[1]): Promise<FtcGlobeResponse> => {
+
+  return customFetch<FtcGlobeResponse>(getGetFtcGlobeDataUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFtcGlobeDataQueryKey = (params?: GetFtcGlobeDataParams,) => {
+    return [
+    `/api/public/ftc-globe`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetFtcGlobeDataQueryOptions = <TData = Awaited<ReturnType<typeof getFtcGlobeData>>, TError = ErrorType<void>>(params?: GetFtcGlobeDataParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFtcGlobeData>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFtcGlobeDataQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFtcGlobeData>>> = ({ signal }) => getFtcGlobeData(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFtcGlobeData>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFtcGlobeDataQueryResult = NonNullable<Awaited<ReturnType<typeof getFtcGlobeData>>>
+export type GetFtcGlobeDataQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get public FTC team and event locations for the world globe
+ */
+
+export function useGetFtcGlobeData<TData = Awaited<ReturnType<typeof getFtcGlobeData>>, TError = ErrorType<void>>(
+ params?: GetFtcGlobeDataParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFtcGlobeData>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFtcGlobeDataQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

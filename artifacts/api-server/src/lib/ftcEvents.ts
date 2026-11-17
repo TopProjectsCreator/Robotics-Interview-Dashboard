@@ -1,3 +1,6 @@
+import type { FtcGlobeResponse } from "@workspace/api-zod";
+import { ftcGlobeLocationIndex } from "./ftcGlobeLocationIndex.ts";
+
 const FTC_API_ROOT = "https://ftc-api.firstinspires.org/v2.0";
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const STALE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -190,6 +193,100 @@ async function getSeasonEvents(season: number): Promise<FtcEvent[]> {
     return Array.isArray(payload.events)
       ? payload.events.map(event => mapEvent(event, season)).filter((event): event is FtcEvent => event !== null)
       : [];
+  });
+}
+
+function normalizeLocationPart(value: string | null): string {
+  return (value ?? "")
+    .normalize("NFKD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function getFtcLocation(city: string | null, stateProv: string | null, country: string | null): {
+  latitude: number;
+  longitude: number;
+  precision: "city" | "region" | "country" | "unknown";
+} {
+  const normalizedCountry = normalizeLocationPart(country);
+  const countryCode = ftcGlobeLocationIndex.countries[normalizedCountry] ?? normalizedCountry.toUpperCase();
+  const normalizedRegion = normalizeLocationPart(stateProv);
+  const regionCode = ftcGlobeLocationIndex.regionAliases[`${countryCode}|${normalizedRegion}`] ?? normalizedRegion;
+  const normalizedCity = normalizeLocationPart(city);
+  const cityPoint = ftcGlobeLocationIndex.cityLocations[`${countryCode}|${regionCode}|${normalizedCity}`];
+  if (cityPoint) return { latitude: cityPoint[0], longitude: cityPoint[1], precision: cityPoint[2] };
+
+  const regionPoint = ftcGlobeLocationIndex.regionLocations[`${countryCode}|${regionCode}`];
+  if (regionPoint) return { latitude: regionPoint[0], longitude: regionPoint[1], precision: "region" };
+
+  const countryPoint = ftcGlobeLocationIndex.countryLocations[countryCode];
+  if (countryPoint) return { latitude: countryPoint[0], longitude: countryPoint[1], precision: "country" };
+
+  return { latitude: 0, longitude: 0, precision: "unknown" };
+}
+
+function formatLocation(city: string | null, stateProv: string | null, country: string | null): string {
+  const parts = [city, stateProv, country].filter((part): part is string => Boolean(part?.trim()));
+  return parts.length ? parts.join(", ") : "Location unavailable";
+}
+
+export async function getFtcGlobeData(season: number): Promise<FtcGlobeResponse> {
+  return cached(`globe:${season}`, async () => {
+    const [teams, events] = await Promise.all([getSeasonTeams(season), getSeasonEvents(season)]);
+    const teamPoints = teams.map(team => {
+      const location = getFtcLocation(team.city, team.stateProv, team.country);
+      return {
+        id: `team-${season}-${team.teamNumber}`,
+        kind: "team" as const,
+        season,
+        ...location,
+        label: team.nameFull ?? team.nameShort ?? team.schoolName ?? `FTC Team ${team.teamNumber}`,
+        location: formatLocation(team.city, team.stateProv, team.country),
+        teamNumber: team.teamNumber,
+        eventCode: null,
+        schoolName: team.schoolName,
+        nameShort: team.nameShort,
+        robotName: team.robotName,
+        rookieYear: team.rookieYear,
+        typeName: null,
+        venue: null,
+        website: team.website,
+        liveStreamUrl: null,
+        dateStart: null,
+        dateEnd: null,
+      };
+    });
+    const eventPoints = events.map(event => {
+      const location = getFtcLocation(event.city, event.stateProv, event.country);
+      return {
+        id: `event-${season}-${event.code}`,
+        kind: "event" as const,
+        season,
+        ...location,
+        label: event.name ?? `FTC Event ${event.code}`,
+        location: formatLocation(event.city, event.stateProv, event.country),
+        teamNumber: null,
+        eventCode: event.code,
+        schoolName: null,
+        nameShort: null,
+        robotName: null,
+        rookieYear: null,
+        typeName: event.typeName,
+        venue: event.venue,
+        website: event.website,
+        liveStreamUrl: event.liveStreamUrl,
+        dateStart: event.dateStart,
+        dateEnd: event.dateEnd,
+      };
+    });
+    return {
+      season,
+      teamCount: teams.length,
+      eventCount: events.length,
+      points: [...teamPoints, ...eventPoints],
+    };
   });
 }
 

@@ -3,6 +3,7 @@ import { afterEach, test } from "node:test";
 
 const {
   clearFtcEventCacheForTests,
+  getFtcGlobeData,
   searchFtcEntities,
   getFtcTeamProfile,
   getFtcEventProfile,
@@ -179,6 +180,51 @@ test("team and event detail requests include the requested season", async (t) =>
   assert.equal(team.events[0].season, 2025);
   assert.equal(event.event?.name, "Cascade Regional");
   assert.equal(event.teams[0].teamNumber, 23442);
+});
+
+test("public globe data includes every team and event with a mapped location", async (t) => {
+  withCredentials();
+  t.mock.method(globalThis, "fetch", async url => {
+    const href = String(url);
+    if (href.endsWith("/2026/teams?page=1")) {
+      return response({
+        teams: [{
+          teamNumber: 23442,
+          nameFull: "BioBuzz",
+          schoolName: "Pine Lake Middle School",
+          city: "Sharon",
+          stateProv: "MA",
+          country: "USA",
+        }],
+        pageTotal: 1,
+      });
+    }
+    if (href.endsWith("/2026/events")) {
+      return response({
+        events: [{
+          code: "MASH1",
+          name: "Massachusetts FTC Meet",
+          city: "Sharon",
+          stateprov: "MA",
+          country: "USA",
+        }],
+      });
+    }
+    throw new Error(`Unexpected request ${href}`);
+  });
+
+  const globe = await getFtcGlobeData(2026);
+  assert.equal(globe.teamCount, 1);
+  assert.equal(globe.eventCount, 1);
+  assert.equal(globe.points.length, 2);
+  assert.deepEqual(globe.points.map(point => point.kind), ["team", "event"]);
+  assert.deepEqual(globe.points.map(point => point.precision), ["city", "city"]);
+  assert.deepEqual(globe.points.map(point => [point.latitude, point.longitude]), [
+    [42.1237, -71.1787],
+    [42.1237, -71.1787],
+  ]);
+  assert.equal(globe.points[0].teamNumber, 23442);
+  assert.equal(globe.points[1].eventCode, "MASH1");
 });
 
 test("missing FIRST credentials fail explicitly before making a request", async () => {

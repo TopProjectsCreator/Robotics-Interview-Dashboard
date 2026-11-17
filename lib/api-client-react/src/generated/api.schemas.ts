@@ -2426,6 +2426,76 @@ export interface FtcEventProfileResponse {
   teams: FtcTeam[];
 }
 
+export type FtcGlobePointKind = typeof FtcGlobePointKind[keyof typeof FtcGlobePointKind];
+
+
+export const FtcGlobePointKind = {
+  team: 'team',
+  event: 'event',
+} as const;
+
+export type FtcGlobePointPrecision = typeof FtcGlobePointPrecision[keyof typeof FtcGlobePointPrecision];
+
+
+export const FtcGlobePointPrecision = {
+  city: 'city',
+  region: 'region',
+  country: 'country',
+  unknown: 'unknown',
+} as const;
+
+export interface FtcGlobePoint {
+  id: string;
+  kind: FtcGlobePointKind;
+  season: number;
+  /**
+     * @minimum -90
+     * @maximum 90
+     */
+  latitude: number;
+  /**
+     * @minimum -180
+     * @maximum 180
+     */
+  longitude: number;
+  precision: FtcGlobePointPrecision;
+  label: string;
+  location: string;
+  /** @nullable */
+  teamNumber: number | null;
+  /** @nullable */
+  eventCode: string | null;
+  /** @nullable */
+  schoolName: string | null;
+  /** @nullable */
+  nameShort: string | null;
+  /** @nullable */
+  robotName: string | null;
+  /** @nullable */
+  rookieYear: number | null;
+  /** @nullable */
+  typeName: string | null;
+  /** @nullable */
+  venue: string | null;
+  /** @nullable */
+  website: string | null;
+  /** @nullable */
+  liveStreamUrl: string | null;
+  /** @nullable */
+  dateStart: string | null;
+  /** @nullable */
+  dateEnd: string | null;
+}
+
+export interface FtcGlobeResponse {
+  season: number;
+  /** @minimum 0 */
+  teamCount: number;
+  /** @minimum 0 */
+  eventCount: number;
+  points: FtcGlobePoint[];
+}
+
 export type ChatProductivityActivityAssessment = typeof ChatProductivityActivityAssessment[keyof typeof ChatProductivityActivityAssessment];
 
 
@@ -5176,6 +5246,14 @@ season?: number;
 };
 
 export type GetFtcEventProfileParams = {
+/**
+ * @minimum 2022
+ * @maximum 2100
+ */
+season?: number;
+};
+
+export type GetFtcGlobeDataParams = {
 /**
  * @minimum 2022
  * @maximum 2100

@@ -2319,6 +2319,28 @@ paths:
           description: Invalid event code or season
         "404":
           description: Event not found
+  /public/ftc-globe:
+    get:
+      operationId: getFtcGlobeData
+      tags: [queue]
+      summary: Get public FTC team and event locations for the world globe
+      parameters:
+        - name: season
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 2022
+            maximum: 2100
+      responses:
+        "200":
+          description: Current-season FTC teams and events with approximate public locations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FtcGlobeResponse"
+        "502":
+          description: FIRST team and event data could not be loaded
   /queue/chat/{messageId}/poll:
     post:
       operationId: createChatPoll
@@ -9007,6 +9029,42 @@ components:
         teams:
           type: array
           items: { $ref: "#/components/schemas/FtcTeam" }
+    FtcGlobePoint:
+      type: object
+      additionalProperties: false
+      required: [id, kind, season, latitude, longitude, precision, label, location, teamNumber, eventCode, schoolName, nameShort, robotName, rookieYear, typeName, venue, website, liveStreamUrl, dateStart, dateEnd]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [team, event] }
+        season: { type: integer }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        precision: { type: string, enum: [city, region, country, unknown] }
+        label: { type: string }
+        location: { type: string }
+        teamNumber: { type: ["integer", "null"] }
+        eventCode: { type: ["string", "null"] }
+        schoolName: { type: ["string", "null"] }
+        nameShort: { type: ["string", "null"] }
+        robotName: { type: ["string", "null"] }
+        rookieYear: { type: ["integer", "null"] }
+        typeName: { type: ["string", "null"] }
+        venue: { type: ["string", "null"] }
+        website: { type: ["string", "null"] }
+        liveStreamUrl: { type: ["string", "null"] }
+        dateStart: { type: ["string", "null"] }
+        dateEnd: { type: ["string", "null"] }
+    FtcGlobeResponse:
+      type: object
+      additionalProperties: false
+      required: [season, teamCount, eventCount, points]
+      properties:
+        season: { type: integer }
+        teamCount: { type: integer, minimum: 0 }
+        eventCount: { type: integer, minimum: 0 }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/FtcGlobePoint" }
     ChatProductivityActivity:
       type: object
       required: [activity, assessment]

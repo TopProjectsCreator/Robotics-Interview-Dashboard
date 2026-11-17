@@ -2673,6 +2673,59 @@ export const GetFtcEventProfileResponse = zod.object({
 
 
 /**
+ * @summary Get public FTC team and event locations for the world globe
+ */
+export const getFtcGlobeDataQuerySeasonMin = 2022;
+export const getFtcGlobeDataQuerySeasonMax = 2100;
+
+
+
+export const GetFtcGlobeDataQueryParams = zod.object({
+  "season": zod.coerce.number().int().min(getFtcGlobeDataQuerySeasonMin).max(getFtcGlobeDataQuerySeasonMax).optional()
+})
+
+export const getFtcGlobeDataResponseTeamCountMin = 0;
+
+export const getFtcGlobeDataResponseEventCountMin = 0;
+
+export const getFtcGlobeDataResponsePointsItemLatitudeMin = -90;
+export const getFtcGlobeDataResponsePointsItemLatitudeMax = 90;
+
+export const getFtcGlobeDataResponsePointsItemLongitudeMin = -180;
+export const getFtcGlobeDataResponsePointsItemLongitudeMax = 180;
+
+
+
+export const GetFtcGlobeDataResponse = zod.object({
+  "season": zod.number().int(),
+  "teamCount": zod.number().int().min(getFtcGlobeDataResponseTeamCountMin),
+  "eventCount": zod.number().int().min(getFtcGlobeDataResponseEventCountMin),
+  "points": zod.array(zod.object({
+  "id": zod.string(),
+  "kind": zod.enum(['team', 'event']),
+  "season": zod.number().int(),
+  "latitude": zod.number().min(getFtcGlobeDataResponsePointsItemLatitudeMin).max(getFtcGlobeDataResponsePointsItemLatitudeMax),
+  "longitude": zod.number().min(getFtcGlobeDataResponsePointsItemLongitudeMin).max(getFtcGlobeDataResponsePointsItemLongitudeMax),
+  "precision": zod.enum(['city', 'region', 'country', 'unknown']),
+  "label": zod.string(),
+  "location": zod.string(),
+  "teamNumber": zod.number().int().nullable(),
+  "eventCode": zod.string().nullable(),
+  "schoolName": zod.string().nullable(),
+  "nameShort": zod.string().nullable(),
+  "robotName": zod.string().nullable(),
+  "rookieYear": zod.number().int().nullable(),
+  "typeName": zod.string().nullable(),
+  "venue": zod.string().nullable(),
+  "website": zod.string().nullable(),
+  "liveStreamUrl": zod.string().nullable(),
+  "dateStart": zod.string().nullable(),
+  "dateEnd": zod.string().nullable()
+}))
+})
+
+
+/**
  * @summary Attach a poll to a chat message
  */
 export const CreateChatPollParams = zod.object({

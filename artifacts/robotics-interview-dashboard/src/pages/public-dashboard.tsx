@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "wouter";
 import { BrandMark } from "@/components/BrandMark";
+import { FtcSeasonGlobe } from "@/components/FtcSeasonGlobe";
 import {
   ArrowRight,
   Cpu,
@@ -274,6 +275,8 @@ export default function PublicDashboard() {
             </div>
           </div>
         </section>
+
+        <FtcSeasonGlobe />
 
         <section
           className="grid grid-cols-2 border-y border-[#d9e6e1] dark:border-[#28464d] sm:grid-cols-4"

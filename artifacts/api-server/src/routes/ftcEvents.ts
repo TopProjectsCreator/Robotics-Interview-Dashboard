@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
 import {
+  GetFtcGlobeDataQueryParams,
+  GetFtcGlobeDataResponse,
   GetFtcEventProfileParams,
   GetFtcEventProfileQueryParams,
   GetFtcEventProfileResponse,
@@ -10,7 +12,7 @@ import {
   SearchFtcMentionsResponse,
 } from "@workspace/api-zod";
 import { requireAdmin } from "../middlewares/adminAuth";
-import { getFtcEventProfile, getFtcTeamProfile, searchFtcEntities } from "../lib/ftcEvents";
+import { getFtcEventProfile, getFtcGlobeData, getFtcTeamProfile, searchFtcEntities } from "../lib/ftcEvents";
 
 const router: IRouter = Router();
 
@@ -24,6 +26,23 @@ function requestedSeason(value: unknown): number | null {
     ? season
     : null;
 }
+
+router.get("/public/ftc-globe", async (req, res): Promise<void> => {
+  const query = GetFtcGlobeDataQueryParams.safeParse(req.query);
+  if (!query.success) {
+    res.status(400).json({ error: query.error.message });
+    return;
+  }
+  const season = requestedSeason(query.data.season) ?? new Date().getUTCFullYear();
+  try {
+    const data = await getFtcGlobeData(season);
+    res.set("Cache-Control", "public, max-age=900, stale-while-revalidate=86400");
+    res.json(GetFtcGlobeDataResponse.parse(data));
+  } catch (error) {
+    req.log.warn({ err: error, season }, "Public FTC globe data could not be loaded");
+    res.status(502).json({ error: "FTC team and event locations could not be loaded right now." });
+  }
+});
 
 router.get("/queue/chat/ftc/search", requireAdmin, async (req, res): Promise<void> => {
   const query = SearchFtcMentionsQueryParams.safeParse(req.query);
