@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
    Dices, Coins, Disc3, FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, SquareSlash, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Lock, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, SquareSlash, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -85,6 +85,8 @@ import type { LucideIcon } from "lucide-react";
 import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getChatDraftStorageKey, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, loadChatDraft, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, saveChatDraft, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
 import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
+import { backgroundIndexAt } from "./lib/backgroundRotation";
+import { useTeamTheme, useEnforceTeamTheme, applyExplicitTeamThemeChoice, teamThemeQueryKey, type TeamTheme, type TeamThemePolicy } from "./useTeamTheme";
 import { useRealtimeSync } from "./useRealtimeSync";
 import { shouldUseChunkedUpload, uploadChunked } from "./lib/chunkedUpload";
 import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
@@ -167,6 +169,8 @@ import { TeamRoleManagement } from "./components/TeamRoleManagement";
 import { AssistantGovernanceSettings } from "./components/AssistantGovernanceSettings";
 import { getSettingsNavigationItems, SettingsWorkspaceNavigation, type SettingsSectionId } from "./components/SettingsWorkspaceNavigation";
 import { SettingsAssistantChat } from "./components/SettingsAssistantChat";
+import { BlockedIpsSettings } from "./components/BlockedIpsSettings";
+import { TinyUrlsSettings } from "./components/TinyUrlsSettings";
 import { updateSettingsCapability } from "./settingsCapabilityRegistry";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
@@ -199,6 +203,15 @@ function signInErrorMessage(error: unknown, fallback = "Could not complete sign-
 
   if (status === 401) return "The team access code or personal password is incorrect.";
   if (status === 429) return "Too many sign-in attempts. Wait a minute and try again.";
+  if (status === 403) {
+    // 403 from the sign-in paths carries the team's sign-in blocklist copy;
+    // show the server's own explanation instead of a generic failure.
+    const data = (error as { data?: unknown } | null)?.data;
+    const message = data && typeof data === "object" && !Array.isArray(data)
+      ? (data as Record<string, unknown>).error
+      : undefined;
+    return typeof message === "string" && message.trim() ? message : "Sign-in from this network address is blocked for this team.";
+  }
   if (typeof status !== "number" || status >= 500) {
     return "Sign-in is temporarily unavailable. Check your connection and try again.";
   }
@@ -372,10 +385,22 @@ function Skeleton({ className = "" }: { className?: string }) { return <div clas
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
+  const session = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
+  const teamTheme = useTeamTheme(session.data?.teamId, session.data?.authenticated === true);
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
   const dark = mounted && theme === "dark";
-  return <button onClick={() => setTheme(dark ? "light" : "dark")} title={dark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle color theme" data-testid="button-theme-toggle" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>;
+  const teamDefault = teamTheme.data?.defaultTheme ?? null;
+  const locked = Boolean(teamDefault) && teamTheme.data?.themePolicy === "locked";
+  if (locked) {
+    return <button type="button" disabled title="Your team admin locked the theme" aria-label="Theme locked by your team admin" aria-disabled="true" data-testid="button-theme-toggle" className="flex h-11 w-11 shrink-0 cursor-not-allowed items-center justify-center rounded-lg opacity-70">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}<span className="sr-only">Locked by your team</span></button>;
+  }
+  const toggle = () => {
+    const next = dark ? "light" : "dark";
+    applyExplicitTeamThemeChoice(next, teamDefault);
+    setTheme(next);
+  };
+  return <button onClick={toggle} title={dark ? "Switch to light mode" : "Switch to dark mode"} aria-label="Toggle color theme" data-testid="button-theme-toggle" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition hover:bg-[#e3ebeb] dark:hover:bg-[#1e3340]">{mounted && dark ? <Sun size={17} className="text-[#f8c84a]" /> : <Moon size={17} className="text-[#60757c] dark:text-[#9db2bd]" />}</button>;
 }
 
 function SignalChips({ signals }: { signals: ApplicantSignals }) {
@@ -396,8 +421,8 @@ function Toggle({ on, onChange, testId, label, disabled = false }: { on: boolean
   // the switch is reachable with a thumb.
   return <button role="switch" aria-checked={on} aria-label={label} disabled={disabled} data-testid={testId} onClick={() => onChange(!on)} className={`relative h-11 w-12 shrink-0 transition ${disabled ? "cursor-not-allowed opacity-50" : ""}`}><span className={`absolute left-0 top-1/2 h-6 w-11 -translate-y-1/2 rounded-full transition ${on ? "bg-[#16869a]" : "bg-[#cbd9da]"}`} /><span className={`absolute left-0 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full bg-white shadow transition-all ${on ? "translate-x-[22px]" : "translate-x-0.5"}`} /></button>;
 }
-function Segmented<T extends string | number>({ options, value, onChange, testId }: { options: { value: T; label: string }[]; value: T; onChange: (v: T) => void; testId: string }) {
-  return <div className="flex rounded-lg border border-[#dce5e5] bg-[#f3f6f5] p-1" data-testid={testId}>{options.map(o => <button key={String(o.value)} onClick={() => onChange(o.value)} className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition ${o.value === value ? "bg-white text-[#183a4b] shadow-sm" : "text-[#7c8c91] hover:text-[#385762]"}`}>{o.label}</button>)}</div>;
+function Segmented<T extends string | number>({ options, value, onChange, testId, disabled = false }: { options: { value: T; label: string }[]; value: T; onChange: (v: T) => void; testId: string; disabled?: boolean }) {
+  return <div className={`flex rounded-lg border border-[#dce5e5] bg-[#f3f6f5] p-1 ${disabled ? "opacity-60" : ""}`} data-testid={testId} aria-disabled={disabled || undefined}>{options.map(o => <button key={String(o.value)} disabled={disabled} onClick={() => onChange(o.value)} className={`flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-semibold transition ${o.value === value ? "bg-white text-[#183a4b] shadow-sm" : "text-[#7c8c91] hover:text-[#385762]"} ${disabled ? "cursor-not-allowed" : ""}`}>{o.label}</button>)}</div>;
 }
 function SettingRow({ title, detail, children }: { title: string; detail?: string; children: ReactNode }) {
   return <div className="flex items-center justify-between gap-4 py-3"><div className="min-w-0"><p className="text-sm font-semibold">{title}</p>{detail && <p className="mt-0.5 text-xs text-[#7c8c91]">{detail}</p>}</div><div className="shrink-0">{children}</div></div>;
@@ -700,6 +725,16 @@ function SettingsModal({
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const workspaceVisibility = useWorkspaceVisibility();
   const [visibilityDraft, setVisibilityDraft] = useState(workspaceVisibility.visibility);
+  const teamTheme = useTeamTheme(session.data?.teamId, session.data?.authenticated === true);
+  const teamDefaultTheme = teamTheme.data?.defaultTheme ?? null;
+  const teamThemeLocked = Boolean(teamDefaultTheme) && teamTheme.data?.themePolicy === "locked";
+  const [teamThemeDefaultDraft, setTeamThemeDefaultDraft] = useState<TeamTheme | null>(null);
+  const [teamThemePolicyDraft, setTeamThemePolicyDraft] = useState<TeamThemePolicy>("recommended");
+  const [teamThemeSaveError, setTeamThemeSaveError] = useState("");
+  useEffect(() => {
+    setTeamThemeDefaultDraft(teamTheme.data?.defaultTheme ?? null);
+    setTeamThemePolicyDraft(teamTheme.data?.themePolicy ?? "recommended");
+  }, [teamTheme.data?.defaultTheme, teamTheme.data?.themePolicy]);
   const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionId>("profile");
   const settingsSectionPanelRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -802,19 +837,34 @@ function SettingsModal({
   const [backgroundAudienceDraft, setBackgroundAudienceDraft] = useState<"everyone" | "selected">("everyone");
   const [backgroundMemberIdsDraft, setBackgroundMemberIdsDraft] = useState<string[]>([]);
   const [backgroundAudienceNotice, setBackgroundAudienceNotice] = useState("");
+  const [backgroundRotationDraft, setBackgroundRotationDraft] = useState(0);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
+  const backgroundCount = branding.data?.backgrounds.length ?? 0;
   useEffect(() => {
     setBrandColorDraft(branding.data?.primaryColor ?? "#16869a");
   }, [branding.data?.primaryColor]);
   useEffect(() => {
     setBackgroundModeDraft(branding.data?.backgroundMode ?? "cover");
     setBackgroundOverlayDraft(branding.data?.backgroundOverlay ?? 35);
-  }, [branding.data?.backgroundMode, branding.data?.backgroundOverlay]);
+    setBackgroundRotationDraft(branding.data?.backgroundRotationSeconds ?? 0);
+  }, [branding.data?.backgroundMode, branding.data?.backgroundOverlay, branding.data?.backgroundRotationSeconds]);
   useEffect(() => {
     setBackgroundAudienceDraft(branding.data?.backgroundAudience ?? "everyone");
     setBackgroundMemberIdsDraft(branding.data?.backgroundMemberIds ?? []);
   }, [branding.data?.backgroundAudience, branding.data?.backgroundMemberIds]);
+  const rotationParts = rotationPartsFor(backgroundRotationDraft);
+  const handleRotationValueChange = (raw: string) => {
+    const factor = ROTATION_UNIT_SECONDS[rotationParts.unit];
+    const parsed = Number(raw);
+    const maxForUnit = Math.floor(ROTATION_MAX_SECONDS / factor);
+    const value = Number.isFinite(parsed) ? Math.min(maxForUnit, Math.max(0, Math.round(parsed))) : 0;
+    setBackgroundRotationDraft(value * factor);
+  };
+  const handleRotationUnitChange = (unit: RotationUnit) => {
+    const factor = ROTATION_UNIT_SECONDS[unit];
+    setBackgroundRotationDraft(Math.min(Math.floor(ROTATION_MAX_SECONDS / factor), rotationParts.value) * factor);
+  };
   const interviewerAccounts = useListInterviewers(undefined, {
     query: { queryKey: [...getListInterviewersQueryKey(), "team", session.data?.teamId ?? "unknown"] },
   });
@@ -987,18 +1037,49 @@ function SettingsModal({
   const passkeysAvailable = usePasskeysAvailable();
   const chatSettings = useGetChatSettings({ query: { queryKey: getGetChatSettingsQueryKey() } });
   const updateChatSettings = useUpdateChatSettings();
+  // The endpoint replaces both chat settings at once, and the Segmented
+  // controls render before the settings query resolves — so never save until
+  // the current values are known, or the untouched field would be wiped.
+  // Shared by both setters: current values once loaded, otherwise null.
+  const currentChatSettings = (): { slowmodeSeconds: number; multimessageLimit: number } | null => (
+    chatSettings.data
+      ? { slowmodeSeconds: chatSettings.data.slowmodeSeconds, multimessageLimit: chatSettings.data.multimessageLimit }
+      : null
+  );
+  const settingsStillLoading = () => setPasswordError("Chat settings are still loading — try again in a moment.");
   const [slowmodeBusy, setSlowmodeBusy] = useState(false);
   const setSlowmode = (seconds: number) => {
+    const current = currentChatSettings();
+    if (!current) { settingsStillLoading(); return; }
     setSlowmodeBusy(true);
-    updateChatSettings.mutate({ data: { slowmodeSeconds: seconds } }, {
-      onSuccess: () => {
+    updateChatSettings.mutate({ data: { ...current, slowmodeSeconds: seconds } }, {
+      onSuccess: (saved) => {
         setSlowmodeBusy(false);
+        qc.setQueryData(getGetChatSettingsQueryKey(), saved);
         setPasswordNotice(seconds > 0 ? `Slow mode on — one message every ${seconds < 60 ? `${seconds}s` : "1m"}.` : "Slow mode off.");
         setPasswordError("");
       },
       onError: () => {
         setSlowmodeBusy(false);
         setPasswordError("Could not save slow mode. Try again.");
+      },
+    });
+  };
+  const [multimessageLimitBusy, setMultimessageLimitBusy] = useState(false);
+  const setMultimessageLimit = (limit: number) => {
+    const current = currentChatSettings();
+    if (!current) { settingsStillLoading(); return; }
+    setMultimessageLimitBusy(true);
+    updateChatSettings.mutate({ data: { ...current, multimessageLimit: limit } }, {
+      onSuccess: (saved) => {
+        setMultimessageLimitBusy(false);
+        qc.setQueryData(getGetChatSettingsQueryKey(), saved);
+        setPasswordNotice(limit > 0 ? `/multimessage is limited to ${limit} ${limit === 1 ? "copy" : "copies"} per run.` : "/multimessage limit removed — no limit.");
+        setPasswordError("");
+      },
+      onError: () => {
+        setMultimessageLimitBusy(false);
+        setPasswordError("Could not save the /multimessage limit. Try again.");
       },
     });
   };
@@ -1209,9 +1290,21 @@ function SettingsModal({
     "live.refreshMs": settings.refreshMs,
   };
   const applySettingsAssistantLocalUpdates = async (updates: Record<string, unknown>) => {
+    if (teamThemeLocked && Object.prototype.hasOwnProperty.call(updates, "appearance.theme")) {
+      throw new Error("The team theme is locked by your team admin. Change it in Settings → Branding to switch the whole team.");
+    }
     const context = {
       session: session.data,
-      local: { settings, theme, updateSettings: update, setTheme },
+      local: {
+        settings,
+        theme,
+        updateSettings: update,
+        setTheme: (next: string) => {
+          const choice = next === "dark" ? "dark" : "light";
+          applyExplicitTeamThemeChoice(choice, teamDefaultTheme);
+          setTheme(next);
+        },
+      },
     };
     for (const [settingId, value] of Object.entries(updates)) {
       await updateSettingsCapability(settingId, value, context);
@@ -1223,6 +1316,7 @@ function SettingsModal({
       qc.invalidateQueries({ queryKey: getGetTeamMailboxSettingsQueryKey() }),
       qc.invalidateQueries({ queryKey: getGetTeamNameRulesQueryKey() }),
       qc.invalidateQueries({ queryKey: teamBrandingQueryKey(session.data?.teamId) }),
+      qc.invalidateQueries({ queryKey: teamThemeQueryKey(session.data?.teamId) }),
     ]);
   };
   const activeSettingsItem = settingsNavigationItems.find((item) => item.id === activeSettingsSection)
@@ -1234,7 +1328,7 @@ function SettingsModal({
         <div className="min-w-0">
           <p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p>
           <h2 className="mt-1 text-lg font-semibold tracking-[-.02em]">Tune your station</h2>
-          <p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Profile and view preferences stay on this device; team branding is shared with your teammates.</p>
+          <p className="mt-1 text-xs text-[#7c8c91] dark:text-[#93a8b2]">Profile and view preferences stay on this device; team branding and the team theme are shared with your teammates.</p>
         </div>
         <button onClick={onClose} aria-label="Close settings" data-testid="button-close-settings" className="shrink-0 rounded-lg p-2 text-[#60757c] transition hover:bg-[#f1f6f5] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-[#9db2bd] dark:hover:bg-[#1e3340]"><X size={16} /></button>
       </div>
@@ -1261,7 +1355,9 @@ function SettingsModal({
         <SettingRow title="Avatar initials" detail="Defaults to your name initials"><input value={settings.initials} onChange={e => update({ initials: e.target.value.toUpperCase().slice(0, 2) })} data-testid="input-settings-initials" placeholder={avatarInitials({ ...settings, initials: "" })} maxLength={2} className={`mono ${field} w-20 text-center font-bold uppercase`} /></SettingRow>
       </div>}
       {activeSettingsSection === "appearance" && <div className={divider}><p className={sectionLabel}>Appearance</p>
-        <SettingRow title="Theme" detail="Dark is easier on the eyes at night events"><Segmented options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={theme === "dark" ? "dark" : "light"} onChange={(v) => setTheme(v)} testId="segment-settings-theme" /></SettingRow>
+        <SettingRow title="Theme" detail={teamThemeLocked ? `Locked to ${teamDefaultTheme === "dark" ? "Dark" : "Light"} by your team admin` : teamDefaultTheme ? `Your team recommends ${teamDefaultTheme === "dark" ? "Dark" : "Light"}` : "Dark is easier on the eyes at night events"}>{teamThemeLocked
+          ? <span className="flex items-center gap-2" data-testid="settings-theme-locked"><Lock size={13} className="text-[#7c8c91] dark:text-[#93a8b2]" aria-hidden="true" /><Segmented disabled options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={teamDefaultTheme ?? "light"} onChange={() => undefined} testId="segment-settings-theme" /></span>
+          : <span className="flex items-center gap-2"><Segmented options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={theme === "dark" ? "dark" : "light"} onChange={(v) => { applyExplicitTeamThemeChoice(v, teamDefaultTheme); setTheme(v); }} testId="segment-settings-theme" />{teamDefaultTheme && (theme === "dark" ? "dark" : "light") !== teamDefaultTheme && <button type="button" onClick={() => { applyExplicitTeamThemeChoice(teamDefaultTheme, teamDefaultTheme); setTheme(teamDefaultTheme); }} data-testid="button-apply-team-theme" className={ghostButton}>Use {teamDefaultTheme === "dark" ? "Dark" : "Light"}</button>}</span>}</SettingRow>
         <SettingRow title="Row density" detail="Compact fits more applicants per screen"><Segmented options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]} value={settings.density} onChange={(v) => update({ density: v })} testId="segment-settings-density" /></SettingRow>
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
@@ -1286,11 +1382,20 @@ function SettingsModal({
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>
         <div className="mt-2"><PresencePanel /></div>
       </div>}
+      {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-blocked-ips">
+        <p className={sectionLabel}>Sign-in blocklist</p>
+        <div className="mt-2"><BlockedIpsSettings /></div>
+      </div>}
       {isAdmin && session.data?.teamId && <div hidden={activeSettingsSection !== "operations"}><PartsOrderLimitSetting key={session.data.teamId} teamId={session.data.teamId} /></div>}
       {canSendBroadcast && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-broadcast">
         <p className={sectionLabel}>Broadcast</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Send a popup to everyone online, or to one person by name. It pops up in seconds — and with browser notifications on, even in another tab.</p>
         <div className="mt-2"><BroadcastCard /></div>
+      </div>}
+      {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-tiny-urls">
+        <p className={sectionLabel}>TinyURL</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Short links with the alias you choose, served from this site&rsquo;s own domain. The domain is auto-detected — no setup, and it works everywhere the team app does.</p>
+        <div className="mt-2"><TinyUrlsSettings /></div>
       </div>}
       {activeSettingsSection === "team" && canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
@@ -1380,28 +1485,48 @@ function SettingsModal({
           </div>
           {branding.updateColor.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateColor.error.message}</p>}
         </SettingRow>
-        <SettingRow title="App background" detail={`Shown behind pages for ${backgroundAudienceDraft === "selected" ? "selected team members" : "everyone in the team"} · PNG, JPEG, or WebP · up to 8 MB`}>
+        <SettingRow title="App background" detail={`Shown behind every page for ${backgroundAudienceDraft === "selected" ? "selected team members" : "everyone in the team"} · PNG, JPEG, or WebP · up to 8 MB each · up to ten backgrounds`}>
           <div className="flex flex-wrap items-center gap-2">
-            {branding.data?.backgroundPath && <AuthenticatedChatImage key={branding.data.backgroundPath} src={teamBrandingObjectUrl(branding.data.backgroundPath)} alt="Current team background" className="h-16 w-24 rounded-lg border border-[#dce5e5] object-cover dark:border-[#31495a]" />}
-            <input ref={backgroundInputRef} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose team background" data-testid="input-team-background" className="max-w-[220px] text-xs text-[#52666e] file:mr-2 file:rounded-lg file:border-0 file:bg-[#eaf2f1] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#385762] dark:text-[#c3d3db] dark:file:bg-[#243743] dark:file:text-[#c3d3db]" onChange={event => {
-              const file = event.currentTarget.files?.[0];
+            <input ref={backgroundInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label="Choose team backgrounds" data-testid="input-team-background" className="max-w-[260px] text-xs text-[#52666e] file:mr-2 file:rounded-lg file:border-0 file:bg-[#eaf2f1] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#385762] dark:text-[#c3d3db] dark:file:bg-[#243743] dark:file:text-[#c3d3db]" onChange={event => {
+              const selected = Array.from(event.currentTarget.files ?? []);
               event.currentTarget.value = "";
-              if (!file) return;
-              if (file.size > 8 * 1024 * 1024) {
-                notify({ title: "Background is too large", description: "Choose an image smaller than 8 MB." });
+              if (selected.length === 0) return;
+              const remaining = Math.max(0, TEAM_BACKGROUNDS_LIMIT - backgroundCount);
+              if (remaining === 0) {
+                notify({ title: "Background limit reached", description: `Keep at most ten backgrounds; remove one before adding more.` });
                 return;
               }
-              branding.uploadBackground.mutate(file, {
-                onSuccess: () => notify({ title: "Team background saved" }),
-                onError: error => notify({ title: "Could not save team background", description: error.message }),
+              const files = selected.slice(0, remaining);
+              if (selected.length > files.length) notify({ title: "Background limit reached", description: `Only the first ${files.length} image${files.length === 1 ? " was" : "s were"} added (ten backgrounds max).` });
+              const oversized = files.filter(file => file.size > 8 * 1024 * 1024);
+              if (oversized.length > 0) notify({ title: "Background is too large", description: "Choose images smaller than 8 MB each." });
+              const usable = files.filter(file => file.size <= 8 * 1024 * 1024);
+              if (usable.length === 0) return;
+              branding.uploadBackgrounds.mutate(usable, {
+                onSuccess: () => notify({ title: usable.length > 1 ? `${usable.length} team backgrounds saved` : "Team background saved" }),
+                onError: error => notify({ title: "Could not save team backgrounds", description: error.message }),
               });
             }} />
-            {branding.data?.backgroundPath && <button type="button" disabled={branding.resetBackground.isPending} onClick={() => branding.resetBackground.mutate(undefined, {
-              onSuccess: () => notify({ title: "Team background reset" }),
-              onError: error => notify({ title: "Could not reset team background", description: error.message }),
-            })} data-testid="button-reset-team-background" className={dangerButton}>Reset background</button>}
+            {backgroundCount > 0 && <button type="button" disabled={branding.resetBackground.isPending} onClick={() => branding.resetBackground.mutate(undefined, {
+              onSuccess: () => notify({ title: "Team backgrounds reset" }),
+              onError: error => notify({ title: "Could not reset team backgrounds", description: error.message }),
+            })} data-testid="button-reset-team-background" className={dangerButton}>Reset backgrounds</button>}
           </div>
-          {branding.data?.backgroundPath && (
+          {backgroundCount > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2" data-testid="team-background-list">
+              {branding.data?.backgrounds.map((path, index) => (
+                <div key={path} className="relative h-16 w-24 overflow-hidden rounded-lg border border-[#dce5e5] dark:border-[#31495a]">
+                  <AuthenticatedChatImage key={path} src={teamBrandingObjectUrl(path)} alt={`Team background ${index + 1}`} className="h-full w-full object-cover" />
+                  {index === 0 && <span className="pointer-events-none absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[.08em] text-white" title="Shown when rotation is off">First</span>}
+                  <button type="button" disabled={branding.removeBackground.isPending} aria-label={`Remove background ${index + 1}`} data-testid={`button-remove-background-${index}`} onClick={() => branding.removeBackground.mutate(path, {
+                    onSuccess: () => notify({ title: "Background removed" }),
+                    onError: error => notify({ title: "Could not remove background", description: error.message }),
+                  })} className="absolute right-1 top-1 rounded-md bg-black/60 p-1 text-white transition hover:bg-[#b34a42] disabled:opacity-50"><Trash2 size={12} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          {branding.data && backgroundCount > 0 && (
             <div className="mt-3 space-y-3 border-t border-[#edf1f1] pt-3 dark:border-[#243743]" data-testid="team-background-options">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <label className="text-xs font-semibold text-[#63747c] dark:text-[#a9bcc6]" htmlFor="team-background-mode">Fit</label>
@@ -1417,16 +1542,29 @@ function SettingsModal({
                   <code className="mono w-8 text-xs text-[#52666e] dark:text-[#c3d3db]">{backgroundOverlayDraft}%</code>
                 </div>
               </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="text-xs font-semibold text-[#63747c] dark:text-[#a9bcc6]" htmlFor="team-background-rotation">Switch every</label>
+                <div className="flex items-center gap-2">
+                  <input id="team-background-rotation" type="number" min={0} step={1} value={rotationParts.value} onChange={event => handleRotationValueChange(event.target.value)} aria-label="Background switch interval" data-testid="input-team-background-rotation" className={field + " h-9 w-20 text-xs"} />
+                  <select aria-label="Background switch interval unit" value={rotationParts.unit} onChange={event => handleRotationUnitChange(event.target.value as RotationUnit)} data-testid="select-team-background-rotation-unit" className={field + " h-9 text-xs"}>
+                    <option value="seconds">seconds</option>
+                    <option value="minutes">minutes</option>
+                    <option value="hours">hours</option>
+                  </select>
+                </div>
+              </div>
+              <p className="text-[11px] leading-5 text-[#7c8c91] dark:text-[#93a8b2]">0 keeps the first background. With two or more backgrounds, every screen in {session.data?.teamName?.trim() || "your team"} switches at the same time. Up to 24 hours.</p>
               <button type="button" disabled={branding.updateBackgroundOptions.isPending
                 || (backgroundModeDraft === (branding.data?.backgroundMode ?? "cover")
-                  && backgroundOverlayDraft === (branding.data?.backgroundOverlay ?? 35))}
-                onClick={() => branding.updateBackgroundOptions.mutate({ backgroundMode: backgroundModeDraft, backgroundOverlay: backgroundOverlayDraft }, {
+                  && backgroundOverlayDraft === (branding.data?.backgroundOverlay ?? 35)
+                  && backgroundRotationDraft === (branding.data?.backgroundRotationSeconds ?? 0))}
+                onClick={() => branding.updateBackgroundOptions.mutate({ backgroundMode: backgroundModeDraft, backgroundOverlay: backgroundOverlayDraft, backgroundRotationSeconds: backgroundRotationDraft }, {
                   onSuccess: () => notify({ title: "Background options saved" }),
                   onError: error => notify({ title: "Could not save background options", description: error.message }),
                 })} data-testid="button-save-team-background-options" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a]">Save options</button>
             </div>
           )}
-          {branding.data?.backgroundPath && (
+          {branding.data && backgroundCount > 0 && (
             <fieldset className="mt-3 space-y-3 border-t border-[#edf1f1] pt-3 dark:border-[#243743]" data-testid="team-background-audience">
               <legend className="text-xs font-semibold">Who can see this background?</legend>
               <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
@@ -1495,8 +1633,31 @@ function SettingsModal({
               {backgroundAudienceNotice && <p role={branding.updateBackgroundAudience.isError ? "alert" : "status"} className={`text-xs ${branding.updateBackgroundAudience.isError ? "font-semibold text-[#b34a42] dark:text-[#e89087]" : "text-[#28785c] dark:text-[#6fce8f]"}`} data-testid="team-background-audience-result">{backgroundAudienceNotice}</p>}
             </fieldset>
           )}
+          {branding.uploadBackgrounds.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.uploadBackgrounds.error.message}</p>}
+          {branding.removeBackground.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.removeBackground.error.message}</p>}
           {branding.updateBackgroundOptions.error && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{branding.updateBackgroundOptions.error.message}</p>}
         </SettingRow>
+      </div>}
+      {activeSettingsSection === "branding" && canManageBranding && <div className={divider} data-testid="settings-team-theme">
+        <p className={sectionLabel}>Team theme</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Default light or dark theme for everyone in {session.data?.teamName?.trim() || "your team"}. Saved for the team, not just this device.</p>
+        <SettingRow title="Default theme" detail="Clear it to let members follow their device or their own last choice">
+          <div className="flex items-center gap-2">
+            <Segmented options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} value={teamThemeDefaultDraft ?? ""} onChange={(v) => setTeamThemeDefaultDraft(v as TeamTheme)} testId="segment-team-default-theme" />
+            {teamThemeDefaultDraft !== null && <button type="button" disabled={teamTheme.update.isPending} onClick={() => setTeamThemeDefaultDraft(null)} data-testid="button-clear-team-default-theme" className={ghostButton}>Clear</button>}
+          </div>
+        </SettingRow>
+        <SettingRow title="Members' theme" detail={teamThemePolicyDraft === "locked" ? "Locked: members cannot switch themes" : "Recommended: members land on the default but can still switch"}>
+          <Segmented options={[{ value: "recommended", label: "Recommended" }, { value: "locked", label: "Locked" }]} value={teamThemePolicyDraft} onChange={(v) => setTeamThemePolicyDraft(v as TeamThemePolicy)} testId="segment-team-theme-policy" />
+        </SettingRow>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <button type="button" disabled={teamTheme.update.isPending || (teamThemeDefaultDraft === (teamTheme.data?.defaultTheme ?? null) && teamThemePolicyDraft === (teamTheme.data?.themePolicy ?? "recommended"))} onClick={() => teamTheme.update.mutate({ defaultTheme: teamThemeDefaultDraft, themePolicy: teamThemePolicyDraft }, {
+            onSuccess: () => { setTeamThemeSaveError(""); notify({ title: "Team theme saved" }); },
+            onError: (error) => setTeamThemeSaveError(error instanceof Error ? error.message : "Could not save the team theme."),
+          })} data-testid="button-save-team-theme" className="rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50 dark:bg-[#16869a]">{teamTheme.update.isPending ? "Saving…" : "Save team theme"}</button>
+          {teamTheme.data?.defaultTheme && <span className="mono text-[10px] uppercase tracking-[.14em] text-[#7c8c91] dark:text-[#93a8b2]">Current: {teamTheme.data.defaultTheme}{teamTheme.data.themePolicy === "locked" ? " · locked" : " · recommended"}</span>}
+        </div>
+        {teamThemeSaveError && <p role="alert" className="mt-2 text-xs font-semibold text-[#b34a42] dark:text-[#e89087]">{teamThemeSaveError}</p>}
       </div>}
       {session.data?.teamId && <div hidden={activeSettingsSection !== "team"}><TeamAccessCodeSettings key={session.data.teamId} canManage={isAdmin} /></div>}
       {canManageNameRules && session.data?.teamId && <div hidden={activeSettingsSection !== "team"}><TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} /></div>}
@@ -1644,12 +1805,17 @@ function SettingsModal({
           {passkeyError && <p className="text-[11px] font-semibold text-[#b34a42] dark:text-[#e89087]" data-testid="passkey-error">{passkeyError}</p>}
         </div>}
       </div>}
-      {activeSettingsSection === "chat" && canManageChatSettings && <div className={divider}><p className={sectionLabel}>Chat slow mode</p>
+      {activeSettingsSection === "chat" && canManageChatSettings && <div className={divider}><p className={sectionLabel}>Chat limits</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Like Discord: each person on the team chat may only send one message every N seconds. The send button counts down for them. Direct messages are never slowed.</p>
         <SettingRow title="Slow mode" detail={chatSettings.isLoading ? "Loading…" : `One message every ${(() => { const v = chatSettings.data?.slowmodeSeconds ?? 0; return v === 0 ? "no limit" : v < 60 ? `${v}s` : "1m"; })()}`}>
           <Segmented options={[{ value: 0, label: "Off" }, { value: 5, label: "5s" }, { value: 10, label: "10s" }, { value: 30, label: "30s" }, { value: 60, label: "1m" }]} value={chatSettings.data?.slowmodeSeconds ?? 0} onChange={(v) => setSlowmode(v)} testId="segment-settings-slowmode" />
         </SettingRow>
         {slowmodeBusy && <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Saving…</p>}
+        <p className="mt-4 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Admins can post the same message many times in one run with <code className="mono text-[11px]">/multimessage</code>. Cap how many copies a single run may post — the limit applies team-wide (including direct messages and channels) and the server enforces it for every admin. No limit by default.</p>
+        <SettingRow title="Multimessage limit" detail={chatSettings.isLoading ? "Loading…" : (() => { const v = chatSettings.data?.multimessageLimit ?? 0; return v === 0 ? "No limit" : `Up to ${v} ${v === 1 ? "copy" : "copies"} per run`; })()}>
+          <Segmented options={[{ value: 0, label: "No limit" }, { value: 5, label: "5" }, { value: 10, label: "10" }, { value: 25, label: "25" }, { value: 50, label: "50" }, { value: 100, label: "100" }]} value={chatSettings.data?.multimessageLimit ?? 0} onChange={(v) => setMultimessageLimit(v)} testId="segment-settings-multimessage-limit" />
+        </SettingRow>
+        {multimessageLimitBusy && <p className="text-[11px] text-[#7c8c91] dark:text-[#93a8b2]">Saving…</p>}
       </div>}
       {(canSessionUsePermission(session.data, "featureRequests.view") ||
         canSessionUsePermission(session.data, "featureRequests.create")) && <div hidden={activeSettingsSection !== "chat"}><FeatureRequestSection /></div>}
@@ -1744,7 +1910,64 @@ function appRelativeUrl(path: string): string {
 }
 
 type TeamBackgroundMode = "cover" | "tile";
-type TeamBranding = { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number; backgroundAudience: "everyone" | "selected"; backgroundMemberIds: string[] };
+type TeamBranding = { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgrounds: string[]; backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number; backgroundRotationSeconds: number; backgroundAudience: "everyone" | "selected"; backgroundMemberIds: string[] };
+
+const TEAM_BACKGROUNDS_LIMIT = 10;
+const ROTATION_UNIT_SECONDS = { seconds: 1, minutes: 60, hours: 3600 } as const;
+type RotationUnit = keyof typeof ROTATION_UNIT_SECONDS;
+const ROTATION_MAX_SECONDS = 86_400;
+
+function rotationPartsFor(totalSeconds: number): { value: number; unit: RotationUnit } {
+  if (totalSeconds > 0 && totalSeconds % 3600 === 0 && totalSeconds / 3600 <= ROTATION_MAX_SECONDS / 3600) {
+    return { value: totalSeconds / 3600, unit: "hours" };
+  }
+  if (totalSeconds > 0 && totalSeconds % 60 === 0 && totalSeconds / 60 <= ROTATION_MAX_SECONDS / 60) {
+    return { value: totalSeconds / 60, unit: "minutes" };
+  }
+  return { value: totalSeconds, unit: "seconds" };
+}
+
+/**
+ * Renders the team's background stack. Kept as its own component so the
+ * once-a-second rotation tick re-renders only the layers, not the whole app.
+ */
+function TeamBackgroundLayers({ backgrounds, rotationSeconds, mode, overlay, reduceMotion }: { backgrounds: string[]; rotationSeconds: number; mode: TeamBackgroundMode | null; overlay: number; reduceMotion: boolean }) {
+  const activeIndex = useBackgroundRotation(backgrounds.length, rotationSeconds);
+  return (
+    <div aria-hidden className="pointer-events-none fixed inset-0 z-0" data-testid="team-background">
+      {backgrounds.map((path, index) => (
+        <div
+          key={path}
+          data-testid={index === activeIndex ? "team-background-active" : undefined}
+          className={`absolute inset-0 ${reduceMotion ? "" : "transition-opacity duration-1000"} ${index === activeIndex ? "opacity-100" : "opacity-0"}`}
+          style={{
+            backgroundImage: `url(${teamBrandingObjectUrl(path)})`,
+            backgroundRepeat: mode === "tile" ? "repeat" : "no-repeat",
+            backgroundSize: mode === "tile" ? "auto" : "cover",
+            backgroundPosition: "center",
+          }}
+        />
+      ))}
+      <div className="absolute inset-0" style={{ backgroundColor: `rgba(8, 14, 19, ${overlay / 100})` }} />
+    </div>
+  );
+}
+
+/**
+ * Keeps every team member on the same background: the active index is derived
+ * from wall-clock time, so screens switch together without any server round trip.
+ */
+function useBackgroundRotation(backgroundCount: number, rotationSeconds: number): number {
+  const active = rotationSeconds > 0 && backgroundCount > 1;
+  const [tick, setTick] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return undefined;
+    setTick(Date.now());
+    const id = window.setInterval(() => setTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [active, rotationSeconds]);
+  return backgroundIndexAt(backgroundCount, rotationSeconds, tick);
+}
 const TEAM_BRANDING_QUERY_KEY = ["/api/auth/team-branding"] as const;
 function teamBrandingQueryKey(teamId?: string) {
   return [...TEAM_BRANDING_QUERY_KEY, teamId ?? "unknown"];
@@ -1811,7 +2034,7 @@ function useTeamBranding(teamId?: string, enabled = false) {
     },
   });
   const updateBackgroundOptions = useMutation({
-    mutationFn: async (options: { backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number }) => readTeamBranding(await teamBrandingApi("/api/auth/team-branding", {
+    mutationFn: async (options: { backgroundMode: TeamBackgroundMode | null; backgroundOverlay: number; backgroundRotationSeconds: number }) => readTeamBranding(await teamBrandingApi("/api/auth/team-branding", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ primaryColor: query.data?.primaryColor ?? null, ...options }),
@@ -1836,10 +2059,23 @@ function useTeamBranding(teamId?: string, enabled = false) {
       void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
     },
   });
-  const uploadBackground = useMutation({
-    mutationFn: async (file: File) => {
-      const response = await teamBrandingApi("/api/auth/team-branding/background", { method: "POST", headers: { "Content-Type": file.type }, body: file });
-      if (!response.ok) throw new Error((await response.text()) || "Could not save the team background.");
+  const uploadBackgrounds = useMutation({
+    mutationFn: async (files: File[]) => {
+      let latest: TeamBranding | null = null;
+      // Sequential on purpose: the server appends one background per request.
+      for (const file of files.slice(0, TEAM_BACKGROUNDS_LIMIT)) {
+        const response = await teamBrandingApi("/api/auth/team-branding/background", { method: "POST", headers: { "Content-Type": file.type }, body: file });
+        latest = await readTeamBranding(response);
+      }
+      if (!latest) throw new Error("Choose at least one image to upload.");
+      return latest;
+    },
+    onSuccess: (data) => queryClient.setQueryData(queryKey, data),
+  });
+  const removeBackground = useMutation({
+    mutationFn: async (path: string) => {
+      const response = await teamBrandingApi("/api/auth/team-branding/background", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path }) });
+      if (!response.ok) throw new Error((await response.text()) || "Could not remove the background.");
       return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
     },
     onSuccess: (data) => {
@@ -1850,7 +2086,7 @@ function useTeamBranding(teamId?: string, enabled = false) {
   const resetBackground = useMutation({
     mutationFn: async () => {
       const response = await teamBrandingApi("/api/auth/team-branding/background", { method: "DELETE" });
-      if (!response.ok) throw new Error((await response.text()) || "Could not reset the team background.");
+      if (!response.ok) throw new Error((await response.text()) || "Could not reset the team backgrounds.");
       return readTeamBranding(await teamBrandingApi("/api/auth/team-branding"));
     },
     onSuccess: (data) => {
@@ -1858,7 +2094,7 @@ function useTeamBranding(teamId?: string, enabled = false) {
       void queryClient.invalidateQueries({ queryKey: effectiveTeamBrandingQueryKey(teamId) });
     },
   });
-  return { ...query, updateColor, uploadLogo, resetLogo, updateBackgroundOptions, updateBackgroundAudience, uploadBackground, resetBackground };
+  return { ...query, updateColor, uploadLogo, resetLogo, updateBackgroundOptions, updateBackgroundAudience, uploadBackgrounds, removeBackground, resetBackground };
 }
 
 function useEffectiveTeamBranding(teamId?: string, interviewerId?: string, enabled = false) {
@@ -2749,8 +2985,9 @@ type MultiMessageCommand =
  * Parses the admin-only `/multimessage [{delayMs}] <count> <message>` composer command.
  * Returns null when the draft is not a multimessage command at all, and a
  * usage error (rather than posting anything) for malformed commands.
- * `count` has no upper limit by design — the admin chooses how many copies
- * are posted. The optional leading `{delayMs}` (milliseconds) spaces the
+ * `count` is capped by the team's configured multimessage limit (enforced
+ * by the caller before sending and by the server on every request); 0 means
+ * no limit. The optional leading `{delayMs}` (milliseconds) spaces the
  * copies out — `/multimessage {500} 5 Hello team` posts 5 copies, 500 ms
  * apart — and lets the composer stay usable while the run is in flight.
  * Omit it (or use `{0}`) to post every copy in one request as before.
@@ -3951,6 +4188,9 @@ function Shell({
   const fullscreen = useFullscreen();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode } });
   const teamBranding = useEffectiveTeamBranding(session.data?.teamId, session.data?.interviewerId, !demoMode && session.data?.authenticated === true);
+  const backgroundCount = teamBranding.data?.backgrounds.length ?? 0;
+  const teamTheme = useTeamTheme(session.data?.teamId, !demoMode && session.data?.authenticated === true);
+  useEnforceTeamTheme(teamTheme.data, !demoMode && session.data?.authenticated === true);
   const logout = useLogout();
   usePresenceHeartbeat(!demoMode && session.data?.authenticated === true, location);
   useRealtimeSync(!demoMode && session.data?.authenticated === true);
@@ -4217,20 +4457,15 @@ function Shell({
   ];
   const nav = demoMode ? demoNav : regularNav;
   return (
-    <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] ${teamBranding.data?.backgroundPath ? "bg-transparent" : "bg-[#f3f6f5]"} text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
-      {teamBranding.data?.backgroundPath && (
-        <div aria-hidden className="pointer-events-none fixed inset-0 z-0" data-testid="team-background">
-          <div
-            className="absolute inset-0"
-            style={{
-              backgroundImage: `url(${teamBrandingObjectUrl(teamBranding.data.backgroundPath)})`,
-              backgroundRepeat: teamBranding.data.backgroundMode === "tile" ? "repeat" : "no-repeat",
-              backgroundSize: teamBranding.data.backgroundMode === "tile" ? "auto" : "cover",
-              backgroundPosition: "center",
-            }}
-          />
-          <div className="absolute inset-0" style={{ backgroundColor: `rgba(8, 14, 19, ${(teamBranding.data.backgroundOverlay ?? 35) / 100})` }} />
-        </div>
+    <div className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 overflow-auto" : ""} min-h-[100dvh] ${backgroundCount > 0 ? "bg-transparent" : "bg-[#f3f6f5]"} text-[#182232]${settings.reduceMotion ? " reduce-motion" : ""}`}>
+      {teamBranding.data && backgroundCount > 0 && (
+        <TeamBackgroundLayers
+          backgrounds={teamBranding.data.backgrounds}
+          rotationSeconds={teamBranding.data.backgroundRotationSeconds}
+          mode={teamBranding.data.backgroundMode}
+          overlay={teamBranding.data.backgroundOverlay ?? 35}
+          reduceMotion={settings.reduceMotion}
+        />
       )}
       {mobileNav && <button type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} className="fixed inset-0 z-25 bg-black/45 backdrop-blur-[1px] xl:hidden" data-testid="button-close-mobile-navigation" />}
       <aside id="workspace-sidebar" aria-label="Workspace navigation" className={`fixed inset-y-0 left-0 z-30 flex w-[min(248px,88vw)] flex-col overflow-y-auto bg-[#172a3a] px-4 py-5 pt-[calc(1.25rem+env(safe-area-inset-top))] pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-[#d4e0e2] transition-transform xl:translate-x-0 ${mobileNav ? "translate-x-0 shadow-2xl" : "-translate-x-full"}`}>
@@ -7974,6 +8209,13 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       if ("error" in multiMessageCommand) { setChatError(multiMessageCommand.error); return; }
       const isChatAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
       if (!isChatAdmin) { setChatError("Only admins can use /multimessage."); return; }
+      // Team-configured cap (Settings → chat): enforced client-side here for
+      // immediate feedback; the server re-checks it on every request.
+      const multimessageLimit = slowmodeConfig.data?.multimessageLimit ?? 0;
+      if (multimessageLimit > 0 && multiMessageCommand.count > multimessageLimit) {
+        setChatError(`The team limit for /multimessage is ${multimessageLimit} ${multimessageLimit === 1 ? "copy" : "copies"} per run. An admin can raise it in Settings.`);
+        return;
+      }
       setChatError("");
       setMultiMessageNotice("");
       setExportNotice("");

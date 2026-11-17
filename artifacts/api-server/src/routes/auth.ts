@@ -2,7 +2,7 @@ import { randomBytes, scryptSync, createHash, timingSafeEqual } from "node:crypt
 import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, isNull, or, sql } from "drizzle-orm";
-import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, teamNameRulesTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
+import { db, primaryDb, secondaryDb, secondaryPool, enterInstance, currentInstance, interviewerAccountsTable, interviewChatMessagesTable, interviewQueueTable, teamNameRulesTable, webauthnCredentialsTable, teamsTable, personalNotepadTable, DEFAULT_TEAM_ID, normalizeTeamName, TEAM_BACKGROUNDS_MAX, type DbInstance } from "@workspace/db";
 import { ensureDefaultTeam, findTeamByCode, hashTeamCode, hasTeamCode, matchesLegacyTeamCode, TEAM_CODE_UNIQUENESS_LOCK_KEY, teamIdForAccount, teamFilter, randomTeamCode, type ResolvedTeam } from "../lib/teams";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import {
@@ -66,7 +66,17 @@ import {
   revokeAdminSession,
   setAdminCookie,
 } from "../middlewares/adminAuth";
-import { deletePresenceHeartbeat } from "./presence";
+import { deletePresenceHeartbeat, accountNamesById } from "./presence";
+import {
+  addBlockedIp,
+  BlockedIpsFullError,
+  listBlockedIps,
+  MAX_BLOCKED_IP_REASON_LENGTH,
+  MAX_BLOCKED_IPS_PER_TEAM,
+  normalizeIp,
+  rejectBlockedLoginIp,
+  removeBlockedIp,
+} from "../lib/blockedIps";
 import { checkAccountCreationAllowed, validateDisplayName } from "../lib/spamGuard";
 import { validateTeamNameRules } from "../lib/nameRules";
 import { accountById, normalizeInterviewerName, syncInterviewerAccounts, updateQueueLabels } from "../lib/interviewerAccounts";
@@ -76,22 +86,28 @@ import { getInterviewSettings } from "../lib/roboticsData";
 import { getPwnedPasswordCount } from "../lib/pwnedPasswords";
 import { isDatabaseConnectionError } from "../lib/databaseErrors";
 import { ObjectStorageService } from "../lib/objectStorage";
+import { normalizedBackgrounds, normalizedBrandingRow } from "../lib/teamBranding";
 import { requestTeamId } from "../middlewares/adminAuth";
 import {
   GetTeamBrandingResponse,
   GetEffectiveTeamBrandingResponse,
   UpdateTeamBrandingBody,
   UploadTeamLogoResponse,
-  UploadTeamBackgroundResponse,
   GetPersonalNotepadResponse,
   UpdatePersonalNotepadBody,
   UpdatePersonalNotepadResponse,
+  GetTeamThemeResponse,
+  UpdateTeamThemeBody,
   GetTeamNameRulesResponse,
   UpdateTeamNameRulesBody,
   UpdateTeamNameRulesResponse,
   CreateTeamRoleBody,
   CreateTeamRoleResponse,
   ListTeamRolesResponse,
+  ListBlockedIpsResponse,
+  BlockLoginIpBody,
+  BlockLoginIpResponse,
+  UnblockLoginIpBody,
   UpdateTeamRoleBody,
   UpdateTeamRoleResponse,
   DeleteTeamRoleParams,
@@ -319,34 +335,21 @@ function clearCredentialFailures(kind: string, value: string): void {
   credentialFailures.delete(credentialKey(kind, value));
 }
 
-function normalizedBrandingRow(row: { logoPath?: string | null; primaryColor?: string | null; backgroundPath?: string | null; backgroundMode?: string | null; backgroundOverlay?: number | null; backgroundAudience?: string | null; backgroundMemberIds?: unknown } | undefined): { logoPath: string | null; primaryColor: string | null; backgroundPath: string | null; backgroundMode: "cover" | "tile" | null; backgroundOverlay: number; backgroundAudience: "everyone" | "selected"; backgroundMemberIds: string[] } {
-  const mode = row?.backgroundMode;
-  return {
-    logoPath: row?.logoPath ?? null,
-    primaryColor: row?.primaryColor ?? null,
-    backgroundPath: row?.backgroundPath ?? null,
-    backgroundMode: mode === "cover" || mode === "tile" ? mode : null,
-    backgroundOverlay: typeof row?.backgroundOverlay === "number" && Number.isFinite(row.backgroundOverlay)
-      ? Math.min(80, Math.max(0, Math.round(row.backgroundOverlay)))
-      : 35,
-    backgroundAudience: row?.backgroundAudience === "selected" ? "selected" : "everyone",
-    backgroundMemberIds: Array.isArray(row?.backgroundMemberIds)
-      ? [...new Set(row.backgroundMemberIds.filter((id): id is string => typeof id === "string" && id.length > 0))]
-      : [],
-  };
-}
+const TEAM_BRANDING_SELECT = {
+  logoPath: teamsTable.logoPath,
+  primaryColor: teamsTable.primaryColor,
+  backgroundPath: teamsTable.backgroundPath,
+  backgroundPaths: teamsTable.backgroundPaths,
+  backgroundMode: teamsTable.backgroundMode,
+  backgroundOverlay: teamsTable.backgroundOverlay,
+  backgroundRotationSeconds: teamsTable.backgroundRotationSeconds,
+  backgroundAudience: teamsTable.backgroundAudience,
+  backgroundMemberIds: teamsTable.backgroundMemberIds,
+} as const;
 
 router.get("/auth/team-branding", requireAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
-  const [team] = await db.select({
-    logoPath: teamsTable.logoPath,
-    primaryColor: teamsTable.primaryColor,
-    backgroundPath: teamsTable.backgroundPath,
-    backgroundMode: teamsTable.backgroundMode,
-    backgroundOverlay: teamsTable.backgroundOverlay,
-    backgroundAudience: teamsTable.backgroundAudience,
-    backgroundMemberIds: teamsTable.backgroundMemberIds,
-  }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  const [team] = await db.select(TEAM_BRANDING_SELECT).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
   res.json(GetTeamBrandingResponse.parse(normalizedBrandingRow(team)));
 });
 
@@ -357,15 +360,7 @@ router.get("/auth/team-branding/effective", requireAdmin, async (req, res): Prom
     return;
   }
   const teamId = await requestTeamId(req);
-  const [team] = await db.select({
-    logoPath: teamsTable.logoPath,
-    primaryColor: teamsTable.primaryColor,
-    backgroundPath: teamsTable.backgroundPath,
-    backgroundMode: teamsTable.backgroundMode,
-    backgroundOverlay: teamsTable.backgroundOverlay,
-    backgroundAudience: teamsTable.backgroundAudience,
-    backgroundMemberIds: teamsTable.backgroundMemberIds,
-  }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  const [team] = await db.select(TEAM_BRANDING_SELECT).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
   const branding = normalizedBrandingRow(team);
   const canSeeBackground = backgroundVisibleToMember(
     branding.backgroundAudience,
@@ -375,8 +370,10 @@ router.get("/auth/team-branding/effective", requireAdmin, async (req, res): Prom
   res.json(GetEffectiveTeamBrandingResponse.parse({
     primaryColor: branding.primaryColor,
     backgroundPath: canSeeBackground ? branding.backgroundPath : null,
+    backgrounds: canSeeBackground ? branding.backgrounds : [],
     backgroundMode: canSeeBackground ? branding.backgroundMode : null,
     backgroundOverlay: canSeeBackground ? branding.backgroundOverlay : 35,
+    backgroundRotationSeconds: canSeeBackground ? branding.backgroundRotationSeconds : 0,
   }));
 });
 
@@ -417,18 +414,11 @@ router.patch("/auth/team-branding", requireCoordinator, async (req, res): Promis
   }
   if (parsed.data.backgroundMode !== undefined) update.backgroundMode = parsed.data.backgroundMode;
   if (parsed.data.backgroundOverlay !== undefined) update.backgroundOverlay = parsed.data.backgroundOverlay;
+  if (parsed.data.backgroundRotationSeconds !== undefined) update.backgroundRotationSeconds = parsed.data.backgroundRotationSeconds;
   const [team] = await db.update(teamsTable)
     .set(update)
     .where(eq(teamsTable.id, teamId))
-    .returning({
-      logoPath: teamsTable.logoPath,
-      primaryColor: teamsTable.primaryColor,
-      backgroundPath: teamsTable.backgroundPath,
-      backgroundMode: teamsTable.backgroundMode,
-      backgroundOverlay: teamsTable.backgroundOverlay,
-      backgroundAudience: teamsTable.backgroundAudience,
-      backgroundMemberIds: teamsTable.backgroundMemberIds,
-    });
+    .returning(TEAM_BRANDING_SELECT);
   if (!team) {
     res.status(404).json({ error: "Team not found" });
     return;
@@ -524,9 +514,14 @@ router.post(
       return;
     }
     const teamId = await requestTeamId(req);
-    const [existing] = await db.select({ backgroundPath: teamsTable.backgroundPath }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+    const [existing] = await db.select({ backgroundPath: teamsTable.backgroundPath, backgroundPaths: teamsTable.backgroundPaths }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
     if (!existing) {
       res.status(404).json({ error: "Team not found" });
+      return;
+    }
+    const currentBackgrounds = normalizedBackgrounds(existing);
+    if (currentBackgrounds.length >= TEAM_BACKGROUNDS_MAX) {
+      res.status(409).json({ error: `A team can keep up to ${TEAM_BACKGROUNDS_MAX} backgrounds. Remove one before adding another.` });
       return;
     }
     let backgroundPath: string;
@@ -537,35 +532,107 @@ router.post(
       res.status(503).json({ error: "Background storage is temporarily unavailable. Try again shortly." });
       return;
     }
+    const nextBackgrounds = [...currentBackgrounds, backgroundPath];
     try {
-      await db.update(teamsTable).set({ backgroundPath }).where(eq(teamsTable.id, teamId));
+      const [team] = await db.update(teamsTable)
+        .set({ backgroundPaths: nextBackgrounds, backgroundPath: nextBackgrounds[0] ?? null })
+        .where(eq(teamsTable.id, teamId))
+        .returning(TEAM_BRANDING_SELECT);
+      res.status(201).json(GetTeamBrandingResponse.parse(normalizedBrandingRow(team)));
     } catch (error) {
       await objectStorageService.deleteObject(backgroundPath).catch(() => undefined);
       throw error;
     }
-    if (existing.backgroundPath) await objectStorageService.deleteObject(existing.backgroundPath).catch((error) => {
-      req.log.warn({ err: error }, "Could not remove the replaced team background");
-    });
-    res.status(201).json(UploadTeamBackgroundResponse.parse({ backgroundPath }));
   },
 );
 
 router.delete("/auth/team-branding/background", requireCoordinator, async (req, res): Promise<void> => {
+  // No body, or a body without `path`: remove every team background. With
+  // `path`: remove just that one (a no-op when it is not one the team has).
+  const body: unknown = req.body;
+  let requestedPath: string | null = null;
+  if (body !== undefined && body !== null) {
+    if (typeof body !== "object" || Array.isArray(body)) {
+      res.status(400).json({ error: "The body must be a JSON object with an optional `path` string." });
+      return;
+    }
+    const pathValue = (body as Record<string, unknown>).path;
+    if (pathValue !== undefined && (typeof pathValue !== "string" || pathValue.trim().length === 0)) {
+      res.status(400).json({ error: "path must be a non-empty string when provided." });
+      return;
+    }
+    requestedPath = typeof pathValue === "string" ? pathValue : null;
+  }
   const teamId = await requestTeamId(req);
-  const [existing] = await db.select({ backgroundPath: teamsTable.backgroundPath })
+  const [existing] = await db.select({ backgroundPath: teamsTable.backgroundPath, backgroundPaths: teamsTable.backgroundPaths })
     .from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  const currentBackgrounds = normalizedBackgrounds(existing);
+  const remainingBackgrounds = requestedPath ? currentBackgrounds.filter((path) => path !== requestedPath) : [];
+  const removedBackgrounds = currentBackgrounds.filter((path) => !remainingBackgrounds.includes(path));
   const [team] = await db.update(teamsTable)
-    .set({ backgroundPath: null })
+    .set({ backgroundPaths: remainingBackgrounds, backgroundPath: remainingBackgrounds[0] ?? null })
     .where(eq(teamsTable.id, teamId))
     .returning({ id: teamsTable.id });
   if (!team) {
     res.status(404).json({ error: "Team not found" });
     return;
   }
-  if (existing?.backgroundPath) await objectStorageService.deleteObject(existing.backgroundPath).catch((error) => {
-    req.log.warn({ err: error }, "Could not remove the reset team background");
-  });
+  for (const objectPath of removedBackgrounds) {
+    await objectStorageService.deleteObject(objectPath).catch((error) => {
+      req.log.warn({ err: error }, "Could not remove the reset team background");
+    });
+  }
   res.status(204).end();
+});
+
+function normalizedTeamThemeRow(row: { defaultTheme?: string | null; themePolicy?: string | null } | undefined): { defaultTheme: "light" | "dark" | null; themePolicy: "recommended" | "locked" } {
+  const theme = row?.defaultTheme;
+  const policy = row?.themePolicy;
+  return {
+    defaultTheme: theme === "light" || theme === "dark" ? theme : null,
+    themePolicy: policy === "locked" ? "locked" : "recommended",
+  };
+}
+
+router.get("/auth/team-theme", requireAdmin, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  const [team] = await db.select({
+    defaultTheme: teamsTable.defaultTheme,
+    themePolicy: teamsTable.themePolicy,
+  }).from(teamsTable).where(eq(teamsTable.id, teamId)).limit(1);
+  res.json(GetTeamThemeResponse.parse(normalizedTeamThemeRow(team)));
+});
+
+router.patch("/auth/team-theme", requireCoordinator, async (req, res): Promise<void> => {
+  const parsed = UpdateTeamThemeBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+  if (parsed.data.defaultTheme === undefined && parsed.data.themePolicy === undefined) {
+    res.status(400).json({ error: "Choose a default theme or a member policy to save." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  const update: Partial<typeof teamsTable.$inferInsert> = {};
+  if (parsed.data.defaultTheme !== undefined) update.defaultTheme = parsed.data.defaultTheme;
+  if (parsed.data.themePolicy !== undefined) update.themePolicy = parsed.data.themePolicy;
+  const [team] = await db.update(teamsTable)
+    .set(update)
+    .where(eq(teamsTable.id, teamId))
+    .returning({
+      defaultTheme: teamsTable.defaultTheme,
+      themePolicy: teamsTable.themePolicy,
+    });
+  if (!team) {
+    res.status(404).json({ error: "Team not found" });
+    return;
+  }
+  res.json(GetTeamThemeResponse.parse(normalizedTeamThemeRow(team)));
 });
 
 async function rejectUnsafePassword(
@@ -735,6 +802,7 @@ router.get("/auth/interviewers", async (req, res): Promise<void> => {
       res.status(401).json({ error: "The team access code is incorrect." });
       return;
     }
+    if (await rejectBlockedLoginIp(req, res, team.id)) return;
     teamId = team.id;
     enterInstance(team.instance);
   }
@@ -765,6 +833,7 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
+  if (await rejectBlockedLoginIp(req, res, team.id)) return;
   enterInstance(team.instance);
   const displayName = parsed.data.displayName.trim().replace(/\s+/g, " ");
   // A display name must look like a person, not an email address or a link.
@@ -838,6 +907,7 @@ router.post("/auth/interviewers/setup", async (req, res): Promise<void> => {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
+  if (await rejectBlockedLoginIp(req, res, team.id)) return;
   enterInstance(team.instance);
   const account = await accountById(parsed.data.interviewerId);
   if (!account || accountTeamId(account) !== team.id) {
@@ -1157,6 +1227,101 @@ router.patch("/auth/interviewers/:interviewerId/name", requireCoordinator, async
 
 
 // ---------------------------------------------------------------------------
+// Sign-in IP blocklist: team admins block exact addresses from every
+// team-scoped sign-in path for their own team (team access code, password and
+// passkey sign-in, passkey options, the sign-in roster, account creation and
+// setup). Blocks take effect at the next sign-in; sessions that are already
+// signed in keep working until they sign out or expire.
+// ---------------------------------------------------------------------------
+
+router.get("/auth/blocked-ips", requireCoordinator, async (req, res): Promise<void> => {
+  const teamId = await requestTeamId(req);
+  try {
+    const rows = await listBlockedIps(teamId);
+    const createdByIds = [...new Set(rows.map((row) => row.createdBy).filter((id): id is string => Boolean(id)))];
+    const names = await accountNamesById(createdByIds, teamId);
+    res.json(ListBlockedIpsResponse.parse({
+      items: rows.map((row) => ({
+        ip: row.ip,
+        reason: row.reason,
+        createdBy: row.createdBy,
+        createdByName: row.createdBy ? names.get(row.createdBy) ?? null : null,
+        createdAt: row.createdAt,
+      })),
+    }));
+  } catch (error) {
+    req.log.error({ err: error }, "Sign-in blocklist load failed");
+    res.status(500).json({ error: "Unable to load the sign-in blocklist." });
+  }
+});
+
+router.post("/auth/blocked-ips", requireCoordinator, async (req, res): Promise<void> => {
+  const parsed = BlockLoginIpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Enter an IPv4 or IPv6 address." });
+    return;
+  }
+  const ip = normalizeIp(parsed.data.ip);
+  if (!ip) {
+    res.status(400).json({ error: "Enter a valid IPv4 or IPv6 address." });
+    return;
+  }
+  const callerIp = normalizeIp(req.ip);
+  if (callerIp && callerIp === ip) {
+    res.status(400).json({ error: "You can't block the network address you're connecting from. Ask another admin if that address must be blocked." });
+    return;
+  }
+  const reason = (parsed.data.reason ?? "").trim().slice(0, MAX_BLOCKED_IP_REASON_LENGTH);
+  const teamId = await requestTeamId(req);
+  const createdBy = (req as Request & { interviewerId?: string }).interviewerId ?? null;
+  try {
+    const row = await addBlockedIp(teamId, ip, reason, createdBy);
+    const names = createdBy ? await accountNamesById([createdBy], teamId) : new Map<string, string>();
+    req.log.info({ teamId, ip, createdBy }, "Sign-in blocklist entry added");
+    res.status(201).json(BlockLoginIpResponse.parse({
+      ip: row.ip,
+      reason: row.reason,
+      createdBy: row.createdBy,
+      createdByName: row.createdBy ? names.get(row.createdBy) ?? null : null,
+      createdAt: row.createdAt,
+    }));
+  } catch (error) {
+    if (error instanceof BlockedIpsFullError) {
+      res.status(409).json({ error: `The sign-in blocklist is full (${MAX_BLOCKED_IPS_PER_TEAM} addresses). Remove one before adding another.` });
+      return;
+    }
+    req.log.error({ err: error }, "Sign-in blocklist update failed");
+    res.status(500).json({ error: "Unable to update the sign-in blocklist." });
+  }
+});
+
+router.delete("/auth/blocked-ips", requireCoordinator, async (req, res): Promise<void> => {
+  const parsed = UnblockLoginIpBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Enter an IPv4 or IPv6 address." });
+    return;
+  }
+  const ip = normalizeIp(parsed.data.ip);
+  if (!ip) {
+    res.status(400).json({ error: "Enter a valid IPv4 or IPv6 address." });
+    return;
+  }
+  const teamId = await requestTeamId(req);
+  try {
+    const removed = await removeBlockedIp(teamId, ip);
+    if (!removed) {
+      res.status(404).json({ error: "That address is not on this team's sign-in blocklist." });
+      return;
+    }
+    req.log.info({ teamId, ip }, "Sign-in blocklist entry removed");
+    res.status(204).end();
+  } catch (error) {
+    req.log.error({ err: error }, "Sign-in blocklist removal failed");
+    res.status(500).json({ error: "Unable to update the sign-in blocklist." });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Passkeys: an optional, additive sign-in method. Password auth is unchanged;
 // a passkey simply skips typing the personal password after the event passcode.
 // ---------------------------------------------------------------------------
@@ -1334,6 +1499,7 @@ router.post("/auth/passkey/login/options", async (req, res): Promise<void> => {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
+  if (await rejectBlockedLoginIp(req, res, team.id)) return;
   const ip = req.ip ?? "unknown";
   if (!loginAllowed(ip)) {
     res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
@@ -1390,6 +1556,7 @@ router.post("/auth/passkey/login", async (req, res): Promise<void> => {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
+  if (await rejectBlockedLoginIp(req, res, team.id)) return;
   const ip = req.ip ?? "unknown";
   if (!loginAllowed(ip)) {
     res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
@@ -1479,6 +1646,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     res.status(401).json({ error: "The event passcode is incorrect." });
     return;
   }
+  if (await rejectBlockedLoginIp(req, res, team.id)) return;
   const ip = req.ip ?? "unknown";
   if (!loginAllowed(ip)) {
     res.status(429).json({ error: "Too many attempts. Wait a minute and try again." });
@@ -1515,6 +1683,7 @@ router.post("/auth/verify-event-passcode", async (req, res): Promise<void> => {
     res.status(401).json({ error: "The team access code is incorrect." });
     return;
   }
+  if (await rejectBlockedLoginIp(req, res, team.id)) return;
   eventPasscodeFailures.delete(ip);
   // Extra teamId/teamName fields are ignored by older clients but let the new
   // login flow show which team was unlocked and scope the account list.
@@ -1751,6 +1920,7 @@ router.delete("/auth/teams/:teamId", requireSiteOwner, async (req, res): Promise
       "cad_models", "chat_channel_members", "chat_channels", "chat_custom_emojis",
       "chat_message_reactions",
       "chat_poll_votes", "chat_polls", "chat_settings", "team_name_rules", "chunked_uploads",
+      "team_blocked_ips", "parts_vendor_blocks",
       "chat_productivity_settings", "chat_productivity_snapshots",
       "code_files", "code_presence", "code_projects", "code_revisions",
       "dashboard_charts", "data_snapshots", "display_settings",

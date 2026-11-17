@@ -19,9 +19,10 @@ export function permissionForRoute(method: string, rawPath: string): PermissionI
       ? (read ? "personal.notepad.read" : "personal.notepad.write")
       : "personal.notepad.read";
   }
-  if (/^\/auth\/(?:roles|interviewers\/[^/]+\/custom-role|interviewers\/[^/]+\/role|interviewers\/[^/]+\/password|interviewers\/passwords|interviewers\/[^/]+$|teams\/)/.test(path)) return null;
+  if (/^\/auth\/(?:roles|blocked-ips|interviewers\/[^/]+\/custom-role|interviewers\/[^/]+\/role|interviewers\/[^/]+\/password|interviewers\/passwords|interviewers\/[^/]+$|teams\/)/.test(path)) return null;
   if (path.startsWith("/auth/name-rules")) return "team.nameRules.manage";
   if (path.startsWith("/auth/team-branding")) return "team.branding.manage";
+  if (path.startsWith("/auth/team-theme")) return "team.branding.manage";
 
   if (path === "/system/usage") return null;
   if (path.startsWith("/system/mailbox")) return "team.mailbox.manage";
@@ -41,6 +42,10 @@ export function permissionForRoute(method: string, rawPath: string): PermissionI
   if (path === "/dashboard/workspace-usage") return "dashboard.view";
   if (path.startsWith("/dashboard/charts")) return read ? "dashboard.view" : "dashboard.manage";
   if (path.startsWith("/snapshots")) return read ? "snapshots.view" : "snapshots.manage";
+
+  // Chat settings are readable by anyone who can open chat; only
+  // chat managers change them (slow mode, the /multimessage limit).
+  if (path === "/chat/settings") return read ? "chat.view" : "chat.manage";
 
   // Bulk send is an administration-level action, not ordinary posting.
   if (path === "/queue/chat/multimessage") return "chat.manage";

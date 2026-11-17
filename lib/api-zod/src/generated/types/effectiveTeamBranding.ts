@@ -15,10 +15,15 @@ export interface EffectiveTeamBranding {
      */
   primaryColor: string | null;
   /**
-     * Private object path for this member's custom app background, or null when excluded
+     * Deprecated, kept for older clients. The first entry of `backgrounds`, or null when excluded
      * @nullable
      */
   backgroundPath: string | null;
+  /**
+     * Private object paths for this member's visible app backgrounds, in rotation order. Empty when excluded
+     * @maxItems 10
+     */
+  backgrounds: string[];
   /**
      * How the visible custom app background is fitted to the viewport
      * @nullable
@@ -30,4 +35,10 @@ export interface EffectiveTeamBranding {
      * @maximum 80
      */
   backgroundOverlay: number;
+  /**
+     * Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
+     * @minimum 0
+     * @maximum 86400
+     */
+  backgroundRotationSeconds: number;
 }

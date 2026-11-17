@@ -25,6 +25,7 @@ const CAPABILITIES = new Map<SettingsCapabilityId, SettingsCapability>(
 const SORT_OPTIONS = new Set(["rank", "queue", "score", "name", "grade", "skill", "gender", "newest", "oldest"]);
 const REFRESH_INTERVALS = new Set([3000, 10000, 30000]);
 const SLOWMODE_OPTIONS = new Set([0, 5, 10, 30, 60]);
+const MULTIMESSAGE_LIMIT_OPTIONS = new Set([0, 5, 10, 25, 50, 100]);
 
 export interface SettingsCapabilityContext {
   session: AuthSession | null | undefined;
@@ -182,10 +183,10 @@ function safeBrandingView(value: unknown) {
   return {
     primaryColor: parsed.primaryColor,
     hasLogo: parsed.logoPath !== null,
-    hasBackground: parsed.backgroundPath !== null,
-    backgroundOptions: parsed.backgroundPath === null
+    hasBackground: parsed.backgrounds.length > 0,
+    backgroundOptions: parsed.backgrounds.length === 0
       ? null
-      : { backgroundMode: parsed.backgroundMode, backgroundOverlay: parsed.backgroundOverlay },
+      : { backgroundMode: parsed.backgroundMode, backgroundOverlay: parsed.backgroundOverlay, backgroundRotationSeconds: parsed.backgroundRotationSeconds },
   };
 }
 
@@ -194,7 +195,12 @@ export async function readSettingsCapability(id: string, context: SettingsCapabi
   const capability = getVisibleCapability(id, context);
   switch (capability.id) {
     case "team.chat.slowmode": {
-      return GetChatSettingsResponse.parse(await apiRequest("chat/settings", context));
+      const settings = GetChatSettingsResponse.parse(await apiRequest("chat/settings", context));
+      return { slowmodeSeconds: settings.slowmodeSeconds };
+    }
+    case "team.chat.multimessageLimit": {
+      const settings = GetChatSettingsResponse.parse(await apiRequest("chat/settings", context));
+      return { multimessageLimit: settings.multimessageLimit };
     }
     case "team.inbox":
       return safeMailboxView(await apiRequest("system/mailbox", context));
@@ -221,8 +227,22 @@ export async function updateSettingsCapability(id: string, input: unknown, conte
       if (typeof seconds !== "number" || !SLOWMODE_OPTIONS.has(seconds)) {
         throw new Error("Choose a slow-mode interval shown in Settings.");
       }
-      const saved = requireObject(await apiRequest("chat/settings", context, jsonRequest("POST", { slowmodeSeconds: seconds })));
-      return GetChatSettingsResponse.parse(saved);
+      // The endpoint replaces both chat settings at once, so merge the
+      // untouched multimessage limit from the current value.
+      const current = GetChatSettingsResponse.parse(await apiRequest("chat/settings", context));
+      const saved = requireObject(await apiRequest("chat/settings", context, jsonRequest("POST", { slowmodeSeconds: seconds, multimessageLimit: current.multimessageLimit })));
+      return { slowmodeSeconds: GetChatSettingsResponse.parse(saved).slowmodeSeconds };
+    }
+    case "team.chat.multimessageLimit": {
+      const limit = requireObject(input).multimessageLimit;
+      if (typeof limit !== "number" || !MULTIMESSAGE_LIMIT_OPTIONS.has(limit)) {
+        throw new Error("Choose a /multimessage limit shown in Settings.");
+      }
+      // The endpoint replaces both chat settings at once, so merge the
+      // untouched slow mode from the current value.
+      const current = GetChatSettingsResponse.parse(await apiRequest("chat/settings", context));
+      const saved = requireObject(await apiRequest("chat/settings", context, jsonRequest("POST", { slowmodeSeconds: current.slowmodeSeconds, multimessageLimit: limit })));
+      return { multimessageLimit: GetChatSettingsResponse.parse(saved).multimessageLimit };
     }
     case "team.inbox": {
       const parsed = UpdateTeamMailboxSettingsBody.safeParse(input);
@@ -253,15 +273,20 @@ export async function updateSettingsCapability(id: string, input: unknown, conte
       const inputObject = requireObject(input);
       const mode = inputObject.backgroundMode;
       const overlay = inputObject.backgroundOverlay;
+      const rotation = inputObject.backgroundRotationSeconds;
       if ((mode !== "cover" && mode !== "tile") ||
           typeof overlay !== "number" || !Number.isInteger(overlay) || overlay < 0 || overlay > 80 || overlay % 5 !== 0) {
         throw new Error("Choose a supported background fit and overlay from 0 to 80 in steps of 5.");
+      }
+      if (rotation !== undefined && (typeof rotation !== "number" || !Number.isInteger(rotation) || rotation < 0 || rotation > 86400)) {
+        throw new Error("Rotation must be a whole number of seconds from 0 to 86400.");
       }
       const current = GetTeamBrandingResponse.parse(await apiRequest("auth/team-branding", context));
       const body = UpdateTeamBrandingBody.parse({
         primaryColor: current.primaryColor,
         backgroundMode: mode,
         backgroundOverlay: overlay,
+        backgroundRotationSeconds: rotation ?? current.backgroundRotationSeconds,
       });
       return safeBrandingView(await apiRequest("auth/team-branding", context, jsonRequest("PATCH", body)));
     }

@@ -50,6 +50,7 @@ describe("Settings capability registry", () => {
     expect(ids).toContain("team.inbox");
     expect(ids).not.toContain("team.nameRules");
     expect(ids).not.toContain("team.chat.slowmode");
+    expect(ids).not.toContain("team.chat.multimessageLimit");
     expect(listSettingsCapabilities({ authenticated: false }).length).toBe(0);
     expect(listSettingsCapabilities(admin).map((capability) => capability.id)).toContain("team.nameRules");
   });
@@ -67,22 +68,40 @@ describe("Settings capability registry", () => {
   });
 
   it("uses the signed-in team's existing endpoints and never accepts a caller-selected team", async () => {
+    const current = { slowmodeSeconds: 10, multimessageLimit: 25 };
     const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(response({ slowmodeSeconds: 10 }))
-      .mockResolvedValueOnce(response({ slowmodeSeconds: 30 }));
+      .mockResolvedValueOnce(response(current))
+      .mockResolvedValueOnce(response(current))
+      .mockResolvedValueOnce(response({ ...current, slowmodeSeconds: 30 }))
+      .mockResolvedValueOnce(response(current))
+      .mockResolvedValueOnce(response(current))
+      .mockResolvedValueOnce(response({ ...current, multimessageLimit: 50 }));
     const ctx = context(admin, fetcher);
     window.localStorage.setItem("robotics_admin_session_token", "signed-session-token");
 
     await expect(readSettingsCapability("team.chat.slowmode", ctx)).resolves.toEqual({ slowmodeSeconds: 10 });
     await expect(updateSettingsCapability("team.chat.slowmode", { slowmodeSeconds: 30, teamId: "team-b" }, ctx))
       .resolves.toEqual({ slowmodeSeconds: 30 });
+    await expect(readSettingsCapability("team.chat.multimessageLimit", ctx)).resolves.toEqual({ multimessageLimit: 25 });
+    await expect(updateSettingsCapability("team.chat.multimessageLimit", { multimessageLimit: 50, teamId: "team-b" }, ctx))
+      .resolves.toEqual({ multimessageLimit: 50 });
 
-    expect(fetcher.mock.calls[0][0]).toBe("/api/chat/settings");
-    expect(fetcher.mock.calls[1][0]).toBe("/api/chat/settings");
+    // Every call goes to the signed-in team's endpoint — never a caller-selected one.
+    expect(fetcher.mock.calls.map((call) => call[0])).toEqual([
+      "/api/chat/settings",
+      "/api/chat/settings",
+      "/api/chat/settings",
+      "/api/chat/settings",
+      "/api/chat/settings",
+      "/api/chat/settings",
+    ]);
     expect(fetcher.mock.calls[0][1]).toMatchObject({ credentials: "include" });
     expect(new Headers(fetcher.mock.calls[0][1]?.headers).get("Authorization")).toBe("Bearer signed-session-token");
-    expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toEqual({ slowmodeSeconds: 30 });
-    expect(String(fetcher.mock.calls[1][1]?.body)).not.toContain("team-b");
+    // Updates merge the untouched field from the current settings.
+    expect(JSON.parse(String(fetcher.mock.calls[2][1]?.body))).toEqual({ slowmodeSeconds: 30, multimessageLimit: 25 });
+    expect(JSON.parse(String(fetcher.mock.calls[5][1]?.body))).toEqual({ slowmodeSeconds: 10, multimessageLimit: 50 });
+    expect(String(fetcher.mock.calls[2][1]?.body)).not.toContain("team-b");
+    expect(String(fetcher.mock.calls[5][1]?.body)).not.toContain("team-b");
   });
 
   it("redacts secret values and private storage paths from team settings reads", async () => {
@@ -102,10 +121,12 @@ describe("Settings capability registry", () => {
         logoPath: "private/team-a/logo.png",
         primaryColor: "#123456",
         backgroundPath: "private/team-a/background.webp",
+        backgrounds: ["private/team-a/background.webp", "private/team-a/background-2.webp"],
         backgroundMode: "cover",
         backgroundOverlay: 35,
         backgroundAudience: "selected",
         backgroundMemberIds: ["member-a"],
+        backgroundRotationSeconds: 300,
       }));
     const ctx = context(admin, fetcher);
 
@@ -123,7 +144,7 @@ describe("Settings capability registry", () => {
       primaryColor: "#123456",
       hasLogo: true,
       hasBackground: true,
-      backgroundOptions: { backgroundMode: "cover", backgroundOverlay: 35 },
+      backgroundOptions: { backgroundMode: "cover", backgroundOverlay: 35, backgroundRotationSeconds: 300 },
     });
     expect(JSON.stringify(branding)).not.toContain("private/");
     expect(JSON.stringify(branding)).not.toContain("member-a");
@@ -134,10 +155,12 @@ describe("Settings capability registry", () => {
       logoPath: null,
       primaryColor: null,
       backgroundPath: null,
+      backgrounds: [],
       backgroundMode: "tile",
       backgroundOverlay: 65,
       backgroundAudience: "everyone",
       backgroundMemberIds: [],
+      backgroundRotationSeconds: 900,
     }));
     const ctx = context(admin, fetcher);
     await expect(readSettingsCapability("team.branding.backgroundOptions", ctx)).resolves.toEqual({
@@ -195,10 +218,17 @@ describe("Settings capability registry", () => {
     const ctx = context(admin, fetcher);
     await expect(updateSettingsCapability("team.chat.slowmode", { slowmodeSeconds: 600 }, ctx))
       .rejects.toThrow(/interval shown/);
+    await expect(updateSettingsCapability("team.chat.multimessageLimit", { multimessageLimit: 7 }, ctx))
+      .rejects.toThrow(/multimessage limit/);
     await expect(updateSettingsCapability("team.branding.backgroundOptions", {
       backgroundMode: "cover",
       backgroundOverlay: 13,
     }, ctx)).rejects.toThrow(/steps of 5/);
+    await expect(updateSettingsCapability("team.branding.backgroundOptions", {
+      backgroundMode: "cover",
+      backgroundOverlay: 30,
+      backgroundRotationSeconds: 90000,
+    }, ctx)).rejects.toThrow(/whole number of seconds/);
     await expect(updateSettingsCapability("team.nameRules", {
       rules: [{ matchType: "exact", text: "  " }],
     }, ctx)).rejects.toThrow(/non-empty text/);

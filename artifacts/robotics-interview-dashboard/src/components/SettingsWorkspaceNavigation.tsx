@@ -19,12 +19,12 @@ export type SettingsNavigationItem = {
 
 const BASE_SECTIONS: SettingsNavigationItem[] = [
   { id: "profile", label: "Profile", description: "Your name, passkeys, and sign-in options.", keywords: "account identity avatar initials password passkey" },
-  { id: "appearance", label: "Appearance", description: "Theme and personal dashboard preferences.", keywords: "theme dark light density photos motion" },
-  { id: "assistant", label: "AI", description: "AI settings, assistant chat, providers, usage, and tool controls.", keywords: "assistant model provider governance tools productivity chat" },
+  { id: "appearance", label: "Appearance", description: "Theme and personal dashboard preferences.", keywords: "theme dark light density photos motion team default" },
+  { id: "assistant", label: "AI", description: "AI settings, assistant chat, providers, usage, and tool controls.", keywords: "ai assistant model provider governance tools productivity chat" },
   { id: "team", label: "Team", description: "Team members, access, inbox, and naming rules.", keywords: "members roles passwords access workspace mailbox email rules" },
-  { id: "branding", label: "Branding", description: "Shared team colors, logo, and background.", keywords: "color logo background image" },
-  { id: "chat", label: "Chat", description: "Team chat behavior and app adjustments.", keywords: "slow mode messages app adjustments feature requests" },
-  { id: "operations", label: "Operations", description: "Live updates, broadcasts, and data controls.", keywords: "refresh notifications broadcast data reset parts order" },
+  { id: "branding", label: "Branding", description: "Shared team colors, logo, background, and default theme.", keywords: "color logo background image theme default light dark locked" },
+  { id: "chat", label: "Chat", description: "Team chat behavior, assistant conversation settings, and app adjustments.", keywords: "slow mode messages app adjustments feature requests assistant" },
+  { id: "operations", label: "Operations", description: "Live updates, broadcasts, and data controls.", keywords: "refresh notifications broadcast data reset parts order blocked ip signin network address tinyurl short link alias redirect t" },
 ];
 
 export function getSettingsNavigationItems({

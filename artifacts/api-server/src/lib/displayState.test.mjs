@@ -131,7 +131,6 @@ test("public display state scopes by event code and exposes only approved fields
     secondaryPool: () => null,
     hasSecondary: () => false,
     currentInstance: () => "primary",
-    runWithInstance: (_instance, callback) => callback(),
     enterInstance: () => {},
     DEFAULT_TEAM_ID: "default",
     codeFilesTable: {},

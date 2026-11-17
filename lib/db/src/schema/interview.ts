@@ -58,6 +58,8 @@ export const chatSettingsTable = pgTable("chat_settings", {
   id: text("id").primaryKey().default("1"),
   teamId: text("team_id"),
   slowmodeSeconds: integer("slowmode_seconds").notNull().default(0),
+  // Maximum copies per /multimessage run; 0 = no limit.
+  multimessageLimit: integer("multimessage_limit").notNull().default(0),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
     .$onUpdate(() => new Date()),
 });

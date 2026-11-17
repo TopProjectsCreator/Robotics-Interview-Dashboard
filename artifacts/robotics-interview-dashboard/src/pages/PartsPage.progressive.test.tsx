@@ -54,7 +54,9 @@ const testPriceSnapshot = {
 vi.mock("@workspace/api-client-react", async () => {
   const { useQuery, useQueryClient } =
     await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
-  const getTeamId = () => mocks.sessionTeams.get(useQueryClient()) ?? "team-a";
+  // Named like a hook so the linter knows it may call useQueryClient: it runs
+  // inside the mocked hooks below, during React render, by design.
+  const useTeamId = () => mocks.sessionTeams.get(useQueryClient()) ?? "team-a";
   return {
     consumePartsCatalogSearchStream: mocks.consumeSearch,
     getGetPartsDashboardQueryKey: () => ["/parts/dashboard"],
@@ -64,11 +66,11 @@ vi.mock("@workspace/api-client-react", async () => {
     getGetPartsCatalogDetailsQueryKey: (partId: string) => ["/parts/catalog/details", partId],
     getListPartsCatalogQueryKey: () => ["/parts/catalog"],
     useIdentifyPartsImage: () => ({ mutateAsync: mocks.identifyImage, isPending: false }),
-    useGetSession: () => ({ data: { role: mocks.role, teamId: getTeamId() } }),
+    useGetSession: () => ({ data: { role: mocks.role, teamId: useTeamId() } }),
     useGetPartsPricingPreference: (options?: {
       query?: Record<string, unknown> & { queryKey?: readonly unknown[] };
     }) => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return useQuery({
         queryKey: options?.query?.queryKey ?? ["/parts/pricing"],
         queryFn: async () => ({
@@ -78,7 +80,7 @@ vi.mock("@workspace/api-client-react", async () => {
       });
     },
     useUpdatePartsPricingPreference: () => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return {
         mutateAsync: async ({ data }: { data: { useFtcPricing: boolean } }) => {
           await mocks.saveFtcPricing({ teamId, data });
@@ -89,7 +91,7 @@ vi.mock("@workspace/api-client-react", async () => {
       };
     },
     useCheckPartsOrderLimit: () => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return {
         mutateAsync: async ({ data }: { data: { itemCount: number } }) => {
           await mocks.checkOrderLimit({ teamId, data });
@@ -100,7 +102,7 @@ vi.mock("@workspace/api-client-react", async () => {
       };
     },
     useUpdatePartsVendorBlock: () => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return {
         mutateAsync: async ({ vendorKey, data }: {
           vendorKey: string;
@@ -117,7 +119,7 @@ vi.mock("@workspace/api-client-react", async () => {
       };
     },
     useCreatePartsCatalogItem: () => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return {
         mutateAsync: async (input: { data: Record<string, unknown> }) => {
           const result = await mocks.createItem(input);
@@ -151,7 +153,7 @@ vi.mock("@workspace/api-client-react", async () => {
       };
     },
     useCreatePartsRobot: () => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return {
         mutateAsync: async ({ data }: { data: { name: string } }) => {
           const result = await mocks.createRobot({ data });
@@ -168,7 +170,7 @@ vi.mock("@workspace/api-client-react", async () => {
     useGetPartsCatalogDetails: (partId: string, options?: {
       query?: Record<string, unknown> & { queryKey?: readonly unknown[] };
     }) => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return useQuery({
         queryKey: options?.query?.queryKey ?? ["/parts/catalog", partId, "details"],
         queryFn: () => mocks.getDetails(partId, teamId),
@@ -178,7 +180,7 @@ vi.mock("@workspace/api-client-react", async () => {
     useGetPartsDashboard: (options?: {
       query?: Record<string, unknown>;
     }) => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return useQuery({
         queryKey: ["/parts/dashboard"],
         queryFn: async () => {
@@ -220,7 +222,7 @@ vi.mock("@workspace/api-client-react", async () => {
       },
       options?: { query?: Record<string, unknown> & { queryKey?: readonly unknown[] } },
     ) => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return useQuery({
         queryKey: options?.query?.queryKey ?? ["/parts/catalog", params],
         queryFn: async () => {
@@ -242,7 +244,7 @@ vi.mock("@workspace/api-client-react", async () => {
       });
     },
     useSetPartsRobotAllocation: () => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return {
         mutateAsync: async ({ robotId, partId, data }: {
           robotId: string;
@@ -283,7 +285,7 @@ vi.mock("@workspace/api-client-react", async () => {
     useSyncPartsCatalog: () => ({ mutateAsync: mocks.syncCatalogs, isPending: false }),
     useUpdatePartsCatalogStock: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useUpdatePartsCatalogDetails: () => {
-      const teamId = getTeamId();
+      const teamId = useTeamId();
       return {
         mutateAsync: async ({ partId, data }: { partId: string; data: Record<string, unknown> }) => {
           const items = mocks.teamInventory.get(teamId) ?? [];

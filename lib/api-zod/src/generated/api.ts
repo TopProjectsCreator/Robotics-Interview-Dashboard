@@ -326,8 +326,13 @@ export const UpdatePersonalNotepadResponse = zod.object({
  * @summary Get branding for the signed-in team
  */
 export const getTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const getTeamBrandingResponseBackgroundsMax = 10;
+
 export const getTeamBrandingResponseBackgroundOverlayMin = 0;
 export const getTeamBrandingResponseBackgroundOverlayMax = 80;
+
+export const getTeamBrandingResponseBackgroundRotationSecondsMin = 0;
+export const getTeamBrandingResponseBackgroundRotationSecondsMax = 86400;
 
 
 export const getTeamBrandingResponseBackgroundMemberIdsMax = 500;
@@ -337,9 +342,11 @@ export const getTeamBrandingResponseBackgroundMemberIdsMax = 500;
 export const GetTeamBrandingResponse = zod.object({
   "logoPath": zod.string().nullable().describe('Private object path for this team\'s logo'),
   "primaryColor": zod.string().regex(getTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
-  "backgroundPath": zod.string().nullable().describe('Private object path for this team\'s custom app background'),
+  "backgroundPath": zod.string().nullable().describe('Deprecated, kept for older clients. The first entry of `backgrounds`, or null when no background is set'),
+  "backgrounds": zod.array(zod.string()).max(getTeamBrandingResponseBackgroundsMax).describe('Private object paths for this team\'s app backgrounds, in rotation order. Clients pick one deterministically every `backgroundRotationSeconds`'),
   "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the custom app background is fitted to the viewport'),
   "backgroundOverlay": zod.number().int().min(getTeamBrandingResponseBackgroundOverlayMin).max(getTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background'),
+  "backgroundRotationSeconds": zod.number().int().min(getTeamBrandingResponseBackgroundRotationSecondsMin).max(getTeamBrandingResponseBackgroundRotationSecondsMax).describe('Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background'),
   "backgroundAudience": zod.enum(['everyone', 'selected']).describe('Whether the background is visible to every team member or only selected members'),
   "backgroundMemberIds": zod.array(zod.string().min(1)).max(getTeamBrandingResponseBackgroundMemberIdsMax).describe('Team-local member account IDs selected to see the background')
 })
@@ -352,6 +359,9 @@ export const updateTeamBrandingBodyPrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f
 export const updateTeamBrandingBodyBackgroundOverlayMin = 0;
 export const updateTeamBrandingBodyBackgroundOverlayMax = 80;
 
+export const updateTeamBrandingBodyBackgroundRotationSecondsMin = 0;
+export const updateTeamBrandingBodyBackgroundRotationSecondsMax = 86400;
+
 
 export const updateTeamBrandingBodyBackgroundMemberIdsMax = 500;
 
@@ -361,13 +371,19 @@ export const UpdateTeamBrandingBody = zod.object({
   "primaryColor": zod.string().regex(updateTeamBrandingBodyPrimaryColorRegExp).nullable(),
   "backgroundMode": zod.enum(['cover', 'tile']).nullish().describe('How the custom app background is fitted to the viewport'),
   "backgroundOverlay": zod.number().int().min(updateTeamBrandingBodyBackgroundOverlayMin).max(updateTeamBrandingBodyBackgroundOverlayMax).optional().describe('Percentage of dark overlay drawn over the custom app background'),
+  "backgroundRotationSeconds": zod.number().int().min(updateTeamBrandingBodyBackgroundRotationSecondsMin).max(updateTeamBrandingBodyBackgroundRotationSecondsMax).optional().describe('Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background'),
   "backgroundAudience": zod.enum(['everyone', 'selected']).optional().describe('Whether the background is visible to every team member or only selected members'),
   "backgroundMemberIds": zod.array(zod.string().min(1)).max(updateTeamBrandingBodyBackgroundMemberIdsMax).optional().describe('Team-local member account IDs selected to see the background')
 })
 
 export const updateTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const updateTeamBrandingResponseBackgroundsMax = 10;
+
 export const updateTeamBrandingResponseBackgroundOverlayMin = 0;
 export const updateTeamBrandingResponseBackgroundOverlayMax = 80;
+
+export const updateTeamBrandingResponseBackgroundRotationSecondsMin = 0;
+export const updateTeamBrandingResponseBackgroundRotationSecondsMax = 86400;
 
 
 export const updateTeamBrandingResponseBackgroundMemberIdsMax = 500;
@@ -377,9 +393,11 @@ export const updateTeamBrandingResponseBackgroundMemberIdsMax = 500;
 export const UpdateTeamBrandingResponse = zod.object({
   "logoPath": zod.string().nullable().describe('Private object path for this team\'s logo'),
   "primaryColor": zod.string().regex(updateTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
-  "backgroundPath": zod.string().nullable().describe('Private object path for this team\'s custom app background'),
+  "backgroundPath": zod.string().nullable().describe('Deprecated, kept for older clients. The first entry of `backgrounds`, or null when no background is set'),
+  "backgrounds": zod.array(zod.string()).max(updateTeamBrandingResponseBackgroundsMax).describe('Private object paths for this team\'s app backgrounds, in rotation order. Clients pick one deterministically every `backgroundRotationSeconds`'),
   "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the custom app background is fitted to the viewport'),
   "backgroundOverlay": zod.number().int().min(updateTeamBrandingResponseBackgroundOverlayMin).max(updateTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background'),
+  "backgroundRotationSeconds": zod.number().int().min(updateTeamBrandingResponseBackgroundRotationSecondsMin).max(updateTeamBrandingResponseBackgroundRotationSecondsMax).describe('Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background'),
   "backgroundAudience": zod.enum(['everyone', 'selected']).describe('Whether the background is visible to every team member or only selected members'),
   "backgroundMemberIds": zod.array(zod.string().min(1)).max(updateTeamBrandingResponseBackgroundMemberIdsMax).describe('Team-local member account IDs selected to see the background')
 })
@@ -390,16 +408,23 @@ export const UpdateTeamBrandingResponse = zod.object({
  * @summary Get branding visible to the signed-in team member
  */
 export const getEffectiveTeamBrandingResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const getEffectiveTeamBrandingResponseBackgroundsMax = 10;
+
 export const getEffectiveTeamBrandingResponseBackgroundOverlayMin = 0;
 export const getEffectiveTeamBrandingResponseBackgroundOverlayMax = 80;
+
+export const getEffectiveTeamBrandingResponseBackgroundRotationSecondsMin = 0;
+export const getEffectiveTeamBrandingResponseBackgroundRotationSecondsMax = 86400;
 
 
 
 export const GetEffectiveTeamBrandingResponse = zod.object({
   "primaryColor": zod.string().regex(getEffectiveTeamBrandingResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
-  "backgroundPath": zod.string().nullable().describe('Private object path for this member\'s custom app background, or null when excluded'),
+  "backgroundPath": zod.string().nullable().describe('Deprecated, kept for older clients. The first entry of `backgrounds`, or null when excluded'),
+  "backgrounds": zod.array(zod.string()).max(getEffectiveTeamBrandingResponseBackgroundsMax).describe('Private object paths for this member\'s visible app backgrounds, in rotation order. Empty when excluded'),
   "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the visible custom app background is fitted to the viewport'),
-  "backgroundOverlay": zod.number().int().min(getEffectiveTeamBrandingResponseBackgroundOverlayMin).max(getEffectiveTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the visible custom app background')
+  "backgroundOverlay": zod.number().int().min(getEffectiveTeamBrandingResponseBackgroundOverlayMin).max(getEffectiveTeamBrandingResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the visible custom app background'),
+  "backgroundRotationSeconds": zod.number().int().min(getEffectiveTeamBrandingResponseBackgroundRotationSecondsMin).max(getEffectiveTeamBrandingResponseBackgroundRotationSecondsMax).describe('Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background')
 })
 
 
@@ -418,17 +443,68 @@ export const ResetTeamLogoResponse = zod.void()
 
 
 /**
- * @summary Upload a custom app background for the signed-in team
+ * Appends the image to the team's app backgrounds (up to 10). When two or more backgrounds are set, clients rotate through them every `backgroundRotationSeconds`.
+ * @summary Add an app background for the signed-in team
  */
+export const uploadTeamBackgroundResponsePrimaryColorRegExp = new RegExp('^#[0-9A-Fa-f]{6}$');
+export const uploadTeamBackgroundResponseBackgroundsMax = 10;
+
+export const uploadTeamBackgroundResponseBackgroundOverlayMin = 0;
+export const uploadTeamBackgroundResponseBackgroundOverlayMax = 80;
+
+export const uploadTeamBackgroundResponseBackgroundRotationSecondsMin = 0;
+export const uploadTeamBackgroundResponseBackgroundRotationSecondsMax = 86400;
+
+
+export const uploadTeamBackgroundResponseBackgroundMemberIdsMax = 500;
+
+
+
 export const UploadTeamBackgroundResponse = zod.object({
-  "backgroundPath": zod.string().describe('Private object path for this team\'s custom app background')
+  "logoPath": zod.string().nullable().describe('Private object path for this team\'s logo'),
+  "primaryColor": zod.string().regex(uploadTeamBackgroundResponsePrimaryColorRegExp).nullable().describe('Team primary brand color'),
+  "backgroundPath": zod.string().nullable().describe('Deprecated, kept for older clients. The first entry of `backgrounds`, or null when no background is set'),
+  "backgrounds": zod.array(zod.string()).max(uploadTeamBackgroundResponseBackgroundsMax).describe('Private object paths for this team\'s app backgrounds, in rotation order. Clients pick one deterministically every `backgroundRotationSeconds`'),
+  "backgroundMode": zod.enum(['cover', 'tile']).nullable().describe('How the custom app background is fitted to the viewport'),
+  "backgroundOverlay": zod.number().int().min(uploadTeamBackgroundResponseBackgroundOverlayMin).max(uploadTeamBackgroundResponseBackgroundOverlayMax).describe('Percentage of dark overlay drawn over the custom app background'),
+  "backgroundRotationSeconds": zod.number().int().min(uploadTeamBackgroundResponseBackgroundRotationSecondsMin).max(uploadTeamBackgroundResponseBackgroundRotationSecondsMax).describe('Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background'),
+  "backgroundAudience": zod.enum(['everyone', 'selected']).describe('Whether the background is visible to every team member or only selected members'),
+  "backgroundMemberIds": zod.array(zod.string().min(1)).max(uploadTeamBackgroundResponseBackgroundMemberIdsMax).describe('Team-local member account IDs selected to see the background')
 })
 
 
 /**
- * @summary Reset the signed-in team's custom app background
+ * Deletes every team background, or just the one named by `path` when a JSON body is provided.
+ * @summary Remove one or all app backgrounds for the signed-in team
  */
+export const ResetTeamBackgroundBody = zod.object({
+  "path": zod.string().optional().describe('Private object path of the background to remove (must be one of the team\'s `backgrounds`). Omit to remove every team background')
+})
+
 export const ResetTeamBackgroundResponse = zod.void()
+
+
+/**
+ * @summary Get the signed-in team's default theme and theme policy
+ */
+export const GetTeamThemeResponse = zod.object({
+  "defaultTheme": zod.enum(['light', 'dark']).nullable().describe('Team default color theme; null means no team default (members choose, or follow their device)'),
+  "themePolicy": zod.enum(['recommended', 'locked']).describe('recommended — members land on the team default but may switch; locked — members cannot switch')
+})
+
+
+/**
+ * @summary Set or clear the signed-in team's default theme and theme policy
+ */
+export const UpdateTeamThemeBody = zod.object({
+  "defaultTheme": zod.enum(['light', 'dark']).nullish().describe('Set the team default theme, or null to clear it (members follow their device or last choice)'),
+  "themePolicy": zod.enum(['recommended', 'locked']).optional().describe('recommended — members may switch; locked — members cannot switch')
+})
+
+export const UpdateTeamThemeResponse = zod.object({
+  "defaultTheme": zod.enum(['light', 'dark']).nullable().describe('Team default color theme; null means no team default (members choose, or follow their device)'),
+  "themePolicy": zod.enum(['recommended', 'locked']).describe('recommended — members land on the team default but may switch; locked — members cannot switch')
+})
 
 
 /**
@@ -761,6 +837,59 @@ export const ResetAllInterviewerPasswordsBody = zod.object({
 export const ResetAllInterviewerPasswordsResponse = zod.object({
   "message": zod.string()
 })
+
+
+/**
+ * Team admin only. Returns the exact addresses on this team's sign-in blocklist. Blocked addresses cannot use the team access code, passwords, passkeys, or create accounts; already signed-in sessions are not affected.
+ * @summary List IP addresses blocked from signing in for the signed-in team
+ */
+export const ListBlockedIpsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "ip": zod.string().describe('The blocked address in canonical form.'),
+  "reason": zod.string(),
+  "createdBy": zod.string().nullable().describe('Account id of the admin who blocked the address, when still known.'),
+  "createdByName": zod.string().nullable().describe('Display name of the admin who blocked the address, when still known.'),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * Team admin only. The address is refused on every team-scoped sign-in path for this team (team access code, password and passkey sign-in, passkey options, the sign-in roster, account creation and setup). An admin cannot block the address they are connecting from.
+ * @summary Block an IP address from signing in to the signed-in team
+ */
+export const blockLoginIpBodyIpMax = 45;
+
+export const blockLoginIpBodyReasonMax = 120;
+
+
+
+export const BlockLoginIpBody = zod.object({
+  "ip": zod.string().max(blockLoginIpBodyIpMax).describe('IPv4 or IPv6 address to block. Bracketed IPv6 and ::ffff: IPv4 mappings are accepted and normalized.'),
+  "reason": zod.string().max(blockLoginIpBodyReasonMax).optional().describe('Optional note shown in the blocklist.')
+})
+
+export const BlockLoginIpResponse = zod.object({
+  "ip": zod.string().describe('The blocked address in canonical form.'),
+  "reason": zod.string(),
+  "createdBy": zod.string().nullable().describe('Account id of the admin who blocked the address, when still known.'),
+  "createdByName": zod.string().nullable().describe('Display name of the admin who blocked the address, when still known.'),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Remove an IP address from the signed-in team's sign-in blocklist
+ */
+export const unblockLoginIpBodyIpMax = 45;
+
+
+
+export const UnblockLoginIpBody = zod.object({
+  "ip": zod.string().max(unblockLoginIpBodyIpMax)
+})
+
+export const UnblockLoginIpResponse = zod.void()
 
 
 /**
@@ -1450,37 +1579,50 @@ export const GetQueueResponse = zod.object({
 
 
 /**
- * @summary Read chat settings (slow mode)
+ * @summary Read chat settings (slow mode and the /multimessage limit)
  */
 export const getChatSettingsResponseSlowmodeSecondsMin = 0;
 export const getChatSettingsResponseSlowmodeSecondsMax = 600;
 
+export const getChatSettingsResponseMultimessageLimitMin = 0;
+export const getChatSettingsResponseMultimessageLimitMax = 500;
+
 
 
 export const GetChatSettingsResponse = zod.object({
-  "slowmodeSeconds": zod.number().int().min(getChatSettingsResponseSlowmodeSecondsMin).max(getChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+  "slowmodeSeconds": zod.number().int().min(getChatSettingsResponseSlowmodeSecondsMin).max(getChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.'),
+  "multimessageLimit": zod.number().int().min(getChatSettingsResponseMultimessageLimitMin).max(getChatSettingsResponseMultimessageLimitMax).describe('Maximum copies per `\/multimessage` run. 0 means no limit. The server rejects any run whose count exceeds this limit.')
 })
 
 
 /**
+ * Replaces both chat settings at once, so send the current `slowmodeSeconds` and `multimessageLimit` together.
  * @summary Update chat settings (coordinators only)
  */
 export const updateChatSettingsBodySlowmodeSecondsMin = 0;
 export const updateChatSettingsBodySlowmodeSecondsMax = 600;
 
+export const updateChatSettingsBodyMultimessageLimitMin = 0;
+export const updateChatSettingsBodyMultimessageLimitMax = 500;
+
 
 
 export const UpdateChatSettingsBody = zod.object({
-  "slowmodeSeconds": zod.number().int().min(updateChatSettingsBodySlowmodeSecondsMin).max(updateChatSettingsBodySlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+  "slowmodeSeconds": zod.number().int().min(updateChatSettingsBodySlowmodeSecondsMin).max(updateChatSettingsBodySlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.'),
+  "multimessageLimit": zod.number().int().min(updateChatSettingsBodyMultimessageLimitMin).max(updateChatSettingsBodyMultimessageLimitMax).describe('Maximum copies per `\/multimessage` run. 0 means no limit. The server rejects any run whose count exceeds this limit.')
 })
 
 export const updateChatSettingsResponseSlowmodeSecondsMin = 0;
 export const updateChatSettingsResponseSlowmodeSecondsMax = 600;
 
+export const updateChatSettingsResponseMultimessageLimitMin = 0;
+export const updateChatSettingsResponseMultimessageLimitMax = 500;
+
 
 
 export const UpdateChatSettingsResponse = zod.object({
-  "slowmodeSeconds": zod.number().int().min(updateChatSettingsResponseSlowmodeSecondsMin).max(updateChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.')
+  "slowmodeSeconds": zod.number().int().min(updateChatSettingsResponseSlowmodeSecondsMin).max(updateChatSettingsResponseSlowmodeSecondsMax).describe('Slow mode for the team chat: an author must wait this many seconds between messages. 0 turns it off.'),
+  "multimessageLimit": zod.number().int().min(updateChatSettingsResponseMultimessageLimitMin).max(updateChatSettingsResponseMultimessageLimitMax).describe('Maximum copies per `\/multimessage` run. 0 means no limit. The server rejects any run whose count exceeds this limit.')
 })
 
 
@@ -1918,8 +2060,9 @@ export const ExportChatResponse = zod.string()
 /**
  * Admin-only bulk send used by the `/multimessage <count> <message>` chat
  * command. Posts `count` copies of the same message to the current
- * conversation in one request. There is no upper limit on `count`; it is
- * whatever the admin asks for. Ordinary spam guards (slow mode, minimum
+ * conversation in one request. `count` may not exceed the team's
+ * configured multimessage limit (0 = no limit); requests over the limit
+ * are rejected with 400. Ordinary spam guards (slow mode, minimum
  * spacing, duplicate suppression) do not apply to this admin-only action.
  * @summary Bulk-send a message (admins only)
  */
@@ -1930,7 +2073,7 @@ export const sendChatMultimessageBodyScopeDefault = `shared`;
 
 export const SendChatMultimessageBody = zod.object({
   "message": zod.string().min(1).max(sendChatMultimessageBodyMessageMax).describe('Message body to post `count` times.'),
-  "count": zod.number().int().min(1).describe('How many copies to post. Deliberately no upper limit — admins may ask for as many as they need.'),
+  "count": zod.number().int().min(1).describe('How many copies to post. Bounded only by the team\'s configured multimessage limit (0 = no limit); over-limit requests are rejected with 400.'),
   "scope": zod.enum(['shared', 'direct', 'channel']).default(sendChatMultimessageBodyScopeDefault),
   "recipient": zod.string().nullish().describe('Configured interviewer label receiving the copies in direct scope.'),
   "channelId": zod.string().nullish().describe('Invite-only channel id receiving the copies; only channel members (and admins) may post.')
@@ -7945,5 +8088,59 @@ export const AskCustomWorkspaceLlmBody = zod.object({
 export const AskCustomWorkspaceLlmResponse = zod.object({
   "answer": zod.string()
 })
+
+
+/**
+ * Team admin only. Returns the short links this team created, newest first, including click counts. Every link resolves on this deployment's own domain at /t/<alias>.
+ * @summary List this team's tiny URLs
+ */
+export const ListTinyUrlsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "alias": zod.string().describe('Stored lowercase alias; the link resolves at path.'),
+  "path": zod.string().describe('Path the redirect answers on for this alias (e.g. \"\/t\/tryouts\"). Auto-detect the domain by joining it with the deployment origin (e.g. window.location.origin).'),
+  "targetUrl": zod.string().describe('Absolute http(s) URL the short link redirects to.'),
+  "clickCount": zod.number().int().describe('Real (GET) visits to the link, counted since creation.'),
+  "createdByName": zod.string().nullish().describe('Display name of the admin who created the link, when known.'),
+  "createdAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * Team admin only. The short link lives at /t/<alias> on this deployment's domain (aliases are unique across the deployment, case-insensitive, letters/numbers/hyphens/underscores). The target must be an absolute http(s) URL; bare domains are upgraded to https.
+ * @summary Create a tiny URL with a custom alias
+ */
+export const createTinyUrlBodyAliasMax = 512;
+
+export const createTinyUrlBodyTargetUrlMax = 2048;
+
+
+
+export const CreateTinyUrlBody = zod.object({
+  "alias": zod.string().min(1).max(createTinyUrlBodyAliasMax).describe('Custom alias, case-insensitive. Stored form is letters, numbers, hyphens and underscores (1–64 chars, starting with a letter or number); a pasted \"\/t\/<alias>\" or full short link is reduced to its alias.'),
+  "targetUrl": zod.string().min(1).max(createTinyUrlBodyTargetUrlMax).describe('Absolute http(s) URL. Bare domains (e.g. \"example.com\/signup\") are upgraded to https.')
+})
+
+export const CreateTinyUrlResponse = zod.object({
+  "id": zod.string(),
+  "alias": zod.string().describe('Stored lowercase alias; the link resolves at path.'),
+  "path": zod.string().describe('Path the redirect answers on for this alias (e.g. \"\/t\/tryouts\"). Auto-detect the domain by joining it with the deployment origin (e.g. window.location.origin).'),
+  "targetUrl": zod.string().describe('Absolute http(s) URL the short link redirects to.'),
+  "clickCount": zod.number().int().describe('Real (GET) visits to the link, counted since creation.'),
+  "createdByName": zod.string().nullish().describe('Display name of the admin who created the link, when known.'),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Team admin only. The link stops resolving immediately; the target page is unaffected.
+ * @summary Delete a tiny URL
+ */
+export const DeleteTinyUrlParams = zod.object({
+  "tinyUrlId": zod.coerce.string()
+})
+
+export const DeleteTinyUrlResponse = zod.void()
 
 

@@ -66,6 +66,9 @@ import type {
   AssistantToolPolicyInput,
   AssistantUsageReport,
   AuthSession,
+  BlockIpInput,
+  BlockedIp,
+  BlockedIpList,
   Board,
   BoardCreateInput,
   BoardOperationInput,
@@ -273,6 +276,7 @@ import type {
   QueueSettingsInput,
   QueueState,
   RandomTeamCode,
+  RemoveTeamBackground,
   ReorderQueueInput,
   ScheduledChatInput,
   ScheduledChatList,
@@ -315,16 +319,21 @@ import type {
   TeamRoleInput,
   TeamRoleList,
   TeamRoleUpdate,
+  TeamThemeSetting,
   TeamVerifyResponse,
+  TinyUrl,
+  TinyUrlInput,
+  TinyUrlList,
+  UnblockIpInput,
   UpdateCodeFile200,
   UpdateCodeProject200,
   UpdateFeatureRequestInput,
   UpdateTeamBranding,
+  UpdateTeamThemeSetting,
   UploadCadModelFileParams,
   UploadInput,
   UploadPartsRobotPreviewFileParams,
   UploadResponse,
-  UploadTeamBackground,
   UploadTeamLogo,
   WorkspaceUsageSummary,
   WorkspaceVisibility,
@@ -1989,11 +1998,12 @@ export const getUploadTeamBackgroundUrl = () => {
 }
 
 /**
- * @summary Upload a custom app background for the signed-in team
+ * Appends the image to the team's app backgrounds (up to 10). When two or more backgrounds are set, clients rotate through them every `backgroundRotationSeconds`.
+ * @summary Add an app background for the signed-in team
  */
-export const uploadTeamBackground = async (uploadTeamBackgroundBody: Blob, options?: Parameters<typeof customFetch>[1]): Promise<UploadTeamBackground> => {
+export const uploadTeamBackground = async (uploadTeamBackgroundBody: Blob, options?: Parameters<typeof customFetch>[1]): Promise<TeamBranding> => {
 
-  return customFetch<UploadTeamBackground>(getUploadTeamBackgroundUrl(),
+  return customFetch<TeamBranding>(getUploadTeamBackgroundUrl(),
   {
     ...options,
     method: 'POST',
@@ -2038,7 +2048,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UploadTeamBackgroundMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Upload a custom app background for the signed-in team
+ * @summary Add an app background for the signed-in team
  */
 export const useUploadTeamBackground = <TError = ErrorType<ErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadTeamBackground>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
@@ -2060,16 +2070,17 @@ export const getResetTeamBackgroundUrl = () => {
 }
 
 /**
- * @summary Reset the signed-in team's custom app background
+ * Deletes every team background, or just the one named by `path` when a JSON body is provided.
+ * @summary Remove one or all app backgrounds for the signed-in team
  */
-export const resetTeamBackground = async ( options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+export const resetTeamBackground = async (removeTeamBackground?: RemoveTeamBackground, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
 
   return customFetch<void>(getResetTeamBackgroundUrl(),
   {
     ...options,
-    method: 'DELETE'
-
-
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(removeTeamBackground)
   }
 );}
 
@@ -2078,8 +2089,8 @@ export const resetTeamBackground = async ( options?: Parameters<typeof customFet
 
 
 export const getResetTeamBackgroundMutationOptions = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,void, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,{data?: BodyType<RemoveTeamBackground>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,{data?: BodyType<RemoveTeamBackground>}, TContext> => {
 
 const mutationKey = ['resetTeamBackground'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -2091,10 +2102,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetTeamBackground>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resetTeamBackground>>, {data?: BodyType<RemoveTeamBackground>}> = (props) => {
+          const {data} = props ?? {};
 
-
-          return  resetTeamBackground(requestOptions)
+          return  resetTeamBackground(data,requestOptions)
         }
 
 
@@ -2105,21 +2116,169 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
   return  { mutationFn, ...mutationOptions }}
 
     export type ResetTeamBackgroundMutationResult = NonNullable<Awaited<ReturnType<typeof resetTeamBackground>>>
-
+    export type ResetTeamBackgroundMutationBody = BodyType<RemoveTeamBackground> | undefined
     export type ResetTeamBackgroundMutationError = ErrorType<ErrorResponse>
 
     /**
- * @summary Reset the signed-in team's custom app background
+ * @summary Remove one or all app backgrounds for the signed-in team
  */
 export const useResetTeamBackground = <TError = ErrorType<ErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resetTeamBackground>>, TError,{data?: BodyType<RemoveTeamBackground>}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof resetTeamBackground>>,
         TError,
-        void,
+        {data?: BodyType<RemoveTeamBackground>},
         TContext
       > => {
       return useMutation(getResetTeamBackgroundMutationOptions(options));
+    }
+
+export const getGetTeamThemeUrl = () => {
+
+
+
+
+  return `/api/auth/team-theme`
+}
+
+/**
+ * @summary Get the signed-in team's default theme and theme policy
+ */
+export const getTeamTheme = async ( options?: Parameters<typeof customFetch>[1]): Promise<TeamThemeSetting> => {
+
+  return customFetch<TeamThemeSetting>(getGetTeamThemeUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamThemeQueryKey = () => {
+    return [
+    `/api/auth/team-theme`
+    ] as const;
+    }
+
+
+export const getGetTeamThemeQueryOptions = <TData = Awaited<ReturnType<typeof getTeamTheme>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTheme>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamThemeQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamTheme>>> = ({ signal }) => getTeamTheme({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamTheme>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamThemeQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamTheme>>>
+export type GetTeamThemeQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary Get the signed-in team's default theme and theme policy
+ */
+
+export function useGetTeamTheme<TData = Awaited<ReturnType<typeof getTeamTheme>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamTheme>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamThemeQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateTeamThemeUrl = () => {
+
+
+
+
+  return `/api/auth/team-theme`
+}
+
+/**
+ * @summary Set or clear the signed-in team's default theme and theme policy
+ */
+export const updateTeamTheme = async (updateTeamThemeSetting: UpdateTeamThemeSetting, options?: Parameters<typeof customFetch>[1]): Promise<TeamThemeSetting> => {
+
+  return customFetch<TeamThemeSetting>(getUpdateTeamThemeUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateTeamThemeSetting)
+  }
+);}
+
+
+
+
+
+export const getUpdateTeamThemeMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamTheme>>, TError,{data: BodyType<UpdateTeamThemeSetting>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamTheme>>, TError,{data: BodyType<UpdateTeamThemeSetting>}, TContext> => {
+
+const mutationKey = ['updateTeamTheme'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamTheme>>, {data: BodyType<UpdateTeamThemeSetting>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateTeamTheme(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamThemeMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamTheme>>>
+    export type UpdateTeamThemeMutationBody = BodyType<UpdateTeamThemeSetting>
+    export type UpdateTeamThemeMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Set or clear the signed-in team's default theme and theme policy
+ */
+export const useUpdateTeamTheme = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamTheme>>, TError,{data: BodyType<UpdateTeamThemeSetting>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamTheme>>,
+        TError,
+        {data: BodyType<UpdateTeamThemeSetting>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamThemeMutationOptions(options));
     }
 
 export const getGetTeamNameRulesUrl = () => {
@@ -3360,6 +3519,227 @@ export const useResetAllInterviewerPasswords = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getResetAllInterviewerPasswordsMutationOptions(options));
+    }
+
+export const getListBlockedIpsUrl = () => {
+
+
+
+
+  return `/api/auth/blocked-ips`
+}
+
+/**
+ * Team admin only. Returns the exact addresses on this team's sign-in blocklist. Blocked addresses cannot use the team access code, passwords, passkeys, or create accounts; already signed-in sessions are not affected.
+ * @summary List IP addresses blocked from signing in for the signed-in team
+ */
+export const listBlockedIps = async ( options?: Parameters<typeof customFetch>[1]): Promise<BlockedIpList> => {
+
+  return customFetch<BlockedIpList>(getListBlockedIpsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListBlockedIpsQueryKey = () => {
+    return [
+    `/api/auth/blocked-ips`
+    ] as const;
+    }
+
+
+export const getListBlockedIpsQueryOptions = <TData = Awaited<ReturnType<typeof listBlockedIps>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBlockedIps>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListBlockedIpsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listBlockedIps>>> = ({ signal }) => listBlockedIps({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listBlockedIps>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListBlockedIpsQueryResult = NonNullable<Awaited<ReturnType<typeof listBlockedIps>>>
+export type ListBlockedIpsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List IP addresses blocked from signing in for the signed-in team
+ */
+
+export function useListBlockedIps<TData = Awaited<ReturnType<typeof listBlockedIps>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listBlockedIps>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListBlockedIpsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getBlockLoginIpUrl = () => {
+
+
+
+
+  return `/api/auth/blocked-ips`
+}
+
+/**
+ * Team admin only. The address is refused on every team-scoped sign-in path for this team (team access code, password and passkey sign-in, passkey options, the sign-in roster, account creation and setup). An admin cannot block the address they are connecting from.
+ * @summary Block an IP address from signing in to the signed-in team
+ */
+export const blockLoginIp = async (blockIpInput: BlockIpInput, options?: Parameters<typeof customFetch>[1]): Promise<BlockedIp> => {
+
+  return customFetch<BlockedIp>(getBlockLoginIpUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(blockIpInput)
+  }
+);}
+
+
+
+
+
+export const getBlockLoginIpMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockLoginIp>>, TError,{data: BodyType<BlockIpInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof blockLoginIp>>, TError,{data: BodyType<BlockIpInput>}, TContext> => {
+
+const mutationKey = ['blockLoginIp'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof blockLoginIp>>, {data: BodyType<BlockIpInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  blockLoginIp(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BlockLoginIpMutationResult = NonNullable<Awaited<ReturnType<typeof blockLoginIp>>>
+    export type BlockLoginIpMutationBody = BodyType<BlockIpInput>
+    export type BlockLoginIpMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Block an IP address from signing in to the signed-in team
+ */
+export const useBlockLoginIp = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof blockLoginIp>>, TError,{data: BodyType<BlockIpInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof blockLoginIp>>,
+        TError,
+        {data: BodyType<BlockIpInput>},
+        TContext
+      > => {
+      return useMutation(getBlockLoginIpMutationOptions(options));
+    }
+
+export const getUnblockLoginIpUrl = () => {
+
+
+
+
+  return `/api/auth/blocked-ips`
+}
+
+/**
+ * @summary Remove an IP address from the signed-in team's sign-in blocklist
+ */
+export const unblockLoginIp = async (unblockIpInput: UnblockIpInput, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getUnblockLoginIpUrl(),
+  {
+    ...options,
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(unblockIpInput)
+  }
+);}
+
+
+
+
+
+export const getUnblockLoginIpMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockLoginIp>>, TError,{data: BodyType<UnblockIpInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof unblockLoginIp>>, TError,{data: BodyType<UnblockIpInput>}, TContext> => {
+
+const mutationKey = ['unblockLoginIp'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof unblockLoginIp>>, {data: BodyType<UnblockIpInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  unblockLoginIp(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UnblockLoginIpMutationResult = NonNullable<Awaited<ReturnType<typeof unblockLoginIp>>>
+    export type UnblockLoginIpMutationBody = BodyType<UnblockIpInput>
+    export type UnblockLoginIpMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Remove an IP address from the signed-in team's sign-in blocklist
+ */
+export const useUnblockLoginIp = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof unblockLoginIp>>, TError,{data: BodyType<UnblockIpInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof unblockLoginIp>>,
+        TError,
+        {data: BodyType<UnblockIpInput>},
+        TContext
+      > => {
+      return useMutation(getUnblockLoginIpMutationOptions(options));
     }
 
 export const getLogoutUrl = () => {
@@ -5313,7 +5693,7 @@ export const getGetChatSettingsUrl = () => {
 }
 
 /**
- * @summary Read chat settings (slow mode)
+ * @summary Read chat settings (slow mode and the /multimessage limit)
  */
 export const getChatSettings = async ( options?: Parameters<typeof customFetch>[1]): Promise<ChatSettings> => {
 
@@ -5360,7 +5740,7 @@ export type GetChatSettingsQueryError = ErrorType<unknown>
 
 
 /**
- * @summary Read chat settings (slow mode)
+ * @summary Read chat settings (slow mode and the /multimessage limit)
  */
 
 export function useGetChatSettings<TData = Awaited<ReturnType<typeof getChatSettings>>, TError = ErrorType<unknown>>(
@@ -5390,6 +5770,7 @@ export const getUpdateChatSettingsUrl = () => {
 }
 
 /**
+ * Replaces both chat settings at once, so send the current `slowmodeSeconds` and `multimessageLimit` together.
  * @summary Update chat settings (coordinators only)
  */
 export const updateChatSettings = async (chatSettings: ChatSettings, options?: Parameters<typeof customFetch>[1]): Promise<ChatSettings> => {
@@ -6441,8 +6822,9 @@ export const getSendChatMultimessageUrl = () => {
 /**
  * Admin-only bulk send used by the `/multimessage <count> <message>` chat
  * command. Posts `count` copies of the same message to the current
- * conversation in one request. There is no upper limit on `count`; it is
- * whatever the admin asks for. Ordinary spam guards (slow mode, minimum
+ * conversation in one request. `count` may not exceed the team's
+ * configured multimessage limit (0 = no limit); requests over the limit
+ * are rejected with 400. Ordinary spam guards (slow mode, minimum
  * spacing, duplicate suppression) do not apply to this admin-only action.
  * @summary Bulk-send a message (admins only)
  */
@@ -19727,5 +20109,227 @@ export const useAskCustomWorkspaceLlm = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getAskCustomWorkspaceLlmMutationOptions(options));
+    }
+
+export const getListTinyUrlsUrl = () => {
+
+
+
+
+  return `/api/tiny-urls`
+}
+
+/**
+ * Team admin only. Returns the short links this team created, newest first, including click counts. Every link resolves on this deployment's own domain at /t/<alias>.
+ * @summary List this team's tiny URLs
+ */
+export const listTinyUrls = async ( options?: Parameters<typeof customFetch>[1]): Promise<TinyUrlList> => {
+
+  return customFetch<TinyUrlList>(getListTinyUrlsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTinyUrlsQueryKey = () => {
+    return [
+    `/api/tiny-urls`
+    ] as const;
+    }
+
+
+export const getListTinyUrlsQueryOptions = <TData = Awaited<ReturnType<typeof listTinyUrls>>, TError = ErrorType<ErrorResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTinyUrls>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTinyUrlsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTinyUrls>>> = ({ signal }) => listTinyUrls({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTinyUrls>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTinyUrlsQueryResult = NonNullable<Awaited<ReturnType<typeof listTinyUrls>>>
+export type ListTinyUrlsQueryError = ErrorType<ErrorResponse>
+
+
+/**
+ * @summary List this team's tiny URLs
+ */
+
+export function useListTinyUrls<TData = Awaited<ReturnType<typeof listTinyUrls>>, TError = ErrorType<ErrorResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTinyUrls>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTinyUrlsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTinyUrlUrl = () => {
+
+
+
+
+  return `/api/tiny-urls`
+}
+
+/**
+ * Team admin only. The short link lives at /t/<alias> on this deployment's domain (aliases are unique across the deployment, case-insensitive, letters/numbers/hyphens/underscores). The target must be an absolute http(s) URL; bare domains are upgraded to https.
+ * @summary Create a tiny URL with a custom alias
+ */
+export const createTinyUrl = async (tinyUrlInput: TinyUrlInput, options?: Parameters<typeof customFetch>[1]): Promise<TinyUrl> => {
+
+  return customFetch<TinyUrl>(getCreateTinyUrlUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tinyUrlInput)
+  }
+);}
+
+
+
+
+
+export const getCreateTinyUrlMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTinyUrl>>, TError,{data: BodyType<TinyUrlInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTinyUrl>>, TError,{data: BodyType<TinyUrlInput>}, TContext> => {
+
+const mutationKey = ['createTinyUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTinyUrl>>, {data: BodyType<TinyUrlInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTinyUrl(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTinyUrlMutationResult = NonNullable<Awaited<ReturnType<typeof createTinyUrl>>>
+    export type CreateTinyUrlMutationBody = BodyType<TinyUrlInput>
+    export type CreateTinyUrlMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Create a tiny URL with a custom alias
+ */
+export const useCreateTinyUrl = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTinyUrl>>, TError,{data: BodyType<TinyUrlInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTinyUrl>>,
+        TError,
+        {data: BodyType<TinyUrlInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTinyUrlMutationOptions(options));
+    }
+
+export const getDeleteTinyUrlUrl = (tinyUrlId: string,) => {
+
+
+
+
+  return `/api/tiny-urls/${tinyUrlId}`
+}
+
+/**
+ * Team admin only. The link stops resolving immediately; the target page is unaffected.
+ * @summary Delete a tiny URL
+ */
+export const deleteTinyUrl = async (tinyUrlId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteTinyUrlUrl(tinyUrlId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteTinyUrlMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTinyUrl>>, TError,{tinyUrlId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteTinyUrl>>, TError,{tinyUrlId: string}, TContext> => {
+
+const mutationKey = ['deleteTinyUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteTinyUrl>>, {tinyUrlId: string}> = (props) => {
+          const {tinyUrlId} = props ?? {};
+
+          return  deleteTinyUrl(tinyUrlId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteTinyUrlMutationResult = NonNullable<Awaited<ReturnType<typeof deleteTinyUrl>>>
+
+    export type DeleteTinyUrlMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Delete a tiny URL
+ */
+export const useDeleteTinyUrl = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteTinyUrl>>, TError,{tinyUrlId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteTinyUrl>>,
+        TError,
+        {tinyUrlId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteTinyUrlMutationOptions(options));
     }
 

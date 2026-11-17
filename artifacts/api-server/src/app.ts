@@ -20,6 +20,7 @@ import { WORKSPACE_KEYS } from "./lib/workspaceVisibility";
 import { normalizePermissions, permissionsForBuiltInRole } from "@workspace/api-zod";
 import { UCP_AGENT_PROFILE_PATH, publicOriginFromHeaders } from "./lib/publicOrigin";
 import { rememberPublicOriginFromHeaders } from "./lib/agentProfile";
+import { tinyUrlRedirectHandler } from "./routes/tinyUrls";
 
 const app: Express = express();
 
@@ -264,6 +265,14 @@ app.use((req, _res, next) => {
 });
 
 app.use("/api", router);
+
+// Tiny link redirects (Settings → Operations creates these). Public by
+// design: anyone with the link can follow it, signed in or not. Registered
+// before the SPA fallback so /t/<alias> never renders the app shell.
+// HEAD answers like GET for link checkers but never counts as a click.
+app.get("/t/:alias", (req, res, next) => {
+  tinyUrlRedirectHandler(req, res).catch(next);
+});
 
 // Canonical sitemap for crawlers. Registered before static + SPA fallback
 // so GET /sitemap.xml returns XML instead of index.html. The same handler

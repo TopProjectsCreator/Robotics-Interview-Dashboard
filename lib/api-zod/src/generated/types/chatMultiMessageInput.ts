@@ -15,7 +15,7 @@ export interface ChatMultiMessageInput {
      */
   message: string;
   /**
-     * How many copies to post. Deliberately no upper limit — admins may ask for as many as they need.
+     * How many copies to post. Bounded only by the team's configured multimessage limit (0 = no limit); over-limit requests are rejected with 400.
      * @minimum 1
      */
   count: number;

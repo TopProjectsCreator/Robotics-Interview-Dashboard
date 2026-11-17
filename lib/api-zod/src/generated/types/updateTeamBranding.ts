@@ -25,6 +25,12 @@ export interface UpdateTeamBranding {
      * @maximum 80
      */
   backgroundOverlay?: number;
+  /**
+     * Seconds between app background switches when two or more backgrounds are set. 0 keeps the first background
+     * @minimum 0
+     * @maximum 86400
+     */
+  backgroundRotationSeconds?: number;
   /** Whether the background is visible to every team member or only selected members */
   backgroundAudience?: UpdateTeamBrandingBackgroundAudience;
   /**

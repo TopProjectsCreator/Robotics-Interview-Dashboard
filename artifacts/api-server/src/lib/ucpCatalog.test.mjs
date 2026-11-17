@@ -157,7 +157,7 @@ test("UCP MCP calls unwrap the tool envelope and surface tool errors", async () 
 
 test("catalog snapshot browses the purchasable and unavailable passes until has_next_page is false", async () => {
   let calls = 0;
-  const products = (handles) => handles.map((handle, i) => ({
+  const products = (handles) => handles.map((handle) => ({
     ...limelightProduct,
     id: `gid://shopify/Product/${handle.replace(/[^a-z0-9]/gi, "x")}`,
     handle,

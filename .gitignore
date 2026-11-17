@@ -87,5 +87,6 @@ supabase/.temp/
 
 Just all ofopencoode
 .opencode/
+.opencode-runtime/
 .dev-secrets/
 .kilo/

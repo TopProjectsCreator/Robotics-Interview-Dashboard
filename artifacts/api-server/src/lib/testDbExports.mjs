@@ -21,7 +21,6 @@ import { fileURLToPath } from "node:url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..", "..", "..");
 const schemaDir = path.join(repoRoot, "lib", "db", "src", "schema");
-const dbIndexPath = path.join(repoRoot, "lib", "db", "src", "index.ts");
 
 /** Every `export const` in the drizzle schema, as an inert placeholder. */
 export const dbSchemaExports = (() => {
@@ -29,8 +28,13 @@ export const dbSchemaExports = (() => {
   for (const file of readdirSync(schemaDir)) {
     if (!file.endsWith(".ts")) continue;
     const source = readFileSync(path.join(schemaDir, file), "utf8");
-    for (const match of source.matchAll(/export const (\w+)/g)) {
-      exports[match[1]] = {};
+    for (const match of source.matchAll(/export const (\w+)(?:[^=]*=\s*([^;]+))?/g)) {
+      const [, name, initializer] = match;
+      // Plain numeric constants are preserved verbatim (the branding limits
+      // are used in comparisons and slice() calls); tables and objects stay
+      // inert placeholders, matching how the tests treat ORM symbols.
+      const numeric = initializer !== undefined ? Number(initializer.replace(/_/g, "")) : NaN;
+      exports[name] = Number.isFinite(numeric) ? numeric : {};
     }
   }
   return exports;

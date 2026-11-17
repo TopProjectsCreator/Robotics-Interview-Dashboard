@@ -31,7 +31,7 @@ export const CHAT_SLASH_COMMANDS: readonly ChatSlashCommand[] = [
   {
     name: "multimessage",
     usage: "/multimessage [{delayMs}] <count> <message>",
-    description: "Post the same message multiple times, optionally {delayMs} apart — keeps the composer usable while it runs",
+    description: "Post the same message multiple times, optionally {delayMs} apart — capped by the team multimessage limit set in Settings",
     adminOnly: true,
   },
   {

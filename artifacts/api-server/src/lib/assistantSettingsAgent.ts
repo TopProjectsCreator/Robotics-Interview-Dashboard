@@ -74,6 +74,8 @@ function jsonSchemaValue(settingId: SettingsCapabilityId): Record<string, unknow
       return { type: "integer", enum: [3000, 10000, 30000] };
     case "team.chat.slowmode":
       return { type: "object", properties: { slowmodeSeconds: { type: "integer", enum: [0, 5, 10, 30, 60] } }, required: ["slowmodeSeconds"], additionalProperties: false };
+    case "team.chat.multimessageLimit":
+      return { type: "object", properties: { multimessageLimit: { type: "integer", enum: [0, 5, 10, 25, 50, 100] } }, required: ["multimessageLimit"], additionalProperties: false };
     case "team.inbox":
       return {
         type: "object",
@@ -113,6 +115,7 @@ function jsonSchemaValue(settingId: SettingsCapabilityId): Record<string, unknow
         properties: {
           backgroundMode: { type: "string", enum: ["cover", "tile"] },
           backgroundOverlay: { type: "integer", minimum: 0, maximum: 80, multipleOf: 5 },
+          backgroundRotationSeconds: { type: "integer", minimum: 0, maximum: 86400 },
         },
         required: ["backgroundMode", "backgroundOverlay"],
         additionalProperties: false,

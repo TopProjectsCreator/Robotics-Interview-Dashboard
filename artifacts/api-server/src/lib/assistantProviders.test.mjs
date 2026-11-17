@@ -70,7 +70,7 @@ mock.module("../lib/assistantProviderConfiguration", {
     resolveAssistantProviderInput: async () => ({ provider, endpointUrl: undefined }),
     saveTeamAssistantProvider: async (...args) => {
       calls.saves.push(args);
-      const [teamId, input, selectedProvider, selectedModel, endpointUrl] = args;
+      const [teamId, _input, selectedProvider, selectedModel, endpointUrl] = args;
       statusByTeam.set(teamId, {
         configured: true,
         providerId: selectedProvider.id,
