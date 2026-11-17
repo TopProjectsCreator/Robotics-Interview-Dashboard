@@ -6366,6 +6366,10 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         const created = await createChannelMutation.mutateAsync({
           data: { name, emoji: channelEmojiDraft.trim() || null, memberIds: channelMemberIdsDraft.length ? channelMemberIdsDraft : undefined },
         });
+        if (!created.id?.trim()) throw new Error("The channel was created, but its ID was missing. Refresh the channel list and try again.");
+        qc.setQueryData(getListChatChannelsQueryKey(), (current: typeof channelsQuery.data) => ({
+          items: [created, ...(current?.items ?? []).filter(channel => channel.id !== created.id)],
+        }));
         setConversationPeer(null);
         setConversationChannelId(created.id);
       }

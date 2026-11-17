@@ -1088,31 +1088,28 @@ export async function runAssistantWorkspaceTool(
          values ($1, $2, $3, $4, $5)`,
         [channelId, context.teamId, channelName, normalized, account.id],
       );
-      const invited: string[] = [];
+      const invitedMembers = new Map<string, { id: string; display_name: string }>();
       if (args.inviteAllTeamMembers === true) {
         const members = await client.query<{ id: string; display_name: string }>(
           `select "id", "display_name" from "interviewer_accounts"
             where ${teamSqlCondition('"team_id"', "$1")} order by lower("display_name")`,
           [context.teamId],
         );
-        for (const member of members.rows) {
-          await client.query(
-            `insert into "chat_channel_members" ("id", "team_id", "channel_id", "member_id", "member_name", "added_by")
-             values ($1, $2, $3, $4, $5, $6) on conflict ("channel_id", "member_id") do nothing`,
-            [randomUUID(), context.teamId, channelId, member.id, member.display_name, account.id],
-          );
-          invited.push(member.display_name);
-        }
-      } else {
+        for (const member of members.rows) invitedMembers.set(member.id, member);
+      }
+      // Never rely on the invite-all lookup to include the account that created
+      // the channel. Creator access is required even when that lookup is empty.
+      invitedMembers.set(account.id, { id: account.id, display_name: account.displayName });
+      for (const member of invitedMembers.values()) {
         await client.query(
           `insert into "chat_channel_members" ("id", "team_id", "channel_id", "member_id", "member_name", "added_by")
            values ($1, $2, $3, $4, $5, $6) on conflict ("channel_id", "member_id") do nothing`,
-          [randomUUID(), context.teamId, channelId, account.id, account.displayName, account.id],
+          [randomUUID(), context.teamId, channelId, member.id, member.display_name, account.id],
         );
-        invited.push(account.displayName);
       }
       await client.query("commit");
       pushRealtimeHint("chat_channels", "INSERT");
+      const invited = [...invitedMembers.values()].map((member) => member.display_name);
       return { content: JSON.stringify({ id: channelId, name: channelName, invitedMembers: invited }), detail: `created channel ${channelName} and invited ${invited.length} team member(s)` };
     } catch (error) {
       await client.query("rollback").catch(() => undefined);

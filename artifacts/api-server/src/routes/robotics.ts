@@ -6118,33 +6118,36 @@ router.post("/queue/chat/channels", requireCoordinator, async (req, res): Promis
   }
   const viewer = channelViewerFor(account);
   const canManage = await viewerCanManageChat(viewer);
-  const [channel] = await db.insert(chatChannelsTable).values({
-    id: randomUUID(),
-    teamId,
-    name,
-    emoji,
-    normalizedName,
-    createdBy: account.displayName,
-  }).returning();
-  // The creating admin is always a member so they can post to their own channel.
-  const members = await db.insert(chatChannelMembersTable).values([
-    {
+  const { channel, members } = await db.transaction(async (tx) => {
+    const [createdChannel] = await tx.insert(chatChannelsTable).values({
       id: randomUUID(),
       teamId,
-      channelId: channel.id,
-      memberId: account.id,
-      memberName: account.displayName,
-      addedBy: account.displayName,
-    },
-    ...invited.map((member) => ({
-      id: randomUUID(),
-      teamId,
-      channelId: channel.id,
-      memberId: member.id,
-      memberName: member.displayName,
-      addedBy: account.displayName,
-    })),
-  ]).returning();
+      name,
+      emoji,
+      normalizedName,
+      createdBy: account.displayName,
+    }).returning();
+    // Keep creator membership unconditional, including when no invitees are selected.
+    const createdMembers = await tx.insert(chatChannelMembersTable).values([
+      {
+        id: randomUUID(),
+        teamId,
+        channelId: createdChannel.id,
+        memberId: account.id,
+        memberName: account.displayName,
+        addedBy: account.displayName,
+      },
+      ...invited.map((member) => ({
+        id: randomUUID(),
+        teamId,
+        channelId: createdChannel.id,
+        memberId: member.id,
+        memberName: member.displayName,
+        addedBy: account.displayName,
+      })),
+    ]).returning();
+    return { channel: createdChannel, members: createdMembers };
+  });
   pushRealtimeHint("chat_channels", "INSERT");
   const accountsById = new Map([account, ...invited].map((row) => [row.id, row]));
   res.status(201).json(CreateChatChannelResponse.parse(chatChannelResponse(channel, members, accountsById, viewer, null, canManage)));

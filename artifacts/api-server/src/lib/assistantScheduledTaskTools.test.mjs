@@ -31,6 +31,8 @@ const runsByTask = new Map();
 const queries = [];
 let channelMembers = [];
 let channelMessages = [];
+let omitCoordinatorFromInviteLookup = false;
+const channels = new Map();
 const pool = {
   async connect() {
     return { query: (...args) => pool.query(...args), release() {} };
@@ -45,11 +47,16 @@ const pool = {
       return { rows: [{ count }], rowCount: 1 };
     }
     if (statement.includes('from "chat_channels" c')) {
-      const role = values[1];
-      const accountId = values[2];
-      const rows = role === "coordinator" || accountId === "member-a"
-        ? [{ id: "build-channel", name: "Builds" }]
-        : [];
+      const [teamId, role, accountId] = values;
+      const rows = [...channels.values()]
+        .filter((channel) => channel.team_id === teamId && (
+          role === "coordinator" ||
+          channelMembers.some((member) => member[1] === teamId && member[2] === channel.id && member[3] === accountId)
+        ))
+        .map(({ id, name }) => ({ id, name }));
+      if (teamId === "team-a" && (role === "coordinator" || accountId === "member-a")) {
+        rows.push({ id: "build-channel", name: "Builds" });
+      }
       return { rows, rowCount: rows.length };
     }
     if (statement.startsWith('insert into "assistant_scheduled_tasks"')) {
@@ -88,12 +95,18 @@ const pool = {
       }
       return { rows: [], rowCount: 0 };
     }
-    if (statement.startsWith('insert into "chat_channels"')) return { rows: [], rowCount: 1 };
+    if (statement.startsWith('insert into "chat_channels"')) {
+      const [id, teamId, name] = values;
+      channels.set(id, { id, team_id: teamId, name });
+      return { rows: [], rowCount: 1 };
+    }
     if (statement.includes('from "interviewer_accounts"')) {
       return {
-        rows: [...accounts.values()].filter((account) => account.teamId === values[0])
+        rows: [...accounts.values()].filter((account) => account.teamId === values[0]
+          && !(omitCoordinatorFromInviteLookup && account.id === "coordinator-a"))
           .map(({ id, displayName }) => ({ id, display_name: displayName })),
-        rowCount: 3,
+        rowCount: [...accounts.values()].filter((account) => account.teamId === values[0]
+          && !(omitCoordinatorFromInviteLookup && account.id === "coordinator-a")).length,
       };
     }
     if (statement.startsWith('insert into "chat_channel_members"')) {
@@ -101,11 +114,23 @@ const pool = {
       return { rows: [], rowCount: 1 };
     }
     if (statement.includes('from "interview_chat_messages"') && statement.includes('"conversation_scope" = \'channel\'')) {
-      channelMessages = [{
-        id: "message-1", author: "AI assistant", message: "Build update",
-        createdAt: new Date("2026-10-20T15:00:00Z"), deletedAt: null,
-      }];
-      return { rows: channelMessages, rowCount: channelMessages.length };
+      const rows = values[1] === "build-channel"
+        ? [{
+          id: "message-1", author: "AI assistant", message: "Build update",
+          createdAt: new Date("2026-10-20T15:00:00Z"), deletedAt: null,
+        }]
+        : channelMessages.filter((message) => message.channelId === values[1]).map((message) => ({
+          id: message.id,
+          author: "AI assistant",
+          message: message.message,
+          createdAt: new Date("2026-10-20T15:00:00Z"),
+          deletedAt: null,
+        }));
+      return { rows, rowCount: rows.length };
+    }
+    if (statement.startsWith('insert into "interview_chat_messages"')) {
+      channelMessages.push({ id: values[0], channelId: values[4], message: values[2] });
+      return { rows: [], rowCount: 1 };
     }
     throw new Error(`Unexpected assistant task query: ${statement}`);
   },
@@ -272,6 +297,7 @@ test("recurring task lists include recent results only for the signed-in owner",
 });
 
 test("coordinator channel creation can invite only members of the current team", async () => {
+  omitCoordinatorFromInviteLookup = true;
   const created = await runAssistantWorkspaceTool("create_team_chat_channel", {
     name: "Planning",
     inviteAllTeamMembers: true,
@@ -286,6 +312,58 @@ test("coordinator channel creation can invite only members of the current team",
   assert.deepEqual(result.invitedMembers.sort(), ["Coordinator A", "Member A", "Member B"]);
   assert.equal(channelMembers.length, 3);
   assert.ok(channelMembers.every((values) => values[1] === "team-a"));
+  assert.equal(channelMembers.filter((values) => values[3] === "coordinator-a").length, 1);
+  omitCoordinatorFromInviteLookup = false;
+});
+
+test("a new private channel is listed, readable, and writable by its creator only", async () => {
+  channelMembers = [];
+  channelMessages = [];
+  channels.clear();
+  const creator = {
+    ...baseContext,
+    accountId: "coordinator-a",
+    authorName: "Coordinator A",
+    role: "coordinator",
+  };
+
+  const created = await runAssistantWorkspaceTool("create_team_chat_channel", {
+    name: "Creator Only",
+    inviteAllTeamMembers: false,
+  }, creator);
+  const channel = JSON.parse(created.content);
+  assert.deepEqual(channel.invitedMembers, ["Coordinator A"]);
+  assert.deepEqual(channelMembers.map((values) => values[3]), ["coordinator-a"]);
+
+  const creatorList = JSON.parse((await runAssistantWorkspaceTool("list_team_chat_channels", {}, creator)).content);
+  assert.ok(creatorList.includes("Creator Only"));
+  const posted = await runAssistantWorkspaceTool("send_team_chat_message", {
+    channelName: "Creator Only",
+    message: "First private update",
+  }, creator);
+  assert.match(posted.detail, /posted team chat message/);
+
+  const history = await runAssistantWorkspaceTool("read_team_chat_channel_history", {
+    channelName: "Creator Only",
+    startDate: "2026-10-20",
+    endDate: "2026-10-20",
+  }, creator);
+  assert.equal(JSON.parse(history.content)[0].message, "First private update");
+
+  const teammate = { ...baseContext, accountId: "member-b", authorName: "Member B" };
+  const teammateList = JSON.parse((await runAssistantWorkspaceTool("list_team_chat_channels", {}, teammate)).content);
+  assert.ok(!teammateList.includes("Creator Only"));
+  const deniedRead = await runAssistantWorkspaceTool("read_team_chat_channel_history", {
+    channelName: "Creator Only",
+    startDate: "2026-10-20",
+    endDate: "2026-10-20",
+  }, teammate);
+  assert.equal(deniedRead.detail, "channel not found or access denied");
+  const deniedPost = await runAssistantWorkspaceTool("send_team_chat_message", {
+    channelName: "Creator Only",
+    message: "This must not post",
+  }, teammate);
+  assert.equal(deniedPost.detail, "channel not found or access denied");
 });
 
 test("channel history is date-bounded and the tool never reads direct messages", async () => {
@@ -331,6 +409,22 @@ test("shared and @ai surfaces expose scheduled tools and carry the same disabled
   assert.match(routeSource, /for update skip locked/i);
   assert.match(routeSource, /on conflict \("idempotency_key"\) do nothing/i);
   assert.match(routeSource, /onScheduledSideEffect/);
+});
+
+test("dialog channel creation persists creator membership transactionally and selects only after success", async () => {
+  const appSource = await readFile(new URL("../../../robotics-interview-dashboard/src/App.tsx", import.meta.url), "utf8");
+  const routeSource = await readFile(new URL("../routes/robotics.ts", import.meta.url), "utf8");
+  assert.match(routeSource, /db\.transaction\(async \(tx\) => \{[\s\S]*?memberId: account\.id/);
+  assert.match(routeSource, /async function accessibleChatChannelIds[\s\S]*?eq\(chatChannelMembersTable\.memberId, viewer\.id\)/);
+  assert.match(routeSource, /if \(!viewer \|\| \(!isAdmin && !isInvited\)\)/);
+
+  const createAt = appSource.indexOf("const created = await createChannelMutation.mutateAsync");
+  const cacheAt = appSource.indexOf("qc.setQueryData(getListChatChannelsQueryKey()", createAt);
+  const selectAt = appSource.indexOf("setConversationChannelId(created.id)", createAt);
+  const catchAt = appSource.indexOf("} catch (error) {", createAt);
+  assert.ok(createAt >= 0 && cacheAt > createAt && selectAt > cacheAt && catchAt > selectAt);
+  assert.match(appSource, /data-testid="channel-dialog-error"/);
+  assert.match(appSource, /The channel was created, but its ID was missing/);
 });
 
 test.after(() => mock.restoreAll());
