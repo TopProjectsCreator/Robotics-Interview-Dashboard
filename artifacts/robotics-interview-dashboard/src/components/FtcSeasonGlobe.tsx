@@ -85,6 +85,7 @@ function GlobeRenderer({
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
     camera.position.set(0, 0, 4.5);
     const root = new THREE.Group();
+    root.rotation.y = THREE.MathUtils.degToRad(-100);
     scene.add(root);
     const globe = new THREE.Mesh(
       new THREE.SphereGeometry(1, 64, 48),
@@ -222,7 +223,7 @@ function SelectedDetails({ point }: { point: GlobePoint }) {
       <div className="flex items-center gap-2">
         <span className={`size-2 rounded-full ${point.kind === "team" ? "bg-[#59d8aa]" : "bg-[#efc25e]"}`} />
         <p className="font-mono text-[9px] font-semibold uppercase tracking-[.15em] text-[#a4c8bb]">
-          {point.kind === "team" ? "FTC team" : "Competition event"}
+          {point.kind === "team" ? `FTC team · ${point.teamNumber ?? "number unavailable"}` : `Competition event · ${point.eventCode ?? "code unavailable"}`}
         </p>
       </div>
       <h3 className="mt-2 truncate text-lg font-semibold tracking-[-.035em] text-[#f2f7ee]" title={point.label}>{point.label}</h3>
