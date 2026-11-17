@@ -6,10 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { FtcEvent } from './ftcEvent';
+import type { FtcMentionSearchResponseEventsStatus } from './ftcMentionSearchResponseEventsStatus';
+import type { FtcMentionSearchResponseTeamsStatus } from './ftcMentionSearchResponseTeamsStatus';
 import type { FtcTeam } from './ftcTeam';
 
 export interface FtcMentionSearchResponse {
   season: number;
   teams: FtcTeam[];
   events: FtcEvent[];
+  teamsStatus: FtcMentionSearchResponseTeamsStatus;
+  eventsStatus: FtcMentionSearchResponseEventsStatus;
 }

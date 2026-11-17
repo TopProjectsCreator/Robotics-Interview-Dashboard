@@ -8994,7 +8994,7 @@ components:
     FtcMentionSearchResponse:
       type: object
       additionalProperties: false
-      required: [season, teams, events]
+      required: [season, teams, events, teamsStatus, eventsStatus]
       properties:
         season: { type: integer }
         teams:
@@ -9003,6 +9003,8 @@ components:
         events:
           type: array
           items: { $ref: "#/components/schemas/FtcEvent" }
+        teamsStatus: { type: string, enum: [loading, ready, error] }
+        eventsStatus: { type: string, enum: [loading, ready, error] }
     FtcTeamProfileResponse:
       type: object
       additionalProperties: false

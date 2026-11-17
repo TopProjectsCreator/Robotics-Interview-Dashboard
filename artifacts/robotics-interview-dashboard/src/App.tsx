@@ -6984,31 +6984,36 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
-  const [debouncedFtcMentionQuery, setDebouncedFtcMentionQuery] = useState("");
-  useEffect(() => {
-    const query = mentionQuery.trim();
-    if (!mentionOpen || query.length < 2 || demoMode) {
-      setDebouncedFtcMentionQuery("");
-      return;
-    }
-    const timer = window.setTimeout(() => setDebouncedFtcMentionQuery(query), 250);
-    return () => window.clearTimeout(timer);
-  }, [demoMode, mentionOpen, mentionQuery]);
+  const currentFtcMentionQuery = mentionQuery.trim();
   const ftcMentionSearchParams = useMemo(() => ({
-    query: debouncedFtcMentionQuery || "  ",
+    query: currentFtcMentionQuery || "  ",
     season: new Date().getUTCFullYear(),
-  }), [debouncedFtcMentionQuery]);
+  }), [currentFtcMentionQuery]);
   const ftcMentionSearch = useSearchFtcMentions(ftcMentionSearchParams, {
     query: {
       queryKey: getSearchFtcMentionsQueryKey(ftcMentionSearchParams),
-      enabled: !demoMode && mentionOpen && debouncedFtcMentionQuery.length >= 2,
+      enabled: !demoMode && mentionOpen && currentFtcMentionQuery.length >= 2,
       staleTime: 5 * 60 * 1000,
       retry: false,
+      refetchInterval: query => {
+        const result = query.state.data;
+        return result?.teamsStatus === "loading" || result?.eventsStatus === "loading" ? 350 : false;
+      },
     },
   });
-  const currentFtcMentionResults = debouncedFtcMentionQuery.toLowerCase() === mentionQuery.trim().toLowerCase()
+  const currentFtcMentionResults = ftcMentionSearchParams.query.toLowerCase() === currentFtcMentionQuery.toLowerCase()
     ? ftcMentionSearch.data
     : undefined;
+  const ftcMentionIsLoading = currentFtcMentionQuery.length >= 2 && (
+    !currentFtcMentionResults ||
+    currentFtcMentionResults.teamsStatus === "loading" ||
+    currentFtcMentionResults.eventsStatus === "loading"
+  );
+  const ftcMentionHasError = currentFtcMentionQuery.length >= 2 && (
+    ftcMentionSearch.isError ||
+    currentFtcMentionResults?.teamsStatus === "error" ||
+    currentFtcMentionResults?.eventsStatus === "error"
+  );
   const [channelMentionOpen, setChannelMentionOpen] = useState(false);
   const [channelMentionQuery, setChannelMentionQuery] = useState("");
   const [channelMentionActiveIndex, setChannelMentionActiveIndex] = useState(0);
@@ -8561,9 +8566,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                  </button>)}
                {applicantMentionsQuery.isFetching && <p className="px-3 py-3 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">Loading applicant suggestions…</p>}
                {applicantMentionsQuery.isError && <p className="px-3 py-3 text-center text-xs text-[#a34d46] dark:text-[#ef948b]">Applicants couldn’t be loaded. Interviewer mentions still work.</p>}
-               {mentionQuery.trim().length >= 2 && (!currentFtcMentionResults || ftcMentionSearch.isFetching) && <p className="px-3 py-3 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">Searching FIRST teams and events…</p>}
-               {ftcMentionSearch.isError && mentionQuery.trim().length >= 2 && <p className="px-3 py-3 text-center text-xs text-[#a34d46] dark:text-[#ef948b]">FIRST teams and events couldn’t be loaded.</p>}
-               {filteredMentionSuggestions.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && !(mentionQuery.trim().length >= 2 && (!currentFtcMentionResults || ftcMentionSearch.isFetching)) && !(ftcMentionSearch.isError && mentionQuery.trim().length >= 2) && <p className="px-3 py-4 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">No matching people, teams, or events.</p>}
+                {ftcMentionIsLoading && <p className="px-3 py-3 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">Searching FIRST teams and events…</p>}
+                {ftcMentionHasError && <p className="px-3 py-3 text-center text-xs text-[#a34d46] dark:text-[#ef948b]">Some FIRST team or event data couldn’t be loaded.</p>}
+                {filteredMentionSuggestions.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && !ftcMentionIsLoading && !ftcMentionHasError && <p className="px-3 py-4 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc9]">No matching people, teams, or events.</p>}
             </div>
          </div>}
            {channelMentionOpen && <div id="chat-channel-listbox" role="listbox" aria-label="Channel suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="channel-mention-menu">

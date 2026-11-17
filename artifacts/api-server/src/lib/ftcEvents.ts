@@ -41,9 +41,15 @@ export type FtcEvent = {
 type CacheEntry<T> = { expiresAt: number; staleUntil: number; value: T };
 const cache = new Map<string, CacheEntry<unknown>>();
 const pending = new Map<string, Promise<unknown>>();
+const loadErrors = new Map<string, { error: unknown; retryAt: number }>();
+const partialTeamLists = new Map<number, FtcTeam[]>();
+const CACHE_ERROR_RETRY_MS = 5_000;
 
 function refreshCache<T>(key: string, load: () => Promise<T>): Promise<T> {
-  const request = load()
+  loadErrors.delete(key);
+  let request: Promise<T>;
+  request = Promise.resolve()
+    .then(load)
     .then(value => {
       const cachedAt = Date.now();
       cache.set(key, {
@@ -53,7 +59,13 @@ function refreshCache<T>(key: string, load: () => Promise<T>): Promise<T> {
       });
       return value;
     })
-    .finally(() => pending.delete(key));
+    .catch(error => {
+      loadErrors.set(key, { error, retryAt: Date.now() + CACHE_ERROR_RETRY_MS });
+      throw error;
+    })
+    .finally(() => {
+      if (pending.get(key) === request) pending.delete(key);
+    });
   pending.set(key, request);
   return request;
 }
@@ -65,10 +77,15 @@ function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
 
   const existing = pending.get(key) as Promise<T> | undefined;
   if (entry && entry.staleUntil > now) {
-    if (!existing) void refreshCache(key, load).catch(() => undefined);
+    const previousError = loadErrors.get(key);
+    if (!existing && (!previousError || previousError.retryAt <= now)) {
+      void refreshCache(key, load).catch(() => undefined);
+    }
     return Promise.resolve(entry.value);
   }
   if (existing) return existing;
+  const previousError = loadErrors.get(key);
+  if (previousError && previousError.retryAt > now) return Promise.reject(previousError.error);
   return refreshCache(key, load);
 }
 
@@ -170,20 +187,31 @@ async function getTeamPage(season: number, page: number): Promise<{ teams: FtcTe
 
 async function getSeasonTeams(season: number): Promise<FtcTeam[]> {
   return cached(`teams:${season}`, async () => {
+    const cachedTeams = cache.get(`teams:${season}`);
+    if (!cachedTeams || cachedTeams.staleUntil <= Date.now()) partialTeamLists.delete(season);
     const firstPage = await getTeamPage(season, 1);
     if (firstPage.pageTotal > MAX_TEAM_PAGES) {
       throw new Error("The FTC team list is too large to search safely. Search by team number instead.");
     }
     const allTeams = [...firstPage.teams];
+    partialTeamLists.set(season, allTeams);
     for (let start = 2; start <= firstPage.pageTotal; start += PAGE_CONCURRENCY) {
       const pages = Array.from(
         { length: Math.min(PAGE_CONCURRENCY, firstPage.pageTotal - start + 1) },
         (_, index) => start + index,
       );
-      const results = await Promise.all(pages.map(page => getTeamPage(season, page)));
-      allTeams.push(...results.flatMap(result => result.teams));
+      const partialTeams = new Map(allTeams.map(team => [team.teamNumber, team]));
+      const results = await Promise.all(pages.map(async page => {
+        const result = await getTeamPage(season, page);
+        for (const team of result.teams) partialTeams.set(team.teamNumber, team);
+        partialTeamLists.set(season, [...partialTeams.values()]);
+        return { page, result };
+      }));
+      allTeams.push(...results.sort((left, right) => left.page - right.page).flatMap(result => result.result.teams));
     }
-    return [...new Map(allTeams.map(team => [team.teamNumber, team])).values()];
+    const uniqueTeams = [...new Map(allTeams.map(team => [team.teamNumber, team])).values()];
+    partialTeamLists.set(season, uniqueTeams);
+    return uniqueTeams;
   });
 }
 
@@ -298,37 +326,84 @@ function encodePathPart(value: string): string {
   return encodeURIComponent(value);
 }
 
-export async function searchFtcEntities(season: number, query: string): Promise<{ season: number; teams: FtcTeam[]; events: FtcEvent[] }> {
-  const normalized = query.trim();
-  if (normalized.length < 2) return { season, teams: [], events: [] };
+type FtcSearchSourceStatus = "loading" | "ready" | "error";
 
-  let teamsPromise: Promise<FtcTeam[]>;
-  if (/^\d{5}$/.test(normalized)) {
-    teamsPromise = cached(`team:${season}:${normalized}`, async () => {
+function availableCacheValue<T>(key: string): T | undefined {
+  const entry = cache.get(key) as CacheEntry<T> | undefined;
+  return entry && entry.staleUntil > Date.now() ? entry.value : undefined;
+}
+
+function sourceStatus(key: string): FtcSearchSourceStatus {
+  if (pending.has(key)) return "loading";
+  if (loadErrors.has(key)) return "error";
+  if (availableCacheValue(key) !== undefined) return "ready";
+  return "loading";
+}
+
+function filterTeams(query: string, teams: readonly FtcTeam[]): FtcTeam[] {
+  return teams
+    .map(team => ({ team, rank: rankMatch(query, [team.teamNumber, team.displayTeamNumber, team.nameFull, team.nameShort, team.schoolName, team.robotName, team.city, team.stateProv]) }))
+    .filter(result => Number.isFinite(result.rank))
+    .sort((left, right) => left.rank - right.rank || left.team.teamNumber - right.team.teamNumber)
+    .slice(0, 8)
+    .map(result => result.team);
+}
+
+function filterEvents(query: string, events: readonly FtcEvent[]): FtcEvent[] {
+  return events
+    .map(event => ({ event, rank: rankMatch(query, [event.code, event.name, event.typeName, event.venue, event.city, event.stateProv, event.country]) }))
+    .filter(result => Number.isFinite(result.rank))
+    .sort((left, right) => left.rank - right.rank || (left.event.name ?? "").localeCompare(right.event.name ?? ""))
+    .slice(0, 8)
+    .map(result => result.event);
+}
+
+export async function searchFtcEntities(season: number, query: string): Promise<{
+  season: number;
+  teams: FtcTeam[];
+  events: FtcEvent[];
+  teamsStatus: FtcSearchSourceStatus;
+  eventsStatus: FtcSearchSourceStatus;
+}> {
+  const normalized = query.trim();
+  if (normalized.length < 2) {
+    return { season, teams: [], events: [], teamsStatus: "ready", eventsStatus: "ready" };
+  }
+
+  const exactTeamKey = /^\d{5}$/.test(normalized) ? `team:${season}:${normalized}` : null;
+  const teamsKey = exactTeamKey ?? `teams:${season}`;
+  const eventsKey = `events:${season}`;
+  if (!exactTeamKey && !availableCacheValue<FtcTeam[]>(teamsKey) && !pending.has(teamsKey)) {
+    partialTeamLists.delete(season);
+  }
+  const teamsPromise = exactTeamKey
+    ? cached(exactTeamKey, async () => {
       const payload = asRecord(await requestFirst<unknown>(`${season}/teams?teamNumber=${encodePathPart(normalized)}`));
       return Array.isArray(payload.teams)
         ? payload.teams.map(mapTeam).filter((team): team is FtcTeam => team !== null)
         : [];
-    });
-  } else {
-    teamsPromise = getSeasonTeams(season);
-  }
+    })
+    : getSeasonTeams(season);
+  const eventsPromise = getSeasonEvents(season);
+  void teamsPromise.catch(() => undefined);
+  void eventsPromise.catch(() => undefined);
 
-  const [teams, events] = await Promise.all([teamsPromise, getSeasonEvents(season)]);
+  const teamsStatus = sourceStatus(teamsKey);
+  const eventsStatus = sourceStatus(eventsKey);
+  if (teamsStatus === "error" && eventsStatus === "error") {
+    throw new Error("FTC team and event data could not be loaded.");
+  }
+  const fullSeasonTeams = exactTeamKey ? availableCacheValue<FtcTeam[]>(`teams:${season}`) : undefined;
+  const teams = exactTeamKey
+    ? availableCacheValue<FtcTeam[]>(exactTeamKey) ?? (fullSeasonTeams?.filter(team => String(team.teamNumber) === normalized) ?? [])
+    : availableCacheValue<FtcTeam[]>(teamsKey) ?? partialTeamLists.get(season) ?? [];
+  const events = availableCacheValue<FtcEvent[]>(eventsKey) ?? [];
   return {
     season,
-    teams: teams
-      .map(team => ({ team, rank: rankMatch(normalized, [team.teamNumber, team.displayTeamNumber, team.nameFull, team.nameShort, team.schoolName, team.robotName, team.city, team.stateProv]) }))
-      .filter(result => Number.isFinite(result.rank))
-      .sort((left, right) => left.rank - right.rank || left.team.teamNumber - right.team.teamNumber)
-      .slice(0, 8)
-      .map(result => result.team),
-    events: events
-      .map(event => ({ event, rank: rankMatch(normalized, [event.code, event.name, event.typeName, event.venue, event.city, event.stateProv, event.country]) }))
-      .filter(result => Number.isFinite(result.rank))
-      .sort((left, right) => left.rank - right.rank || (left.event.name ?? "").localeCompare(right.event.name ?? ""))
-      .slice(0, 8)
-      .map(result => result.event),
+    teams: filterTeams(normalized, teams),
+    events: filterEvents(normalized, events),
+    teamsStatus,
+    eventsStatus,
   };
 }
 
@@ -366,4 +441,6 @@ export async function getFtcEventProfile(season: number, eventCode: string): Pro
 export function clearFtcEventCacheForTests(): void {
   cache.clear();
   pending.clear();
+  loadErrors.clear();
+  partialTeamLists.clear();
 }

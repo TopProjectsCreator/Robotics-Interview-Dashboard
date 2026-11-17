@@ -2408,10 +2408,30 @@ export interface FtcEvent {
   dateEnd: string | null;
 }
 
+export type FtcMentionSearchResponseTeamsStatus = typeof FtcMentionSearchResponseTeamsStatus[keyof typeof FtcMentionSearchResponseTeamsStatus];
+
+
+export const FtcMentionSearchResponseTeamsStatus = {
+  loading: 'loading',
+  ready: 'ready',
+  error: 'error',
+} as const;
+
+export type FtcMentionSearchResponseEventsStatus = typeof FtcMentionSearchResponseEventsStatus[keyof typeof FtcMentionSearchResponseEventsStatus];
+
+
+export const FtcMentionSearchResponseEventsStatus = {
+  loading: 'loading',
+  ready: 'ready',
+  error: 'error',
+} as const;
+
 export interface FtcMentionSearchResponse {
   season: number;
   teams: FtcTeam[];
   events: FtcEvent[];
+  teamsStatus: FtcMentionSearchResponseTeamsStatus;
+  eventsStatus: FtcMentionSearchResponseEventsStatus;
 }
 
 export interface FtcTeamProfileResponse {

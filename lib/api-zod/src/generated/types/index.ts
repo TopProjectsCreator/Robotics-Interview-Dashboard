@@ -303,6 +303,8 @@ export * from './ftcGlobePointKind';
 export * from './ftcGlobePointPrecision';
 export * from './ftcGlobeResponse';
 export * from './ftcMentionSearchResponse';
+export * from './ftcMentionSearchResponseEventsStatus';
+export * from './ftcMentionSearchResponseTeamsStatus';
 export * from './ftcTeam';
 export * from './ftcTeamProfileResponse';
 export * from './generateImageInput';

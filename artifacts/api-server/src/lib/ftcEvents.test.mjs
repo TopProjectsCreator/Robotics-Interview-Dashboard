@@ -32,6 +32,15 @@ function response(body, status = 200) {
   });
 }
 
+async function waitForSearch(season, query) {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const result = await searchFtcEntities(season, query);
+    if (result.teamsStatus !== "loading" && result.eventsStatus !== "loading") return result;
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  throw new Error(`FTC search did not finish loading for ${query}`);
+}
+
 test("numeric searches request one team and search event details", async (t) => {
   withCredentials();
   const requests = [];
@@ -63,10 +72,12 @@ test("numeric searches request one team and search event details", async (t) => 
     throw new Error(`Unexpected request ${url}`);
   });
 
-  const results = await searchFtcEntities(2026, "23442");
+  const results = await waitForSearch(2026, "23442");
   assert.equal(results.teams[0].teamNumber, 23442);
   assert.equal(results.teams[0].nameFull, "BioBuzz");
   assert.equal(results.events.length, 0);
+  assert.equal(results.teamsStatus, "ready");
+  assert.equal(results.eventsStatus, "ready");
   assert.deepEqual(requests.map(request => request.authorization), [
     "Basic " + Buffer.from("test-user:test-key").toString("base64"),
     "Basic " + Buffer.from("test-user:test-key").toString("base64"),
@@ -102,7 +113,7 @@ test("name search loads paged teams once and filters team and event names", asyn
     throw new Error(`Unexpected request ${url}`);
   });
 
-  const first = await searchFtcEntities(2026, "Cascade");
+  const first = await waitForSearch(2026, "Cascade");
   const second = await searchFtcEntities(2026, "Cascade");
   assert.deepEqual(first.teams.map(team => team.teamNumber), [11, 22]);
   assert.deepEqual(first.events.map(event => event.code), ["CASC"]);
@@ -130,7 +141,7 @@ test("stale season results return immediately while the cache refreshes", async 
     throw new Error(`Unexpected request ${href}`);
   });
 
-  const initial = await searchFtcEntities(2026, "Cascade");
+  const initial = await waitForSearch(2026, "Cascade");
   assert.equal(initial.teams[0].nameFull, "Cascade Robotics");
   assert.equal(initial.events[0].code, "CASC");
 
@@ -139,6 +150,8 @@ test("stale season results return immediately while the cache refreshes", async 
   const stale = await searchFtcEntities(2026, "Cascade");
   assert.equal(stale.teams[0].nameFull, "Cascade Robotics");
   assert.equal(stale.events[0].code, "CASC");
+  assert.equal(stale.teamsStatus, "loading");
+  assert.equal(stale.eventsStatus, "loading");
   assert.equal(refreshRequests.length, 2);
 
   for (const request of refreshRequests) {
@@ -150,9 +163,74 @@ test("stale season results return immediately while the cache refreshes", async 
   }
   await new Promise(resolve => setTimeout(resolve, 0));
 
-  const refreshed = await searchFtcEntities(2026, "Cascade");
+  const refreshed = await waitForSearch(2026, "Cascade");
   assert.equal(refreshed.teams[0].nameFull, "Cascade Updated");
   assert.equal(refreshed.events[0].code, "UPDT");
+});
+
+test("cold searches expose matching first-page data while later team pages load", async (t) => {
+  withCredentials();
+  let resolvePageThree;
+  let markPageThreeStarted;
+  const pageThreeStarted = new Promise(resolve => { markPageThreeStarted = resolve; });
+  const pageThree = new Promise(resolve => { resolvePageThree = resolve; });
+  t.mock.method(globalThis, "fetch", async url => {
+    const href = String(url);
+    if (href.endsWith("/2026/teams?page=1")) {
+      return response({
+        teams: [{ teamNumber: 11, nameFull: "Cascade Robotics" }],
+        pageTotal: 3,
+      });
+    }
+    if (href.endsWith("/2026/teams?page=2")) {
+      return response({ teams: [{ teamNumber: 22, nameFull: "Cascade Makers" }], pageTotal: 3 });
+    }
+    if (href.endsWith("/2026/teams?page=3")) {
+      markPageThreeStarted();
+      return await pageThree;
+    }
+    if (href.endsWith("/2026/events")) {
+      return response({ events: [{ code: "CASC", name: "Cascade Open" }] });
+    }
+    throw new Error(`Unexpected request ${href}`);
+  });
+
+  const initial = await searchFtcEntities(2026, "Cascade");
+  assert.equal(initial.teamsStatus, "loading");
+  assert.equal(initial.eventsStatus, "loading");
+  await pageThreeStarted;
+
+  let currentPartial = await searchFtcEntities(2026, "Cascade");
+  for (let attempt = 0; currentPartial.eventsStatus !== "ready" && attempt < 20; attempt += 1) {
+    await new Promise(resolve => setImmediate(resolve));
+    currentPartial = await searchFtcEntities(2026, "Cascade");
+  }
+  assert.deepEqual(currentPartial.teams.map(team => team.teamNumber), [11, 22]);
+  assert.deepEqual(currentPartial.events.map(event => event.code), ["CASC"]);
+  assert.equal(currentPartial.teamsStatus, "loading");
+  assert.equal(currentPartial.eventsStatus, "ready");
+
+  resolvePageThree(response({ teams: [{ teamNumber: 33, nameFull: "Cascade Builders" }], pageTotal: 3 }));
+  const complete = await waitForSearch(2026, "Cascade");
+  assert.deepEqual(complete.teams.map(team => team.teamNumber), [11, 22, 33]);
+  assert.equal(complete.teamsStatus, "ready");
+});
+
+test("a failed source reports an error without hiding the source that loaded", async (t) => {
+  withCredentials();
+  t.mock.method(globalThis, "fetch", async url => {
+    const href = String(url);
+    if (href.endsWith("/2026/teams?teamNumber=23442")) {
+      return response({ teams: [{ teamNumber: 23442, nameFull: "BioBuzz Robotics" }] });
+    }
+    if (href.endsWith("/2026/events")) return response({ error: "temporary outage" }, 503);
+    throw new Error(`Unexpected request ${href}`);
+  });
+
+  const result = await waitForSearch(2026, "23442");
+  assert.deepEqual(result.teams.map(team => team.teamNumber), [23442]);
+  assert.equal(result.teamsStatus, "ready");
+  assert.equal(result.eventsStatus, "error");
 });
 
 test("team and event detail requests include the requested season", async (t) => {
@@ -230,5 +308,7 @@ test("public globe data includes every team and event with a mapped location", a
 test("missing FIRST credentials fail explicitly before making a request", async () => {
   delete process.env.FTC_EVENTS_USERNAME;
   delete process.env.FTC_EVENTS_AUTHORIZATION_KEY;
-  await assert.rejects(searchFtcEntities(2026, "robotics"), /credentials are not configured/i);
+  await searchFtcEntities(2026, "robotics");
+  await new Promise(resolve => setImmediate(resolve));
+  await assert.rejects(searchFtcEntities(2026, "robotics"), /could not be loaded/i);
 });

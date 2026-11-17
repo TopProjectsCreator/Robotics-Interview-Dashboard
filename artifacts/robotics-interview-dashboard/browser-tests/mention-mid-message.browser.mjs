@@ -55,6 +55,8 @@ try {
 
   const page = await browser.newPage();
   const pageErrors = [];
+  let resolveSlowSearchStarted;
+  const slowSearchStarted = new Promise(resolve => { resolveSlowSearchStarted = resolve; });
   page.on("pageerror", error => pageErrors.push(error.message));
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url());
@@ -75,7 +77,52 @@ try {
         peer: url.searchParams.get("peer"),
       };
     } else if (url.pathname === "/api/queue/chat/ftc/search") {
-      body = {
+      const query = url.searchParams.get("query") ?? "";
+      if (query.toLowerCase() === "slow") {
+        resolveSlowSearchStarted?.();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        body = {
+          season: 2026,
+          teams: [{
+            teamNumber: 11111,
+            displayTeamNumber: "11111",
+            nameFull: "Slow Result Robotics",
+            nameShort: "Slow Result",
+            schoolName: null,
+            city: null,
+            stateProv: null,
+            country: null,
+            website: null,
+            rookieYear: null,
+            robotName: null,
+            homeRegion: null,
+          }],
+          events: [],
+          teamsStatus: "ready",
+          eventsStatus: "ready",
+        };
+      } else if (query.toLowerCase() === "fast") {
+        body = {
+          season: 2026,
+          teams: [{
+            teamNumber: 22222,
+            displayTeamNumber: "22222",
+            nameFull: "Fast Result Robotics",
+            nameShort: "Fast Result",
+            schoolName: null,
+            city: null,
+            stateProv: null,
+            country: null,
+            website: null,
+            rookieYear: null,
+            robotName: null,
+            homeRegion: null,
+          }],
+          events: [],
+          teamsStatus: "ready",
+          eventsStatus: "ready",
+        };
+      } else body = {
         season: 2026,
         teams: [{
           teamNumber: 23442,
@@ -105,6 +152,8 @@ try {
           dateStart: null,
           dateEnd: null,
         }],
+        teamsStatus: "ready",
+        eventsStatus: "ready",
       };
     }
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
@@ -188,6 +237,19 @@ try {
   await page.getByTestId("mention-option-ftc-event-cafo").click();
   assert.equal(await input.inputValue(), "see @FTC Event 2026 CAFO ");
   console.log("ok 8: competition selection inserts a stable event reference");
+
+  // 9. Search starts immediately and a late older response never replaces the
+  // suggestions for the query currently being typed.
+  const slowTypedAt = Date.now();
+  await input.fill("find @Slow");
+  await slowSearchStarted;
+  assert.ok(Date.now() - slowTypedAt < 200, "FTC search should start without the old 250 ms debounce");
+  await input.fill("find @Fast");
+  await page.getByTestId("mention-option-ftc-team-22222").waitFor({ state: "visible", timeout: 5000 });
+  await page.waitForTimeout(550);
+  assert.equal(await page.getByTestId("mention-option-ftc-team-22222").isVisible(), true);
+  assert.equal(await page.getByTestId("mention-option-ftc-team-11111").count(), 0);
+  console.log("ok 9: successive searches start promptly and older results stay out of the current menu");
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join("; ")}`);
   console.log("ALL MENTION PICKER CHECKS PASSED");

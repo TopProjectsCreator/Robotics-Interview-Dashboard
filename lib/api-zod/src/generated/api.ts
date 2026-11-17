@@ -2559,7 +2559,9 @@ export const SearchFtcMentionsResponse = zod.object({
   "liveStreamUrl": zod.string().nullable(),
   "dateStart": zod.coerce.date().nullable(),
   "dateEnd": zod.coerce.date().nullable()
-}))
+})),
+  "teamsStatus": zod.enum(['loading', 'ready', 'error']),
+  "eventsStatus": zod.enum(['loading', 'ready', 'error'])
 })
 
 
