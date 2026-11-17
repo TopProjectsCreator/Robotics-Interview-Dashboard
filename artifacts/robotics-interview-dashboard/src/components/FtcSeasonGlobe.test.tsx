@@ -10,7 +10,7 @@ vi.mock("@workspace/api-client-react", () => ({
   useGetFtcGlobeData: useGetFtcGlobeDataMock,
 }));
 
-import { FtcSeasonGlobe } from "./FtcSeasonGlobe";
+import { FtcSeasonGlobe, pointPosition } from "./FtcSeasonGlobe";
 
 const teamPoint = {
   id: "team-2026-23442",
@@ -72,6 +72,16 @@ describe("FTC season globe", () => {
       isFetching: false,
       refetch: vi.fn(),
     });
+  });
+
+  it("places east longitudes on the right side of the globe", () => {
+    const east = pointPosition({ ...teamPoint, latitude: 0, longitude: 90 }, 1);
+    const west = pointPosition({ ...teamPoint, latitude: 0, longitude: -90 }, 1);
+
+    expect(east.x).toBeCloseTo(1);
+    expect(east.z).toBeCloseTo(0);
+    expect(west.x).toBeCloseTo(-1);
+    expect(west.z).toBeCloseTo(0);
   });
 
   it("shows the selected team's identifiers and profile details", () => {

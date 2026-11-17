@@ -9,11 +9,11 @@ const MIN_GLOBE_ZOOM = 0.75;
 const MAX_GLOBE_ZOOM = 2.2;
 const GLOBE_ZOOM_STEP = 0.2;
 
-function pointPosition(point: GlobePoint, radius: number, latitudeOffset = 0, longitudeOffset = 0) {
+export function pointPosition(point: GlobePoint, radius: number, latitudeOffset = 0, longitudeOffset = 0) {
   const lat = THREE.MathUtils.degToRad(point.latitude + latitudeOffset);
   const lon = THREE.MathUtils.degToRad(point.longitude + longitudeOffset);
   return new THREE.Vector3(
-    -radius * Math.cos(lat) * Math.sin(lon),
+    radius * Math.cos(lat) * Math.sin(lon),
     radius * Math.sin(lat),
     radius * Math.cos(lat) * Math.cos(lon),
   );
@@ -23,8 +23,9 @@ function makeEarthTexture() {
   const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}ftc-globe-world.svg`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
-  texture.repeat.x = -1;
-  texture.offset.x = 0.75;
+  // Sphere U and east-positive longitude now advance in the same direction.
+  texture.repeat.x = 1;
+  texture.offset.x = 0.25;
   return texture;
 }
 
@@ -101,7 +102,7 @@ function GlobeRenderer({
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
     const root = new THREE.Group();
-    root.rotation.y = THREE.MathUtils.degToRad(-100);
+    root.rotation.y = THREE.MathUtils.degToRad(100);
     scene.add(root);
     const globe = new THREE.Mesh(
       new THREE.SphereGeometry(1, 64, 48),
