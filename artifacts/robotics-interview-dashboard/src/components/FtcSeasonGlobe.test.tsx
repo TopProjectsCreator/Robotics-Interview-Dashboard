@@ -97,4 +97,23 @@ describe("FTC season globe", () => {
     expect(details).toHaveTextContent("Sharon High School");
     expect(details).toHaveTextContent("Nov 20, 2026");
   });
+
+  it("provides accessible zoom controls and reset behavior", () => {
+    render(<FtcSeasonGlobe />);
+
+    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("120 percent");
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in on globe" }));
+    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("140 percent");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset globe zoom" }));
+    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("100 percent");
+  });
+
+  it("promotes the platform with working signup and product links", () => {
+    render(<FtcSeasonGlobe />);
+
+    expect(screen.getByTestId("card-ftc-platform-promo")).toHaveTextContent("team chat");
+    expect(screen.getByTestId("link-ftc-platform-signup")).toHaveAttribute("href", "/auth?createTeam=1");
+    expect(screen.getByTestId("link-ftc-platform-capabilities")).toHaveAttribute("href", "#capabilities");
+  });
 });

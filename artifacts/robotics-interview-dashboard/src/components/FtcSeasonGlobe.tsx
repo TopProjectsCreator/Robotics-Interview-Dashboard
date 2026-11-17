@@ -2,9 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { getGetFtcGlobeDataQueryKey, useGetFtcGlobeData } from "@workspace/api-client-react";
 import type { FtcGlobePoint } from "@workspace/api-client-react";
-import { ArrowUpRight, CalendarDays, MapPin, Pause, Play, RotateCcw } from "lucide-react";
+import { ArrowUpRight, CalendarDays, MapPin, Pause, Play, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 
 type GlobePoint = FtcGlobePoint;
+const MIN_GLOBE_ZOOM = 0.75;
+const MAX_GLOBE_ZOOM = 2.2;
+const GLOBE_ZOOM_STEP = 0.2;
 
 function pointPosition(point: GlobePoint, radius: number, latitudeOffset = 0, longitudeOffset = 0) {
   const lat = THREE.MathUtils.degToRad(point.latitude + latitudeOffset);
@@ -53,6 +56,7 @@ function GlobeRenderer({
   dark,
   selectedId,
   paused,
+  zoom,
   onSelect,
   onReady,
 }: {
@@ -60,11 +64,15 @@ function GlobeRenderer({
   dark: boolean;
   selectedId: string | null;
   paused: boolean;
+  zoom: number;
   onSelect: (point: GlobePoint) => void;
   onReady: (ready: boolean) => void;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
+  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const pausedRef = useRef(paused);
   const callbacksRef = useRef({ onSelect, onReady });
+  pausedRef.current = paused;
   callbacksRef.current = { onSelect, onReady };
 
   useEffect(() => {
@@ -77,13 +85,21 @@ function GlobeRenderer({
       callbacksRef.current.onReady(false);
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0x000000, 0);
+    renderer.domElement.style.display = "block";
+    renderer.domElement.style.width = "100%";
+    renderer.domElement.style.height = "100%";
+    renderer.domElement.style.touchAction = "pan-y pinch-zoom";
+    renderer.domElement.style.cursor = "grab";
     mount.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
     camera.position.set(0, 0, 4.5);
+    camera.zoom = zoom;
+    camera.updateProjectionMatrix();
+    cameraRef.current = camera;
     const root = new THREE.Group();
     root.rotation.y = THREE.MathUtils.degToRad(-100);
     scene.add(root);
@@ -123,14 +139,17 @@ function GlobeRenderer({
       root.add(mesh);
       meshData.push({ mesh, points: entries });
     };
-    addPointSet(teamPoints, dark ? 0x74e0b3 : 0x087e72, 0.012);
-    addPointSet(eventPoints, dark ? 0xffd46c : 0xc17e27, 0.017);
+    addPointSet(teamPoints, dark ? 0x74e0b3 : 0x087e72, 0.007);
+    addPointSet(eventPoints, dark ? 0xffd46c : 0xc17e27, 0.010);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let dragging = false;
     let previousX = 0;
     let previousY = 0;
+    let startX = 0;
+    let startY = 0;
+    let moved = false;
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const resize = () => {
       const width = Math.max(1, mount.clientWidth);
@@ -144,12 +163,17 @@ function GlobeRenderer({
     resize();
     const pointerDown = (event: PointerEvent) => {
       dragging = true;
+      moved = false;
+      startX = event.clientX;
+      startY = event.clientY;
       previousX = event.clientX;
       previousY = event.clientY;
+      renderer.domElement.style.cursor = "grabbing";
       renderer.domElement.setPointerCapture(event.pointerId);
     };
     const pointerMove = (event: PointerEvent) => {
       if (dragging) {
+        if (Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY) > 6) moved = true;
         root.rotation.y += (event.clientX - previousX) * 0.006;
         root.rotation.x = THREE.MathUtils.clamp(root.rotation.x + (event.clientY - previousY) * 0.004, -0.65, 0.65);
         previousX = event.clientX;
@@ -159,7 +183,8 @@ function GlobeRenderer({
     const pointerUp = (event: PointerEvent) => {
       if (!dragging) return;
       dragging = false;
-      if (Math.abs(event.clientX - previousX) + Math.abs(event.clientY - previousY) > 4) return;
+      renderer.domElement.style.cursor = "grab";
+      if (moved) return;
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
       raycaster.setFromCamera(pointer, camera);
@@ -173,12 +198,16 @@ function GlobeRenderer({
     renderer.domElement.addEventListener("pointerdown", pointerDown);
     renderer.domElement.addEventListener("pointermove", pointerMove);
     renderer.domElement.addEventListener("pointerup", pointerUp);
-    renderer.domElement.addEventListener("pointercancel", () => { dragging = false; });
+    const pointerCancel = () => {
+      dragging = false;
+      renderer.domElement.style.cursor = "grab";
+    };
+    renderer.domElement.addEventListener("pointercancel", pointerCancel);
 
     let animation = 0;
     const draw = () => {
       animation = requestAnimationFrame(draw);
-      if (!paused && !reducedMotion && !dragging) root.rotation.y += 0.0014;
+      if (!pausedRef.current && !reducedMotion && !dragging) root.rotation.y += 0.0014;
       renderer.render(scene, camera);
     };
     draw();
@@ -190,6 +219,8 @@ function GlobeRenderer({
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
+      renderer.domElement.removeEventListener("pointercancel", pointerCancel);
+      cameraRef.current = null;
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.InstancedMesh) {
           object.geometry.dispose();
@@ -203,7 +234,13 @@ function GlobeRenderer({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [dark, paused, points, selectedId]);
+  }, [dark, points, selectedId]);
+
+  useEffect(() => {
+    if (!cameraRef.current) return;
+    cameraRef.current.zoom = zoom;
+    cameraRef.current.updateProjectionMatrix();
+  }, [zoom]);
 
   return <div ref={mountRef} className="absolute inset-0" aria-hidden="true" />;
 }
@@ -265,6 +302,7 @@ export function FtcSeasonGlobe() {
   });
   const [selected, setSelected] = useState<GlobePoint | null>(null);
   const [paused, setPaused] = useState(false);
+  const [zoom, setZoom] = useState(1.2);
   const [rendererReady, setRendererReady] = useState(false);
   const [dark, setDark] = useState(false);
   const [visiblePointCount, setVisiblePointCount] = useState(80);
@@ -311,7 +349,7 @@ export function FtcSeasonGlobe() {
             <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[.14] [background-image:linear-gradient(rgba(157,221,210,.42)_1px,transparent_1px),linear-gradient(90deg,rgba(157,221,210,.42)_1px,transparent_1px)] [background-size:40px_40px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_76%)]" />
             <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[min(95%,560px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#8bc8b6]/20 shadow-[0_0_90px_rgba(66,173,145,.09)]" />
             {data && points.length > 0 && (
-              <GlobeRenderer points={points} dark={dark} selectedId={selected?.id ?? null} paused={paused} onSelect={choosePoint} onReady={setRendererReady} />
+              <GlobeRenderer points={points} dark={dark} selectedId={selected?.id ?? null} paused={paused} zoom={zoom} onSelect={choosePoint} onReady={setRendererReady} />
             )}
             {isLoading && <GlobeLoading />}
             {isError && (
@@ -340,10 +378,45 @@ export function FtcSeasonGlobe() {
               </span>
               <span className="font-mono text-[9px] font-semibold uppercase tracking-[.13em] text-[#c7ddd4]">FTC · season {data?.season ?? "—"}</span>
             </div>
+            <div className="absolute right-4 top-4 flex items-center gap-1.5 rounded-xl border border-white/10 bg-[#102a31]/85 p-1.5 shadow-lg backdrop-blur sm:right-6 sm:top-6" aria-label="Globe zoom controls">
+              <button
+                type="button"
+                aria-label="Zoom out of globe"
+                onClick={() => setZoom((value) => Math.max(MIN_GLOBE_ZOOM, Number((value - GLOBE_ZOOM_STEP).toFixed(2))))}
+                disabled={zoom <= MIN_GLOBE_ZOOM}
+                className="grid size-9 place-items-center rounded-lg text-[#cde5db] transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#efc34f] disabled:cursor-default disabled:opacity-35"
+                data-testid="button-globe-zoom-out"
+              >
+                <ZoomOut size={16} />
+              </button>
+              <button
+                type="button"
+                aria-label="Reset globe zoom"
+                onClick={() => setZoom(1)}
+                disabled={zoom === 1}
+                className="h-9 min-w-10 rounded-lg px-2 font-mono text-[9px] font-semibold text-[#cde5db] transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#efc34f] disabled:cursor-default disabled:opacity-60"
+                data-testid="button-globe-zoom-reset"
+              >
+                1×
+              </button>
+              <button
+                type="button"
+                aria-label="Zoom in on globe"
+                onClick={() => setZoom((value) => Math.min(MAX_GLOBE_ZOOM, Number((value + GLOBE_ZOOM_STEP).toFixed(2))))}
+                disabled={zoom >= MAX_GLOBE_ZOOM}
+                className="grid size-9 place-items-center rounded-lg text-[#cde5db] transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#efc34f] disabled:cursor-default disabled:opacity-35"
+                data-testid="button-globe-zoom-in"
+              >
+                <ZoomIn size={16} />
+              </button>
+              <span className="sr-only" role="status" aria-live="polite" data-testid="status-globe-zoom">
+                Globe zoom {Math.round(zoom * 100)} percent.
+              </span>
+            </div>
             <div className="absolute bottom-4 left-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-white/10 bg-[#102a31]/80 px-3 py-2.5 font-mono text-[9px] text-[#c2d8d0] backdrop-blur sm:bottom-6 sm:left-6">
               <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#59d8aa]" /> TEAMS</span>
               <span className="inline-flex items-center gap-1.5"><span className="size-2 rounded-full bg-[#efc25e]" /> EVENTS</span>
-              <span className="hidden text-[#82a79e] sm:inline">DRAG TO ROTATE</span>
+              <span className="hidden text-[#82a79e] sm:inline">DRAG TO ROTATE · USE +/− TO ZOOM · SCROLL PAGE NORMALLY</span>
             </div>
             <button type="button" onClick={() => setPaused((value) => !value)} aria-label={paused ? "Resume globe rotation" : "Pause globe rotation"} aria-pressed={paused} disabled={points.length === 0} className="absolute bottom-4 right-4 grid size-10 place-items-center rounded-full border border-white/15 bg-[#102a31]/85 text-[#cde5db] transition hover:bg-[#24505a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#efc34f] disabled:opacity-50 sm:bottom-6 sm:right-6" data-testid="button-globe-rotation">
               {paused ? <Play size={15} /> : <Pause size={15} />}
@@ -407,6 +480,33 @@ export function FtcSeasonGlobe() {
           <p>
             Coordinate source: <a className="underline underline-offset-2 hover:text-white" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0). World map: <a className="underline underline-offset-2 hover:text-white" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a>.
           </p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-5 rounded-2xl border border-[#c8ded7] bg-[#e6f1eb] p-5 dark:border-[#315a5f] dark:bg-[#122f36] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:p-7" data-testid="card-ftc-platform-promo">
+        <div>
+          <p className="font-mono text-[9px] font-semibold uppercase tracking-[.16em] text-[#087e72] dark:text-[#7edbd0]">A shared home for robotics teams</p>
+          <h3 className="mt-2 max-w-[680px] text-2xl font-semibold leading-tight tracking-[-.045em] text-[#153642] dark:text-[#e3efeb] sm:text-3xl">
+            Give your team one place to build the whole season.
+          </h3>
+          <p className="mt-2 max-w-[720px] text-sm leading-6 text-[#43616a] dark:text-[#aac1be]">
+            Bring team chat, shared boards, CAD and 3D reviews, planning, and AI tools together—so the work behind your robot stays connected.
+          </p>
+        </div>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <a
+            href="/auth?createTeam=1"
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-[#153642] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#214e59] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#168b94] dark:bg-[#efc34f] dark:text-[#153642] dark:hover:bg-[#ffda79]"
+            data-testid="link-ftc-platform-signup"
+          >
+            Start your team — free <ArrowUpRight size={15} />
+          </a>
+          <a
+            href="#capabilities"
+            className="inline-flex min-h-10 items-center gap-2 px-1 text-sm font-semibold text-[#087e72] underline decoration-[#87b9ad] underline-offset-4 transition hover:text-[#153642] dark:text-[#7edbd0] dark:hover:text-white"
+            data-testid="link-ftc-platform-capabilities"
+          >
+            Explore platform tools <ArrowUpRight size={14} />
+          </a>
         </div>
       </div>
     </section>
