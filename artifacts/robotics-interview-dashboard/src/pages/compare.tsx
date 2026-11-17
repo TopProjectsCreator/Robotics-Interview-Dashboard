@@ -16,7 +16,7 @@ const pageMeta = [
     attribute: "name",
     key: "description",
     content:
-      "Compare our FTC team workspace with Robolyst’s season management, scouting, live competition data, and public team tools.",
+      "Compare a robotics team workspace with Robolyst’s toolkit for FTC, FRC, FLL, and VEX teams, including FTC-specific scouting and competition data.",
   },
   {
     attribute: "property",
@@ -27,7 +27,7 @@ const pageMeta = [
     attribute: "property",
     key: "og:description",
     content:
-      "A sourced, feature-by-feature comparison of build collaboration tools and Robolyst’s FTC season platform.",
+      "A sourced comparison of build collaboration and Robolyst’s multi-program toolkit, with FTC-specific scouting and competition data.",
   },
   {
     attribute: "name",
@@ -38,7 +38,7 @@ const pageMeta = [
     attribute: "name",
     key: "twitter:description",
     content:
-      "Compare build collaboration, FTC season management, scouting, public competition data, and pricing.",
+      "Compare build collaboration, Robolyst’s multi-program toolkit, FTC-specific scouting and data, and pricing.",
   },
 ] as const;
 
@@ -46,16 +46,16 @@ const comparisonAreas = [
   {
     area: "Core focus",
     workspace:
-      "A shared team workspace connecting conversations with FTC code, CAD, parts, boards, and spreadsheets.",
+      "A shared workspace for robotics teams, connecting conversation and coordination with engineering and parts tools.",
     robolyst:
-      "An FTC season-management platform with team operations, scouting, live competition data, and public team tools.",
+      "A team toolkit for FTC, FRC, FLL, and VEX. FTC competition sync, scouting, live results, metrics, and public team pages are FTC-specific.",
   },
   {
     area: "Planning and coordination",
     workspace:
-      "Channels, direct messages, shared notes, live boards and spreadsheets, attendance, and public displays.",
+      "Channels, direct messages, shared notes and files, live boards and spreadsheets, attendance, and public displays.",
     robolyst:
-      "Roster and roles; task boards, lists, and timelines with dependencies; meeting calendars; checklists; and Discord or Slack notifications.",
+      "Roster and roles; task boards, lists, and timelines with dependencies; schedules, checklists, documentation, and Discord or Slack connections.",
   },
   {
     area: "Robot engineering",
@@ -67,30 +67,30 @@ const comparisonAreas = [
   {
     area: "Parts and finances",
     workspace:
-      "Supplier part discovery, team-owned inventory, and reservations for robot builds.",
+      "Supplier listing discovery, team-owned inventory, and reservations for robot builds.",
     robolyst:
-      "Parts orders, expenses, budgets, and optional fiscal sponsorship.",
+      "Parts orders, expenses, and budgets; optional fiscal sponsorship takes 4% of funds flowing through it, plus separate card-processing fees.",
   },
   {
     area: "Scouting and match data",
     workspace:
-      "Focuses on team build collaboration—code, CAD, inventory, and planning—rather than event-wide scouting and match analytics.",
+      "Focused on team collaboration and robot-building tools rather than event-wide scouting or match analytics.",
     robolyst:
-      "Pit sheets, stand scouting, picklists, and a strategy board, alongside public team and event results, rankings, and FTC metrics.",
+      "FTC pit and match scouting, picklists, and a strategy board; public FTC results and derived metrics use published FIRST match data.",
   },
   {
     area: "Public presence",
     workspace:
       "Public display tools for sharing selected team information.",
     robolyst:
-      "An FTC team directory and public team websites for rosters, robots, awards, sponsors, and forms.",
+      "FTC team profiles and public team sites for information such as rosters, robots, awards, and sponsors.",
   },
   {
     area: "Pricing",
     workspace:
-      "One team plan: $0, with no payment card required.",
+      "One team plan: $0, available now, with no payment card required.",
     robolyst:
-      "Team workspaces are free. Fiscal sponsorship is optional and charges 4% of funds processed; Stripe card-processing fees are separate.",
+      "Team workspaces are free. Optional fiscal sponsorship takes 4% of funds flowing through it; Stripe card-processing fees are separate and donors may cover them.",
   },
 ] as const;
 
@@ -187,20 +187,20 @@ export default function ComparePage() {
 
         <section className="compare-page__hero" aria-labelledby="compare-title" data-testid="section-compare-hero">
           <div className="compare-page__hero-copy">
-            <p className="compare-page__eyebrow"><span /> FTC TEAM TOOLS · SIDE BY SIDE</p>
+            <p className="compare-page__eyebrow"><span /> ROBOTICS TEAM TOOLS · SIDE BY SIDE</p>
             <h1 id="compare-title">
               Our workspace
               <em> vs. Robolyst.</em>
             </h1>
             <p className="compare-page__hero-intro">
-              Compare the work each product puts in one place: our build-collaboration workspace and Robolyst’s
-              FTC season-management, scouting, and competition-data platform.
+              Compare our shared robotics workspace with Robolyst’s toolkit for FTC, FRC, FLL, and VEX teams.
+              Robolyst’s competition sync, scouting, and live competition data are FTC-specific.
             </p>
             <a className="compare-page__hero-link" href="#public-info" data-testid="link-compare-explore">
               See the comparison <ArrowDownRight size={16} aria-hidden="true" />
             </a>
             <p className="compare-page__date-line" data-testid="text-compare-date">
-              OFFICIAL PRODUCT PAGES REVIEWED <strong> NOV 4, 2026</strong>
+              OFFICIAL PRODUCT PAGES REVIEWED <strong> NOV 17, 2026</strong>
             </p>
           </div>
 
@@ -209,20 +209,21 @@ export default function ComparePage() {
             <p className="compare-page__note-label">THE SHORT VERSION</p>
             <h2>Different strengths. Both free.</h2>
             <p>
-              Our workspace connects team conversation to code, CAD, and parts. Robolyst adds season operations,
-              scouting, public FTC results, and team websites. Pick the tools that solve your team’s actual gaps.
+              Our workspace connects team conversation to engineering, parts, and planning. Robolyst offers a
+              toolkit for FTC, FRC, FLL, and VEX teams; its live FTC data and scouting tools serve FTC teams.
+              Pick the tools that solve your team’s actual gaps.
             </p>
             <a href="https://robolyst.org/" target="_blank" rel="noreferrer" data-testid="link-compare-robolyst-note">
               Explore Robolyst <ExternalLink size={14} aria-hidden="true" />
             </a>
           </aside>
 
-          <div className="compare-page__hero-index" aria-hidden="true"><span>01</span> / FTC WORKFLOWS</div>
+          <div className="compare-page__hero-index" aria-hidden="true"><span>01</span> / TEAM WORKFLOWS</div>
         </section>
 
         <section className="compare-page__signal-row" aria-label="Workspace overview" data-testid="section-compare-overview">
           <div><span>01 / OUR FOCUS</span><strong>Build tools connected to team chat</strong></div>
-          <div><span>02 / ROBOLYST</span><strong>Season operations, scouting & FTC data</strong></div>
+          <div><span>02 / ROBOLYST</span><strong>Multi-program toolkit; FTC scouting & data</strong></div>
           <div><span>03 / PRICE</span><strong>Both offer free team workspaces</strong></div>
         </section>
 
@@ -231,8 +232,8 @@ export default function ComparePage() {
             <p className="compare-page__kicker">THE ACTUAL PRODUCT DIFFERENCES</p>
             <h2 id="public-info-title">Compare the work, tool by tool.</h2>
             <p>
-              Both support FTC teams, but their strongest features solve different problems. Here’s what each
-              product’s own pages say it does.
+              Both offer free team workspaces, but their strongest features solve different problems. Robolyst’s
+              general toolkit supports FTC, FRC, FLL, and VEX; its competition data and scouting are FTC-specific.
             </p>
           </div>
 
@@ -241,7 +242,7 @@ export default function ComparePage() {
               <div className="compare-page__comparison-top">
                 <span className="compare-page__comparison-mark"><BrandMark dataTestId="compare-card-brand-mark" /></span>
                 <div>
-                  <p>BUILD COLLABORATION</p>
+                  <p>ROBOTICS TEAM WORKSPACE</p>
                   <h3>Robotics team workspace</h3>
                 </div>
               </div>
@@ -267,7 +268,7 @@ export default function ComparePage() {
                   <img src="/robolyst-icon.svg" alt="Robolyst logo" data-testid="img-compare-robolyst-logo" />
                 </span>
                 <div>
-                  <p>FTC SEASON OPERATIONS + SCOUTING</p>
+                  <p>MULTI-PROGRAM TEAM TOOLKIT</p>
                   <h3>Robolyst</h3>
                 </div>
                 <a
@@ -282,15 +283,16 @@ export default function ComparePage() {
                 </a>
               </div>
               <p className="compare-page__comparison-summary">
-                Best fit for teams that want season management, scouting, and public FTC competition information.
+                The toolkit serves FTC, FRC, FLL, and VEX teams. Competition sync, live data, scouting, and public
+                team pages are FTC-specific.
               </p>
               <ul className="compare-page__fact-list">
                 <li><Check size={15} aria-hidden="true" /><span>Roster and roles; task boards with dependencies, meeting calendar, and checklists</span></li>
                 <li><Check size={15} aria-hidden="true" /><span>Engineering notebook, shared resources, and a 3D-print job queue</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Pit sheets, stand scouting, team questions, picklists, and strategy board</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Public team and event directory, rankings, live match results, and scouting metrics</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Team websites, sponsor tools, shared inbox, and Discord/Slack connections</span></li>
-                <li><Check size={15} aria-hidden="true" /><span>Team workspaces are free; optional fiscal sponsorship costs 4% plus card-processing fees</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>FTC pit and match scouting, team questions, picklists, and strategy board</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Public FTC team and event data, rankings, match results, and metrics from published FIRST results</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>FTC team sites and sponsor tools; shared inbox and Discord/Slack connections</span></li>
+                <li><Check size={15} aria-hidden="true" /><span>Team workspaces are free; optional fiscal sponsorship takes 4% of funds flowing through it, plus separate card-processing fees</span></li>
               </ul>
               <a
                 href="https://robolyst.org/team-management/features"
@@ -318,7 +320,7 @@ export default function ComparePage() {
                   <tr key={area} data-testid={`row-compare-area-${area.toLowerCase().replace(/[^a-z]+/g, "-")}`}>
                     <th scope="row">{area}</th>
                     <td><span className="compare-page__matrix-label">Our workspace</span>{workspace}</td>
-                    <td><span className="compare-page__matrix-label">Robolyst’s homepage</span>{robolyst}</td>
+                    <td><span className="compare-page__matrix-label">Robolyst official sources</span>{robolyst}</td>
                   </tr>
                 ))}
               </tbody>
@@ -327,16 +329,31 @@ export default function ComparePage() {
           <p className="compare-page__source-note" data-testid="text-compare-source-note">
             <span>01</span>
             <span>
-              Sources reviewed Nov 4, 2026: our public product pages and pricing; Robolyst’s official Team HQ,
-              scouting, competition-data, and help pages. Feature availability can change.
+              Sources reviewed Nov 17, 2026: our public platform, chat, code, CAD, parts, and pricing pages;
+              Robolyst’s homepage, toolkit features, FTC scouting and metrics references, and Help fee information.
+              Availability and features can change.
               {" "}
-              <a href="https://robolyst.org/team-management/features" target="_blank" rel="noreferrer">Team HQ features</a>
+              <Link href="/" data-testid="source-workspace-platform">Workspace platform</Link>
               {" · "}
-              <a href="https://robolyst.org/team-management/features/scouting" target="_blank" rel="noreferrer">Scouting</a>
+              <Link href="/chat-landing" data-testid="source-workspace-chat">Chat</Link>
               {" · "}
-              <a href="https://robolyst.org/ftc/scouting-metrics" target="_blank" rel="noreferrer">FTC metrics</a>
+              <Link href="/code-landing" data-testid="source-workspace-code">Code</Link>
               {" · "}
-              <a href="https://robolyst.org/help" target="_blank" rel="noreferrer">Pricing and fees</a>
+              <Link href="/cad-landing" data-testid="source-workspace-cad">CAD</Link>
+              {" · "}
+              <Link href="/parts-landing" data-testid="source-workspace-parts">Parts</Link>
+              {" · "}
+              <Link href="/pricing" data-testid="source-workspace-pricing">Pricing</Link>
+              {" · "}
+              <a href="https://robolyst.org/" target="_blank" rel="noreferrer" data-testid="source-robolyst-home">Robolyst homepage</a>
+              {" · "}
+              <a href="https://robolyst.org/team-management/features" target="_blank" rel="noreferrer" data-testid="source-robolyst-toolkit">Team toolkit</a>
+              {" · "}
+              <a href="https://robolyst.org/team-management/features/scouting" target="_blank" rel="noreferrer" data-testid="source-robolyst-scouting">FTC scouting</a>
+              {" · "}
+              <a href="https://robolyst.org/ftc/scouting-metrics" target="_blank" rel="noreferrer" data-testid="source-robolyst-metrics">FTC metrics</a>
+              {" · "}
+              <a href="https://robolyst.org/help" target="_blank" rel="noreferrer" data-testid="source-robolyst-fees">Pricing and fees</a>
             </span>
           </p>
         </section>
@@ -345,7 +362,7 @@ export default function ComparePage() {
           <div className="compare-page__closing-copy">
             <p className="compare-page__kicker">PICK THE TOOLS THAT FIT</p>
             <h2 id="compare-closing-title">Build together.<br /><em>Run the season.</em></h2>
-            <p>Use our workspace for team conversation and robot-building tools. Use Robolyst for season workflows, scouting, and public FTC data.</p>
+            <p>Use our workspace for team conversation and robot-building tools. Robolyst’s toolkit supports FTC, FRC, FLL, and VEX teams, with scouting and competition data for FTC.</p>
           </div>
           <div className="compare-page__closing-actions">
             <Link href="/pricing" className="compare-page__primary-link" data-testid="link-compare-closing-pricing">

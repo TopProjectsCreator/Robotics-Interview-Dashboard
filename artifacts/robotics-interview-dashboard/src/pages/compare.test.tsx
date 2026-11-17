@@ -9,6 +9,10 @@ import ComparePage from "./compare";
 import Pricing from "./pricing";
 import PublicDashboard from "./public-dashboard";
 
+vi.mock("@/components/FtcSeasonGlobe", () => ({
+  FtcSeasonGlobe: () => <div data-testid="test-ftc-season-globe" />,
+}));
+
 const compareStyles = readFileSync("src/pages/compare.css", "utf8");
 
 function renderWithRouter(ui: ReactNode) {
@@ -21,7 +25,7 @@ afterEach(() => {
 });
 
 describe("robotics workspace comparison page", () => {
-  it("compares specific workspace, season-management, scouting, and pricing capabilities", () => {
+  it("distinguishes the shared toolkit audience from Robolyst's FTC-specific features", () => {
     renderWithRouter(<ComparePage />);
 
     const page = screen.getByTestId("compare-page");
@@ -37,30 +41,46 @@ describe("robotics workspace comparison page", () => {
     ]) {
       expect(within(page).getAllByText(area).length).toBeGreaterThan(0);
     }
-    expect(page).toHaveTextContent("Channels, direct messages, shared notes, and files");
+    expect(page).toHaveTextContent("FRC, FLL, and VEX");
+    expect(page).toHaveTextContent("FTC-specific");
+    expect(page).toHaveTextContent("Channels, direct messages, shared notes and files");
     expect(page).toHaveTextContent("task boards, lists, and timelines with dependencies");
     expect(page).toHaveTextContent("FTC Java");
     expect(page).toHaveTextContent("CAD library with browser 3D previews");
-    expect(page).toHaveTextContent("Pit sheets, stand scouting, team questions, picklists, and strategy board");
-    expect(page).toHaveTextContent("live match results, and scouting metrics");
+    expect(page).toHaveTextContent("FTC pit and match scouting, team questions, picklists, and strategy board");
+    expect(page).toHaveTextContent("FTC team and event data, rankings, match results, and metrics from published FIRST results");
     expect(page).toHaveTextContent("Team workspaces are free");
-    expect(page).toHaveTextContent("4% plus card-processing fees");
-    expect(page).toHaveTextContent("Sources reviewed Nov 4, 2026");
-    expect(page).toHaveTextContent("rather than event-wide scouting and match analytics");
+    expect(page).toHaveTextContent("available now");
+    expect(page).toHaveTextContent("4% of funds flowing through it");
+    expect(page).toHaveTextContent("donors may cover them");
+    expect(page).toHaveTextContent("NOV 17, 2026");
+    expect(page).toHaveTextContent("rather than event-wide scouting or match analytics");
     expect(screen.getByTestId("img-compare-robolyst-logo")).toHaveAttribute("src", "/robolyst-icon.svg");
     expect(screen.getByTestId("img-compare-robolyst-logo")).toHaveAttribute("alt", "Robolyst logo");
+    expect(page).not.toHaveTextContent("FTC season-management platform");
     expect(page).not.toHaveTextContent("No feature details are published");
     expect(page).not.toHaveTextContent("AI Driven. Risk Defined.");
     expect(page).not.toHaveTextContent("robolyst.com");
   });
 
-  it("links readers to product details, pricing, and Robolyst's official platform", () => {
+  it("links readers to first-party workspace and Robolyst sources", () => {
     renderWithRouter(<ComparePage />);
 
     for (const [testId, href] of [
       ["link-compare-our-pricing", "/pricing"],
       ["link-compare-closing-pricing", "/pricing"],
       ["link-compare-closing-platform", "https://robolyst.org/"],
+      ["source-workspace-platform", "/"],
+      ["source-workspace-chat", "/chat-landing"],
+      ["source-workspace-code", "/code-landing"],
+      ["source-workspace-cad", "/cad-landing"],
+      ["source-workspace-parts", "/parts-landing"],
+      ["source-workspace-pricing", "/pricing"],
+      ["source-robolyst-home", "https://robolyst.org/"],
+      ["source-robolyst-toolkit", "https://robolyst.org/team-management/features"],
+      ["source-robolyst-scouting", "https://robolyst.org/team-management/features/scouting"],
+      ["source-robolyst-metrics", "https://robolyst.org/ftc/scouting-metrics"],
+      ["source-robolyst-fees", "https://robolyst.org/help"],
     ]) {
       expect(screen.getByTestId(testId)).toHaveAttribute("href", href);
     }
@@ -72,14 +92,16 @@ describe("robotics workspace comparison page", () => {
       expect(screen.getByTestId(testId)).toHaveAttribute("href", "https://robolyst.org/");
       expect(screen.getByTestId(testId)).toHaveAttribute("target", "_blank");
     }
-    expect(screen.getByTestId("link-compare-robolyst-features")).toHaveAttribute(
-      "href",
-      "https://robolyst.org/team-management/features",
-    );
-    expect(screen.getByRole("link", { name: "FTC metrics" })).toHaveAttribute(
-      "href",
-      "https://robolyst.org/ftc/scouting-metrics",
-    );
+    for (const testId of [
+      "source-robolyst-home",
+      "source-robolyst-toolkit",
+      "source-robolyst-scouting",
+      "source-robolyst-metrics",
+      "source-robolyst-fees",
+    ]) {
+      expect(screen.getByTestId(testId)).toHaveAttribute("target", "_blank");
+      expect(screen.getByTestId(testId)).toHaveAttribute("rel", "noreferrer");
+    }
   });
 
   it("keeps the page and metadata free of references outside the comparison scope", () => {
@@ -115,6 +137,9 @@ describe("robotics workspace comparison page", () => {
     expect(compareStyles).toContain("@media (max-width: 700px)");
     expect(compareStyles).toContain(".compare-page__matrix tbody td { display: grid;");
     expect(compareStyles).toContain(".dark .compare-page");
+    expect(compareStyles).toContain("--compare-ink: #183a45;");
+    expect(compareStyles).toContain("--compare-ink: #e4efeb;");
+    expect(compareStyles).toContain("--compare-card: #142e35;");
     expect(compareStyles).toContain(".compare-page a:focus-visible");
     expect(compareStyles).toContain(".compare-page button:focus-visible");
     expect(compareStyles).toContain("@media (prefers-reduced-motion: reduce)");
@@ -157,10 +182,16 @@ describe("robotics workspace comparison page", () => {
 
     expect(document.title).toBe("Robotics team workspace vs. Robolyst");
     expect(document.querySelector<HTMLMetaElement>('meta[name="description"]')?.content).toMatch(
-      /compare our FTC team workspace with Robolyst’s season management, scouting, live competition data/i,
+      /robotics team workspace with Robolyst’s toolkit for FTC, FRC, FLL, and VEX teams.*FTC-specific scouting and competition data/i,
     );
     expect(document.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content).toBe(
       "Robotics team workspace vs. Robolyst",
+    );
+    expect(document.querySelector<HTMLMetaElement>('meta[property="og:description"]')?.content).toMatch(
+      /multi-program toolkit.*FTC-specific scouting and competition data/i,
+    );
+    expect(document.querySelector<HTMLMetaElement>('meta[name="twitter:description"]')?.content).toMatch(
+      /multi-program toolkit.*FTC-specific scouting and data/i,
     );
 
     unmount();
