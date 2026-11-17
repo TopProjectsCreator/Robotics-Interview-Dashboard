@@ -109,6 +109,51 @@ test("name search loads paged teams once and filters team and event names", asyn
   assert.equal(requests.filter(url => url.includes("/teams?page=")).length, 2);
 });
 
+test("stale season results return immediately while the cache refreshes", async (t) => {
+  withCredentials();
+  let now = 1_000_000;
+  t.mock.method(Date, "now", () => now);
+  let refreshing = false;
+  const refreshRequests = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const href = String(url);
+    if (refreshing) {
+      return await new Promise(resolve => refreshRequests.push({ href, resolve }));
+    }
+    if (href.endsWith("/2026/teams?page=1")) {
+      return response({ teams: [{ teamNumber: 11, nameFull: "Cascade Robotics" }], pageTotal: 1 });
+    }
+    if (href.endsWith("/2026/events")) {
+      return response({ events: [{ code: "CASC", name: "Cascade League Meet" }] });
+    }
+    throw new Error(`Unexpected request ${href}`);
+  });
+
+  const initial = await searchFtcEntities(2026, "Cascade");
+  assert.equal(initial.teams[0].nameFull, "Cascade Robotics");
+  assert.equal(initial.events[0].code, "CASC");
+
+  now += 16 * 60 * 1000;
+  refreshing = true;
+  const stale = await searchFtcEntities(2026, "Cascade");
+  assert.equal(stale.teams[0].nameFull, "Cascade Robotics");
+  assert.equal(stale.events[0].code, "CASC");
+  assert.equal(refreshRequests.length, 2);
+
+  for (const request of refreshRequests) {
+    if (request.href.includes("/teams?")) {
+      request.resolve(response({ teams: [{ teamNumber: 11, nameFull: "Cascade Updated" }], pageTotal: 1 }));
+    } else {
+      request.resolve(response({ events: [{ code: "UPDT", name: "Cascade Updated Meet" }] }));
+    }
+  }
+  await new Promise(resolve => setTimeout(resolve, 0));
+
+  const refreshed = await searchFtcEntities(2026, "Cascade");
+  assert.equal(refreshed.teams[0].nameFull, "Cascade Updated");
+  assert.equal(refreshed.events[0].code, "UPDT");
+});
+
 test("team and event detail requests include the requested season", async (t) => {
   withCredentials();
   t.mock.method(globalThis, "fetch", async url => {

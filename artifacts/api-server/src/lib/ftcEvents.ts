@@ -1,7 +1,8 @@
 const FTC_API_ROOT = "https://ftc-api.firstinspires.org/v2.0";
 const CACHE_TTL_MS = 15 * 60 * 1000;
+const STALE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_TEAM_PAGES = 100;
-const PAGE_CONCURRENCY = 4;
+const PAGE_CONCURRENCY = 12;
 const REQUEST_TIMEOUT_MS = 12_000;
 
 export type FtcTeam = {
@@ -34,23 +35,38 @@ export type FtcEvent = {
   dateEnd: string | null;
 };
 
-type CacheEntry<T> = { expiresAt: number; value: T };
+type CacheEntry<T> = { expiresAt: number; staleUntil: number; value: T };
 const cache = new Map<string, CacheEntry<unknown>>();
 const pending = new Map<string, Promise<unknown>>();
 
-function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
-  const entry = cache.get(key) as CacheEntry<T> | undefined;
-  if (entry && entry.expiresAt > Date.now()) return Promise.resolve(entry.value);
-  const existing = pending.get(key) as Promise<T> | undefined;
-  if (existing) return existing;
+function refreshCache<T>(key: string, load: () => Promise<T>): Promise<T> {
   const request = load()
     .then(value => {
-      cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+      const cachedAt = Date.now();
+      cache.set(key, {
+        expiresAt: cachedAt + CACHE_TTL_MS,
+        staleUntil: cachedAt + STALE_CACHE_TTL_MS,
+        value,
+      });
       return value;
     })
     .finally(() => pending.delete(key));
   pending.set(key, request);
   return request;
+}
+
+function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const entry = cache.get(key) as CacheEntry<T> | undefined;
+  const now = Date.now();
+  if (entry && entry.expiresAt > now) return Promise.resolve(entry.value);
+
+  const existing = pending.get(key) as Promise<T> | undefined;
+  if (entry && entry.staleUntil > now) {
+    if (!existing) void refreshCache(key, load).catch(() => undefined);
+    return Promise.resolve(entry.value);
+  }
+  if (existing) return existing;
+  return refreshCache(key, load);
 }
 
 function requiredCredentials(): string {
@@ -177,6 +193,10 @@ async function getSeasonEvents(season: number): Promise<FtcEvent[]> {
   });
 }
 
+export async function warmFtcMentionSearchCache(season: number): Promise<void> {
+  await Promise.all([getSeasonTeams(season), getSeasonEvents(season)]);
+}
+
 function encodePathPart(value: string): string {
   return encodeURIComponent(value);
 }
@@ -185,19 +205,19 @@ export async function searchFtcEntities(season: number, query: string): Promise<
   const normalized = query.trim();
   if (normalized.length < 2) return { season, teams: [], events: [] };
 
-  let teams: FtcTeam[];
+  let teamsPromise: Promise<FtcTeam[]>;
   if (/^\d{5}$/.test(normalized)) {
-    teams = await cached(`team:${season}:${normalized}`, async () => {
+    teamsPromise = cached(`team:${season}:${normalized}`, async () => {
       const payload = asRecord(await requestFirst<unknown>(`${season}/teams?teamNumber=${encodePathPart(normalized)}`));
       return Array.isArray(payload.teams)
         ? payload.teams.map(mapTeam).filter((team): team is FtcTeam => team !== null)
         : [];
     });
   } else {
-    teams = await getSeasonTeams(season);
+    teamsPromise = getSeasonTeams(season);
   }
 
-  const events = await getSeasonEvents(season);
+  const [teams, events] = await Promise.all([teamsPromise, getSeasonEvents(season)]);
   return {
     season,
     teams: teams

@@ -15,6 +15,7 @@ import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
 import { startMailboxPoller } from "./lib/maildrop";
 import { resumeStalePreviewJobs } from "./routes/storage";
 import { isDatabaseConnectionError } from "./lib/databaseErrors";
+import { warmFtcMentionSearchCache } from "./lib/ftcEvents";
 
 initRealtime();
 
@@ -1308,6 +1309,10 @@ function startBackgroundWork(): void {
 
 server.listen(port, () => {
   logger.info({ port }, "Server listening");
+  const ftcSeason = new Date().getUTCFullYear();
+  void warmFtcMentionSearchCache(ftcSeason).catch((err) => {
+    logger.warn({ err, season: ftcSeason }, "Unable to warm FTC mention search cache");
+  });
   let backgroundWorkStarted = false;
   let schemaRetryTimer: ReturnType<typeof setTimeout> | undefined;
   const scheduleSchemaRetry = (error?: unknown) => {
