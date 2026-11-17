@@ -8663,7 +8663,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                    rows={1}
                    disabled={demoMode}
                    className="max-h-28 min-h-9 w-full resize-y bg-transparent px-2 py-2 text-base md:text-sm text-[#183a4b] outline-none placeholder:text-[#809196]"
-                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : conversationPeer ? `Message ${conversationPeer} — @ people, FTC teams/events, # channels, / commands` : "Message the team — @ people, FTC teams/events, # channels, / commands"}
+                   placeholder={demoMode ? "Messaging is disabled in this demo" : replyingTo ? "Write a reply..." : "@mention anything."}
                  />
                 {formattingOpen && <div className="chat-composer-formatting flex items-center gap-1 border-t border-[#d6e4ed] px-1 pt-1.5"><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("**")} aria-label="Bold" className="chat-composer-control h-11 w-11 rounded-md text-sm font-bold text-[#52666e] hover:bg-white">B</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("_")} aria-label="Italic" className="chat-composer-control h-11 w-11 rounded-md text-sm italic text-[#52666e] hover:bg-white">I</button><button type="button" onMouseDown={event => event.preventDefault()} onClick={() => applyFormatting("`")} aria-label="Code" className="chat-composer-control h-11 w-11 rounded-md font-mono text-xs text-[#52666e] hover:bg-white">&lt;/&gt;</button><span className="ml-1 text-[11px] text-[#819196]">Markdown or {'<iframe>'} embeds supported</span></div>}
               </div>
