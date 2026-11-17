@@ -403,7 +403,7 @@ export function FtcSeasonGlobe() {
           <span>{data ? `${points.length.toLocaleString()} records · live FIRST season feed` : "Loading current season feed"}</span>
         </div>
         <div className="flex flex-col gap-1 border-t border-white/10 px-5 py-3 text-[10px] leading-5 text-[#a8c4bb] sm:px-6">
-          <p>Locations are approximate city, region, or country estimates, not team addresses. Markers at the same location are slightly spread apart so each can be selected.</p>
+          <p>Locations are approximate city, region, or country estimates, not team addresses. Records without usable FIRST locations are grouped at an unknown-location placeholder; overlapping markers are slightly spread apart for selection.</p>
           <p>
             Coordinate source: <a className="underline underline-offset-2 hover:text-white" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0). World map: <a className="underline underline-offset-2 hover:text-white" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a>.
           </p>
