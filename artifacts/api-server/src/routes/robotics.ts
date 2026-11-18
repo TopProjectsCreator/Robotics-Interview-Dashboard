@@ -4,6 +4,7 @@ import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantCon
 import { assistantToolPoliciesTable, teamRolesTable } from "@workspace/db/schema";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import { dispatchChatProductivityReviewForTeam, reviewChatProductivityRange } from "../lib/chatProductivity";
+import { buildProductivityHistory } from "../lib/chatProductivityHistory";
 import { hasPermission } from "@workspace/api-zod";
 import { permissionsForAccount } from "../lib/teamRoles";
 import {
@@ -6600,6 +6601,7 @@ router.get("/queue/chat/productivity/history", requireAdmin, async (req, res): P
     res.status(400).json({ error: "Invalid productivity history request." });
     return;
   }
+  const validatedRange = range as string;
   const channelId = typeof rawChannelId === "string" ? rawChannelId : undefined;
   const teamId = await requestTeamId(req);
   const viewer = channelViewerFor(account);
@@ -6629,48 +6631,21 @@ router.get("/queue/chat/productivity/history", requireAdmin, async (req, res): P
       eq(chatProductivitySnapshotsTable.conversationScope, conversation.scope),
       eq(chatProductivitySnapshotsTable.conversationKey, conversationKey),
       gte(chatProductivitySnapshotsTable.createdAt, since),
+      isNotNull(chatProductivitySnapshotsTable.periodStart),
+      isNotNull(chatProductivitySnapshotsTable.periodEnd),
+      lt(chatProductivitySnapshotsTable.periodStart, chatProductivitySnapshotsTable.periodEnd),
     ))
     .orderBy(asc(chatProductivitySnapshotsTable.createdAt))
     .limit(MAX_PRODUCTIVITY_HISTORY_ROWS);
 
-  const dayBuckets = new Map<string, { sum: number; max: number; count: number }>();
-  for (const row of rows) {
-    // Bucket into the caller's local calendar day so "most productive day"
-    // matches what people see on their own clocks; UTC when not provided.
-    const local = new Date(row.createdAt.getTime() - tzOffsetMinutes * 60_000);
-    const key = local.toISOString().slice(0, 10);
-    const bucket = dayBuckets.get(key) ?? { sum: 0, max: 0, count: 0 };
-    bucket.sum += row.score;
-    bucket.max = Math.max(bucket.max, row.score);
-    bucket.count += 1;
-    dayBuckets.set(key, bucket);
-  }
-  const daily = [...dayBuckets.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([date, bucket]) => ({
-      date,
-      averageScore: Math.round((bucket.sum / bucket.count) * 10) / 10,
-      maxScore: bucket.max,
-      reviewCount: bucket.count,
-    }));
-
-  const truncated = rows.length > MAX_PRODUCTIVITY_HISTORY_POINTS;
-  const points = (truncated ? rows.slice(-MAX_PRODUCTIVITY_HISTORY_POINTS) : rows).map((row) => ({
-    score: row.score,
-    summary: row.summary,
-    breakdown: row.breakdown,
-    periodStart: row.periodStart,
-    periodEnd: row.periodEnd,
-    createdAt: row.createdAt,
-  }));
-
-  res.json(GetChatProductivityHistoryResponse.parse({
-    range,
-    reviewCount: rows.length,
-    truncated,
-    points,
-    daily,
-  }));
+  // Bucket into the caller's local calendar day so "most productive day"
+  // matches what people see on their own clocks; UTC when not provided.
+  res.json(GetChatProductivityHistoryResponse.parse(buildProductivityHistory(
+    rows,
+    validatedRange,
+    tzOffsetMinutes,
+    MAX_PRODUCTIVITY_HISTORY_POINTS,
+  )));
 });
 
 router.post("/queue/chat/productivity/review", requireAdmin, async (req, res): Promise<void> => {

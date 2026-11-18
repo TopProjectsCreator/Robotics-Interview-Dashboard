@@ -287,6 +287,7 @@ async function persistResults(
 ): Promise<void> {
   for (const definition of definitions) {
     const included = includedMessages.get(definition.key) ?? [];
+    if (!included.length) continue;
     const { periodStart, periodEnd } = analysisWindow(included, windowStart, windowEnd);
     const result = results[definition.key] ?? noActivityAssessment();
     await db.insert(chatProductivitySnapshotsTable).values({

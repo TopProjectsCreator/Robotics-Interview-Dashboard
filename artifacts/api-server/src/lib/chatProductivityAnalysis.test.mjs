@@ -191,6 +191,24 @@ test("uses older messages only as context and fills them after scoring messages"
   );
 });
 
+test("older context alone does not qualify a conversation for scoring", () => {
+  const windowStart = new Date("2026-11-11T10:00:00.000Z");
+  const windowEnd = new Date("2026-11-11T10:30:00.000Z");
+  const { payload, includedMessages } = buildProductivityInput([{
+    scope: "shared",
+    key: "team",
+    name: "Team",
+    messages: [],
+    contextMessages: [
+      { message: "Old project plan", createdAt: "2026-11-11T09:45:00.000Z" },
+    ],
+  }], 20_000, windowStart, windowEnd);
+
+  assert.deepEqual(payload.channels.team.messages, []);
+  assert.equal(payload.channels.team.contextMessages[0]?.text, "Old project plan");
+  assert.deepEqual([...activeProductivityConversationKeys(includedMessages)], []);
+});
+
 test("prioritizes score-window messages when the input budget is tight", () => {
   const windowStart = new Date("2026-11-11T10:00:00.000Z");
   const windowEnd = new Date("2026-11-11T10:30:00.000Z");
