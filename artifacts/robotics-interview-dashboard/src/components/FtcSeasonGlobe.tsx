@@ -9,6 +9,10 @@ const MIN_GLOBE_ZOOM = 0.75;
 const MAX_GLOBE_ZOOM = 2.2;
 const GLOBE_ZOOM_STEP = 0.2;
 
+export function clampGlobeZoom(value: number) {
+  return Math.max(MIN_GLOBE_ZOOM, Math.min(MAX_GLOBE_ZOOM, value));
+}
+
 export function pointPosition(point: GlobePoint, radius: number, latitudeOffset = 0, longitudeOffset = 0) {
   const lat = THREE.MathUtils.degToRad(point.latitude + latitudeOffset);
   const lon = THREE.MathUtils.degToRad(point.longitude + longitudeOffset);
@@ -52,6 +56,137 @@ function getMarkerOffsets(points: GlobePoint[]) {
   return offsets;
 }
 
+type GlobePointerEvent = Pick<PointerEvent, "pointerId" | "pointerType" | "clientX" | "clientY">;
+
+export function createGlobePointerGestureHandlers({
+  onRotate,
+  onZoom,
+  onSelect,
+}: {
+  onRotate: (deltaX: number, deltaY: number) => void;
+  onZoom: (delta: number) => void;
+  onSelect: (clientX: number, clientY: number) => void;
+}) {
+  const touchPointers = new Map<number, { x: number; y: number }>();
+  let dragging = false;
+  let activeDragPointerId: number | null = null;
+  let startX = 0;
+  let startY = 0;
+  let previousX = 0;
+  let previousY = 0;
+  let moved = false;
+  let touchGestureActive = false;
+  let pinchActive = false;
+  let previousPinchDistance: number | null = null;
+
+  const distanceBetweenTouches = () => {
+    const [first, second] = [...touchPointers.values()];
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  };
+
+  const beginDrag = (event: GlobePointerEvent) => {
+    dragging = true;
+    activeDragPointerId = event.pointerId;
+    moved = false;
+    startX = previousX = event.clientX;
+    startY = previousY = event.clientY;
+  };
+
+  const finishTouchGesture = () => {
+    touchGestureActive = false;
+    pinchActive = false;
+    previousPinchDistance = null;
+    dragging = false;
+    activeDragPointerId = null;
+    moved = false;
+  };
+
+  return {
+    pointerDown(event: GlobePointerEvent) {
+      if (event.pointerType === "touch") {
+        if (!touchGestureActive) {
+          touchGestureActive = true;
+          pinchActive = false;
+          moved = false;
+        }
+        touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (touchPointers.size >= 2) {
+          dragging = false;
+          activeDragPointerId = null;
+          pinchActive = true;
+          moved = true;
+          previousPinchDistance = distanceBetweenTouches();
+        } else if (!pinchActive) {
+          beginDrag(event);
+        }
+        return;
+      }
+
+      if (touchGestureActive) return;
+      beginDrag(event);
+    },
+
+    pointerMove(event: GlobePointerEvent) {
+      if (event.pointerType === "touch" && touchGestureActive) {
+        if (!touchPointers.has(event.pointerId)) return;
+        touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (touchPointers.size >= 2) {
+          const distance = distanceBetweenTouches();
+          if (previousPinchDistance !== null) onZoom((distance - previousPinchDistance) * 0.005);
+          previousPinchDistance = distance;
+          return;
+        }
+        if (pinchActive) return;
+      }
+
+      if (!dragging || activeDragPointerId !== event.pointerId) return;
+      if (Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY) > 6) moved = true;
+      onRotate(event.clientX - previousX, event.clientY - previousY);
+      previousX = event.clientX;
+      previousY = event.clientY;
+    },
+
+    pointerUp(event: GlobePointerEvent) {
+      if (event.pointerType === "touch" && touchGestureActive) {
+        if (!touchPointers.has(event.pointerId)) return;
+        touchPointers.delete(event.pointerId);
+        if (touchPointers.size > 0) return;
+        if (!pinchActive && !moved) onSelect(event.clientX, event.clientY);
+        finishTouchGesture();
+        return;
+      }
+
+      if (!dragging || activeDragPointerId !== event.pointerId) return;
+      dragging = false;
+      activeDragPointerId = null;
+      if (!moved) onSelect(event.clientX, event.clientY);
+    },
+
+    pointerCancel(event: GlobePointerEvent) {
+      if (event.pointerType === "touch" && touchGestureActive) {
+        touchPointers.delete(event.pointerId);
+        if (touchPointers.size === 0) finishTouchGesture();
+        else {
+          pinchActive = true;
+          moved = true;
+          previousPinchDistance = null;
+          dragging = false;
+          activeDragPointerId = null;
+        }
+        return;
+      }
+      if (activeDragPointerId === event.pointerId) {
+        dragging = false;
+        activeDragPointerId = null;
+      }
+    },
+
+    isInteracting() {
+      return dragging || touchPointers.size > 0;
+    },
+  };
+}
+
 function GlobeRenderer({
   points,
   dark,
@@ -59,6 +194,7 @@ function GlobeRenderer({
   paused,
   zoom,
   onSelect,
+  onZoom,
   onReady,
 }: {
   points: GlobePoint[];
@@ -67,6 +203,7 @@ function GlobeRenderer({
   paused: boolean;
   zoom: number;
   onSelect: (point: GlobePoint) => void;
+  onZoom: (delta: number) => void;
   onReady: (ready: boolean) => void;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -74,9 +211,9 @@ function GlobeRenderer({
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const pausedRef = useRef(paused);
-  const callbacksRef = useRef({ onSelect, onReady });
+  const callbacksRef = useRef({ onSelect, onReady, onZoom });
   pausedRef.current = paused;
-  callbacksRef.current = { onSelect, onReady };
+  callbacksRef.current = { onSelect, onReady, onZoom };
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -93,7 +230,8 @@ function GlobeRenderer({
     renderer.domElement.style.display = "block";
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
-    renderer.domElement.style.touchAction = "pan-y pinch-zoom";
+    // Keep vertical page scrolling native while reserving two-finger pinches for the globe.
+    renderer.domElement.style.touchAction = "pan-y";
     renderer.domElement.style.cursor = "grab";
     mount.appendChild(renderer.domElement);
 
@@ -147,12 +285,24 @@ function GlobeRenderer({
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
-    let dragging = false;
-    let previousX = 0;
-    let previousY = 0;
-    let startX = 0;
-    let startY = 0;
-    let moved = false;
+    const gestures = createGlobePointerGestureHandlers({
+      onRotate: (deltaX, deltaY) => {
+        root.rotation.y += deltaX * 0.006;
+        root.rotation.x = THREE.MathUtils.clamp(root.rotation.x + deltaY * 0.004, -0.65, 0.65);
+      },
+      onZoom: (delta) => callbacksRef.current.onZoom(delta),
+      onSelect: (clientX, clientY) => {
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+        raycaster.setFromCamera(pointer, camera);
+        const hit = raycaster.intersectObjects(meshData.map((entry) => entry.mesh), false)[0];
+        if (hit?.instanceId !== undefined) {
+          const entry = meshData.find((item) => item.mesh === hit.object);
+          const point = entry?.points[hit.instanceId];
+          if (point) callbacksRef.current.onSelect(point);
+        }
+      },
+    });
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const resize = () => {
       const width = Math.max(1, mount.clientWidth);
@@ -165,52 +315,32 @@ function GlobeRenderer({
     observer.observe(mount);
     resize();
     const pointerDown = (event: PointerEvent) => {
-      dragging = true;
-      moved = false;
-      startX = event.clientX;
-      startY = event.clientY;
-      previousX = event.clientX;
-      previousY = event.clientY;
-      renderer.domElement.style.cursor = "grabbing";
-      renderer.domElement.setPointerCapture(event.pointerId);
+      gestures.pointerDown(event);
+      if (gestures.isInteracting()) renderer.domElement.style.cursor = "grabbing";
+      if (typeof renderer.domElement.setPointerCapture === "function") {
+        renderer.domElement.setPointerCapture(event.pointerId);
+      }
     };
     const pointerMove = (event: PointerEvent) => {
-      if (dragging) {
-        if (Math.abs(event.clientX - startX) + Math.abs(event.clientY - startY) > 6) moved = true;
-        root.rotation.y += (event.clientX - previousX) * 0.006;
-        root.rotation.x = THREE.MathUtils.clamp(root.rotation.x + (event.clientY - previousY) * 0.004, -0.65, 0.65);
-        previousX = event.clientX;
-        previousY = event.clientY;
-      }
+      gestures.pointerMove(event);
     };
     const pointerUp = (event: PointerEvent) => {
-      if (!dragging) return;
-      dragging = false;
-      renderer.domElement.style.cursor = "grab";
-      if (moved) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
-      raycaster.setFromCamera(pointer, camera);
-      const hit = raycaster.intersectObjects(meshData.map((entry) => entry.mesh), false)[0];
-      if (hit?.instanceId !== undefined) {
-        const entry = meshData.find((item) => item.mesh === hit.object);
-        const point = entry?.points[hit.instanceId];
-        if (point) callbacksRef.current.onSelect(point);
-      }
+      gestures.pointerUp(event);
+      if (!gestures.isInteracting()) renderer.domElement.style.cursor = "grab";
     };
     renderer.domElement.addEventListener("pointerdown", pointerDown);
     renderer.domElement.addEventListener("pointermove", pointerMove);
     renderer.domElement.addEventListener("pointerup", pointerUp);
-    const pointerCancel = () => {
-      dragging = false;
-      renderer.domElement.style.cursor = "grab";
+    const pointerCancel = (event: PointerEvent) => {
+      gestures.pointerCancel(event);
+      if (!gestures.isInteracting()) renderer.domElement.style.cursor = "grab";
     };
     renderer.domElement.addEventListener("pointercancel", pointerCancel);
 
     let animation = 0;
     const draw = () => {
       animation = requestAnimationFrame(draw);
-      if (!pausedRef.current && !reducedMotion && !dragging) root.rotation.y += 0.0014;
+      if (!pausedRef.current && !reducedMotion && !gestures.isInteracting()) root.rotation.y += 0.0014;
       renderer.render(scene, camera);
     };
     draw();
@@ -352,7 +482,16 @@ export function FtcSeasonGlobe() {
             <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[.14] [background-image:linear-gradient(rgba(157,221,210,.42)_1px,transparent_1px),linear-gradient(90deg,rgba(157,221,210,.42)_1px,transparent_1px)] [background-size:40px_40px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_76%)]" />
             <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[min(95%,560px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#8bc8b6]/20 shadow-[0_0_90px_rgba(66,173,145,.09)]" />
             {data && points.length > 0 && (
-              <GlobeRenderer points={points} dark={dark} selectedId={selected?.id ?? null} paused={paused} zoom={zoom} onSelect={choosePoint} onReady={setRendererReady} />
+              <GlobeRenderer
+                points={points}
+                dark={dark}
+                selectedId={selected?.id ?? null}
+                paused={paused}
+                zoom={zoom}
+                onSelect={choosePoint}
+                onZoom={(delta) => setZoom((value) => clampGlobeZoom(value + delta))}
+                onReady={setRendererReady}
+              />
             )}
             {isLoading && <GlobeLoading />}
             {isError && (

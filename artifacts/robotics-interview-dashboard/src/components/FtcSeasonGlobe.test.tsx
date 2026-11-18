@@ -10,7 +10,7 @@ vi.mock("@workspace/api-client-react", () => ({
   useGetFtcGlobeData: useGetFtcGlobeDataMock,
 }));
 
-import { FtcSeasonGlobe, pointPosition } from "./FtcSeasonGlobe";
+import { clampGlobeZoom, createGlobePointerGestureHandlers, FtcSeasonGlobe, pointPosition } from "./FtcSeasonGlobe";
 
 const teamPoint = {
   id: "team-2026-23442",
@@ -117,6 +117,69 @@ describe("FTC season globe", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reset globe zoom" }));
     expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("100 percent");
+  });
+
+  it("zooms in and out with two-finger pinches without rotating or selecting", () => {
+    const onRotate = vi.fn();
+    const onSelect = vi.fn();
+    let zoom = 1.2;
+    const gestures = createGlobePointerGestureHandlers({
+      onRotate,
+      onSelect,
+      onZoom: (delta) => { zoom = clampGlobeZoom(zoom + delta); },
+    });
+    const touch = (pointerId: number, clientX: number) => ({
+      pointerId,
+      pointerType: "touch",
+      clientX,
+      clientY: 100,
+    });
+
+    gestures.pointerDown(touch(1, 100));
+    gestures.pointerDown(touch(2, 200));
+    gestures.pointerMove(touch(2, 240));
+    expect(zoom).toBeCloseTo(1.4);
+    gestures.pointerUp(touch(1, 100));
+    gestures.pointerUp(touch(2, 240));
+
+    gestures.pointerDown(touch(3, 100));
+    gestures.pointerDown(touch(4, 200));
+    gestures.pointerMove(touch(4, 160));
+    expect(zoom).toBeCloseTo(1.2);
+    gestures.pointerUp(touch(3, 100));
+    gestures.pointerUp(touch(4, 160));
+
+    expect(onRotate).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("clamps pinch zoom to the existing minimum and maximum", () => {
+    expect(clampGlobeZoom(1.2 + 20)).toBe(2.2);
+    expect(clampGlobeZoom(1.2 - 20)).toBe(0.75);
+  });
+
+  it("keeps one-finger touch drag and tap separate from pinching", () => {
+    const onRotate = vi.fn();
+    const onZoom = vi.fn();
+    const onSelect = vi.fn();
+    const gestures = createGlobePointerGestureHandlers({ onRotate, onZoom, onSelect });
+    const touch = (pointerId: number, clientX: number) => ({
+      pointerId,
+      pointerType: "touch",
+      clientX,
+      clientY: 100,
+    });
+
+    gestures.pointerDown(touch(1, 100));
+    gestures.pointerMove(touch(1, 120));
+    gestures.pointerUp(touch(1, 120));
+    expect(onRotate).toHaveBeenCalledWith(20, 0);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onZoom).not.toHaveBeenCalled();
+
+    gestures.pointerDown(touch(2, 100));
+    gestures.pointerUp(touch(2, 100));
+    expect(onSelect).toHaveBeenCalledWith(100, 100);
   });
 
   it("promotes the platform with working signup and product links", () => {
