@@ -1,4 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { useGetFtcGlobeDataMock } = vi.hoisted(() => ({
@@ -11,10 +13,15 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 
 import {
+  clampGlobeTilt,
   clampGlobeZoom,
   createGlobePointerGestureHandlers,
   FtcSeasonGlobe,
+  GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD,
+  MAX_GLOBE_ZOOM,
+  getGlobeMarkerZoomScale,
   pointPosition,
+  shouldUseGlobeCartography,
   shouldUseGlobeDetail,
 } from "./FtcSeasonGlobe";
 
@@ -124,7 +131,7 @@ describe("FTC season globe", () => {
 
     const reset = screen.getByRole("button", { name: "Reset globe zoom" });
     while (!zoomIn.hasAttribute("disabled")) fireEvent.click(zoomIn);
-    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("800 percent");
+    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("1000 percent");
     expect(zoomIn).toBeDisabled();
     expect(reset).toBeEnabled();
 
@@ -172,15 +179,31 @@ describe("FTC season globe", () => {
   });
 
   it("clamps zoom to the minimum and expanded maximum", () => {
-    expect(clampGlobeZoom(1.2 + 20)).toBe(8);
+    expect(MAX_GLOBE_ZOOM).toBe(10);
+    expect(clampGlobeZoom(1.2 + 20)).toBe(10);
     expect(clampGlobeZoom(1.2 - 20)).toBe(0.75);
     expect(shouldUseGlobeDetail(1.2)).toBe(false);
     expect(shouldUseGlobeDetail(2.39)).toBe(false);
     expect(shouldUseGlobeDetail(2.4)).toBe(true);
+    expect(shouldUseGlobeCartography(GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD - 0.01)).toBe(false);
+    expect(shouldUseGlobeCartography(GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD)).toBe(true);
+    expect(shouldUseGlobeCartography(10)).toBe(true);
+  });
+
+  it("keeps globe tilt bounded while allowing higher-latitude exploration", () => {
+    expect(clampGlobeTilt(20)).toBeCloseTo(1.2);
+    expect(clampGlobeTilt(-20)).toBeCloseTo(-1.2);
+    expect(clampGlobeTilt(0.4)).toBeCloseTo(0.4);
+  });
+
+  it("keeps FTC markers readable without growing over close-up map details", () => {
+    expect(getGlobeMarkerZoomScale(1.2)).toBeCloseTo(1.5);
+    expect(getGlobeMarkerZoomScale(10)).toBeCloseTo(0.18);
+    expect(getGlobeMarkerZoomScale(0.1)).toBeCloseTo(2.4);
   });
 
   it("keeps pinch zoom bounded across the expanded range", () => {
-    let zoom = 7.9;
+    let zoom = 9.9;
     const gestures = createGlobePointerGestureHandlers({
       onRotate: vi.fn(),
       onSelect: vi.fn(),
@@ -196,7 +219,7 @@ describe("FTC season globe", () => {
     gestures.pointerDown(touch(1, 100));
     gestures.pointerDown(touch(2, 200));
     gestures.pointerMove(touch(2, 300));
-    expect(zoom).toBe(8);
+    expect(zoom).toBe(10);
     gestures.pointerUp(touch(1, 100));
     gestures.pointerUp(touch(2, 300));
 
@@ -205,6 +228,19 @@ describe("FTC season globe", () => {
     gestures.pointerDown(touch(4, 200));
     gestures.pointerMove(touch(4, 100));
     expect(zoom).toBe(0.75);
+  });
+
+  it("ships sparse Natural Earth city and waterbody details for close views", () => {
+    const cartography = readFileSync(
+      resolve(process.cwd(), "public/ftc-globe-hydrography-cities.svg"),
+      "utf8",
+    );
+
+    expect(cartography).toContain("Natural Earth major lakes, rivers, and city labels");
+    expect(cartography).toContain('data-kind="city" data-name="Tokyo"');
+    expect(cartography).toContain('data-kind="lake"');
+    expect(cartography).toContain('data-kind="river"');
+    expect(cartography.match(/data-kind="city"/g)).toHaveLength(50);
   });
 
   it("keeps one-finger touch drag and tap separate from pinching", () => {

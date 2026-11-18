@@ -5,14 +5,27 @@ import type { FtcGlobePoint } from "@workspace/api-client-react";
 import { ArrowUpRight, CalendarDays, MapPin, Pause, Play, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 
 type GlobePoint = FtcGlobePoint;
+const DEFAULT_GLOBE_ZOOM = 1.2;
+const GLOBE_MARKER_REFERENCE_ZOOM = 1.8;
 const MIN_GLOBE_ZOOM = 0.75;
-const MAX_GLOBE_ZOOM = 8;
+export const MAX_GLOBE_ZOOM = 10;
+const MAX_GLOBE_TILT = 1.2;
 const GLOBE_ZOOM_STEP = 0.2;
 export const GLOBE_DETAIL_ZOOM_THRESHOLD = 2.4;
+export const GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD = 4;
 const GLOBE_DETAIL_TEXTURE = "ftc-globe-boundaries-10m.svg";
+const GLOBE_CARTOGRAPHY_TEXTURE = "ftc-globe-hydrography-cities.svg";
 
 export function clampGlobeZoom(value: number) {
   return Math.max(MIN_GLOBE_ZOOM, Math.min(MAX_GLOBE_ZOOM, value));
+}
+
+export function clampGlobeTilt(value: number) {
+  return THREE.MathUtils.clamp(value, -MAX_GLOBE_TILT, MAX_GLOBE_TILT);
+}
+
+export function getGlobeMarkerZoomScale(zoom: number) {
+  return GLOBE_MARKER_REFERENCE_ZOOM / clampGlobeZoom(zoom);
 }
 
 export function stepGlobeZoom(value: number, direction: -1 | 1) {
@@ -22,6 +35,10 @@ export function stepGlobeZoom(value: number, direction: -1 | 1) {
 
 export function shouldUseGlobeDetail(zoom: number) {
   return zoom >= GLOBE_DETAIL_ZOOM_THRESHOLD;
+}
+
+export function shouldUseGlobeCartography(zoom: number) {
+  return zoom >= GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD;
 }
 
 export function pointPosition(point: GlobePoint, radius: number, latitudeOffset = 0, longitudeOffset = 0) {
@@ -254,7 +271,9 @@ function GlobeRenderer({
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
     const root = new THREE.Group();
-    root.rotation.y = THREE.MathUtils.degToRad(100);
+    root.rotation.y = THREE.MathUtils.degToRad(95);
+    // Center high magnification on a populated region rather than empty equatorial ocean.
+    root.rotation.x = 0.52;
     scene.add(root);
     const baseTexture = makeEarthTexture();
     const earthMaterial = new THREE.MeshStandardMaterial({ map: baseTexture, roughness: 0.92, metalness: 0.02 });
@@ -263,10 +282,30 @@ function GlobeRenderer({
       earthMaterial,
     );
     root.add(globe);
+    const markerOffsets = getMarkerOffsets(points);
+    const meshData: { mesh: THREE.InstancedMesh; points: GlobePoint[]; markerScale: number }[] = [];
+    const syncMarkerScales = (nextZoom: number) => {
+      const zoomScale = getGlobeMarkerZoomScale(nextZoom);
+      const helper = new THREE.Object3D();
+      for (const { mesh, points: entries, markerScale } of meshData) {
+        entries.forEach((point, index) => {
+          const offset = markerOffsets.get(point.id);
+          helper.position.copy(pointPosition(point, 1.012, offset?.latitude, offset?.longitude));
+          helper.scale.setScalar((point.id === selectedId ? markerScale * 2 : 1) * zoomScale);
+          helper.updateMatrix();
+          mesh.setMatrixAt(index, helper.matrix);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+      }
+    };
     let detailTexture: THREE.Texture | null = null;
     let detailOverlay: THREE.Mesh | null = null;
     let detailLoadRequested = false;
     let detailRequestId = 0;
+    let cartographyTexture: THREE.Texture | null = null;
+    let cartographyOverlay: THREE.Mesh | null = null;
+    let cartographyLoadRequested = false;
+    let cartographyRequestId = 0;
     const removeDetailOverlay = () => {
       if (detailOverlay) {
         root.remove(detailOverlay);
@@ -276,6 +315,57 @@ function GlobeRenderer({
       }
       detailTexture?.dispose();
       detailTexture = null;
+    };
+    const removeCartographyOverlay = () => {
+      if (cartographyOverlay) {
+        root.remove(cartographyOverlay);
+        cartographyOverlay.geometry.dispose();
+        (cartographyOverlay.material as THREE.Material).dispose();
+        cartographyOverlay = null;
+      }
+      cartographyTexture?.dispose();
+      cartographyTexture = null;
+    };
+    const syncCartography = (nextZoom: number) => {
+      if (!shouldUseGlobeCartography(nextZoom)) {
+        cartographyRequestId += 1;
+        cartographyLoadRequested = false;
+        removeCartographyOverlay();
+        return;
+      }
+      if (cartographyOverlay || cartographyLoadRequested) return;
+
+      cartographyLoadRequested = true;
+      const requestId = ++cartographyRequestId;
+      new THREE.TextureLoader().load(
+        `${import.meta.env.BASE_URL}${GLOBE_CARTOGRAPHY_TEXTURE}`,
+        (texture) => {
+          if (requestId !== cartographyRequestId || !shouldUseGlobeCartography(zoomRef.current)) {
+            texture.dispose();
+            return;
+          }
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.repeat.x = 1;
+          texture.offset.x = 0.25;
+          cartographyTexture = texture;
+          const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            depthWrite: false,
+            toneMapped: false,
+          });
+          cartographyOverlay = new THREE.Mesh(new THREE.SphereGeometry(1.003, 64, 48), material);
+          root.add(cartographyOverlay);
+        },
+        undefined,
+        () => {
+          if (requestId === cartographyRequestId) {
+            cartographyLoadRequested = false;
+            console.error("Unable to load the Natural Earth city and waterbody texture.");
+          }
+        },
+      );
     };
     const syncDetail = (nextZoom: number) => {
       if (!shouldUseGlobeDetail(nextZoom)) {
@@ -322,7 +412,9 @@ function GlobeRenderer({
       const boundedZoom = clampGlobeZoom(value);
       camera.zoom = boundedZoom;
       camera.updateProjectionMatrix();
+      syncMarkerScales(boundedZoom);
       syncDetail(boundedZoom);
+      syncCartography(boundedZoom);
     };
     syncZoomRef.current(zoomRef.current);
     const atmosphere = new THREE.Mesh(
@@ -337,34 +429,24 @@ function GlobeRenderer({
 
     const teamPoints = points.filter((point) => point.kind === "team");
     const eventPoints = points.filter((point) => point.kind === "event");
-    const markerOffsets = getMarkerOffsets(points);
-    const meshData: { mesh: THREE.InstancedMesh; points: GlobePoint[] }[] = [];
     const addPointSet = (entries: GlobePoint[], color: number, scale: number) => {
       if (!entries.length) return;
       const geometry = new THREE.SphereGeometry(scale, 8, 6);
       const material = new THREE.MeshBasicMaterial({ color, toneMapped: false });
       const mesh = new THREE.InstancedMesh(geometry, material, entries.length);
-      const helper = new THREE.Object3D();
-      entries.forEach((point, index) => {
-        const offset = markerOffsets.get(point.id);
-        helper.position.copy(pointPosition(point, 1.012, offset?.latitude, offset?.longitude));
-        helper.scale.setScalar(point.id === selectedId ? scale * 2 : 1);
-        helper.updateMatrix();
-        mesh.setMatrixAt(index, helper.matrix);
-      });
-      mesh.instanceMatrix.needsUpdate = true;
       root.add(mesh);
-      meshData.push({ mesh, points: entries });
+      meshData.push({ mesh, points: entries, markerScale: scale });
     };
     addPointSet(teamPoints, dark ? 0x74e0b3 : 0x087e72, 0.007);
     addPointSet(eventPoints, dark ? 0xffd46c : 0xc17e27, 0.010);
+    syncMarkerScales(zoomRef.current);
 
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     const gestures = createGlobePointerGestureHandlers({
       onRotate: (deltaX, deltaY) => {
         root.rotation.y += deltaX * 0.006;
-        root.rotation.x = THREE.MathUtils.clamp(root.rotation.x + deltaY * 0.004, -0.65, 0.65);
+        root.rotation.x = clampGlobeTilt(root.rotation.x + deltaY * 0.004);
       },
       onZoom: (delta) => callbacksRef.current.onZoom(delta),
       onSelect: (clientX, clientY) => {
@@ -427,6 +509,7 @@ function GlobeRenderer({
       observer.disconnect();
       syncZoomRef.current = () => undefined;
       detailRequestId += 1;
+      cartographyRequestId += 1;
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
@@ -441,6 +524,7 @@ function GlobeRenderer({
       });
       baseTexture.dispose();
       detailTexture?.dispose();
+      cartographyTexture?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -511,7 +595,7 @@ export function FtcSeasonGlobe() {
   });
   const [selected, setSelected] = useState<GlobePoint | null>(null);
   const [paused, setPaused] = useState(false);
-  const [zoom, setZoom] = useState(1.2);
+  const [zoom, setZoom] = useState(DEFAULT_GLOBE_ZOOM);
   const [rendererReady, setRendererReady] = useState(false);
   const [dark, setDark] = useState(false);
   const [visiblePointCount, setVisiblePointCount] = useState(80);
@@ -696,7 +780,7 @@ export function FtcSeasonGlobe() {
         <div className="flex flex-col gap-1 border-t border-white/10 px-5 py-3 text-[10px] leading-5 text-[#a8c4bb] sm:px-6">
           <p>Locations are approximate city, region, or country estimates, not team addresses. Records without usable FIRST locations are grouped at an unknown-location placeholder; overlapping markers are slightly spread apart for selection.</p>
           <p>
-            Coordinate source: <a className="underline underline-offset-2 hover:text-white" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0). World map and 1:10m close-up country boundaries: <a className="underline underline-offset-2 hover:text-white" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a> (public domain).
+            Coordinate source: <a className="underline underline-offset-2 hover:text-white" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0). World map, 1:10m close-up boundaries, major rivers, lakes, and cities: <a className="underline underline-offset-2 hover:text-white" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a> (public domain).
           </p>
         </div>
       </div>

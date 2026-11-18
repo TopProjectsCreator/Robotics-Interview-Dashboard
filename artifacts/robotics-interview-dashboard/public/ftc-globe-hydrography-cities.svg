@@ -1,0 +1,309 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="4096" height="2048" viewBox="0 0 4096 2048">
+<title>Natural Earth major lakes, rivers, and city labels</title>
+<desc>Selected 1:10m Natural Earth lakes, rivers, and major populated places in an equirectangular projection. Public-domain data.</desc>
+<g fill="#4c9da7" fill-opacity=".30" stroke="#71c6ce" stroke-opacity=".72" stroke-width="2.4" stroke-linejoin="round">
+<path data-kind="lake" data-name="Great Bear Lake" d="M695.9,275.6 L686.0,275.4 L681.4,277.3 L688.6,280.8 L668.7,286.6 L665.5,285.3 L676.2,281.4 L678.2,277.8 L665.2,280.0 L664.6,283.4 L659.4,285.1 L642.9,282.6 L658.1,275.6 L651.0,273.4 L668.4,272.0 L648.0,270.2 L647.4,272.6 L630.4,271.3 L628.1,274.1 L624.4,271.1 L684.8,261.2 L694.6,263.0 L676.8,268.3 L695.9,269.5 L709.7,265.3 L706.5,268.4 L711.5,267.8 L702.4,274.7 L707.5,276.1 L695.9,275.6 Z"/>
+<path data-kind="lake" data-name="Great Slave Lake" d="M777.5,314.2 L791.2,309.5 L800.0,310.9 L787.8,312.3 L798.2,312.2 L784.7,314.1 L771.3,323.0 L754.7,326.4 L753.6,329.9 L728.8,331.7 L709.0,326.5 L728.7,327.9 L727.4,325.7 L733.3,321.4 L743.9,320.1 L728.3,309.6 L756.1,318.5 L777.5,314.2 Z"/>
+<path data-kind="lake" data-name="McLeod Bay" d="M777.1,314.0 L787.9,308.1 L808.9,309.6 L804.0,312.0 L806.0,311.0 L789.2,309.0 L777.1,314.0 Z"/>
+<path data-kind="lake" data-name="Lake Winnipeg" d="M952.5,441.0 L952.4,448.0 L949.6,446.8 L948.8,450.2 L945.3,450.2 L945.0,443.2 L948.8,439.8 L944.5,441.3 L947.4,436.8 L941.3,438.7 L940.5,431.9 L932.6,433.0 L923.9,424.2 L922.8,421.8 L928.0,420.3 L918.7,418.8 L922.0,411.2 L934.3,412.9 L929.4,409.7 L932.6,405.0 L935.3,406.0 L930.3,409.4 L936.0,408.6 L933.2,410.0 L934.9,414.0 L952.5,441.0 Z"/>
+<path data-kind="lake" data-name="Lake Erie" d="M1102.8,542.7 L1102.4,545.5 L1109.3,547.1 L1122.3,538.7 L1136.5,540.0 L1132.6,539.1 L1150.4,534.2 L1147.4,539.6 L1117.9,551.9 L1102.9,552.3 L1107.1,551.6 L1098.3,549.0 L1102.8,542.7 Z"/>
+<path data-kind="lake" data-name="Lake Ontario" d="M1182.3,523.7 L1180.5,528.6 L1172.4,531.8 L1140.4,531.4 L1148.1,525.4 L1163.8,522.9 L1170.5,524.9 L1173.6,522.1 L1165.3,522.2 L1185.7,517.7 L1179.1,522.0 L1182.3,523.7 Z"/>
+<path data-kind="lake" data-name="Lake Saint Clair" d="M1102.7,542.6 L1107.0,538.1 L1110.3,540.5 L1102.7,542.6 Z"/>
+<path data-kind="lake" data-name="Lake Okeechobee" d="M1130.6,716.7 L1129.3,720.4 L1125.2,717.2 L1128.8,714.6 L1130.6,716.7 Z"/>
+<path data-kind="lake" data-name="Lago de Nicaragua" d="M1083.4,897.0 L1073.7,895.9 L1071.0,886.4 L1078.8,890.3 L1083.4,897.0 Z"/>
+<path data-kind="lake" data-name="Wollaston Lake" d="M868.8,359.7 L878.7,359.4 L871.4,367.9 L872.0,365.6 L866.2,366.8 L870.2,362.7 L867.0,363.4 L868.8,359.7 Z"/>
+<path data-kind="lake" data-name="Reindeer Lake" d="M893.0,364.9 L885.6,371.5 L889.4,372.1 L886.7,373.3 L888.0,375.6 L872.7,383.7 L874.8,377.0 L874.6,381.4 L881.1,378.0 L879.8,372.6 L876.3,372.5 L879.2,367.6 L887.5,362.6 L887.7,364.7 L890.1,362.3 L888.2,366.5 L893.0,364.9 Z"/>
+<path data-kind="lake" data-name="Lake of the Woods" d="M974.7,465.5 L963.4,467.3 L971.5,459.5 L965.1,459.5 L972.6,458.5 L971.1,455.2 L978.3,462.3 L969.3,462.5 L978.3,464.4 L974.7,465.5 Z"/>
+<path data-kind="lake" data-name="Lake Nipigon" d="M1036.0,454.5 L1044.3,452.6 L1046.6,455.6 L1045.1,461.9 L1037.8,461.3 L1039.9,459.1 L1035.9,461.0 L1036.0,454.5 Z"/>
+<path data-kind="lake" data-name="Lake Manitoba" d="M933.6,450.2 L927.1,452.7 L921.4,442.7 L923.3,440.7 L915.4,435.6 L919.8,434.7 L922.9,439.9 L923.5,435.6 L926.6,440.4 L924.4,444.6 L933.6,450.2 Z"/>
+<path data-kind="lake" data-name="Lake Winnipegosis" d="M914.4,436.0 L910.9,435.9 L910.6,431.9 L910.1,435.6 L908.6,433.3 L909.6,423.2 L906.1,423.1 L907.2,425.5 L903.8,420.9 L900.8,423.9 L897.6,419.8 L913.9,421.9 L911.8,429.4 L914.4,436.0 Z"/>
+<path data-kind="lake" data-name="Lake Athabasca" d="M805.8,351.7 L797.3,352.6 L786.9,358.7 L781.3,355.5 L802.3,345.8 L810.6,347.0 L808.5,348.4 L841.7,349.5 L805.8,351.7 Z"/>
+<path data-kind="lake" data-name="Lake Mistassini" d="M1212.9,445.8 L1215.8,442.0 L1203.6,454.5 L1208.0,452.5 L1208.2,447.4 L1203.5,451.8 L1206.7,443.9 L1216.6,439.3 L1220.1,439.7 L1216.8,442.2 L1221.8,441.0 L1212.9,445.8 Z"/>
+<path data-kind="lake" data-name="Iliamna Lake" d="M295.5,343.8 L288.4,345.8 L289.4,347.8 L273.9,347.4 L295.5,343.8 Z"/>
+<path data-kind="lake" data-name="Nettilling Lake" d="M1236.1,266.7 L1237.1,261.8 L1240.2,261.3 L1261.2,268.4 L1256.3,270.9 L1244.4,269.2 L1237.2,273.6 L1239.1,269.3 L1236.1,266.7 Z"/>
+<path data-kind="lake" data-name="Dubawnt Lake" d="M885.2,305.3 L903.3,301.7 L898.0,303.9 L900.9,307.1 L895.7,311.2 L894.7,307.9 L892.6,311.0 L885.2,305.3 Z"/>
+<path data-kind="lake" data-name="Baker Lake" d="M954.1,293.6 L952.1,292.9 L976.3,294.4 L975.7,296.5 L954.1,293.6 Z"/>
+<path data-kind="lake" data-name="Lake Champlain" d="M1213.3,521.0 L1213.2,526.2 L1212.3,516.1 L1213.6,511.1 L1214.2,513.5 L1216.3,511.0 L1213.3,521.0 Z"/>
+<path data-kind="lake" data-name="Churchill Lake" d="M816.5,387.9 L811.9,392.3 L810.8,387.8 L805.5,385.9 L812.0,388.8 L816.4,384.9 L809.7,377.8 L818.7,382.1 L816.5,387.9 Z"/>
+<path data-kind="lake" data-name="Lac la Martre" d="M707.8,305.6 L697.8,303.5 L705.0,300.5 L713.9,305.6 L707.8,305.6 Z"/>
+<path data-kind="lake" data-name="Lake Superior" d="M1086.7,495.2 L1080.6,495.0 L1081.4,491.7 L1054.2,494.7 L1049.1,490.4 L1041.2,491.7 L1039.5,486.5 L1019.0,494.1 L1013.1,493.7 L1014.2,489.6 L999.9,491.8 L1015.0,482.2 L1031.6,476.5 L1033.2,472.5 L1037.9,471.2 L1036.0,474.2 L1038.4,473.5 L1041.2,468.2 L1043.1,469.3 L1040.4,473.0 L1044.2,471.1 L1043.7,466.6 L1046.3,466.2 L1064.6,469.1 L1071.1,478.0 L1082.5,478.3 L1080.6,482.2 L1085.6,485.8 L1083.4,489.4 L1088.2,490.5 L1086.7,495.2 Z"/>
+<path data-kind="lake" data-name="Lake Superior" d="M1050.0,484.5 L1043.5,484.3 L1039.7,487.5 L1041.9,489.3 L1050.0,484.5 Z"/>
+<path data-kind="lake" data-name="Lake Michigan" d="M1083.5,502.9 L1074.7,514.6 L1074.5,509.5 L1066.6,515.3 L1063.3,527.6 L1066.6,531.7 L1066.1,541.6 L1060.4,548.7 L1052.5,549.6 L1047.8,531.7 L1054.4,514.2 L1047.4,517.2 L1047.0,515.1 L1058.3,501.5 L1058.5,504.2 L1063.3,502.0 L1062.4,505.1 L1074.9,499.4 L1083.5,502.9 Z"/>
+<path data-kind="lake" data-name="Lake Huron" d="M1141.5,514.6 L1136.5,514.0 L1136.5,518.0 L1127.1,516.6 L1124.9,514.7 L1126.9,512.3 L1118.5,509.0 L1123.3,516.3 L1118.0,522.2 L1117.8,530.8 L1110.3,534.6 L1105.8,523.1 L1093.1,526.8 L1099.9,519.3 L1098.4,511.9 L1100.6,511.6 L1083.4,502.2 L1084.8,500.0 L1093.4,501.0 L1089.7,496.6 L1128.6,501.1 L1141.5,514.6 Z"/>
+<path data-kind="lake" data-name="Lake Huron" d="M1119.7,503.0 L1101.1,501.4 L1114.2,505.6 L1117.8,504.0 L1116.6,506.0 L1119.7,503.0 Z"/>
+<path data-kind="lake" data-name="Whitefish Bay" d="M1086.7,495.2 L1080.3,494.7 L1083.3,489.2 L1088.2,490.5 L1086.7,495.2 Z"/>
+<path data-kind="lake" data-name="Saginaw Bay" d="M1103.4,522.7 L1095.9,527.8 L1092.9,526.5 L1099.9,519.2 L1103.4,522.7 Z"/>
+<path data-kind="lake" data-name="North Channel" d="M1115.9,500.5 L1108.9,503.0 L1098.4,501.2 L1094.2,497.2 L1115.9,500.5 Z"/>
+<path data-kind="lake" data-name="Georgian Bay" d="M1141.5,514.6 L1136.5,514.0 L1136.5,518.0 L1127.1,516.6 L1124.9,514.7 L1126.9,512.3 L1119.5,509.1 L1118.7,501.7 L1129.2,501.5 L1141.5,514.6 Z"/>
+<path data-kind="lake" data-name="Lake Ladoga" d="M2390.2,327.2 L2398.9,321.1 L2417.9,328.4 L2422.9,333.9 L2418.9,335.1 L2418.6,339.2 L2409.1,338.4 L2406.8,342.2 L2402.2,342.2 L2395.3,331.8 L2387.0,327.5 L2390.2,327.2 Z"/>
+<path data-kind="lake" data-name="Lake Balkhash" d="M2947.4,495.3 L2940.5,497.4 L2907.4,495.3 L2906.9,492.9 L2892.6,500.8 L2891.5,512.4 L2883.4,505.1 L2886.2,498.6 L2900.0,491.3 L2939.0,495.4 L2939.6,492.8 L2948.2,491.3 L2947.4,495.3 Z"/>
+<path data-kind="lake" data-name="Lake Baikal" d="M3298.1,390.0 L3294.5,408.0 L3290.1,413.8 L3287.3,411.2 L3282.8,415.1 L3287.0,414.2 L3287.9,416.8 L3263.5,428.6 L3257.9,428.4 L3253.1,435.4 L3240.3,438.3 L3228.0,435.9 L3245.2,433.3 L3260.6,424.0 L3279.1,410.5 L3289.3,397.7 L3290.5,391.9 L3298.1,390.0 Z"/>
+<path data-kind="lake" data-name="Lake Baikal" d="M3274.1,417.4 L3264.7,420.7 L3274.1,417.4 Z"/>
+<path data-kind="lake" data-name="Lake Albert" d="M2404.9,998.2 L2404.1,1004.5 L2395.0,1012.2 L2395.0,1006.8 L2404.9,998.2 Z"/>
+<path data-kind="lake" data-name="Lake Malawi" d="M2448.8,1187.7 L2445.0,1183.4 L2442.9,1186.4 L2441.1,1184.2 L2442.1,1179.9 L2435.3,1163.6 L2438.5,1156.4 L2435.0,1131.8 L2440.8,1137.9 L2441.8,1150.3 L2445.8,1154.8 L2442.7,1165.4 L2448.8,1187.7 Z"/>
+<path data-kind="lake" data-name="Lake Tanganyika" d="M2398.5,1121.7 L2394.7,1120.8 L2396.0,1116.6 L2390.8,1106.5 L2380.2,1093.2 L2380.3,1061.9 L2388.8,1090.5 L2386.1,1095.1 L2395.8,1103.1 L2402.9,1123.3 L2398.5,1121.7 Z"/>
+<path data-kind="lake" data-name="Lake Victoria" d="M2433.9,1041.4 L2430.9,1040.7 L2430.8,1044.2 L2426.7,1045.9 L2429.7,1047.1 L2425.8,1048.1 L2433.0,1049.3 L2428.3,1053.0 L2422.0,1052.2 L2423.7,1056.8 L2420.7,1058.3 L2421.6,1052.6 L2414.6,1049.6 L2409.6,1056.0 L2408.7,1033.1 L2412.3,1024.5 L2418.4,1023.5 L2419.4,1020.7 L2423.3,1022.8 L2427.6,1018.3 L2429.0,1021.9 L2434.6,1021.0 L2438.1,1028.5 L2443.2,1025.0 L2444.4,1027.5 L2435.5,1030.4 L2433.9,1041.4 Z"/>
+<path data-kind="lake" data-name="Lake Chad" d="M2215.6,875.2 L2210.3,877.4 L2210.7,874.1 L2215.6,875.2 Z"/>
+<path data-kind="lake" data-name="Vänern" d="M2208.6,352.0 L2203.7,356.5 L2188.0,359.5 L2191.7,356.8 L2189.4,353.2 L2198.9,353.7 L2197.9,348.5 L2208.0,349.0 L2206.5,351.7 L2208.6,352.0 Z"/>
+<path data-kind="lake" data-name="Lake Onega" d="M2456.0,331.6 L2444.2,329.7 L2444.6,327.3 L2454.1,328.5 L2438.5,320.5 L2441.9,319.6 L2434.1,312.6 L2443.3,318.2 L2440.1,311.8 L2447.4,318.1 L2446.3,315.6 L2452.9,315.4 L2440.1,308.2 L2455.4,313.1 L2453.7,317.9 L2462.8,327.9 L2456.0,331.6 Z"/>
+<path data-kind="lake" data-name="Lake Tana" d="M2472.4,890.4 L2468.9,888.8 L2469.2,885.5 L2474.7,884.0 L2475.5,887.7 L2472.4,890.4 Z"/>
+<path data-kind="lake" data-name="Lago Titicaca" d="M1259.6,1209.1 L1251.2,1204.2 L1252.2,1201.1 L1254.3,1202.9 L1252.9,1198.1 L1267.7,1208.9 L1264.5,1212.9 L1261.8,1211.7 L1264.7,1208.9 L1262.7,1207.3 L1259.6,1209.1 Z"/>
+<path data-kind="lake" data-name="Lake Saimaa" d="M2367.2,328.9 L2364.4,328.2 L2369.5,328.2 L2357.9,326.3 L2360.7,324.7 L2358.3,322.5 L2361.2,324.1 L2362.9,320.8 L2367.0,324.4 L2376.4,320.3 L2365.3,316.9 L2364.0,313.2 L2358.1,313.3 L2356.6,311.4 L2363.6,313.9 L2361.0,311.7 L2363.1,308.1 L2357.1,306.5 L2357.2,301.4 L2353.8,300.5 L2359.4,303.0 L2359.8,307.1 L2370.9,306.7 L2368.0,307.8 L2369.2,311.3 L2377.6,314.2 L2370.6,311.7 L2367.3,313.5 L2366.0,309.8 L2363.3,311.5 L2367.2,313.7 L2365.9,315.6 L2374.1,314.0 L2377.7,316.7 L2375.2,317.1 L2381.6,316.8 L2381.2,311.6 L2388.7,313.5 L2384.1,315.2 L2389.6,317.1 L2382.7,317.4 L2386.1,320.6 L2373.4,322.6 L2376.3,323.4 L2370.0,325.9 L2376.4,327.4 L2367.2,328.9 Z"/>
+<path data-kind="lake" data-name="Lake Saimaa" d="M2376.3,319.7 L2383.8,319.2 L2374.3,318.0 L2376.3,319.7 Z"/>
+<path data-kind="lake" data-name="Lago Buenos Aires" d="M1238.1,1553.0 L1226.1,1553.6 L1218.1,1559.1 L1221.0,1552.4 L1223.5,1554.5 L1233.4,1550.6 L1238.1,1553.0 Z"/>
+<path data-kind="lake" data-name="Lago Llanquihue" d="M1218.5,1494.1 L1216.9,1491.9 L1221.0,1490.5 L1222.4,1492.8 L1218.5,1494.1 Z"/>
+<path data-kind="lake" data-name="Hongze Hu" d="M3398.2,646.5 L3392.6,650.1 L3390.3,649.7 L3393.9,648.9 L3392.8,646.8 L3387.8,647.8 L3392.5,646.0 L3395.3,648.5 L3392.8,643.9 L3397.6,644.5 L3397.0,641.0 L3400.6,644.4 L3398.2,646.5 Z"/>
+<path data-kind="lake" data-name="Khövsgöl Nuur" d="M3194.5,438.6 L3191.2,448.7 L3188.0,450.0 L3188.8,440.0 L3192.0,436.7 L3194.5,438.6 Z"/>
+<path data-kind="lake" data-name="Päijänne" d="M2347.3,325.2 L2344.8,330.7 L2345.7,328.8 L2340.0,326.7 L2339.5,330.0 L2335.9,329.2 L2338.3,327.0 L2334.1,324.7 L2337.7,322.6 L2334.9,320.1 L2340.8,318.3 L2337.5,316.7 L2343.1,314.9 L2339.1,311.8 L2343.7,308.4 L2336.2,307.1 L2339.5,304.3 L2348.5,310.2 L2344.3,308.8 L2345.1,311.5 L2340.9,312.0 L2343.6,313.9 L2350.1,311.6 L2347.4,308.4 L2353.1,311.7 L2349.0,307.7 L2357.3,309.2 L2353.1,309.1 L2354.7,313.6 L2351.6,311.6 L2348.8,315.1 L2350.6,312.5 L2347.6,311.8 L2347.3,315.1 L2343.6,314.1 L2342.9,318.8 L2339.4,318.9 L2341.4,323.4 L2338.7,323.2 L2340.7,324.9 L2338.4,326.6 L2344.8,327.9 L2347.3,325.2 Z"/>
+<path data-kind="lake" data-name="Lac Moeru" d="M2379.4,1122.1 L2374.8,1131.5 L2370.2,1132.3 L2370.3,1127.6 L2376.5,1120.7 L2379.4,1122.1 Z"/>
+<path data-kind="lake" data-name="Lake Khanka" d="M3559.2,510.3 L3554.1,517.3 L3550.6,515.1 L3551.1,508.5 L3559.2,510.3 Z"/>
+<path data-kind="lake" data-name="Tonlé Sap" d="M3238.2,882.5 L3229.6,877.6 L3227.9,873.1 L3238.2,882.5 Z"/>
+<path data-kind="lake" data-name="Lake Pskov" d="M2361.0,361.4 L2368.4,365.3 L2362.2,364.5 L2361.0,361.4 Z"/>
+<path data-kind="lake" data-name="Lake Srednye Kuyto" d="M2394.1,283.2 L2405.9,282.5 L2412.1,285.5 L2404.3,282.9 L2395.1,285.4 L2397.8,284.7 L2394.1,283.2 Z"/>
+<path data-kind="lake" data-name="Mälaren" d="M2253.9,349.0 L2230.3,347.0 L2246.1,347.3 L2245.8,345.3 L2249.7,347.6 L2245.6,344.2 L2248.2,343.5 L2253.9,349.0 Z"/>
+<path data-kind="lake" data-name="Lake Zaysan" d="M3009.2,478.4 L3006.7,481.1 L2992.5,475.5 L2997.8,474.8 L2997.5,468.0 L3005.8,464.7 L2996.5,459.2 L3003.8,458.0 L3000.0,460.7 L3009.2,464.4 L2997.5,469.5 L3003.3,473.4 L2998.2,474.8 L3009.2,478.4 Z"/>
+<path data-kind="lake" data-name="Buhayrat ath Tharthar" d="M2540.7,640.3 L2538.2,633.2 L2543.0,638.0 L2540.7,640.3 Z"/>
+<path data-kind="lake" data-name="Réservoir Manicouagan" d="M1272.1,440.0 L1265.8,447.2 L1258.8,434.6 L1267.2,435.9 L1268.5,432.4 L1268.0,436.0 L1272.4,434.9 L1272.1,440.0 Z"/>
+<path data-kind="lake" data-name="Réservoir Manicouagan" d="M1270.1,440.7 L1266.9,436.2 L1261.7,439.2 L1265.5,442.0 L1270.1,440.7 Z"/>
+<path data-kind="lake" data-name="Rybinsk Reservoir" d="M2488.4,362.8 L2483.2,363.6 L2470.4,354.1 L2481.3,358.1 L2480.3,354.1 L2473.9,354.2 L2477.2,352.6 L2475.1,350.6 L2485.8,350.2 L2477.8,351.7 L2492.6,358.3 L2490.0,362.9 L2486.8,361.4 L2488.4,362.8 Z"/>
+<path data-kind="lake" data-name="Lake Eyre North" d="M3617.7,1355.2 L3612.3,1354.0 L3610.1,1350.0 L3610.5,1354.7 L3609.1,1351.6 L3606.7,1354.0 L3604.4,1342.1 L3614.9,1344.0 L3613.6,1349.7 L3617.7,1355.2 Z"/>
+<path data-kind="lake" data-name="Lake Disappointment" d="M3445.8,1293.4 L3442.9,1291.7 L3444.2,1288.5 L3446.9,1289.0 L3445.8,1293.4 Z"/>
+<path data-kind="lake" data-name="Lake Mackay" d="M3512.9,1282.0 L3508.0,1279.0 L3518.1,1274.6 L3516.1,1276.7 L3518.5,1278.8 L3512.9,1282.0 Z"/>
+<path data-kind="lake" data-name="Lake Gairdner" d="M3594.7,1392.1 L3595.8,1386.4 L3588.5,1377.4 L3596.5,1379.8 L3599.0,1387.7 L3594.7,1392.1 Z"/>
+<path data-kind="lake" data-name="Lake Torrens" d="M3616.7,1383.9 L3615.5,1387.3 L3613.2,1385.6 L3614.7,1372.4 L3611.1,1372.4 L3609.1,1367.4 L3618.1,1374.8 L3619.7,1380.6 L3616.7,1383.9 Z"/>
+<path data-kind="lake" data-name="Lake Frome" d="M3640.5,1375.5 L3638.8,1378.2 L3635.0,1375.6 L3640.5,1368.3 L3640.5,1375.5 Z"/>
+<path data-kind="lake" data-name="Great Salt Lake" d="M774.3,557.8 L769.2,560.9 L762.1,554.3 L762.0,550.6 L765.4,550.0 L768.8,555.2 L769.2,552.3 L772.9,552.8 L770.0,554.4 L774.3,557.8 Z"/>
+<path data-kind="lake" data-name="Laguna Madre" d="M939.4,734.7 L935.8,753.1 L935.3,736.6 L939.4,734.7 Z"/>
+<path data-kind="lake" data-name="Salton Sea" d="M732.4,644.9 L731.3,647.3 L727.5,642.8 L732.4,644.9 Z"/>
+<path data-kind="lake" data-name="Lagoa Mirim" d="M1449.5,1393.3 L1447.5,1398.4 L1443.6,1397.2 L1440.2,1401.3 L1438.9,1406.2 L1437.9,1400.0 L1448.7,1390.1 L1449.5,1393.3 Z"/>
+<path data-kind="lake" data-name="IJsselmeer" d="M2114.8,426.2 L2111.0,429.3 L2104.5,428.1 L2108.3,424.3 L2105.4,421.7 L2109.1,420.1 L2114.8,426.2 Z"/>
+<path data-kind="lake" data-name="IJsselmeer" d="M2114.7,426.6 L2106.4,428.0 L2114.7,426.6 Z"/>
+<path data-kind="lake" data-name="Syvash" d="M2450.6,508.5 L2446.8,507.7 L2443.4,501.7 L2440.1,503.2 L2442.0,501.2 L2431.1,498.1 L2441.0,498.5 L2440.3,501.0 L2443.3,498.8 L2450.6,508.5 Z"/>
+<path data-kind="lake" data-name="Issyk-Kul" d="M2938.4,539.3 L2929.6,544.3 L2914.9,541.1 L2938.4,539.3 Z"/>
+<path data-kind="lake" data-name="Lake Turkana" d="M2465.5,992.5 L2464.0,996.8 L2457.0,986.0 L2457.5,971.3 L2459.7,971.4 L2460.1,986.2 L2465.5,992.5 Z"/>
+<path data-kind="lake" data-name="Uvs Nuur" d="M3098.4,452.5 L3097.5,450.0 L3105.0,447.2 L3110.7,451.9 L3102.6,455.2 L3098.4,452.5 Z"/>
+<path data-kind="lake" data-name="Qinghai Hu" d="M3193.9,604.7 L3193.3,608.2 L3181.4,604.0 L3185.6,600.4 L3193.9,604.7 Z"/>
+<path data-kind="lake" data-name="Lake Razazah" d="M2546.6,651.7 L2546.0,654.2 L2542.3,652.2 L2543.3,647.2 L2546.6,651.7 Z"/>
+<path data-kind="lake" data-name="South Aral Sea" d="M2711.5,511.3 L2716.0,502.5 L2722.7,500.6 L2715.6,506.8 L2712.1,518.5 L2711.5,511.3 Z"/>
+<path data-kind="lake" data-name="North Aral Sea" d="M2739.6,499.6 L2738.9,496.4 L2730.7,494.1 L2739.4,493.3 L2737.3,491.7 L2743.6,495.5 L2748.1,492.9 L2739.6,499.6 Z"/>
+</g>
+<g fill="none" stroke="#79d5df" stroke-opacity=".88" stroke-width="2.15" stroke-linecap="round" stroke-linejoin="round">
+<path data-kind="river" data-name="Irrawaddy Delta" d="M3134.0,821.2 L3128.3,826.7 L3125.2,835.9"/>
+<path data-kind="river" data-name="Irrawaddy Delta" d="M3134.0,821.6 L3135.7,820.3 L3142.2,833.2"/>
+<path data-kind="river" data-name="Irrawaddy Delta" d="M3134.2,822.5 L3126.5,840.1"/>
+<path data-kind="river" data-name="Irrawaddy Delta" d="M3135.8,832.2 L3140.3,837.5"/>
+<path data-kind="river" data-name="Irrawaddy Delta" d="M3134.3,832.8 L3130.4,841.7"/>
+<path data-kind="river" data-name="Ucayali" d="M1232.6,1198.5 L1234.0,1185.6 L1230.7,1181.2 L1214.0,1176.0 L1205.2,1161.6 L1203.1,1150.9 L1209.5,1152.1 L1205.8,1143.0 L1206.6,1135.9 L1199.6,1124.3 L1203.0,1120.1 L1200.3,1120.4 L1191.1,1105.5 L1194.0,1101.2 L1192.3,1094.3 L1202.4,1089.7 L1211.9,1074.6"/>
+<path data-kind="river" data-name="Tuotuo" d="M3081.0,633.7 L3106.1,636.0"/>
+<path data-kind="river" data-name="Lena" d="M3489.4,201.5 L3495.0,206.2 L3499.5,218.3 L3479.1,222.5 L3482.4,224.4 L3460.0,237.6 L3447.5,255.9 L3462.3,275.4 L3464.5,282.7 L3507.0,300.6 L3520.1,301.6 L3527.4,315.3 L3522.1,322.3 L3511.1,326.9 L3459.8,334.8 L3428.2,333.8 L3420.8,336.7"/>
+<path data-kind="river" data-name="Lena" d="M3420.7,336.7 L3407.2,338.3 L3393.7,344.6 L3377.4,336.7 L3356.1,332.6 L3326.9,349.9 L3310.1,356.6 L3297.4,357.4 L3270.8,372.3 L3250.3,378.0 L3257.4,381.0 L3250.2,384.3 L3252.6,386.7 L3243.6,397.6 L3244.5,405.0 L3255.2,411.3 L3266.4,411.3 L3274.3,406.3 L3277.9,407.0 L3276.6,409.6"/>
+<path data-kind="river" data-name="Tongtian" d="M3106.1,636.0 L3123.9,628.5 L3128.5,629.5 L3165.4,655.9 L3169.2,663.4"/>
+<path data-kind="river" data-name="Bahr el Jebel" d="M2412.3,982.9 L2406.5,974.6 L2409.4,958.5 L2402.4,946.3"/>
+<path data-kind="river" data-name="Jinsha" d="M3169.2,663.4 L3173.1,667.3 L3169.9,669.4 L3174.0,674.4 L3176.2,700.4 L3178.9,704.0"/>
+<path data-kind="river" data-name="Jinsha" d="M3178.9,704.1 L3185.5,718.1 L3190.6,707.3 L3190.9,725.6 L3196.1,726.3 L3206.3,721.3 L3208.7,728.3 L3219.8,724.0 L3218.7,713.5 L3229.9,701.7 L3229.6,697.8"/>
+<path data-kind="river" data-name="Bahr el Jebel" d="M2402.4,946.3 L2395.5,938.6 L2391.5,921.7 L2395.1,915.5 L2402.1,916.7"/>
+<path data-kind="river" data-name="El Bahr el Abyad" d="M2402.1,916.7 L2406.5,917.5 L2413.5,911.1 L2413.4,904.0 L2419.4,898.5 L2421.3,875.7 L2413.9,860.4 L2417.7,846.1"/>
+<path data-kind="river" data-name="Chang Jiang" d="M3331.2,685.6 L3335.1,688.8"/>
+<path data-kind="river" data-name="Chang Jiang" d="M3229.6,697.8 L3252.6,695.9 L3260.8,686.9 L3273.9,683.8 L3284.1,671.9 L3307.0,671.3 L3313.9,674.1 L3317.2,679.6 L3325.0,679.3 L3326.5,685.8 L3331.3,685.6"/>
+<path data-kind="river" data-name="Rosetta Branch" d="M2403.4,681.3 L2398.8,678.9 L2393.9,666.2"/>
+<path data-kind="river" data-name="Yangtze" d="M3408.9,657.7 L3399.4,657.8 L3394.2,667.8 L3370.8,685.1 L3361.7,684.1 L3354.7,675.8 L3348.4,676.0"/>
+<path data-kind="river" data-name="Yangtze" d="M3370.1,685.5 L3370.2,685.2"/>
+<path data-kind="river" data-name="Yangtze" d="M3335.1,688.8 L3345.8,681.7 L3343.4,680.0 L3348.5,675.9"/>
+<path data-kind="river" data-name="Damietta Branch" d="M2402.4,680.7 L2403.6,671.7 L2410.3,665.3"/>
+<path data-kind="river" data-name="Bykovskaya Protoka" d="M3489.4,201.5 L3490.2,198.6 L3500.6,199.9"/>
+<path data-kind="river" data-name="Olenekskaya Protoka" d="M3489.4,201.5 L3444.4,195.4"/>
+<path data-kind="river" data-name="St. Lawrence" d="M1197.9,512.0 L1185.7,517.7"/>
+<path data-kind="river" data-name="Ob" d="M2832.7,263.9 L2822.9,267.3 L2804.9,265.7 L2795.5,271.5 L2797.6,274.4 L2790.2,283.1 L2795.1,284.4 L2793.1,287.5 L2799.5,294.4 L2796.4,295.0 L2796.3,300.9 L2788.1,307.1 L2812.7,316.6 L2817.3,322.4 L2825.7,325.0 L2825.2,327.8 L2831.4,328.5"/>
+<path data-kind="river" data-name="Ob" d="M2815.2,265.4 L2828.3,264.6"/>
+<path data-kind="river" data-name="Danube" d="M2243.8,477.2 L2250.8,480.7 L2265.4,480.1 L2263.2,498.4 L2260.7,500.4 L2264.2,507.8 L2278.1,510.0 L2284.2,515.8 L2291.0,514.0 L2300.0,517.7 L2303.6,515.1 L2307.0,516.7 L2304.3,519.1 L2310.0,522.3 L2308.1,525.0 L2313.4,524.7"/>
+<path data-kind="river" data-name="Danube" d="M2313.4,524.7 L2313.4,524.7"/>
+<path data-kind="river" data-name="Danube" d="M2313.4,524.7 L2337.0,527.4 L2347.3,522.8 L2360.4,521.8 L2367.8,518.3 L2364.5,514.1 L2367.0,507.4 L2375.1,509.4"/>
+<path data-kind="river" data-name="Ideriyn" d="M3163.1,477.9 L3156.2,476.0 L3159.8,469.9 L3177.9,470.9 L3193.7,463.5"/>
+<path data-kind="river" data-name="Selenga" d="M3260.7,430.5 L3259.7,428.0"/>
+<path data-kind="river" data-name="Selenga" d="M3260.7,430.5 L3262.6,428.8"/>
+<path data-kind="river" data-name="Selenga" d="M3260.7,430.5 L3260.7,430.5"/>
+<path data-kind="river" data-name="Selenga" d="M3193.7,463.5 L3201.2,461.2 L3223.3,462.8 L3251.1,454.9 L3255.8,452.2 L3257.6,444.3 L3271.9,434.3 L3270.5,430.6 L3260.7,430.5"/>
+<path data-kind="river" data-name="Ertis" d="M2947.7,448.1 L2929.6,437.5 L2920.1,423.8 L2907.8,417.9 L2901.3,409.8"/>
+<path data-kind="river" data-name="Ertis" d="M2947.7,448.1 L2947.5,448.1"/>
+<path data-kind="river" data-name="Ertis" d="M2996.5,459.2 L2983.8,452.5 L2947.7,448.1"/>
+<path data-kind="river" data-name="Ertis" d="M3018.2,477.9 L3007.8,480.9"/>
+<path data-kind="river" data-name="Amazonas" d="M1448.3,1042.0 L1427.1,1051.9 L1425.4,1048.5 L1415.4,1045.7 L1403.6,1053.3 L1393.6,1051.1 L1385.4,1060.6 L1378.5,1062.1 L1367.5,1059.0 L1344.0,1069.1 L1338.2,1066.0 L1329.9,1070.4 L1320.9,1067.6 L1302.9,1053.5 L1290.9,1051.5 L1289.5,1054.6 L1281.7,1053.4 L1276.7,1056.4 L1274.6,1062.0 L1259.2,1063.8 L1256.1,1073.3 L1252.4,1073.2 L1247.6,1067.4 L1234.8,1067.9 L1230.7,1062.0 L1216.8,1064.1 L1211.9,1074.6"/>
+<path data-kind="river" data-name="Amazonas" d="M1432.0,1049.5 L1436.0,1045.9"/>
+<path data-kind="river" data-name="Ertix" d="M3075.7,481.8 L3066.2,489.4 L3032.1,479.1 L3018.2,477.9"/>
+<path data-kind="river" data-name="Maquan" d="M2985.5,678.0 L3009.3,688.2 L3010.4,691.1 L3045.4,692.3"/>
+<path data-kind="river" data-name="Angara" d="M3208.1,353.1 L3207.9,353.0"/>
+<path data-kind="river" data-name="Angara" d="M3208.1,353.1 L3197.1,353.5 L3189.4,360.3 L3175.0,355.8 L3169.1,358.8 L3139.0,357.9 L3127.1,362.4 L3106.0,363.0"/>
+<path data-kind="river" data-name="Angara" d="M3214.1,354.7 L3208.1,353.1"/>
+<path data-kind="river" data-name="Angara" d="M3216.2,364.7 L3218.2,359.4 L3215.8,355.6 L3208.1,353.1"/>
+<path data-kind="river" data-name="Angara" d="M3206.3,383.5 L3206.5,379.4 L3201.5,376.0 L3212.6,375.4"/>
+<path data-kind="river" data-name="Peace" d="M754.2,356.5 L766.3,350.8 L780.4,352.7"/>
+<path data-kind="river" data-name="Peace" d="M657.4,386.6 L691.8,383.1 L701.9,387.5"/>
+<path data-kind="river" data-name="Peace" d="M701.9,387.5 L715.3,381.4 L713.0,376.9 L717.3,369.0 L715.7,363.5 L728.9,358.8 L741.1,359.8 L752.9,356.0"/>
+<path data-kind="river" data-name="Peace" d="M701.9,387.5 L701.9,387.5"/>
+<path data-kind="river" data-name="Mackenzie" d="M519.8,237.2 L516.0,239.0 L520.6,242.3"/>
+<path data-kind="river" data-name="Mackenzie" d="M513.9,239.3 L509.9,235.9"/>
+<path data-kind="river" data-name="Mackenzie" d="M513.9,239.3 L505.1,239.9"/>
+<path data-kind="river" data-name="Mackenzie" d="M520.6,242.3 L513.9,239.3"/>
+<path data-kind="river" data-name="Mackenzie" d="M709.2,326.5 L702.2,324.3 L688.6,327.4 L675.2,323.7 L674.4,320.7 L645.7,315.9 L645.0,305.8 L626.8,287.8 L583.7,276.9 L578.9,272.1 L584.1,269.4 L568.0,263.7 L564.5,258.2 L557.3,256.0 L535.9,259.2 L525.8,256.3 L518.2,250.1 L522.4,245.6 L520.6,242.3"/>
+<path data-kind="river" data-name="Za" d="M3118.5,646.8 L3127.3,646.6 L3151.0,660.3"/>
+<path data-kind="river" data-name="Paraná" d="M1421.4,1186.9 L1405.2,1194.7 L1411.6,1209.9 L1406.6,1211.9 L1399.6,1224.9 L1394.3,1227.7 L1395.3,1234.0 L1391.5,1239.2 L1395.9,1244.5 L1386.3,1253.4 L1390.2,1262.4 L1388.8,1282.5 L1398.7,1302.9 L1381.2,1334.8"/>
+<path data-kind="river" data-name="Paraná" d="M1381.2,1334.8 L1378.0,1336.7 L1374.5,1354.2 L1370.5,1356.9 L1369.2,1373.7 L1357.1,1387.2 L1356.6,1394.7 L1360.6,1401.3"/>
+<path data-kind="river" data-name="Paraná" d="M1360.6,1401.3 L1368.1,1402.2 L1374.6,1408.6"/>
+<path data-kind="river" data-name="Paraná" d="M1360.6,1401.3 L1374.6,1408.6"/>
+<path data-kind="river" data-name="Paraná" d="M1374.6,1408.6 L1383.0,1410.9"/>
+<path data-kind="river" data-name="Lualaba" d="M2346.7,1157.6 L2339.2,1152.1 L2341.2,1146.0 L2336.9,1139.0 L2338.5,1129.5 L2343.0,1128.8 L2348.8,1118.1"/>
+<path data-kind="river" data-name="Donau" d="M2190.3,467.3 L2190.3,467.3"/>
+<path data-kind="river" data-name="Donau" d="M2190.3,467.3 L2190.3,467.4"/>
+<path data-kind="river" data-name="Donau" d="M2141.1,476.8 L2147.7,478.6 L2170.9,469.7 L2190.3,467.3"/>
+<path data-kind="river" data-name="Donau" d="M2243.8,477.2 L2225.6,473.0 L2215.0,475.8 L2190.3,467.3"/>
+<path data-kind="river" data-name="Slave" d="M780.4,352.7 L778.4,342.6 L759.9,332.3 L760.1,327.1 L754.3,327.2"/>
+<path data-kind="river" data-name="Mississippi" d="M1022.5,582.3 L1019.8,588.9 L1029.4,595.3 L1033.9,605.7 L1028.9,608.1 L1027.7,615.6 L1015.3,633.1"/>
+<path data-kind="river" data-name="Mississippi" d="M1015.3,633.1 L1015.3,633.0"/>
+<path data-kind="river" data-name="Mississippi" d="M1015.3,633.1 L1010.0,640.8 L1013.6,656.4 L1005.2,671.9 L1010.9,680.4 L1024.7,683.5 L1024.5,686.6 L1032.3,691.7 L1030.7,694.8"/>
+<path data-kind="river" data-name="Mississippi" d="M1032.3,691.7 L1033.2,690.4"/>
+<path data-kind="river" data-name="Mississippi" d="M1032.5,692.3 L1035.0,691.8"/>
+<path data-kind="river" data-name="Lancang" d="M3151.0,660.3 L3156.0,674.3 L3170.2,692.2 L3176.4,715.3 L3177.7,735.3 L3192.1,745.5 L3186.3,759.9 L3199.1,778.1 L3188.2,788.5 L3186.9,793.4 L3189.7,792.0 L3192.6,798.7 L3211.2,796.1 L3206.5,800.4 L3206.9,810.5 L3201.7,817.1 L3203.6,821.2"/>
+<path data-kind="river" data-name="Congo" d="M2348.8,1118.1 L2354.9,1114.1 L2354.4,1087.8"/>
+<path data-kind="river" data-name="Yarlung" d="M3045.4,692.3 L3049.1,689.5 L3080.4,690.0 L3109.4,694.0 L3121.6,690.5"/>
+<path data-kind="river" data-name="Lualaba" d="M2342.4,1055.3 L2342.2,1039.4 L2337.0,1029.4 L2338.3,1021.7 L2324.4,1015.1"/>
+<path data-kind="river" data-name="Lualaba" d="M2354.4,1087.8 L2354.2,1078.2 L2343.8,1070.0 L2342.4,1055.2"/>
+<path data-kind="river" data-name="Irtysh" d="M2831.5,328.5 L2843.0,333.8 L2840.8,340.0 L2843.6,343.2 L2831.8,347.6 L2831.5,353.4 L2824.2,362.2"/>
+<path data-kind="river" data-name="Irtysh" d="M2886.8,401.7 L2878.4,395.4 L2898.8,385.7 L2894.6,375.8 L2877.8,370.0 L2824.3,362.2"/>
+<path data-kind="river" data-name="Irtysh" d="M2886.8,401.7 L2886.9,401.7"/>
+<path data-kind="river" data-name="Irtysh" d="M2901.3,409.8 L2886.8,401.7"/>
+<path data-kind="river" data-name="Congo" d="M2324.4,1015.1 L2304.0,999.5 L2277.3,1001.7 L2265.6,1006.2 L2257.2,1013.9 L2253.7,1026.3 L2232.4,1048.6 L2232.6,1061.7 L2229.0,1068.6 L2216.6,1078.9 L2202.6,1084.2 L2202.4,1088.8 L2198.0,1090.6"/>
+<path data-kind="river" data-name="Mekong" d="M3220.9,817.6 L3224.3,814.2 L3231.5,815.8 L3240.3,825.8 L3239.9,835.9 L3247.5,841.8 L3250.1,846.1 L3248.2,849.5 L3251.4,851.8"/>
+<path data-kind="river" data-name="Mekong" d="M3203.6,821.2 L3209.4,816.8 L3216.3,821.4 L3221.0,817.6"/>
+<path data-kind="river" data-name="Mekong" d="M3251.6,852.0 L3254.6,883.7 L3249.2,884.1 L3242.1,892.1"/>
+<path data-kind="river" data-name="Mekong" d="M3242.1,892.1 L3242.1,892.1"/>
+<path data-kind="river" data-name="Mekong" d="M3242.1,892.1 L3242.1,892.1"/>
+<path data-kind="river" data-name="Mekong" d="M3242.1,892.1 L3245.6,894.3 L3247.1,903.4 L3255.4,907.5"/>
+<path data-kind="river" data-name="Mekong" d="M3242.1,892.1 L3244.2,902.1 L3252.2,910.2"/>
+<path data-kind="river" data-name="Dihang" d="M3121.6,690.5 L3130.4,684.0 L3133.3,685.3 L3133.9,688.8 L3126.3,695.7 L3130.0,699.3 L3129.3,703.4 L3133.4,705.4"/>
+<path data-kind="river" data-name="Bratul Chillia" d="M2385.5,509.5 L2381.6,506.9 L2376.6,510.0"/>
+<path data-kind="river" data-name="Bratul Sfintu Gheorghe" d="M2376.6,510.0 L2384.9,513.3"/>
+<path data-kind="river" data-name="Nile" d="M2422.1,751.1 L2422.1,739.4 L2417.6,733.3 L2420.8,726.9 L2412.3,726.1 L2399.0,711.6 L2397.8,701.8 L2403.2,691.4 L2403.4,681.3"/>
+<path data-kind="river" data-name="Nile" d="M2431.4,813.6 L2429.9,805.8 L2424.1,801.8 L2406.7,818.3 L2398.1,817.3 L2392.8,798.4 L2396.0,793.3 L2392.7,789.8 L2401.7,778.1"/>
+<path data-kind="river" data-name="Nile" d="M2431.4,813.6 L2431.4,813.6"/>
+<path data-kind="river" data-name="Nile" d="M2432.5,815.2 L2431.4,813.6"/>
+<path data-kind="river" data-name="Nile" d="M2417.7,846.1 L2419.0,839.1 L2431.8,831.0 L2434.7,821.4 L2431.4,813.6"/>
+<path data-kind="river" data-name="Bratul Sulina" d="M2376.6,510.0 L2385.7,510.3"/>
+<path data-kind="river" data-name="Brahmaputra" d="M3133.4,705.4 L3118.9,718.5 L3090.9,726.3 L3071.5,728.1 L3067.7,738.7 L3068.6,751.4 L3074.8,757.1"/>
+<path data-kind="river" data-name="Brahmaputra" d="M3069.2,747.8 L3077.4,755.7"/>
+<path data-kind="river" data-name="Borcea" d="M2358.5,521.7 L2365.8,518.4 L2365.2,514.9"/>
+<path data-kind="river" data-name="Victoria Nile" d="M2404.9,999.0 L2415.2,998.4 L2414.8,1005.0"/>
+<path data-kind="river" data-name="Victoria Nile" d="M2417.5,1006.3 L2418.3,1006.7"/>
+<path data-kind="river" data-name="Victoria Nile" d="M2422.3,1009.1 L2425.6,1019.1"/>
+<path data-kind="river" data-name="Kagera" d="M2384.7,1058.0 L2391.1,1061.7 L2398.2,1052.1 L2398.9,1042.4 L2394.7,1036.1 L2404.8,1038.2 L2409.4,1034.6"/>
+<path data-kind="river" data-name="Madison" d="M781.5,513.4 L776.8,509.5 L780.9,499.3 L779.2,496.5"/>
+<path data-kind="river" data-name="Madison" d="M788.0,515.1 L783.9,514.7"/>
+<path data-kind="river" data-name="Missouri" d="M837.3,477.6 L867.3,477.6"/>
+<path data-kind="river" data-name="Missouri" d="M894.3,483.5 L901.4,492.5"/>
+<path data-kind="river" data-name="Missouri" d="M777.1,493.1 L774.3,487.9 L794.3,477.2 L798.4,480.9 L817.0,482.4"/>
+<path data-kind="river" data-name="Missouri" d="M905.7,518.3 L917.5,523.5"/>
+<path data-kind="river" data-name="Missouri" d="M926.7,534.1 L951.2,540.5 L957.2,560.6 L962.5,568.5 L968.4,570.9 L965.9,574.0 L969.3,577.9 L987.7,575.6 L1000.0,585.2 L1022.5,582.3"/>
+<path data-kind="river" data-name="Albert Nile" d="M2412.3,982.9 L2405.4,989.9 L2406.1,996.7"/>
+<path data-kind="river" data-name="Tongariro" d="M4048.1,1467.2 L4048.4,1469.5"/>
+</g>
+<g fill="#f0f3dc" stroke="#102129" stroke-width="7" stroke-linejoin="round" paint-order="stroke fill" font-family="Arial, sans-serif" font-size="16" font-weight="600" letter-spacing=".4">
+<circle cx="3638.0" cy="618.0" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Tokyo" x="3651.0" y="607.0">Tokyo</text>
+<circle cx="1206.1" cy="560.7" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="New York" x="1219.1" y="549.7">New York</text>
+<circle cx="920.1" cy="802.8" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Mexico City" x="933.1" y="791.8">Mexico City</text>
+<circle cx="2877.2" cy="807.0" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Mumbai" x="2890.2" y="796.0">Mumbai</text>
+<circle cx="1517.5" cy="1292.0" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="São Paulo" x="1530.5" y="1281.0">São Paulo</text>
+<circle cx="3429.7" cy="668.8" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Shanghai" x="3442.7" y="657.8">Shanghai</text>
+<circle cx="3053.4" cy="767.2" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Kolkata" x="3066.4" y="756.2">Kolkata</text>
+<circle cx="702.8" cy="636.6" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Los Angeles" x="715.8" y="625.6">Los Angeles</text>
+<circle cx="2403.5" cy="682.1" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Cairo" x="2416.5" y="671.1">Cairo</text>
+<circle cx="3372.3" cy="570.0" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Beijing" x="3385.3" y="559.0">Beijing</text>
+<circle cx="2476.0" cy="389.6" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Moscow" x="2489.0" y="378.6">Moscow</text>
+<circle cx="2377.7" cy="557.3" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Istanbul" x="2390.7" y="546.3">Istanbul</text>
+<circle cx="2074.8" cy="468.1" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Paris" x="2087.8" y="457.1">Paris</text>
+<circle cx="2086.6" cy="950.7" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Lagos" x="2099.6" y="939.7">Lagos</text>
+<circle cx="3263.5" cy="1094.2" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Jakarta" x="3276.5" y="1083.2">Jakarta</text>
+<circle cx="1205.1" cy="971.7" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Bogota" x="1218.1" y="960.7">Bogota</text>
+<circle cx="3347.1" cy="770.2" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Hong Kong" x="3360.1" y="759.2">Hong Kong</text>
+<circle cx="1244.2" cy="1404.5" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Santiago" x="1257.2" y="1393.5">Santiago</text>
+<circle cx="3229.6" cy="1009.3" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Singapore" x="3242.6" y="998.3">Singapore</text>
+<circle cx="3768.5" cy="1409.4" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Sydney" x="3781.5" y="1398.4">Sydney</text>
+<circle cx="2579.6" cy="743.7" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Riyadh" x="2592.6" y="732.7">Riyadh</text>
+<circle cx="2190.0" cy="547.3" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Rome" x="2203.0" y="536.3">Rome</text>
+<circle cx="2257.7" cy="1409.9" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Cape Town" x="2270.7" y="1398.9">Cape Town</text>
+<circle cx="2466.9" cy="1038.6" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Nairobi" x="2479.9" y="1027.6">Nairobi</text>
+<circle cx="3424.5" cy="857.8" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Manila" x="3437.5" y="846.8">Manila</text>
+<circle cx="1171.3" cy="1161.1" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Lima" x="1184.3" y="1150.1">Lima</text>
+<circle cx="2633.1" cy="618.1" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Tehran" x="2646.1" y="607.1">Tehran</text>
+<circle cx="2222.2" cy="1073.2" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Kinshasa" x="2235.2" y="1062.2">Kinshasa</text>
+<circle cx="2930.4" cy="876.4" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Bengaluru" x="2943.4" y="865.4">Bengaluru</text>
+<circle cx="3191.6" cy="867.5" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Bangkok" x="3204.6" y="856.5">Bangkok</text>
+<circle cx="1135.2" cy="730.6" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Miami" x="1148.2" y="719.6">Miami</text>
+<circle cx="2006.1" cy="564.3" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Madrid" x="2019.1" y="553.3">Madrid</text>
+<circle cx="1088.1" cy="640.1" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Atlanta" x="1101.1" y="629.1">Atlanta</text>
+<circle cx="3232.1" cy="675.0" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Chengdu" x="3245.1" y="664.0">Chengdu</text>
+<circle cx="906.4" cy="731.9" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Monterrey" x="919.4" y="720.9">Monterrey</text>
+<circle cx="3044.4" cy="525.6" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Ürümqi" x="3057.4" y="514.6">Ürümqi</text>
+<circle cx="2366.9" cy="1321.7" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Johannesburg" x="2379.9" y="1310.7">Johannesburg</text>
+<circle cx="2835.1" cy="631.3" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Kabul" x="2848.1" y="620.3">Kabul</text>
+<circle cx="1961.3" cy="641.7" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Casablanca" x="1974.3" y="630.7">Casablanca</text>
+<circle cx="2488.3" cy="921.2" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Addis Ababa" x="2501.3" y="910.2">Addis Ababa</text>
+<circle cx="1286.6" cy="904.5" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Caracas" x="1299.6" y="893.5">Caracas</text>
+<circle cx="2395.2" cy="450.2" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Kyiv" x="2408.2" y="439.2">Kyiv</text>
+<circle cx="1849.2" cy="856.5" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Dakar" x="1862.2" y="845.5">Dakar</text>
+<circle cx="2234.2" cy="475.6" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Vienna" x="2247.2" y="464.6">Vienna</text>
+<circle cx="647.1" cy="463.4" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Vancouver" x="660.1" y="452.4">Vancouver</text>
+<circle cx="853.5" cy="571.8" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Denver" x="866.5" y="560.8">Denver</text>
+<circle cx="2836.1" cy="554.1" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Tashkent" x="2849.1" y="543.1">Tashkent</text>
+<circle cx="4036.4" cy="1443.2" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Auckland" x="4049.4" y="1432.2">Auckland</text>
+<circle cx="2253.6" cy="349.0" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="Stockholm" x="2266.6" y="338.0">Stockholm</text>
+<circle cx="2926.4" cy="698.6" r="8" fill="#efc25e" stroke="#102129" stroke-width="5"/>
+<text data-kind="city" data-name="New Delhi" x="2939.4" y="687.6">New Delhi</text>
+</g></svg>
