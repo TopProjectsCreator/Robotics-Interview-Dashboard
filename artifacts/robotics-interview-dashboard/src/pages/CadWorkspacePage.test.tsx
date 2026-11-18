@@ -182,6 +182,21 @@ afterEach(() => {
 });
 
 describe("CAD workspace tree", () => {
+  it("keeps the bot icon picker in document flow on narrow screens", () => {
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose icon for Scout" }));
+
+    expect(screen.getByTestId("cad-bot-icon-picker-bot-1")).toHaveClass(
+      "relative",
+      "mt-2",
+      "w-full",
+      "lg:absolute",
+      "lg:top-12",
+      "lg:mt-0",
+    );
+  });
+
   it("marks the library layout for desktop viewport fill while preserving natural page flow on small screens", () => {
     renderPage();
 
