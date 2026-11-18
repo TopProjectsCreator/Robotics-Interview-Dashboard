@@ -52,6 +52,26 @@ describe("CadIconSettings", () => {
     expect(await screen.findByTestId("cad-icon-policy-saved")).toHaveTextContent("CAD icon choices saved.");
   });
 
+  it("lets coordinators enable and save a newly added icon", async () => {
+    const originalIcons = DEFAULT_CAD_ICON_IDS.slice(0, 12);
+    mocks.getIconPolicy.mockReturnValue({
+      data: { enabledIcons: [...originalIcons] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    renderSettings();
+
+    const joystick = screen.getByTestId("cad-icon-policy-joystick");
+    expect(joystick).not.toBeChecked();
+    fireEvent.click(joystick);
+    fireEvent.click(screen.getByTestId("button-save-cad-icon-policy"));
+
+    await waitFor(() => expect(mocks.updateIconPolicy).toHaveBeenCalledWith({
+      enabledIcons: [...originalIcons, "joystick"],
+    }));
+  });
+
   it("does not allow the last icon to be removed", () => {
     mocks.getIconPolicy.mockReturnValue({
       data: { enabledIcons: ["boxes"] },

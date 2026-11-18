@@ -10,7 +10,7 @@ import type { CadIcon } from './cadIcon';
 export interface CadIconPolicyUpdate {
   /**
      * @minItems 1
-     * @maxItems 12
+     * @maxItems 24
      */
   enabledIcons: CadIcon[];
 }

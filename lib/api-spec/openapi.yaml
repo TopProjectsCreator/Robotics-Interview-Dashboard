@@ -11707,6 +11707,18 @@ components:
         - drill
         - circle-dot
         - folder-tree
+        - activity
+        - battery-charging
+        - cable
+        - circuit-board
+        - fan
+        - gauge
+        - joystick
+        - magnet
+        - radar
+        - radio
+        - satellite
+        - scan-line
     CadIconPolicy:
       type: object
       required: [enabledIcons]
@@ -11714,7 +11726,7 @@ components:
         enabledIcons:
           type: array
           minItems: 1
-          maxItems: 12
+          maxItems: 24
           uniqueItems: true
           items:
             $ref: "#/components/schemas/CadIcon"
@@ -11725,7 +11737,7 @@ components:
         enabledIcons:
           type: array
           minItems: 1
-          maxItems: 12
+          maxItems: 24
           uniqueItems: true
           items:
             $ref: "#/components/schemas/CadIcon"

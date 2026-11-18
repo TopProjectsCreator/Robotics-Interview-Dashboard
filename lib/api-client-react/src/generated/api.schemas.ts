@@ -4688,6 +4688,18 @@ export const CadIcon = {
   drill: 'drill',
   'circle-dot': 'circle-dot',
   'folder-tree': 'folder-tree',
+  activity: 'activity',
+  'battery-charging': 'battery-charging',
+  cable: 'cable',
+  'circuit-board': 'circuit-board',
+  fan: 'fan',
+  gauge: 'gauge',
+  joystick: 'joystick',
+  magnet: 'magnet',
+  radar: 'radar',
+  radio: 'radio',
+  satellite: 'satellite',
+  'scan-line': 'scan-line',
 } as const;
 
 export interface CadBot {
@@ -4703,7 +4715,7 @@ export interface CadBot {
 export interface CadIconPolicy {
   /**
      * @minItems 1
-     * @maxItems 12
+     * @maxItems 24
      */
   enabledIcons: CadIcon[];
 }
@@ -4711,7 +4723,7 @@ export interface CadIconPolicy {
 export interface CadIconPolicyUpdate {
   /**
      * @minItems 1
-     * @maxItems 12
+     * @maxItems 24
      */
   enabledIcons: CadIcon[];
 }

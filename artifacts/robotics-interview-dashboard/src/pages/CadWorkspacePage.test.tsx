@@ -276,6 +276,17 @@ describe("CAD workspace tree", () => {
     await waitFor(() => expect(mocks.updateBot).toHaveBeenCalledWith("bot-1", { icon: "bot" }));
   });
 
+  it("shows and assigns enabled icons from the expanded catalog", async () => {
+    renderPage(undefined, undefined, undefined, undefined, ["boxes", "joystick"]);
+
+    fireEvent.click(await screen.findByTestId("cad-bot-icon-trigger-bot-1"));
+    const joystickOption = screen.getByTestId("cad-bot-icon-option-bot-1-joystick");
+    expect(joystickOption).toHaveAccessibleName("Set Scout icon to Joystick");
+    fireEvent.click(joystickOption);
+
+    await waitFor(() => expect(mocks.updateBot).toHaveBeenCalledWith("bot-1", { icon: "joystick" }));
+  });
+
   it("keeps icon policy settings in Settings and enabled icons in the bot picker", async () => {
     // The admin policy panel lives in Workspace settings → CAD.
     renderPage(undefined, undefined, undefined, undefined, ["boxes", "bot"]);

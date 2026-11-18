@@ -3,6 +3,13 @@ import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
 import { teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "../../../../lib/db/src/schema/teams.ts";
 
+const CAD_ICON_IDS = [
+  "box", "boxes", "bot", "cog", "wrench", "cpu", "rocket", "lightbulb",
+  "component", "drill", "circle-dot", "folder-tree", "activity",
+  "battery-charging", "cable", "circuit-board", "fan", "gauge", "joystick",
+  "magnet", "radar", "radio", "satellite", "scan-line",
+];
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     try {
@@ -34,20 +41,39 @@ function createHarness(t, {
   enabledIcons = null,
 } = {}) {
   const calls = { update: [], delete: [], poolQueries: [], iconPolicyWrites: [] };
+  let savedEnabledIcons = enabledIcons;
 
   const pool = {
     query: async (statement, values) => {
       calls.poolQueries.push({ statement, values });
       if (queryError) throw queryError;
       if (statement.includes('from "cad_icon_settings"')) {
-        return enabledIcons
-          ? { rows: [{ enabledIcons }], rowCount: 1 }
+        return savedEnabledIcons
+          ? { rows: [{ enabledIcons: savedEnabledIcons }], rowCount: 1 }
           : { rows: [], rowCount: 0 };
       }
       if (statement.startsWith('insert into "cad_icon_settings"')) {
         const saved = JSON.parse(values?.[1] ?? "[]");
         calls.iconPolicyWrites.push(saved);
+        savedEnabledIcons = saved;
         return { rows: [{ enabledIcons: saved }], rowCount: 1 };
+      }
+      if (statement.startsWith('update "cad_bots"')) {
+        const existing = bots.find((bot) => bot.id === values?.[0]);
+        const updatedBot = {
+          ...existing,
+          id: values?.[0] ?? "bot-1",
+          name: values?.[1] ?? existing?.name ?? "Scout",
+          notes: values?.[2] ?? existing?.notes ?? null,
+          icon: values?.[4] ?? existing?.icon ?? "boxes",
+          createdAt: existing?.createdAt ?? STAMP,
+          updatedAt: STAMP,
+        };
+        if (existing) Object.assign(existing, updatedBot);
+        return {
+          rows: [updatedBot],
+          rowCount: 1,
+        };
       }
       if (statement.includes("from \"cad_bots\"") && statement.includes("select")) {
         return { rows: bots, rowCount: bots.length };
@@ -165,14 +191,14 @@ function createHarness(t, {
   mock.module("@workspace/api-zod", {
     namedExports: {
       CadIcon: {
-        box: "box", boxes: "boxes", bot: "bot", cog: "cog", wrench: "wrench",
-        cpu: "cpu", rocket: "rocket", lightbulb: "lightbulb", component: "component",
-        drill: "drill", "circle-dot": "circle-dot", "folder-tree": "folder-tree",
+        ...Object.fromEntries(CAD_ICON_IDS.map((icon) => [icon, icon])),
       },
       GetCadIconPolicyResponse: { parse: (value) => value },
       UpdateCadIconPolicyBody: {
         safeParse: (value) => ({
-          success: Array.isArray(value?.enabledIcons) && value.enabledIcons.length > 0,
+          success: Array.isArray(value?.enabledIcons) && value.enabledIcons.length > 0 &&
+            value.enabledIcons.length <= 24 && value.enabledIcons.every((icon) =>
+              CAD_ICON_IDS.includes(icon)),
           data: value,
         }),
       },
@@ -511,21 +537,31 @@ test("returns the default CAD icon choices when a team has not configured a pale
   );
   assert.equal(res.statusCode, 200);
   assert.ok(res.body.enabledIcons.includes("boxes"));
-  assert.equal(res.body.enabledIcons.length, 12);
+  assert.ok(res.body.enabledIcons.includes("folder-tree"));
+  assert.ok(res.body.enabledIcons.includes("joystick"));
+  assert.equal(res.body.enabledIcons.length, 24);
 });
 
-test("saves a non-empty team CAD icon palette", async (t) => {
+test("saves and reloads a team palette containing expanded CAD icons", async (t) => {
   const harness = createHarness(t);
   const { route } = await loadRouter();
   const res = fakeRes();
   await route("/cad/icon-policy", "put")(
-    { body: { enabledIcons: ["boxes", "bot"] }, log: { error() {} } },
+    { body: { enabledIcons: ["boxes", "joystick", "circuit-board"] }, log: { error() {} } },
     res,
     () => undefined,
   );
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(res.body.enabledIcons, ["boxes", "bot"]);
-  assert.deepEqual(harness.calls.iconPolicyWrites, [["boxes", "bot"]]);
+  assert.deepEqual(res.body.enabledIcons, ["boxes", "joystick", "circuit-board"]);
+  assert.deepEqual(harness.calls.iconPolicyWrites, [["boxes", "joystick", "circuit-board"]]);
+
+  const reloaded = fakeRes();
+  await route("/cad/icon-policy", "get")(
+    { log: { error() {} } },
+    reloaded,
+    () => undefined,
+  );
+  assert.deepEqual(reloaded.body.enabledIcons, ["boxes", "joystick", "circuit-board"]);
 });
 
 test("rejects an empty CAD icon palette", async (t) => {
@@ -559,6 +595,35 @@ test("refuses bot icons that the team admin disabled", async (t) => {
     harness.calls.poolQueries.some((entry) => entry.statement.startsWith('update "cad_bots"')),
     false,
   );
+});
+
+test("assigns an enabled icon from the expanded CAD catalog to a bot", async (t) => {
+  const harness = createHarness(t, { enabledIcons: ["boxes", "joystick"] });
+  const { route } = await loadRouter();
+  const res = fakeRes();
+  await route("/cad/bots/:botId", "patch")(
+    {
+      params: { botId: "bot-1" },
+      body: { icon: "joystick" },
+      log: { error() {} },
+    },
+    res,
+    () => undefined,
+  );
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.icon, "joystick");
+  const [update] = harness.calls.poolQueries.filter((entry) =>
+    entry.statement.startsWith('update "cad_bots"'),
+  );
+  assert.equal(update.values[4], "joystick");
+
+  const reloaded = fakeRes();
+  await route("/cad/library", "get")(
+    { log: { error() {} } },
+    reloaded,
+    () => undefined,
+  );
+  assert.equal(reloaded.body.bots[0].icon, "joystick");
 });
 
 test("new bots default to one of the team's enabled icons", async (t) => {

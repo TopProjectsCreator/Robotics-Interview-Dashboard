@@ -13,6 +13,18 @@ export const DEFAULT_CAD_ICONS = [
   CadIcon.drill,
   CadIcon["circle-dot"],
   CadIcon["folder-tree"],
+  CadIcon.activity,
+  CadIcon["battery-charging"],
+  CadIcon.cable,
+  CadIcon["circuit-board"],
+  CadIcon.fan,
+  CadIcon.gauge,
+  CadIcon.joystick,
+  CadIcon.magnet,
+  CadIcon.radar,
+  CadIcon.radio,
+  CadIcon.satellite,
+  CadIcon["scan-line"],
 ] as const;
 
 export const CAD_ICON_IDS = Object.values(CadIcon);

@@ -7158,7 +7158,7 @@ export const ListCadLibraryResponse = zod.object({
   "bots": zod.array(zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree']),
+  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree', 'activity', 'battery-charging', 'cable', 'circuit-board', 'fan', 'gauge', 'joystick', 'magnet', 'radar', 'radio', 'satellite', 'scan-line']),
   "notes": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -7191,12 +7191,12 @@ export const ListCadLibraryResponse = zod.object({
 /**
  * @summary Get the signed-in team's available CAD bot icons
  */
-export const getCadIconPolicyResponseEnabledIconsMax = 12;
+export const getCadIconPolicyResponseEnabledIconsMax = 24;
 
 
 
 export const GetCadIconPolicyResponse = zod.object({
-  "enabledIcons": zod.array(zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree'])).min(1).max(getCadIconPolicyResponseEnabledIconsMax)
+  "enabledIcons": zod.array(zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree', 'activity', 'battery-charging', 'cable', 'circuit-board', 'fan', 'gauge', 'joystick', 'magnet', 'radar', 'radio', 'satellite', 'scan-line'])).min(1).max(getCadIconPolicyResponseEnabledIconsMax)
 })
 
 
@@ -7204,20 +7204,20 @@ export const GetCadIconPolicyResponse = zod.object({
  * Only team admins can change which Lucide icons are available.
  * @summary Update the available CAD bot icons
  */
-export const updateCadIconPolicyBodyEnabledIconsMax = 12;
+export const updateCadIconPolicyBodyEnabledIconsMax = 24;
 
 
 
 export const UpdateCadIconPolicyBody = zod.object({
-  "enabledIcons": zod.array(zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree'])).min(1).max(updateCadIconPolicyBodyEnabledIconsMax)
+  "enabledIcons": zod.array(zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree', 'activity', 'battery-charging', 'cable', 'circuit-board', 'fan', 'gauge', 'joystick', 'magnet', 'radar', 'radio', 'satellite', 'scan-line'])).min(1).max(updateCadIconPolicyBodyEnabledIconsMax)
 })
 
-export const updateCadIconPolicyResponseEnabledIconsMax = 12;
+export const updateCadIconPolicyResponseEnabledIconsMax = 24;
 
 
 
 export const UpdateCadIconPolicyResponse = zod.object({
-  "enabledIcons": zod.array(zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree'])).min(1).max(updateCadIconPolicyResponseEnabledIconsMax)
+  "enabledIcons": zod.array(zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree', 'activity', 'battery-charging', 'cable', 'circuit-board', 'fan', 'gauge', 'joystick', 'magnet', 'radar', 'radio', 'satellite', 'scan-line'])).min(1).max(updateCadIconPolicyResponseEnabledIconsMax)
 })
 
 
@@ -7233,13 +7233,13 @@ export const createCadBotBodyNotesMax = 2000;
 export const CreateCadBotBody = zod.object({
   "name": zod.string().min(1).max(createCadBotBodyNameMax),
   "notes": zod.string().max(createCadBotBodyNotesMax).optional(),
-  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree']).optional()
+  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree', 'activity', 'battery-charging', 'cable', 'circuit-board', 'fan', 'gauge', 'joystick', 'magnet', 'radar', 'radio', 'satellite', 'scan-line']).optional()
 })
 
 export const CreateCadBotResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree']),
+  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree', 'activity', 'battery-charging', 'cable', 'circuit-board', 'fan', 'gauge', 'joystick', 'magnet', 'radar', 'radio', 'satellite', 'scan-line']),
   "notes": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
@@ -7273,13 +7273,13 @@ export const updateCadBotBodyNotesMax = 2000;
 export const UpdateCadBotBody = zod.object({
   "name": zod.string().min(1).max(updateCadBotBodyNameMax).optional(),
   "notes": zod.string().max(updateCadBotBodyNotesMax).nullish(),
-  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree']).optional()
+  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree', 'activity', 'battery-charging', 'cable', 'circuit-board', 'fan', 'gauge', 'joystick', 'magnet', 'radar', 'radio', 'satellite', 'scan-line']).optional()
 })
 
 export const UpdateCadBotResponse = zod.object({
   "id": zod.string(),
   "name": zod.string(),
-  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree']),
+  "icon": zod.enum(['box', 'boxes', 'bot', 'cog', 'wrench', 'cpu', 'rocket', 'lightbulb', 'component', 'drill', 'circle-dot', 'folder-tree', 'activity', 'battery-charging', 'cable', 'circuit-board', 'fan', 'gauge', 'joystick', 'magnet', 'radar', 'radio', 'satellite', 'scan-line']),
   "notes": zod.string().nullish(),
   "createdAt": zod.string(),
   "updatedAt": zod.string()
