@@ -11296,7 +11296,7 @@ components:
         invocations: { type: integer, minimum: 0 }
     AssistantUsageReport:
       type: object
-      required: [startDate, endDate, totals, users, tools]
+      required: [startDate, endDate, totals, users, tools, productivityUsage]
       properties:
         startDate: { type: string, format: date }
         endDate: { type: string, format: date }
@@ -11310,6 +11310,18 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AssistantUsageTool"
+        productivityUsage:
+          $ref: "#/components/schemas/AssistantProductivityUsage"
+    AssistantProductivityUsage:
+      type: object
+      required: [requests, inputTokens, outputTokens, totalTokens, usageReportedRequests, usageUnavailableRequests]
+      properties:
+        requests: { type: integer, minimum: 0, description: "Scheduled and on-demand productivity review model requests in the selected date range" }
+        inputTokens: { type: ["integer", "null"], minimum: 0 }
+        outputTokens: { type: ["integer", "null"], minimum: 0 }
+        totalTokens: { type: ["integer", "null"], minimum: 0 }
+        usageReportedRequests: { type: integer, minimum: 0 }
+        usageUnavailableRequests: { type: integer, minimum: 0, description: "Requests with one or more missing provider-reported token counts; historical requests without captured usage are not backfilled" }
     AssistantToolPolicyRole:
       type: object
       required: [key, label]

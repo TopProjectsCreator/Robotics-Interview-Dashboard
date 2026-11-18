@@ -4,6 +4,7 @@ import {
   chatChannelsTable,
   chatProductivitySettingsTable,
   chatProductivitySnapshotsTable,
+  chatProductivityUsageEventsTable,
   db,
   DEFAULT_TEAM_ID,
   interviewChatMessagesTable,
@@ -15,6 +16,7 @@ import {
 } from "./assistantModel";
 import { getTeamAssistantProvider } from "./assistantProviderConfiguration";
 import { logger } from "./logger";
+import { trackProductivityReviewRequest } from "./chatProductivityUsage";
 import { teamAssistantAI } from "./teamAssistantAi";
 import {
   buildProductivitySystemPrompt,
@@ -211,6 +213,7 @@ async function loadConversations(
 async function requestProductivityResults(
   teamId: string,
   modelId: string,
+  source: "scheduled" | "on_demand",
   reasoningOptions: Record<string, unknown>,
   definitions: ConversationDefinition[],
   input: ReturnType<typeof buildProductivityInput>,
@@ -218,14 +221,42 @@ async function requestProductivityResults(
   windowEnd: Date,
   customMessage: string,
 ): Promise<ReturnType<typeof parseProductivityResults>> {
-  const completion = await teamAssistantAI(teamId).chat.completions.create({
-    model: modelId,
-    messages: [
-      { role: "system", content: buildProductivitySystemPrompt(windowStart, windowEnd, customMessage) },
-      { role: "user", content: JSON.stringify(input.payload) },
-    ],
-    response_format: buildProductivityResponseFormat(definitions.map((definition) => definition.key)),
-    ...reasoningOptions,
+  const completion = await trackProductivityReviewRequest({
+    teamId,
+    modelId,
+    source,
+    request: () => teamAssistantAI(teamId).chat.completions.create({
+      model: modelId,
+      messages: [
+        { role: "system", content: buildProductivitySystemPrompt(windowStart, windowEnd, customMessage) },
+        { role: "user", content: JSON.stringify(input.payload) },
+      ],
+      response_format: buildProductivityResponseFormat(definitions.map((definition) => definition.key)),
+      ...reasoningOptions,
+    }),
+    startEvent: async (event) => {
+      await db.insert(chatProductivityUsageEventsTable).values({
+        ...event,
+        inputTokens: null,
+        outputTokens: null,
+        totalTokens: null,
+      });
+    },
+    finishEvent: async (id, usage) => {
+      await db.update(chatProductivityUsageEventsTable)
+        .set({
+          inputTokens: usage?.inputTokens ?? null,
+          outputTokens: usage?.outputTokens ?? null,
+          totalTokens: usage?.totalTokens ?? null,
+        })
+        .where(eq(chatProductivityUsageEventsTable.id, id));
+    },
+    onTrackingError: (stage, error) => {
+      logger.warn(
+        { teamId, source, err: safeErrorText(error) },
+        stage === "start" ? "Could not start productivity usage tracking" : "Could not finalize productivity usage tracking",
+      );
+    },
   });
   const text = completion.choices?.[0]?.message?.content;
   if (typeof text !== "string") throw new Error("The AI provider returned no productivity report.");
@@ -306,6 +337,7 @@ async function reviewTeam(teamId: string): Promise<void> {
     const results = await requestProductivityResults(
       teamId,
       modelId,
+      "scheduled",
       reasoningOptions,
       activeDefinitions,
       input,
@@ -365,6 +397,7 @@ export async function reviewChatProductivityRange(
     const results = await requestProductivityResults(
       teamId,
       modelId,
+      "on_demand",
       reasoningOptions,
       [definition],
       input,

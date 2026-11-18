@@ -126,6 +126,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "chat_message_reads",
     "chat_productivity_settings",
     "chat_productivity_snapshots",
+    "chat_productivity_usage_events",
     "chat_polls",
     "chat_poll_votes",
     "scheduled_chat_messages",
@@ -439,6 +440,18 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
        on "chat_productivity_snapshots" ("team_id", "conversation_scope", "conversation_key", "created_at")`,
     `create index if not exists "chat_productivity_snapshots_team_created_idx"
        on "chat_productivity_snapshots" ("team_id", "created_at")`,
+    `create table if not exists "chat_productivity_usage_events" (
+       "id" text primary key,
+       "team_id" text not null,
+       "source" text not null check ("source" in ('scheduled', 'on_demand')),
+       "model_id" text not null,
+       "input_tokens" integer check ("input_tokens" is null or "input_tokens" >= 0),
+       "output_tokens" integer check ("output_tokens" is null or "output_tokens" >= 0),
+       "total_tokens" integer check ("total_tokens" is null or "total_tokens" >= 0),
+       "created_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "chat_productivity_usage_events_team_created_idx"
+       on "chat_productivity_usage_events" ("team_id", "created_at")`,
     `create table if not exists "team_name_rules" ("team_id" text primary key, "rules" jsonb not null default '[]'::jsonb check (jsonb_typeof("rules") = 'array'), "updated_at" timestamptz not null default now())`,
     `create table if not exists "assistant_model_policies" (
        "team_id" text primary key,

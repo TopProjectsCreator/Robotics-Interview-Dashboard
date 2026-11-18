@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { GetAssistantUsageResponse } from "@workspace/api-zod";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AssistantGovernanceSettings } from "./AssistantGovernanceSettings";
 
@@ -46,6 +47,14 @@ const { mutation, policy, report } = vi.hoisted(() => ({
     },
   }],
   tools: [{ name: "search_applicants", invocations: 4 }],
+  productivityUsage: {
+    requests: 2,
+    inputTokens: 41,
+    outputTokens: 16,
+    totalTokens: 57,
+    usageReportedRequests: 1,
+    usageUnavailableRequests: 1,
+  },
   },
 }));
 
@@ -96,6 +105,35 @@ describe("AssistantGovernanceSettings", () => {
     expect(screen.getByText(/2 requests had no provider-reported token counts/)).toBeInTheDocument();
     expect(screen.getAllByText("25")).toHaveLength(2);
     expect(screen.getByText("Search Applicants")).toBeInTheDocument();
+  });
+
+  it("shows productivity review tokens and unavailable requests for the selected range", () => {
+    expect(GetAssistantUsageResponse.safeParse(report).success).toBe(true);
+    renderSettings();
+    const section = screen.getByTestId("productivity-usage");
+    expect(section).toHaveTextContent("Productivity-score review usage");
+    expect(section).toHaveTextContent("Review requests");
+    expect(section).toHaveTextContent("41");
+    expect(section).toHaveTextContent("16");
+    expect(section).toHaveTextContent("57");
+    expect(section).toHaveTextContent("1 request had one or more missing provider-reported token counts.");
+    expect(section).toHaveTextContent("Reviews from before usage tracking are not included");
+  });
+
+  it("does not show estimated tokens when the provider reports no usage", () => {
+    const saved = { ...report.productivityUsage };
+    Object.assign(report.productivityUsage, {
+      inputTokens: null,
+      outputTokens: null,
+      totalTokens: null,
+      usageReportedRequests: 0,
+      usageUnavailableRequests: 2,
+    });
+    expect(GetAssistantUsageResponse.safeParse(report).success).toBe(true);
+    renderSettings();
+    expect(screen.getAllByText("—")).toHaveLength(3);
+    expect(screen.getByTestId("productivity-usage")).toHaveTextContent("2 requests had one or more missing provider-reported token counts.");
+    Object.assign(report.productivityUsage, saved);
   });
 
   it("saves a role-specific tool block without removing team-wide restrictions", async () => {

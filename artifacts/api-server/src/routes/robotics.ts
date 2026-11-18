@@ -11363,6 +11363,25 @@ router.get("/assistant/usage", requireCoordinator, async (req, res): Promise<voi
       where p."team_id" = $1 and p."id" = any($2::text[])`,
     [teamId, promptIds],
   ) : { rows: [] as { id: string; display_name: string | null; role: string | null; custom_role_name: string | null }[] };
+  const productivityUsageResult = await pool.query<{
+    requests: string | number;
+    input_tokens: string | number | null;
+    output_tokens: string | number | null;
+    total_tokens: string | number | null;
+    usage_reported_requests: string | number;
+    usage_unavailable_requests: string | number;
+  }>(
+    `select count(*)::int as "requests",
+            sum("input_tokens") as "input_tokens",
+            sum("output_tokens") as "output_tokens",
+            sum("total_tokens") as "total_tokens",
+            count(*) filter (where "input_tokens" is not null and "output_tokens" is not null and "total_tokens" is not null)::int as "usage_reported_requests",
+            count(*) filter (where "input_tokens" is null or "output_tokens" is null or "total_tokens" is null)::int as "usage_unavailable_requests"
+       from "chat_productivity_usage_events"
+      where "team_id" = $1 and "created_at" >= $2 and "created_at" < $3`,
+    [teamId, start, endExclusive],
+  );
+  const productivityUsageRow = productivityUsageResult.rows[0];
 
   const { totals, byAccount } = aggregateAssistantUsage(
     prompts.rows.map((row) => ({ accountId: row.account_id, status: row.status })),
@@ -11393,6 +11412,17 @@ router.get("/assistant/usage", requireCoordinator, async (req, res): Promise<voi
     totals,
     users,
     tools: toolRows.rows.map((row) => ({ name: row.name, invocations: Number(row.invocations) })),
+    productivityUsage: {
+      requests: Number(productivityUsageRow?.requests ?? 0),
+      inputTokens: productivityUsageRow?.input_tokens === null || productivityUsageRow?.input_tokens === undefined
+        ? null : Number(productivityUsageRow.input_tokens),
+      outputTokens: productivityUsageRow?.output_tokens === null || productivityUsageRow?.output_tokens === undefined
+        ? null : Number(productivityUsageRow.output_tokens),
+      totalTokens: productivityUsageRow?.total_tokens === null || productivityUsageRow?.total_tokens === undefined
+        ? null : Number(productivityUsageRow.total_tokens),
+      usageReportedRequests: Number(productivityUsageRow?.usage_reported_requests ?? 0),
+      usageUnavailableRequests: Number(productivityUsageRow?.usage_unavailable_requests ?? 0),
+    },
   }));
 });
 

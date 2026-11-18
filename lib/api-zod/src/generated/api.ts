@@ -5237,6 +5237,18 @@ export const getAssistantUsageResponseUsersItemMetricsUsageUnavailableRequestsMi
 
 export const getAssistantUsageResponseToolsItemInvocationsMin = 0;
 
+export const getAssistantUsageResponseProductivityUsageRequestsMin = 0;
+
+export const getAssistantUsageResponseProductivityUsageInputTokensMin = 0;
+
+export const getAssistantUsageResponseProductivityUsageOutputTokensMin = 0;
+
+export const getAssistantUsageResponseProductivityUsageTotalTokensMin = 0;
+
+export const getAssistantUsageResponseProductivityUsageUsageReportedRequestsMin = 0;
+
+export const getAssistantUsageResponseProductivityUsageUsageUnavailableRequestsMin = 0;
+
 
 
 export const GetAssistantUsageResponse = zod.object({
@@ -5284,7 +5296,15 @@ export const GetAssistantUsageResponse = zod.object({
   "tools": zod.array(zod.object({
   "name": zod.string(),
   "invocations": zod.number().int().min(getAssistantUsageResponseToolsItemInvocationsMin)
-}))
+})),
+  "productivityUsage": zod.object({
+  "requests": zod.number().int().min(getAssistantUsageResponseProductivityUsageRequestsMin).describe('Scheduled and on-demand productivity review model requests in the selected date range'),
+  "inputTokens": zod.number().int().min(getAssistantUsageResponseProductivityUsageInputTokensMin).nullable(),
+  "outputTokens": zod.number().int().min(getAssistantUsageResponseProductivityUsageOutputTokensMin).nullable(),
+  "totalTokens": zod.number().int().min(getAssistantUsageResponseProductivityUsageTotalTokensMin).nullable(),
+  "usageReportedRequests": zod.number().int().min(getAssistantUsageResponseProductivityUsageUsageReportedRequestsMin),
+  "usageUnavailableRequests": zod.number().int().min(getAssistantUsageResponseProductivityUsageUsageUnavailableRequestsMin).describe('Requests with one or more missing provider-reported token counts; historical requests without captured usage are not backfilled')
+})
 })
 
 

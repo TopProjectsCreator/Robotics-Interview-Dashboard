@@ -214,6 +214,28 @@ export function AssistantGovernanceSettings({ teamId }: { teamId: string }) {
           </ol>
         </div>}
       </>}
+      {report && <section className="mt-5 border-t border-border pt-4" aria-labelledby="productivity-usage-heading" data-testid="productivity-usage">
+        <div>
+          <h3 id="productivity-usage-heading" className="text-sm font-semibold">Productivity-score review usage</h3>
+          <p className="mt-1 text-[11px] leading-5 text-muted-foreground">Scheduled and on-demand model requests for this date range. A request is counted once even when it scores multiple conversations.</p>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {[
+            ["Review requests", report.productivityUsage.requests],
+            ["Input tokens", report.productivityUsage.inputTokens],
+            ["Output tokens", report.productivityUsage.outputTokens],
+            ["Total tokens", report.productivityUsage.totalTokens],
+          ].map(([label, value]) => <div key={String(label)} className="rounded-lg bg-muted/50 p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+            <p className="mt-1 text-lg font-semibold">{label === "Review requests" ? formatCount(value as number) : tokenCell(value as number | null)}</p>
+          </div>)}
+        </div>
+        <p className="mt-3 text-[11px] leading-5 text-muted-foreground">
+          {report.productivityUsage.usageUnavailableRequests} {report.productivityUsage.usageUnavailableRequests === 1 ? "request had" : "requests had"} one or more missing provider-reported token counts.
+          {" "}{report.productivityUsage.usageReportedRequests} {report.productivityUsage.usageReportedRequests === 1 ? "request included" : "requests included"} all three provider-reported counts.
+          {" "}Reviews from before usage tracking are not included in these request counts and are not estimated.
+        </p>
+      </section>}
     </div>
 
     <div className="mt-4 rounded-xl border border-border bg-card p-3">

@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { AssistantProductivityUsage } from './assistantProductivityUsage';
 import type { AssistantUsageMetrics } from './assistantUsageMetrics';
 import type { AssistantUsageTool } from './assistantUsageTool';
 import type { AssistantUsageUser } from './assistantUsageUser';
@@ -15,4 +16,5 @@ export interface AssistantUsageReport {
   totals: AssistantUsageMetrics;
   users: AssistantUsageUser[];
   tools: AssistantUsageTool[];
+  productivityUsage: AssistantProductivityUsage;
 }

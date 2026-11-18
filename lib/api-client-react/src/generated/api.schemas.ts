@@ -4339,12 +4339,43 @@ export interface AssistantUsageTool {
   invocations: number;
 }
 
+export interface AssistantProductivityUsage {
+  /**
+     * Scheduled and on-demand productivity review model requests in the selected date range
+     * @minimum 0
+     */
+  requests: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  inputTokens: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  outputTokens: number | null;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  totalTokens: number | null;
+  /** @minimum 0 */
+  usageReportedRequests: number;
+  /**
+     * Requests with one or more missing provider-reported token counts; historical requests without captured usage are not backfilled
+     * @minimum 0
+     */
+  usageUnavailableRequests: number;
+}
+
 export interface AssistantUsageReport {
   startDate: string;
   endDate: string;
   totals: AssistantUsageMetrics;
   users: AssistantUsageUser[];
   tools: AssistantUsageTool[];
+  productivityUsage: AssistantProductivityUsage;
 }
 
 export interface AssistantToolPolicyRole {

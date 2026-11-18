@@ -57,7 +57,21 @@ export const chatProductivitySnapshotsTable = pgTable("chat_productivity_snapsho
   index("chat_productivity_snapshots_team_created_idx").on(table.teamId, table.createdAt),
 ]);
 
+export const chatProductivityUsageEventsTable = pgTable("chat_productivity_usage_events", {
+  id: text("id").primaryKey(),
+  teamId: text("team_id").notNull(),
+  source: text("source").notNull(),
+  modelId: text("model_id").notNull(),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  totalTokens: integer("total_tokens"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("chat_productivity_usage_events_team_created_idx").on(table.teamId, table.createdAt),
+]);
+
 export const insertChatProductivitySettingsSchema = createInsertSchema(chatProductivitySettingsTable);
 export type ChatProductivitySettings = typeof chatProductivitySettingsTable.$inferSelect;
 export type ChatProductivitySnapshot = typeof chatProductivitySnapshotsTable.$inferSelect;
+export type ChatProductivityUsageEvent = typeof chatProductivityUsageEventsTable.$inferSelect;
 export type InsertChatProductivitySettings = z.infer<typeof insertChatProductivitySettingsSchema>;

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test from "node:test";
 
@@ -81,4 +82,21 @@ test("one prompt with multiple provider calls reports prompt and request counts 
   assert.equal(byAccount.get("account-b").prompts, 1);
   assert.equal(byAccount.get("account-b").inputTokens, null);
   assert.equal(byAccount.get("account-b").totalTokens, null);
+});
+
+test("productivity usage shares the admin-protected report's team and UTC date boundaries", () => {
+  const routes = readFileSync(new URL("../routes/robotics.ts", import.meta.url), "utf8");
+  const reportRoute = routes.slice(
+    routes.indexOf('router.get("/assistant/usage"'),
+    routes.indexOf('router.get("/assistant/tool-policy"'),
+  );
+  assert.match(reportRoute, /router\.get\("\/assistant\/usage", requireCoordinator/);
+  assert.match(reportRoute, /from "chat_productivity_usage_events"[\s\S]*where "team_id" = \$1 and "created_at" >= \$2 and "created_at" < \$3/);
+  assert.match(reportRoute, /sum\("input_tokens"\)[\s\S]*sum\("output_tokens"\)[\s\S]*sum\("total_tokens"\)/);
+  assert.match(reportRoute, /count\(\*\) filter \(where "input_tokens" is null or "output_tokens" is null or "total_tokens" is null\)/);
+
+  const range = parseAssistantUsageDateRange("2026-11-18", "2026-11-18");
+  assert.ok(range);
+  assert.equal(range.start.toISOString(), "2026-11-18T00:00:00.000Z");
+  assert.equal(range.endExclusive.toISOString(), "2026-11-19T00:00:00.000Z");
 });

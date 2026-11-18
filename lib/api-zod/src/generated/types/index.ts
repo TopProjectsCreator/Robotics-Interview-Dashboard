@@ -57,6 +57,7 @@ export * from './assistantModelThinkingLevelsItem';
 export * from './assistantPendingQuestionsResponse';
 export * from './assistantPendingQuestionsResponseQuestionsItem';
 export * from './assistantPendingQuestionsResponseQuestionsItemQuestionsItem';
+export * from './assistantProductivityUsage';
 export * from './assistantPromptQueue';
 export * from './assistantPromptRun';
 export * from './assistantPromptRunStatus';
