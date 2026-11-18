@@ -10,7 +10,13 @@ vi.mock("@workspace/api-client-react", () => ({
   useGetFtcGlobeData: useGetFtcGlobeDataMock,
 }));
 
-import { clampGlobeZoom, createGlobePointerGestureHandlers, FtcSeasonGlobe, pointPosition } from "./FtcSeasonGlobe";
+import {
+  clampGlobeZoom,
+  createGlobePointerGestureHandlers,
+  FtcSeasonGlobe,
+  pointPosition,
+  shouldUseGlobeDetail,
+} from "./FtcSeasonGlobe";
 
 const teamPoint = {
   id: "team-2026-23442",
@@ -112,11 +118,23 @@ describe("FTC season globe", () => {
     render(<FtcSeasonGlobe />);
 
     expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("120 percent");
-    fireEvent.click(screen.getByRole("button", { name: "Zoom in on globe" }));
+    const zoomIn = screen.getByRole("button", { name: "Zoom in on globe" });
+    fireEvent.click(zoomIn);
     expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("140 percent");
 
-    fireEvent.click(screen.getByRole("button", { name: "Reset globe zoom" }));
+    const reset = screen.getByRole("button", { name: "Reset globe zoom" });
+    while (!zoomIn.hasAttribute("disabled")) fireEvent.click(zoomIn);
+    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("800 percent");
+    expect(zoomIn).toBeDisabled();
+    expect(reset).toBeEnabled();
+
+    fireEvent.click(reset);
     expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("100 percent");
+
+    const zoomOut = screen.getByRole("button", { name: "Zoom out of globe" });
+    while (!zoomOut.hasAttribute("disabled")) fireEvent.click(zoomOut);
+    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("75 percent");
+    expect(zoomOut).toBeDisabled();
   });
 
   it("zooms in and out with two-finger pinches without rotating or selecting", () => {
@@ -153,9 +171,40 @@ describe("FTC season globe", () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it("clamps pinch zoom to the existing minimum and maximum", () => {
-    expect(clampGlobeZoom(1.2 + 20)).toBe(2.2);
+  it("clamps zoom to the minimum and expanded maximum", () => {
+    expect(clampGlobeZoom(1.2 + 20)).toBe(8);
     expect(clampGlobeZoom(1.2 - 20)).toBe(0.75);
+    expect(shouldUseGlobeDetail(1.2)).toBe(false);
+    expect(shouldUseGlobeDetail(2.39)).toBe(false);
+    expect(shouldUseGlobeDetail(2.4)).toBe(true);
+  });
+
+  it("keeps pinch zoom bounded across the expanded range", () => {
+    let zoom = 7.9;
+    const gestures = createGlobePointerGestureHandlers({
+      onRotate: vi.fn(),
+      onSelect: vi.fn(),
+      onZoom: (delta) => { zoom = clampGlobeZoom(zoom + delta); },
+    });
+    const touch = (pointerId: number, clientX: number) => ({
+      pointerId,
+      pointerType: "touch",
+      clientX,
+      clientY: 100,
+    });
+
+    gestures.pointerDown(touch(1, 100));
+    gestures.pointerDown(touch(2, 200));
+    gestures.pointerMove(touch(2, 300));
+    expect(zoom).toBe(8);
+    gestures.pointerUp(touch(1, 100));
+    gestures.pointerUp(touch(2, 300));
+
+    zoom = 1;
+    gestures.pointerDown(touch(3, 100));
+    gestures.pointerDown(touch(4, 200));
+    gestures.pointerMove(touch(4, 100));
+    expect(zoom).toBe(0.75);
   });
 
   it("keeps one-finger touch drag and tap separate from pinching", () => {

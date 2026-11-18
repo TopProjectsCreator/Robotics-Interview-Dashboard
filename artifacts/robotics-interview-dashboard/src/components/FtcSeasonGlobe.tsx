@@ -6,11 +6,22 @@ import { ArrowUpRight, CalendarDays, MapPin, Pause, Play, RotateCcw, ZoomIn, Zoo
 
 type GlobePoint = FtcGlobePoint;
 const MIN_GLOBE_ZOOM = 0.75;
-const MAX_GLOBE_ZOOM = 2.2;
+const MAX_GLOBE_ZOOM = 8;
 const GLOBE_ZOOM_STEP = 0.2;
+export const GLOBE_DETAIL_ZOOM_THRESHOLD = 2.4;
+const GLOBE_DETAIL_TEXTURE = "ftc-globe-boundaries-10m.svg";
 
 export function clampGlobeZoom(value: number) {
   return Math.max(MIN_GLOBE_ZOOM, Math.min(MAX_GLOBE_ZOOM, value));
+}
+
+export function stepGlobeZoom(value: number, direction: -1 | 1) {
+  const step = value < 2.2 ? GLOBE_ZOOM_STEP : Math.max(GLOBE_ZOOM_STEP, value * 0.15);
+  return clampGlobeZoom(Number((value + direction * step).toFixed(2)));
+}
+
+export function shouldUseGlobeDetail(zoom: number) {
+  return zoom >= GLOBE_DETAIL_ZOOM_THRESHOLD;
 }
 
 export function pointPosition(point: GlobePoint, radius: number, latitudeOffset = 0, longitudeOffset = 0) {
@@ -23,8 +34,8 @@ export function pointPosition(point: GlobePoint, radius: number, latitudeOffset 
   );
 }
 
-function makeEarthTexture() {
-  const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}ftc-globe-world.svg`);
+function makeEarthTexture(source = "ftc-globe-world.svg") {
+  const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}${source}`);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   // Sphere U and east-positive longitude now advance in the same direction.
@@ -210,6 +221,7 @@ function GlobeRenderer({
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
+  const syncZoomRef = useRef<(value: number) => void>(() => undefined);
   const pausedRef = useRef(paused);
   const callbacksRef = useRef({ onSelect, onReady, onZoom });
   pausedRef.current = paused;
@@ -244,11 +256,75 @@ function GlobeRenderer({
     const root = new THREE.Group();
     root.rotation.y = THREE.MathUtils.degToRad(100);
     scene.add(root);
+    const baseTexture = makeEarthTexture();
+    const earthMaterial = new THREE.MeshStandardMaterial({ map: baseTexture, roughness: 0.92, metalness: 0.02 });
     const globe = new THREE.Mesh(
       new THREE.SphereGeometry(1, 64, 48),
-      new THREE.MeshStandardMaterial({ map: makeEarthTexture(), roughness: 0.92, metalness: 0.02 }),
+      earthMaterial,
     );
     root.add(globe);
+    let detailTexture: THREE.Texture | null = null;
+    let detailOverlay: THREE.Mesh | null = null;
+    let detailLoadRequested = false;
+    let detailRequestId = 0;
+    const removeDetailOverlay = () => {
+      if (detailOverlay) {
+        root.remove(detailOverlay);
+        detailOverlay.geometry.dispose();
+        (detailOverlay.material as THREE.Material).dispose();
+        detailOverlay = null;
+      }
+      detailTexture?.dispose();
+      detailTexture = null;
+    };
+    const syncDetail = (nextZoom: number) => {
+      if (!shouldUseGlobeDetail(nextZoom)) {
+        detailRequestId += 1;
+        detailLoadRequested = false;
+        removeDetailOverlay();
+        return;
+      }
+      if (detailOverlay || detailLoadRequested) return;
+
+      detailLoadRequested = true;
+      const requestId = ++detailRequestId;
+      new THREE.TextureLoader().load(
+        `${import.meta.env.BASE_URL}${GLOBE_DETAIL_TEXTURE}`,
+        (texture) => {
+          if (requestId !== detailRequestId || !shouldUseGlobeDetail(zoomRef.current)) {
+            texture.dispose();
+            return;
+          }
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.repeat.x = 1;
+          texture.offset.x = 0.25;
+          detailTexture = texture;
+          const material = new THREE.MeshBasicMaterial({
+            map: texture,
+            transparent: true,
+            depthWrite: false,
+            toneMapped: false,
+          });
+          detailOverlay = new THREE.Mesh(new THREE.SphereGeometry(1.0015, 64, 48), material);
+          root.add(detailOverlay);
+        },
+        undefined,
+        () => {
+          if (requestId === detailRequestId) {
+            detailLoadRequested = false;
+            console.error("Unable to load the Natural Earth close-up boundary texture.");
+          }
+        },
+      );
+    };
+    syncZoomRef.current = (value) => {
+      const boundedZoom = clampGlobeZoom(value);
+      camera.zoom = boundedZoom;
+      camera.updateProjectionMatrix();
+      syncDetail(boundedZoom);
+    };
+    syncZoomRef.current(zoomRef.current);
     const atmosphere = new THREE.Mesh(
       new THREE.SphereGeometry(1.025, 48, 36),
       new THREE.MeshBasicMaterial({ color: dark ? 0x81d4be : 0x348c79, transparent: true, opacity: 0.09, side: THREE.BackSide }),
@@ -349,6 +425,8 @@ function GlobeRenderer({
     return () => {
       cancelAnimationFrame(animation);
       observer.disconnect();
+      syncZoomRef.current = () => undefined;
+      detailRequestId += 1;
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
@@ -358,12 +436,11 @@ function GlobeRenderer({
         if (object instanceof THREE.Mesh || object instanceof THREE.InstancedMesh) {
           object.geometry.dispose();
           const materials = Array.isArray(object.material) ? object.material : [object.material];
-          materials.forEach((material) => {
-            if ("map" in material && material.map) material.map.dispose();
-            material.dispose();
-          });
+          materials.forEach((material) => material.dispose());
         }
       });
+      baseTexture.dispose();
+      detailTexture?.dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -371,8 +448,7 @@ function GlobeRenderer({
 
   useEffect(() => {
     if (!cameraRef.current) return;
-    cameraRef.current.zoom = zoom;
-    cameraRef.current.updateProjectionMatrix();
+    syncZoomRef.current(zoom);
   }, [zoom]);
 
   return <div ref={mountRef} className="absolute inset-0" aria-hidden="true" />;
@@ -524,7 +600,7 @@ export function FtcSeasonGlobe() {
               <button
                 type="button"
                 aria-label="Zoom out of globe"
-                onClick={() => setZoom((value) => Math.max(MIN_GLOBE_ZOOM, Number((value - GLOBE_ZOOM_STEP).toFixed(2))))}
+                onClick={() => setZoom((value) => stepGlobeZoom(value, -1))}
                 disabled={zoom <= MIN_GLOBE_ZOOM}
                 className="grid size-9 place-items-center rounded-lg text-[#cde5db] transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#efc34f] disabled:cursor-default disabled:opacity-35"
                 data-testid="button-globe-zoom-out"
@@ -544,7 +620,7 @@ export function FtcSeasonGlobe() {
               <button
                 type="button"
                 aria-label="Zoom in on globe"
-                onClick={() => setZoom((value) => Math.min(MAX_GLOBE_ZOOM, Number((value + GLOBE_ZOOM_STEP).toFixed(2))))}
+                onClick={() => setZoom((value) => stepGlobeZoom(value, 1))}
                 disabled={zoom >= MAX_GLOBE_ZOOM}
                 className="grid size-9 place-items-center rounded-lg text-[#cde5db] transition hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#efc34f] disabled:cursor-default disabled:opacity-35"
                 data-testid="button-globe-zoom-in"
@@ -620,7 +696,7 @@ export function FtcSeasonGlobe() {
         <div className="flex flex-col gap-1 border-t border-white/10 px-5 py-3 text-[10px] leading-5 text-[#a8c4bb] sm:px-6">
           <p>Locations are approximate city, region, or country estimates, not team addresses. Records without usable FIRST locations are grouped at an unknown-location placeholder; overlapping markers are slightly spread apart for selection.</p>
           <p>
-            Coordinate source: <a className="underline underline-offset-2 hover:text-white" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0). World map: <a className="underline underline-offset-2 hover:text-white" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a>.
+            Coordinate source: <a className="underline underline-offset-2 hover:text-white" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0). World map and 1:10m close-up country boundaries: <a className="underline underline-offset-2 hover:text-white" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a> (public domain).
           </p>
         </div>
       </div>
