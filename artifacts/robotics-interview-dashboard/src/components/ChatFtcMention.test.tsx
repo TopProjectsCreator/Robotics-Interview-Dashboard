@@ -134,7 +134,7 @@ beforeEach(() => {
 });
 
 describe("FTC chat mention previews", () => {
-  it("renders every team contract field and every field for its listed events", () => {
+  it("opens a listed event as a full profile from its team", () => {
     openTeamWidget();
 
     expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Team 23442");
@@ -144,24 +144,35 @@ describe("FTC chat mention previews", () => {
 
     const event = screen.getByTestId("ftc-team-event-cafo");
     expect(event).toHaveTextContent("Cascade Open");
-    fireEvent.click(within(event).getByText("View details"));
-    expect(within(event).getByText("Hide details")).toBeInTheDocument();
-    expectContractFieldsRendered("FtcEvent", event);
+    expect(event).toHaveAccessibleName("Open FTC event CAFO, 2026 season profile");
+    expect(event).toHaveClass("focus-visible:outline");
     expect(screen.getByRole("link", { name: /team\.example\.org/ })).toHaveAttribute("href", "https://team.example.org/");
+    fireEvent.click(event);
+
+    expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Event CAFO");
+    expect(screen.getByTestId("text-ftc-event-name")).toHaveTextContent("Cascade Open");
+    expectContractFieldsRendered("FtcEvent", screen.getByTestId("dialog-ftc-mention"));
     expect(screen.getByRole("link", { name: /event\.example\.org/ })).toHaveAttribute("href", "https://event.example.org/");
     expect(screen.getByRole("link", { name: /video\.example\.org/ })).toHaveAttribute("href", "https://video.example.org/live");
     expect(screen.getByRole("link", { name: /event\.example\.org/ })).toHaveClass("focus-visible:outline");
+    expect(useGetFtcEventProfile).toHaveBeenLastCalledWith("CAFO", { season: 2026 }, expect.anything());
   });
 
-  it("renders every event contract field and all fields for each attending team", () => {
+  it("opens an attending team as a full profile from its event", () => {
     openEventWidget();
 
     expect(screen.getByTestId("text-ftc-event-name")).toHaveTextContent("Cascade Open");
     expectContractFieldsRendered("FtcEvent", screen.getByTestId("dialog-ftc-mention"));
     const team = screen.getByTestId("ftc-event-team-23442");
     expect(team).toHaveTextContent("BioBuzz");
-    fireEvent.click(within(team).getByText("View details"));
-    expectContractFieldsRendered("FtcTeam", team);
+    expect(team).toHaveAccessibleName("Open FTC Team 23442, 2026 season profile");
+    expect(team).toHaveClass("focus-visible:outline");
+    fireEvent.click(team);
+
+    expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Team 23442");
+    expect(screen.getByTestId("text-ftc-team-name")).toHaveTextContent("BioBuzz");
+    expectContractFieldsRendered("FtcTeam", screen.getByTestId("dialog-ftc-mention"));
+    expect(useGetFtcTeamProfile).toHaveBeenLastCalledWith(23442, { season: 2026 }, expect.anything());
   });
 
   it("shows the complete attending list when there are more than 24 teams", () => {
@@ -184,9 +195,25 @@ describe("FTC chat mention previews", () => {
     for (const team of teams) {
       expect(screen.getByTestId(`ftc-event-team-${team.teamNumber}`)).toBeInTheDocument();
     }
-    const lastTeam = screen.getByTestId("ftc-event-team-23471");
-    fireEvent.click(within(lastTeam).getByText("View details"));
-    expectContractFieldsRendered("FtcTeam", lastTeam);
+    vi.mocked(useGetFtcTeamProfile).mockReturnValue({
+      data: {
+        ...teamProfile,
+        team: {
+          ...teamProfile.team,
+          teamNumber: 23471,
+          displayTeamNumber: "23471",
+          nameFull: "Robotics Team 30",
+        },
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    fireEvent.click(screen.getByTestId("ftc-event-team-23471"));
+    expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Team 23471");
+    expect(screen.getByTestId("text-ftc-team-name")).toHaveTextContent("Robotics Team 30");
+    expectContractFieldsRendered("FtcTeam", screen.getByTestId("dialog-ftc-mention"));
+    expect(useGetFtcTeamProfile).toHaveBeenLastCalledWith(23471, { season: 2026 }, expect.anything());
     expect(screen.queryByText(/Showing the first/i)).not.toBeInTheDocument();
   });
 
@@ -258,6 +285,28 @@ describe("FTC chat mention previews", () => {
     expect(screen.queryByTestId("dialog-ftc-mention")).not.toBeInTheDocument();
   });
 
+  it("returns through visited profiles and can close from a related profile", () => {
+    openTeamWidget();
+    fireEvent.click(screen.getByTestId("ftc-team-event-cafo"));
+    expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Event CAFO");
+
+    fireEvent.click(screen.getByTestId("ftc-event-team-23442"));
+    expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Team 23442");
+    expect(screen.getByTestId("button-back-ftc-details")).toHaveAccessibleName("Back to FTC Event CAFO");
+
+    fireEvent.click(screen.getByTestId("button-back-ftc-details"));
+    expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Event CAFO");
+    expect(screen.getByTestId("button-back-ftc-details")).toHaveAccessibleName("Back to FTC Team 23442");
+
+    fireEvent.click(screen.getByTestId("button-back-ftc-details"));
+    expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Team 23442");
+    expect(screen.queryByTestId("button-back-ftc-details")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("ftc-team-event-cafo"));
+    fireEvent.click(screen.getByTestId("button-close-ftc-details"));
+    expect(screen.queryByTestId("dialog-ftc-mention")).not.toBeInTheDocument();
+  });
+
   it("keeps the retry action keyboard-visible and connected to refetch", () => {
     const refetch = vi.fn();
     vi.mocked(useGetFtcEventProfile).mockReturnValue({
@@ -272,5 +321,42 @@ describe("FTC chat mention previews", () => {
     expect(retry).toHaveClass("focus-visible:outline");
     fireEvent.click(retry);
     expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the missing-team notice when the selected profile has no record", () => {
+    vi.mocked(useGetFtcTeamProfile).mockReturnValue({
+      data: { season: 2026, team: null, events: [] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    openTeamWidget();
+
+    expect(screen.getByText("This team is not listed for the 2026 season.")).toBeInTheDocument();
+  });
+
+  it("keeps the missing-event notice when the selected profile has no record", () => {
+    vi.mocked(useGetFtcEventProfile).mockReturnValue({
+      data: { season: 2026, event: null, teams: [] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    openEventWidget();
+
+    expect(screen.getByText("This event is not listed for the 2026 season.")).toBeInTheDocument();
+  });
+
+  it("shows the loading state when navigating to a related profile", () => {
+    vi.mocked(useGetFtcEventProfile).mockReturnValue({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    openTeamWidget();
+    fireEvent.click(screen.getByTestId("ftc-team-event-cafo"));
+
+    expect(screen.getByRole("status")).toHaveTextContent("Loading official event details…");
   });
 });

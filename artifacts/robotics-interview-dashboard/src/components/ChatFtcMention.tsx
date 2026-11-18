@@ -3,7 +3,8 @@ import {
   ArrowUpRight,
   Award,
   CalendarDays,
-  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   Trophy,
   X,
@@ -24,13 +25,42 @@ export type FtcMentionReference =
 type FtcMentionContextValue = { open: (reference: FtcMentionReference) => void };
 const FtcMentionContext = createContext<FtcMentionContextValue | null>(null);
 
+function sameReference(left: FtcMentionReference, right: FtcMentionReference): boolean {
+  return left.kind === right.kind
+    && left.season === right.season
+    && (left.kind === "team"
+      ? right.kind === "team" && left.teamNumber === right.teamNumber
+      : right.kind === "event" && left.eventCode === right.eventCode);
+}
+
+function referenceTitle(reference: FtcMentionReference): string {
+  return reference.kind === "team"
+    ? `FTC Team ${reference.teamNumber}`
+    : `FTC Event ${reference.eventCode}`;
+}
+
 export function ChatFtcMentionProvider({ children }: { children: ReactNode }) {
-  const [reference, setReference] = useState<FtcMentionReference | null>(null);
-  const context = useMemo(() => ({ open: setReference }), []);
+  const [history, setHistory] = useState<FtcMentionReference[]>([]);
+  const context = useMemo(() => ({
+    open: (reference: FtcMentionReference) => setHistory([reference]),
+  }), []);
+  const reference = history[history.length - 1];
   return (
     <FtcMentionContext.Provider value={context}>
       {children}
-      {reference && <FtcMentionDialog reference={reference} onClose={() => setReference(null)} />}
+      {reference && (
+        <FtcMentionDialog
+          reference={reference}
+          previousReference={history.length > 1 ? history[history.length - 2] : undefined}
+          onNavigate={nextReference => setHistory(current => {
+            const currentReference = current[current.length - 1];
+            if (currentReference && sameReference(currentReference, nextReference)) return current;
+            return [...current, nextReference];
+          })}
+          onBack={() => setHistory(current => current.slice(0, -1))}
+          onClose={() => setHistory([])}
+        />
+      )}
     </FtcMentionContext.Provider>
   );
 }
@@ -165,13 +195,35 @@ function EventFields({ event }: { event: FtcEvent }) {
   );
 }
 
-function FtcMentionDialog({ reference, onClose }: { reference: FtcMentionReference; onClose: () => void }) {
-  const title = reference.kind === "team"
-    ? `FTC Team ${reference.teamNumber}`
-    : `FTC Event ${reference.eventCode}`;
+function FtcMentionDialog({
+  reference,
+  previousReference,
+  onNavigate,
+  onBack,
+  onClose,
+}: {
+  reference: FtcMentionReference;
+  previousReference?: FtcMentionReference;
+  onNavigate: (reference: FtcMentionReference) => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  const title = referenceTitle(reference);
   return (
     <ModalOverlay onClose={onClose} label={title} testId="dialog-ftc-mention" className="flex max-h-[min(90dvh,760px)] max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-[#d7e4e5] bg-white shadow-2xl sm:rounded-3xl dark:border-[#304955] dark:bg-[#12232d]">
       <div className="flex shrink-0 items-start gap-3 border-b border-[#e5eded] px-5 py-4 dark:border-[#304955]">
+        {previousReference && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label={`Back to ${referenceTitle(previousReference)}`}
+            data-testid="button-back-ftc-details"
+            className="flex h-11 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-[#126d7b] transition hover:bg-[#eef4f4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:text-[#8fd7e0] dark:hover:bg-[#203742] dark:focus-visible:outline-[#8fd7e0]"
+          >
+            <ChevronLeft size={17} aria-hidden="true" />
+            Back
+          </button>
+        )}
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e4f3f1] text-[#137989] dark:bg-[#203f48] dark:text-[#8fd7e0]">
           {reference.kind === "team" ? <Award size={20} /> : <CalendarDays size={20} />}
         </span>
@@ -183,14 +235,20 @@ function FtcMentionDialog({ reference, onClose }: { reference: FtcMentionReferen
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-5">
         {reference.kind === "team"
-          ? <FtcTeamDetails reference={reference} />
-          : <FtcEventDetails reference={reference} />}
+          ? <FtcTeamDetails reference={reference} onNavigate={onNavigate} />
+          : <FtcEventDetails reference={reference} onNavigate={onNavigate} />}
       </div>
     </ModalOverlay>
   );
 }
 
-function FtcTeamDetails({ reference }: { reference: Extract<FtcMentionReference, { kind: "team" }> }) {
+function FtcTeamDetails({
+  reference,
+  onNavigate,
+}: {
+  reference: Extract<FtcMentionReference, { kind: "team" }>;
+  onNavigate: (reference: FtcMentionReference) => void;
+}) {
   const query = useGetFtcTeamProfile(reference.teamNumber, { season: reference.season }, {
     query: {
       queryKey: getGetFtcTeamProfileQueryKey(reference.teamNumber, { season: reference.season }),
@@ -202,10 +260,20 @@ function FtcTeamDetails({ reference }: { reference: Extract<FtcMentionReference,
   if (query.isError || !query.data) return <ErrorProfile onRetry={() => void query.refetch()} />;
   const { team, events } = query.data;
   if (!team) return <p className="rounded-xl bg-[#fff7e2] p-4 text-sm text-[#79580e] dark:bg-[#352e1a] dark:text-[#f0d77c]">This team is not listed for the {reference.season} season.</p>;
-  return <TeamProfile team={team} events={events} />;
+  return <TeamProfile team={team} events={events} season={reference.season} onNavigate={onNavigate} />;
 }
 
-function TeamProfile({ team, events }: { team: FtcTeam; events: FtcEvent[] }) {
+function TeamProfile({
+  team,
+  events,
+  season,
+  onNavigate,
+}: {
+  team: FtcTeam;
+  events: FtcEvent[];
+  season: number;
+  onNavigate: (reference: FtcMentionReference) => void;
+}) {
   const teamName = team.nameFull?.trim() || team.nameShort?.trim() || team.schoolName?.trim() || `Team ${team.teamNumber}`;
   return (
     <div className="space-y-5">
@@ -225,33 +293,49 @@ function TeamProfile({ team, events }: { team: FtcTeam; events: FtcEvent[] }) {
           <span className="text-xs font-medium text-[#61747a] dark:text-[#b0c0c7]">{events.length} listed</span>
         </div>
         {events.length
-          ? <div className="grid gap-2 sm:grid-cols-2">{events.map(event => <EventSummary key={`${event.season}-${event.code}`} event={event} />)}</div>
+          ? <div className="grid gap-2 sm:grid-cols-2">{events.map(event => <EventSummary key={`${season}-${event.code}`} event={event} season={season} onNavigate={onNavigate} />)}</div>
           : <p className="rounded-xl border border-dashed border-[#d2dfdf] px-3 py-4 text-sm text-[#75858a] dark:border-[#35515e] dark:text-[#a9bbc2]">No events are listed for this team in this season.</p>}
       </section>
     </div>
   );
 }
 
-function EventSummary({ event }: { event: FtcEvent }) {
+function EventSummary({
+  event,
+  season,
+  onNavigate,
+}: {
+  event: FtcEvent;
+  season: number;
+  onNavigate: (reference: FtcMentionReference) => void;
+}) {
   return (
-    <details className="group min-w-0 rounded-xl border border-[#e0eaea] bg-white/55 p-3 dark:border-[#304955] dark:bg-[#122630]/45" data-testid={`ftc-team-event-${event.code.toLowerCase()}`}>
-      <summary className="flex min-h-10 cursor-pointer list-none items-start justify-between gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:focus-visible:outline-[#8fd7e0] [&::-webkit-details-marker]:hidden">
+    <button
+      type="button"
+      onClick={() => onNavigate({ kind: "event", season, eventCode: event.code })}
+      aria-label={`Open FTC event ${event.code}, ${season} season profile`}
+      className="group flex min-h-16 w-full min-w-0 items-start justify-between gap-3 rounded-xl border border-[#e0eaea] bg-white/55 p-3 text-left transition hover:border-[#9dc9cc] hover:bg-[#f5faf9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:border-[#304955] dark:bg-[#122630]/45 dark:hover:border-[#527a83] dark:hover:bg-[#182f39] dark:focus-visible:outline-[#8fd7e0]"
+      data-testid={`ftc-team-event-${event.code.toLowerCase()}`}
+    >
         <span className="min-w-0">
           <span className="block break-words text-sm font-semibold text-[#183a4b] dark:text-[#edf5f7]">{event.name?.trim() || event.code}</span>
           <span className="mt-1 block break-words text-xs font-medium text-[#61747a] dark:text-[#b0c0c7]">{event.code} · {event.typeName?.trim() || "Type not listed"}</span>
         </span>
         <span className="inline-flex min-h-10 shrink-0 items-center gap-1 text-xs font-semibold text-[#126d7b] dark:text-[#8fd7e0]">
-          <span className="group-open:hidden">View details</span>
-          <span className="hidden group-open:inline">Hide details</span>
-          <ChevronDown size={15} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+          Open event profile
+          <ChevronRight size={15} aria-hidden="true" />
         </span>
-      </summary>
-      <div className="mt-3 border-t border-[#e0eaea] pt-3 dark:border-[#304955]"><EventFields event={event} /></div>
-    </details>
+    </button>
   );
 }
 
-function FtcEventDetails({ reference }: { reference: Extract<FtcMentionReference, { kind: "event" }> }) {
+function FtcEventDetails({
+  reference,
+  onNavigate,
+}: {
+  reference: Extract<FtcMentionReference, { kind: "event" }>;
+  onNavigate: (reference: FtcMentionReference) => void;
+}) {
   const query = useGetFtcEventProfile(reference.eventCode, { season: reference.season }, {
     query: {
       queryKey: getGetFtcEventProfileQueryKey(reference.eventCode, { season: reference.season }),
@@ -281,30 +365,40 @@ function FtcEventDetails({ reference }: { reference: Extract<FtcMentionReference
           <span className="text-xs font-medium text-[#61747a] dark:text-[#b0c0c7]">{teams.length} listed</span>
         </div>
         {teams.length
-          ? <div className="grid gap-2 sm:grid-cols-2">{teams.map(team => <TeamSummary key={team.teamNumber} team={team} />)}</div>
+          ? <div className="grid gap-2 sm:grid-cols-2">{teams.map(team => <TeamSummary key={team.teamNumber} team={team} season={reference.season} onNavigate={onNavigate} />)}</div>
           : <p className="rounded-xl border border-dashed border-[#d2dfdf] px-3 py-4 text-sm text-[#75858a] dark:border-[#35515e] dark:text-[#a9bbc2]">No attending teams are listed yet.</p>}
       </section>
     </div>
   );
 }
 
-function TeamSummary({ team }: { team: FtcTeam }) {
+function TeamSummary({
+  team,
+  season,
+  onNavigate,
+}: {
+  team: FtcTeam;
+  season: number;
+  onNavigate: (reference: FtcMentionReference) => void;
+}) {
   const teamName = team.nameFull?.trim() || team.nameShort?.trim() || team.schoolName?.trim() || "Official FTC team";
   return (
-    <details className="group min-w-0 rounded-xl border border-[#e0eaea] bg-white/55 p-3 dark:border-[#304955] dark:bg-[#122630]/45" data-testid={`ftc-event-team-${team.teamNumber}`}>
-      <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:focus-visible:outline-[#8fd7e0] [&::-webkit-details-marker]:hidden">
+    <button
+      type="button"
+      onClick={() => onNavigate({ kind: "team", season, teamNumber: team.teamNumber })}
+      aria-label={`Open FTC Team ${team.teamNumber}, ${season} season profile`}
+      className="flex min-h-16 w-full min-w-0 items-center justify-between gap-3 rounded-xl border border-[#e0eaea] bg-white/55 p-3 text-left transition hover:border-[#9dc9cc] hover:bg-[#f5faf9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:border-[#304955] dark:bg-[#122630]/45 dark:hover:border-[#527a83] dark:hover:bg-[#182f39] dark:focus-visible:outline-[#8fd7e0]"
+      data-testid={`ftc-event-team-${team.teamNumber}`}
+    >
         <span className="flex min-w-0 items-center gap-2">
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e4f3f1] font-mono text-[10px] font-bold text-[#137989] dark:bg-[#203f48] dark:text-[#8fd7e0]"><Award size={14} /></span>
         <span className="min-w-0"><span className="block break-words text-xs font-bold text-[#16869a] dark:text-[#6fc3cf]">FTC {team.displayTeamNumber?.trim() || team.teamNumber}</span><span className="block break-words text-sm font-semibold text-[#183a4b] dark:text-[#edf5f7]">{teamName}</span></span>
         </span>
         <span className="inline-flex min-h-10 shrink-0 items-center gap-1 text-xs font-semibold text-[#126d7b] dark:text-[#8fd7e0]">
-          <span className="group-open:hidden">View details</span>
-          <span className="hidden group-open:inline">Hide details</span>
-          <ChevronDown size={15} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+          Open team profile
+          <ChevronRight size={15} aria-hidden="true" />
         </span>
-      </summary>
-      <div className="mt-3 border-t border-[#e0eaea] pt-3 dark:border-[#304955]"><TeamFields team={team} /></div>
-    </details>
+    </button>
   );
 }
 
