@@ -70,7 +70,6 @@ vi.mock("@workspace/api-client-react", () => ({
 }));
 
 import {
-  clampGlobeTilt,
   clampGlobeZoom,
   createGlobePointerGestureHandlers,
   findGlobePointAtScreen,
@@ -80,8 +79,10 @@ import {
   getGlobeMarkerZoomScale,
   getGlobeRotationScale,
   pointPosition,
+  rotateGlobeFromDrag,
   shouldUseGlobeCartography,
   shouldUseGlobeDetail,
+  wrapGlobeRotation,
 } from "./FtcSeasonGlobe";
 
 const teamPoint = {
@@ -230,6 +231,34 @@ describe("FTC season globe", () => {
     })?.id).toBe(teamPoint.id);
   });
 
+  it("keeps front-facing markers selectable after crossing either pole", () => {
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+    camera.position.set(0, 0, 4.5);
+    camera.updateProjectionMatrix();
+
+    for (const rotationX of [wrapGlobeRotation(28), wrapGlobeRotation(-28)]) {
+      const root = new THREE.Group();
+      root.rotation.set(rotationX, 0.8, 0);
+      root.updateMatrixWorld(true);
+      const localCenter = new THREE.Vector3(0, 0, 1).applyMatrix4(root.matrixWorld.clone().invert());
+      const centeredPoint = {
+        ...teamPoint,
+        latitude: THREE.MathUtils.radToDeg(Math.asin(localCenter.y)),
+        longitude: THREE.MathUtils.radToDeg(Math.atan2(localCenter.x, localCenter.z)),
+      };
+
+      expect(findGlobePointAtScreen({
+        points: [centeredPoint],
+        markerOffsets: new Map(),
+        root,
+        camera,
+        clientX: 250,
+        clientY: 250,
+        rect: { left: 0, top: 0, width: 500, height: 500 },
+      })?.id).toBe(teamPoint.id);
+    }
+  });
+
   it("shows the selected team's identifiers and profile details", () => {
     render(<FtcSeasonGlobe />);
 
@@ -321,7 +350,10 @@ describe("FTC season globe", () => {
 
   it("keeps one renderer and reuses delayed detail textures across zoom cycles", () => {
     globeRendererMock.failRenderer = false;
-    const { unmount } = render(<FtcSeasonGlobe />);
+    const { unmount, getByTestId } = render(<FtcSeasonGlobe />);
+    expect(getByTestId("stage-ftc-season-globe").querySelector("canvas")).toHaveStyle({
+      touchAction: "pan-y",
+    });
 
     const zoomIn = screen.getByRole("button", { name: "Zoom in on globe" });
     while (Number(screen.getByTestId("status-globe-zoom").textContent?.match(/\d+/)?.[0]) < 420) {
@@ -453,10 +485,67 @@ describe("FTC season globe", () => {
     expect(shouldUseGlobeCartography(200)).toBe(true);
   });
 
-  it("keeps globe tilt bounded while allowing higher-latitude exploration", () => {
-    expect(clampGlobeTilt(20)).toBeCloseTo(1.2);
-    expect(clampGlobeTilt(-20)).toBeCloseTo(-1.2);
-    expect(clampGlobeTilt(0.4)).toBeCloseTo(0.4);
+  it("wraps globe angles without changing their orientation", () => {
+    expect(wrapGlobeRotation(20)).toBeCloseTo(20 - 3 * Math.PI * 2);
+    expect(wrapGlobeRotation(-20)).toBeCloseTo(-20 + 3 * Math.PI * 2);
+    expect(wrapGlobeRotation(0.4)).toBeCloseTo(0.4);
+    expect(wrapGlobeRotation(20)).toBeGreaterThan(-Math.PI);
+    expect(wrapGlobeRotation(20)).toBeLessThanOrEqual(Math.PI);
+  });
+
+  it("rotates continuously through multiple upward and downward turns", () => {
+    const root = new THREE.Group();
+    const onSelect = vi.fn();
+    const gestures = createGlobePointerGestureHandlers({
+      onRotate: (deltaX, deltaY) => rotateGlobeFromDrag(root, deltaX, deltaY),
+      onZoom: vi.fn(),
+      onSelect,
+    });
+    let pointerId = 0;
+    const drag = (direction: -1 | 1) => {
+      const id = ++pointerId;
+      gestures.pointerDown({
+        pointerId: id,
+        pointerType: "mouse",
+        clientX: 100,
+        clientY: 100,
+      });
+      for (let step = 1; step <= 7; step += 1) {
+        gestures.pointerMove({
+          pointerId: id,
+          pointerType: "mouse",
+          clientX: 100,
+          clientY: 100 + direction * step * 1000,
+        });
+      }
+      gestures.pointerUp({
+        pointerId: id,
+        pointerType: "mouse",
+        clientX: 100,
+        clientY: 100 + direction * 7000,
+      });
+    };
+
+    drag(1);
+    expect(root.rotation.x).toBeCloseTo(wrapGlobeRotation(28));
+    expect(root.rotation.x).toBeGreaterThan(1.2);
+    drag(-1);
+    expect(root.rotation.x).toBeCloseTo(0);
+    drag(-1);
+    expect(root.rotation.x).toBeCloseTo(wrapGlobeRotation(-28));
+    expect(root.rotation.x).toBeLessThan(-1.2);
+
+    for (let turn = 0; turn < 25; turn += 1) {
+      drag(1);
+      drag(-1);
+    }
+    expect(root.rotation.x).toBeCloseTo(wrapGlobeRotation(-28));
+    expect(Number.isFinite(root.rotation.x)).toBe(true);
+    expect(Math.abs(root.rotation.x)).toBeLessThanOrEqual(Math.PI);
+    expect(onSelect).not.toHaveBeenCalled();
+
+    rotateGlobeFromDrag(root, 700, 0);
+    expect(root.rotation.y).toBeCloseTo(wrapGlobeRotation(4.2));
   });
 
   it("keeps FTC markers readable without growing over close-up map details", () => {

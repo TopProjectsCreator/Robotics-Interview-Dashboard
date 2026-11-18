@@ -9,7 +9,6 @@ const DEFAULT_GLOBE_ZOOM = 1.2;
 const GLOBE_MARKER_REFERENCE_ZOOM = 1.8;
 const MIN_GLOBE_ZOOM = 0.75;
 export const MAX_GLOBE_ZOOM = 200;
-const MAX_GLOBE_TILT = 1.2;
 const GLOBE_ZOOM_STEP = 0.2;
 export const GLOBE_DETAIL_ZOOM_THRESHOLD = 2.4;
 export const GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD = 4;
@@ -20,8 +19,13 @@ export function clampGlobeZoom(value: number) {
   return Math.max(MIN_GLOBE_ZOOM, Math.min(MAX_GLOBE_ZOOM, value));
 }
 
-export function clampGlobeTilt(value: number) {
-  return THREE.MathUtils.clamp(value, -MAX_GLOBE_TILT, MAX_GLOBE_TILT);
+export function wrapGlobeRotation(value: number) {
+  return THREE.MathUtils.euclideanModulo(value + Math.PI, Math.PI * 2) - Math.PI;
+}
+
+export function rotateGlobeFromDrag(root: THREE.Group, deltaX: number, deltaY: number, rotationScale = 1) {
+  root.rotation.y = wrapGlobeRotation(root.rotation.y + deltaX * 0.006 * rotationScale);
+  root.rotation.x = wrapGlobeRotation(root.rotation.x + deltaY * 0.004 * rotationScale);
 }
 
 export function getGlobeMarkerZoomScale(zoom: number) {
@@ -546,9 +550,7 @@ function GlobeRenderer({
 
     const gestures = createGlobePointerGestureHandlers({
       onRotate: (deltaX, deltaY) => {
-        const rotationScale = getGlobeRotationScale(camera.zoom);
-        root.rotation.y += deltaX * 0.006 * rotationScale;
-        root.rotation.x = clampGlobeTilt(root.rotation.x + deltaY * 0.004 * rotationScale);
+        rotateGlobeFromDrag(root, deltaX, deltaY, getGlobeRotationScale(camera.zoom));
         requestDrawRef.current();
       },
       onZoom: (scale) => callbacksRef.current.onZoom(scale),
