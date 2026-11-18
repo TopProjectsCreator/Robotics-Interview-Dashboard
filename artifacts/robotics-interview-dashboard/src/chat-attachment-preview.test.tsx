@@ -623,4 +623,79 @@ describe("chat mention rendering", () => {
     fireEvent.focus(mention as HTMLElement);
     await waitFor(() => expect(screen.getByText("Applicant · Grade 6 · Queue #4")).toBeVisible());
   });
+
+  it("opens the DM when an interviewer mention is clicked and leaves other people inert", async () => {
+    const interviewer = {
+      token: "Ishaan",
+      label: "Ishaan",
+      detail: "Interviewer · tryout team",
+      initials: "I",
+      kind: "interviewer" as const,
+    };
+    const applicant = {
+      token: "Applicant Casey Nguyen (Grade 6)",
+      label: "Casey Nguyen",
+      detail: "Applicant · Grade 6 · Queue #4",
+      initials: "CN",
+      kind: "applicant" as const,
+    };
+    const onPersonOpen = vi.fn();
+    const { container } = render(
+      <TooltipProvider>{renderInlineMarkdown("@Ishaan, sync with @Applicant Casey Nguyen (Grade 6).", [interviewer, applicant], [], undefined, [], undefined, onPersonOpen)}</TooltipProvider>,
+    );
+
+    const interviewerMention = container.querySelector('[data-testid="chat-mention-ishaan"]');
+    expect(interviewerMention?.tagName).toBe("BUTTON");
+    fireEvent.click(interviewerMention as HTMLElement);
+    expect(onPersonOpen).toHaveBeenCalledTimes(1);
+    expect(onPersonOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: "interviewer", token: "Ishaan" }));
+
+    const applicantMention = container.querySelector('[data-testid="chat-mention-applicant-casey-nguyen-(grade-6)"]');
+    expect(applicantMention?.tagName).toBe("SPAN");
+    fireEvent.click(applicantMention as HTMLElement);
+    expect(onPersonOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders a board reference and opens it on click", async () => {
+    const board = {
+      token: "Sprint plan",
+      id: "11111111-2222-4333-8444-555555555555",
+      title: "Sprint plan",
+      kind: "board" as const,
+      detail: "Board · click to open",
+      idToken: false,
+    };
+    const onOpen = vi.fn();
+    const { container } = render(
+      <TooltipProvider>{renderInlineMarkdown("See @Sprint plan for tasks.", [], [], undefined, [board], onOpen)}</TooltipProvider>,
+    );
+
+    const mention = container.querySelector('[data-testid="chat-object-mention-11111111-2222-4333-8444-555555555555"]');
+    expect(mention).toHaveTextContent("@Sprint plan");
+    fireEvent.click(mention as HTMLElement);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ id: board.id, kind: "board" }));
+    fireEvent.focus(mention as HTMLElement);
+    await waitFor(() => expect(screen.getByText("Board · Click to open")).toBeVisible());
+  });
+
+  it("resolves an @id object mention to the same shared object", () => {
+    const sheet = {
+      token: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      id: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      title: "Budget sheet",
+      kind: "spreadsheet" as const,
+      detail: "Spreadsheet · click to open",
+      idToken: true,
+    };
+    const onOpen = vi.fn();
+    const { container } = render(
+      <TooltipProvider>{renderInlineMarkdown("Numbers live in @aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.", [], [], undefined, [sheet], onOpen)}</TooltipProvider>,
+    );
+
+    const mention = container.querySelector('[data-testid="chat-object-mention-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"]');
+    expect(mention).toHaveTextContent("@aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee");
+    fireEvent.click(mention as HTMLElement);
+    expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: "spreadsheet", title: "Budget sheet" }));
+  });
 });

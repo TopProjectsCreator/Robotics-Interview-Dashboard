@@ -1,9 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import { applicantsTable, db, DEFAULT_TEAM_ID, interviewWhiteboardsTable } from "@workspace/db";
-import { UpdateBoardBody } from "@workspace/api-zod";
+import { UpdateBoardBody, UpdateCalendarBody } from "@workspace/api-zod";
 import { ObjectStorageService } from "./objectStorage";
 import { applyBoardOperation, initialBoardData, parseBoardData } from "./boardOperations";
+import {
+  applyCalendarOperation,
+  initialCalendarData,
+  parseCalendarData,
+} from "./calendarOperations";
+import { fetchIcalFeed } from "./calendarIcal";
 import {
   applySpreadsheetAssistantEdits,
   initialSpreadsheetData,
@@ -35,7 +41,7 @@ const MAX_ASSISTANT_WHITEBOARD_BYTES = 1_500_000;
 const MAX_ROSTER_ENTRIES = 1_000;
 
 type ArtifactRow = typeof interviewWhiteboardsTable.$inferSelect;
-type ArtifactKind = "whiteboard" | "board" | "document" | "spreadsheet";
+type ArtifactKind = "whiteboard" | "board" | "document" | "spreadsheet" | "calendar";
 type ArtifactAccessCheck = (row: Pick<ArtifactRow, "conversationScope" | "conversationPeer">) => boolean | Promise<boolean>;
 
 export const ASSISTANT_ARTIFACT_TOOL_NAMES = new Set([
@@ -45,10 +51,12 @@ export const ASSISTANT_ARTIFACT_TOOL_NAMES = new Set([
   "create_document",
   "create_spreadsheet",
   "create_whiteboard",
+  "create_calendar",
   "edit_whiteboard",
   "edit_board",
   "edit_document",
   "edit_spreadsheet",
+  "edit_calendar",
 ]);
 
 const boardOperationSchema = {
@@ -101,16 +109,61 @@ const boardOperationSchema = {
   required: ["operation"],
 };
 
+const calendarEventProperties = {
+  title: { type: "string", minLength: 1, maxLength: 200 },
+  description: { type: "string", maxLength: 12000 },
+  location: { type: "string", maxLength: 500 },
+  startAt: { type: "string", description: "ISO 8601 datetime (e.g. 2026-11-20T18:30:00), or YYYY-MM-DD for an all-day event." },
+  endAt: { type: "string", description: "ISO 8601 datetime, or YYYY-MM-DD. Defaults to +1 hour, or +1 day for all-day events." },
+  allDay: { type: "boolean" },
+  assignees: { type: "array", maxItems: 32, items: { type: "string", maxLength: 80 } },
+  color: { type: "string", maxLength: 16, description: "Hex color, e.g. #16869a." },
+} as const;
+
+const calendarOperationSchema = {
+  type: "object",
+  properties: {
+    operation: {
+      type: "string",
+      enum: [
+        "rename_calendar", "create_event", "update_event", "delete_event",
+        "add_ical_feed", "remove_ical_feed", "refresh_ical_feed",
+      ],
+    },
+    title: { type: "string", maxLength: 120, description: "New calendar name for rename_calendar." },
+    description: { type: "string", maxLength: 500, description: "New calendar description for rename_calendar." },
+    event: {
+      type: "object",
+      properties: calendarEventProperties,
+      required: ["title", "startAt"],
+    },
+    eventPatch: {
+      type: "object",
+      properties: {
+        ...calendarEventProperties,
+        title: { type: "string", minLength: 1, maxLength: 200 },
+        startAt: { ...calendarEventProperties.startAt, description: "ISO 8601 datetime, or YYYY-MM-DD." },
+      },
+    },
+    eventId: { type: "string", description: "Event id for update_event/delete_event (from create_event or read_collaboration_artifact)." },
+    feedUrl: { type: "string", maxLength: 2048, description: "Webcal/https iCal URL for add_ical_feed." },
+    feedName: { type: "string", maxLength: 80 },
+    feedColor: { type: "string", maxLength: 16 },
+    feedId: { type: "string", description: "Feed id for remove_ical_feed/refresh_ical_feed." },
+  },
+  required: ["operation"],
+};
+
 export const ASSISTANT_ARTIFACT_TOOLS = [
   {
     type: "function" as const,
     function: {
       name: "list_collaboration_artifacts",
-      description: "List accessible collaboration artifacts with their kind. A Board is a structured task/Kanban board; a Whiteboard is a freeform canvas; a Document is rich text; a Spreadsheet is a workbook grid. Use this to identify the correct existing artifact before editing.",
+      description: "List accessible collaboration artifacts with their kind. A Board is a structured task/Kanban board; a Whiteboard is a freeform canvas; a Document is rich text; a Spreadsheet is a workbook grid; a Calendar is a shared team calendar with dated events and iCal feeds. Use this to identify the correct existing artifact before editing.",
       parameters: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: ["whiteboard", "board", "document", "spreadsheet"] },
+          kind: { type: "string", enum: ["whiteboard", "board", "document", "spreadsheet", "calendar"] },
           limit: { type: "integer", minimum: 1, maximum: 50 },
         },
         required: [],
@@ -121,7 +174,7 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     type: "function" as const,
     function: {
       name: "read_collaboration_artifact",
-      description: "Read an accessible artifact by id before editing. The returned kind distinguishes task Board, freeform Whiteboard, rich-text Document, and workbook Spreadsheet. Reads only the signed-in interviewer's shared and direct-conversation artifacts. Spreadsheet rows and Board/Whiteboard items can be paged with offset and limit; set sheetName to read another worksheet.",
+      description: "Read an accessible artifact by id before editing. The returned kind distinguishes task Board, freeform Whiteboard, rich-text Document, workbook Spreadsheet, and team Calendar. Reads only the signed-in interviewer's shared and direct-conversation artifacts. Board/Whiteboard/Calendar items can be paged with offset and limit; set sheetName to read another worksheet.",
       parameters: {
         type: "object",
         properties: {
@@ -190,6 +243,20 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
     function: {
       name: "create_spreadsheet",
       description: "Create a shared workbook-style Spreadsheet for rows, columns, calculations, and formulas (similar to an Excel worksheet). This is not a task board. After creation, use the returned spreadsheetId with edit_spreadsheet to add headers, rows, or formulas.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string", minLength: 1, maxLength: 120 },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "create_calendar",
+      description: "Create a shared team Calendar for scheduled events, interviews, deadlines, and iCal feeds. This is not a Board or Spreadsheet. After creation, use the returned calendarId with edit_calendar to add events, or read_collaboration_artifact to list them.",
       parameters: {
         type: "object",
         properties: {
@@ -319,6 +386,21 @@ export const ASSISTANT_ARTIFACT_TOOLS = [
       },
     },
   },
+  {
+    type: "function" as const,
+    function: {
+      name: "edit_calendar",
+      description: "Apply one validated operation to an accessible team Calendar (shared events, deadlines, and subscribed iCal feeds)—not task cards or spreadsheet cells. Use operation=create_event with event.title and event.startAt (ISO datetime or YYYY-MM-DD for all-day); use update_event/delete_event with eventId (from create_event or read_collaboration_artifact); rename_calendar to rename; add_ical_feed/refresh_ical_feed/remove_ical_feed to manage external iCal subscriptions. Do not delete events or feeds unless explicitly requested. Read the Calendar first when answering questions about it.",
+      parameters: {
+        type: "object",
+        properties: {
+          calendarId: { type: "string" },
+          operation: calendarOperationSchema,
+        },
+        required: ["calendarId", "operation"],
+      },
+    },
+  },
 ];
 
 type ToolOutcome = {
@@ -332,6 +414,7 @@ function kindForRow(row: ArtifactRow): ArtifactKind | null {
     const parsed = JSON.parse(row.data) as { kind?: unknown; elements?: unknown };
     if (parsed.kind === "board") return "board";
     if (parsed.kind === "document") return "document";
+    if (parsed.kind === "calendar") return "calendar";
     return Array.isArray(parsed.elements) ? "whiteboard" : null;
   } catch {
     return null;
@@ -357,7 +440,7 @@ async function listArtifacts(
   teamId?: string | null,
 ): Promise<ToolOutcome> {
   const requestedKind = args.kind;
-  if (requestedKind !== undefined && !["whiteboard", "board", "document", "spreadsheet"].includes(String(requestedKind))) {
+  if (requestedKind !== undefined && !["whiteboard", "board", "document", "spreadsheet", "calendar"].includes(String(requestedKind))) {
     return toolFailure("Choose a supported artifact kind.");
   }
   const limit = safeNumber(args.limit, 25, 1, 50);
@@ -536,6 +619,61 @@ function whiteboardReadView(row: ArtifactRow, args: Record<string, unknown>): To
   };
 }
 
+function calendarReadView(
+  row: ArtifactRow,
+  args: Record<string, unknown>,
+): ToolOutcome {
+  const data = parseCalendarData(row.data);
+  if (!data) return toolFailure("The stored calendar data is invalid.");
+  const query = clippedText(args.query, 120).trim().toLowerCase();
+  const events = [...data.events]
+    .sort((a, b) => toDateValue(a.startAt) - toDateValue(b.startAt))
+    .filter((event) => !query || [
+      event.title, event.description, event.location, ...event.assignees,
+    ].some((value) => value.toLowerCase().includes(query)));
+  const offset = safeNumber(args.offset, 0, 0, events.length);
+  const limit = safeNumber(args.limit, 40, 1, 50);
+  const slice = events.slice(offset, offset + limit).map((event) => ({
+    id: event.id,
+    title: event.title,
+    description: event.description.slice(0, 400),
+    startAt: toDateValue(event.startAt) > 0 ? new Date(toDateValue(event.startAt)).toISOString() : String(event.startAt),
+    endAt: toDateValue(event.endAt) > 0 ? new Date(toDateValue(event.endAt)).toISOString() : String(event.endAt),
+    allDay: event.allDay,
+    location: event.location,
+    assignees: event.assignees,
+    color: event.color,
+    feedId: event.feedId,
+    updatedBy: event.updatedBy,
+  }));
+  return {
+    content: JSON.stringify({
+      ok: true,
+      id: row.id,
+      kind: "calendar",
+      title: row.title,
+      description: data.description,
+      feeds: data.feeds.map((feed) => ({
+        id: feed.id,
+        name: feed.name,
+        url: feed.url,
+        lastFetchedAt: feed.lastFetchedAt,
+        lastError: feed.lastError,
+      })),
+      events: slice,
+      eventCount: events.length,
+      offset,
+      truncated: offset + slice.length < events.length,
+    }),
+    activity: { tool: "read_collaboration_artifact", detail: `Calendar "${row.title.slice(0, 45)}"` },
+  };
+}
+
+function toDateValue(value: string | Date): number {
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
 async function readArtifact(
   args: Record<string, unknown>,
   canAccess: ArtifactAccessCheck,
@@ -554,6 +692,7 @@ async function readArtifact(
   if (kind === "board") return boardReadView(row, args);
   if (kind === "spreadsheet") return spreadsheetReadView(row, args);
   if (kind === "whiteboard") return whiteboardReadView(row, args);
+  if (kind === "calendar") return calendarReadView(row, args);
   if (kind === "document") {
     const read = await readDocumentForAssistant(row.id, String(args.displayName ?? ""), team);
     if (!read.ok) return toolFailure(read.error);
@@ -1002,6 +1141,104 @@ async function createSpreadsheet(args: Record<string, unknown>, displayName: str
   };
 }
 
+async function createCalendar(args: Record<string, unknown>, displayName: string, teamId?: string | null): Promise<ToolOutcome> {
+  const parsedTitle = creationTitle(args, "calendar");
+  if (!parsedTitle.title) return toolFailure(parsedTitle.error ?? "A calendar title is required.");
+  const row = await insertSharedArtifact(
+    parsedTitle.title,
+    JSON.stringify(initialCalendarData()),
+    displayName,
+    teamId,
+  );
+  return {
+    content: JSON.stringify({ ok: true, kind: "calendar", calendarId: row.id, title: row.title }),
+    activity: { tool: "create_calendar", detail: `"${row.title.slice(0, 45)}"` },
+  };
+}
+
+async function editCalendar(
+  args: Record<string, unknown>,
+  displayName: string,
+  canAccess: ArtifactAccessCheck,
+  teamId?: string | null,
+): Promise<ToolOutcome> {
+  const calendarId = clippedText(args.calendarId, 120).trim();
+  const operation = UpdateCalendarBody.safeParse(args.operation);
+  if (!calendarId || !operation.success) {
+    return toolFailure(operation.success ? "A calendar id is required." : "The calendar operation is invalid.");
+  }
+  const team = teamId?.trim() ? teamId : DEFAULT_TEAM_ID;
+
+  // External feeds are fetched before the transaction so the database lock is
+  // never held across network I/O. Add failures abort the update; refresh
+  // failures are recorded on the feed (lastError) so the attempt is visible.
+  let importedEvents: Awaited<ReturnType<typeof fetchIcalFeed>> | undefined;
+  let feedError: string | undefined;
+  if (operation.data.operation === "add_ical_feed") {
+    const feedUrl = operation.data.feedUrl?.trim();
+    if (feedUrl) {
+      try {
+        importedEvents = await fetchIcalFeed(feedUrl);
+      } catch (error) {
+        return toolFailure(error instanceof Error ? error.message : "That feed could not be read.");
+      }
+    }
+  } else if (operation.data.operation === "refresh_ical_feed") {
+    const feedId = operation.data.feedId?.trim();
+    if (feedId) {
+      const [existing] = await db.select().from(interviewWhiteboardsTable)
+        .where(and(eq(interviewWhiteboardsTable.id, calendarId), teamFilter(interviewWhiteboardsTable.teamId, team)))
+        .limit(1);
+      const current = existing ? parseCalendarData(existing.data) : null;
+      const feed = current?.feeds.find((item) => item.id === feedId);
+      if (feed) {
+        try {
+          importedEvents = await fetchIcalFeed(feed.url);
+        } catch (error) {
+          feedError = error instanceof Error ? error.message : "That feed could not be read.";
+        }
+      }
+    }
+  }
+
+  const result = await db.transaction(async (tx) => {
+    const [row] = await tx.select().from(interviewWhiteboardsTable)
+      .where(and(eq(interviewWhiteboardsTable.id, calendarId), teamFilter(interviewWhiteboardsTable.teamId, team)))
+      .limit(1)
+      .for("update");
+    const rowAccessible = await canAccess(row);
+    if (!row || !rowAccessible || kindForRow(row) !== "calendar") {
+      return { ok: false as const, error: "Calendar not found or not accessible." };
+    }
+    const current = parseCalendarData(row.data);
+    if (!current) return { ok: false as const, error: "The stored calendar data is invalid." };
+    const applied = applyCalendarOperation(current, operation.data, displayName, { importedEvents, feedError });
+    if (!applied.ok) return { ok: false as const, error: applied.error };
+    const serialized = JSON.stringify(applied.data);
+    if (Buffer.byteLength(serialized, "utf8") > 1_500_000) {
+      return { ok: false as const, error: "This calendar is too large to save." };
+    }
+    const [updated] = await tx.update(interviewWhiteboardsTable)
+      .set({
+        data: serialized,
+        ...(applied.title ? { title: applied.title.slice(0, 120) } : {}),
+        updatedAt: new Date(),
+      })
+      .where(and(eq(interviewWhiteboardsTable.id, row.id), teamFilter(interviewWhiteboardsTable.teamId, team)))
+      .returning();
+    const eventId = operation.data.operation === "create_event"
+      ? applied.data.events[applied.data.events.length - 1]?.id
+      : operation.data.eventId;
+    return { ok: true as const, title: updated.title, operation: operation.data.operation, events: applied.data.events.length, eventId };
+  });
+  if (!result.ok) return toolFailure(result.error);
+  pushRealtimeHint("interview_whiteboards");
+  return {
+    content: JSON.stringify({ ok: true, calendarId, title: result.title, operation: result.operation, eventCount: result.events, eventId: result.eventId }),
+    activity: { tool: "edit_calendar", detail: `"${result.title.slice(0, 45)}" · ${result.operation}` },
+  };
+}
+
 export async function runAssistantArtifactTool(
   name: string,
   args: Record<string, unknown>,
@@ -1016,10 +1253,12 @@ export async function runAssistantArtifactTool(
   if (name === "create_board") return createBoard(args, displayName, teamId);
   if (name === "create_document") return createDocument(args, displayName, teamId);
   if (name === "create_spreadsheet") return createSpreadsheet(args, displayName, teamId);
+  if (name === "create_calendar") return createCalendar(args, displayName, teamId);
   if (name === "create_whiteboard") return createWhiteboard(args, displayName, teamId);
   if (name === "edit_whiteboard") return editWhiteboard(args, displayName, canAccess, teamId);
   if (name === "edit_board") return editBoard(args, displayName, canAccess, teamId);
   if (name === "edit_document") return editDocument(args, displayName, teamId);
   if (name === "edit_spreadsheet") return editSpreadsheet(args, canAccess, teamId);
+  if (name === "edit_calendar") return editCalendar(args, displayName, canAccess, teamId);
   return toolFailure("Unknown artifact tool.");
 }

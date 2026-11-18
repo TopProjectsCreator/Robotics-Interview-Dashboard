@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatMentions, messageMentionsInterviewer } from "./chat-mentions";
+import { buildApplicantMentionPeople, buildChannelMentions, buildObjectMentions, findChatChannelMentions, findChatMentions, messageMentionsInterviewer } from "./chat-mentions";
 
 const people = [
   { token: "Maksim" },
@@ -112,5 +112,71 @@ describe("chat mentions", () => {
     expect(messageMentionsInterviewer("@Ishaan", "Ishaan", roster)).toBe(true);
     expect(messageMentionsInterviewer("@Applicant Ishaan", "Ishaan", roster)).toBe(false);
     expect(messageMentionsInterviewer("@all", "Ishaan", roster)).toBe(true);
+  });
+});
+describe("chat object mentions", () => {
+  const objects = [
+    { id: "11111111-2222-4333-8444-555555555555", title: "Sprint plan", data: JSON.stringify({ kind: "board" }) },
+    { id: "bbbbbbbb-1111-4333-8666-777777777777", title: "Budget sheet", data: JSON.stringify({ kind: "spreadsheet" }) },
+    { id: "cccccccc-2222-4333-8777-888888888888", title: "Collision", data: JSON.stringify({ kind: "document" }) },
+    { id: "dddddddd-3333-4333-8888-999999999999", title: "Collision", data: "{\"kind\":\"whiteboard\"}" },
+    { id: "eeeeeeee-5555-4333-9000-aaaaaaaaaaaa", title: "Tryout calendar", data: JSON.stringify({ kind: "calendar" }) },
+  ];
+
+  it("builds mention tokens for every chat-created object kind (document, whiteboard, board, spreadsheet, calendar)", () => {
+    const mentions = buildObjectMentions(objects, ["Ishaan", "all", "ai"]);
+    const kinds = new Set(mentions.map(object => object.kind));
+    expect([...kinds].sort()).toEqual(["board", "calendar", "document", "spreadsheet", "whiteboard"]);
+
+    const board = mentions.find(object => object.kind === "board");
+    const sheet = mentions.find(object => object.kind === "spreadsheet");
+    const document = mentions.find(object => object.kind === "document");
+    const whiteboard = mentions.find(object => object.kind === "whiteboard");
+    const calendar = mentions.find(object => object.kind === "calendar");
+    expect(board?.title).toBe("Sprint plan");
+    expect(sheet?.title).toBe("Budget sheet");
+    expect(document?.title).toBe("Collision");
+    expect(whiteboard?.title).toBe("Collision");
+    expect(calendar?.title).toBe("Tryout calendar");
+    // Duplicate titles get a stable Ref disambiguator.
+    expect(new Set([document?.token, whiteboard?.token]).size).toBe(2);
+    expect([document?.token, whiteboard?.token].every(token => token?.startsWith("Collision"))).toBe(true);
+  });
+
+  it("matches object mentions by whitespace-normalized title, case-insensitively", () => {
+    const mentions = buildObjectMentions(objects, []);
+    const matches = findChatMentions("Open @Sprint plan when you get back.", mentions);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].person).toMatchObject({ kind: "board", id: "11111111-2222-4333-8444-555555555555" });
+    expect(matches[0].text).toBe("@Sprint plan");
+  });
+
+  it("matches object mentions by raw id", () => {
+    const mentions = buildObjectMentions(objects, []);
+    const matches = findChatMentions("See @11111111-2222-4333-8444-555555555555 for the plan.", mentions);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0].person).toMatchObject({ kind: "board", title: "Sprint plan" });
+  });
+
+  it("prefers the longest token when titles overlap", () => {
+    const overlapping = [
+      ...objects,
+      { id: "eeeeeeee-4444-4333-8999-000000000000", title: "Sprint plan v2", data: JSON.stringify({ kind: "document" }) },
+    ];
+    const mentions = buildObjectMentions(overlapping, []);
+    const matches = findChatMentions("Check @Sprint plan v2 and @Sprint plan.", mentions);
+
+    expect(matches).toHaveLength(2);
+    expect(matches.map(match => match.person.title)).toEqual(["Sprint plan v2", "Sprint plan"]);
+  });
+
+  it("ignores mentions with no @ or with a token that is not an object", () => {
+    const mentions = buildObjectMentions(objects, []);
+
+    expect(findChatMentions("Sprint plan without trigger", mentions)).toHaveLength(0);
+    expect(findChatMentions("@Sprint plans", mentions)).toHaveLength(0);
+    expect(findChatMentions("", mentions)).toHaveLength(0);
   });
 });

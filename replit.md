@@ -82,7 +82,7 @@ Rust/Cargo 1.85 or newer is required for the API build; it compiles the bundled 
 - Public entry pages: `/`, `/interview-landing`, `/chat-landing`, `/parts-landing`, `/cad-landing`, and `/code-landing`; `/auth` is the sign-in route.
 - `/dashboard`, `/interview`, `/applicants`, and `/queue` — live team overview, interview planning, applicant search/import and decision lanes, and an interviewer-aware queue.
 - `/attendance`, `/big-screen`, and `/display` — attendance and seating operations plus the sanitized waiting-room display.
-- `/chat` — shared and direct interviewer chat, attachments, reactions, polls, moderation, team notifications, AI mentions, server-scheduled messages, and embedded web previews (paste `<iframe>` HTML into a message).
+- `/chat` — shared and direct interviewer chat, attachments, reactions, polls, moderation, team notifications, AI mentions, server-scheduled messages, message forwarding to other conversations (team, direct, or channel), and embedded web previews (paste `<iframe>` HTML into a message).
 - `/spreadsheets/:id` — shared spreadsheet editing; chat also creates collaborative documents, whiteboards, boards, and spreadsheets.
 - `/parts` and `/parts/assistant` — parts catalog (15 suppliers, including Limelight Vision and Platypus Robotics' 274-product Wix store catalog and WestCoast Products' live UCP catalog API sync) and inventory, supplier search/sync, robot builds, cost tracking, and a parts-aware assistant.
 - `/cad` — private CAD library with folders, large chunked uploads, and browser-side previews for supported CAD and mesh formats.

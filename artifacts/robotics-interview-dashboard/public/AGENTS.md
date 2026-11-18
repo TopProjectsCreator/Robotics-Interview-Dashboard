@@ -101,7 +101,8 @@ Every workspace and public surface, what it does, and how far it goes.
   rendered as tables, JSON pretty-printed, archives browsable as trees, and 3D models
   (.glb/.stl/.obj/.ply/.3mf/.step/.iges/.brep/.x_t/.x_b) rendered inline in chat.
 - **Social layer:** reactions, replies/threads with parent previews, pinned sticky bar
-  with jump-to, read receipts ("Read by …"), edited/deleted badges, per-channel slow
+  with jump-to, read receipts ("Read by …"; authors see their own messages,
+  admins see every message they can access), edited/deleted badges, per-channel slow
   mode, custom team emoji uploads with `:name:` shortcodes (≤512 KB
   png/jpeg/gif/webp), full emoji picker.
 - **@ai in chat:** mention `@ai` and the assistant answers in-thread with tool-use
@@ -281,8 +282,9 @@ Every workspace and public surface, what it does, and how far it goes.
   (prompt, frequency, time, weekdays, timezone)/cancel.
 - **Broadcasts:** admins send popups from Workspace settings → Broadcast to the whole team (or one person, picked by name); optionally mirrored as OS notifications; delivery to everyone online or a specific person; short-lived by default.
 - **Presence:** "Live now" pills in admin settings show who is online by name, their
-  page and rough region, with coordinator kick and per-person drill-down (visits,
-  sessions, first/last seen).
+  page and rough region, with coordinator kick and per-person drill-down (IP addresses,
+  visits, sessions, first/last seen). Offline teammates are listed beneath with their
+  last-seen time and open the same drill-down.
 
 ### 04.9 — Overview, settings & the shell
 

@@ -6,8 +6,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PresenceEntry } from './presenceEntry';
+import type { PresenceOfflineEntry } from './presenceOfflineEntry';
 
 export interface PresenceList {
   onlineCount: number;
   entries: PresenceEntry[];
+  /** Team accounts that are not currently online, with their last-seen times (null when never seen) */
+  offline: PresenceOfflineEntry[];
 }

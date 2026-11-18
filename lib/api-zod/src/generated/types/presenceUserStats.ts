@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PresenceIpEntry } from './presenceIpEntry';
 import type { PresenceUserStatsPagesItem } from './presenceUserStatsPagesItem';
 
 export interface PresenceUserStats {
@@ -16,6 +17,8 @@ export interface PresenceUserStats {
   visitCount: number;
   firstSeenAt: string | null;
   lastSeenAt: string | null;
+  /** Recent distinct IP addresses seen for this person, most recent first (currently online sessions are flagged) */
+  ips: PresenceIpEntry[];
   pages: PresenceUserStatsPagesItem[];
   /** Online sessions from this person with browser notifications granted */
   notifyGranted: number;

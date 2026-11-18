@@ -402,7 +402,7 @@ describe("AssistantModelPicker", () => {
   });
 
   it("covers the complete static assistant tool catalog, including image and workspace actions", () => {
-    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(85);
+    expect(ALL_ASSISTANT_TOOL_NAMES).toHaveLength(87);
     expect(new Set(ALL_ASSISTANT_TOOL_NAMES).size).toBe(ALL_ASSISTANT_TOOL_NAMES.length);
     const names = new Set(ALL_ASSISTANT_TOOL_NAMES);
     for (const name of [
@@ -430,6 +430,8 @@ describe("AssistantModelPicker", () => {
       "list_code_project_files",
       "write_code_file",
       "execute_workspace_tools",
+      "create_calendar",
+      "edit_calendar",
     ]) {
       expect(names.has(name), `${name} should have an individual setting`).toBe(true);
     }

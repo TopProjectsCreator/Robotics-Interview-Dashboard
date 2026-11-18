@@ -366,9 +366,59 @@ router.get("/presence", async (req, res): Promise<void> => {
       )
       .orderBy(desc(presenceHeartbeatsTable.updatedAt));
     const names = await accountNamesById(rows.map((row) => row.accountId), teamId);
+    // Team accounts that are not online right now, with their last-known
+    // page-visit times so admins can see when each person was last active.
+    const onlineAccountIds = new Set(rows.map((row) => row.accountId).filter(Boolean));
+    let offline: Array<{ userId: string; name: string; firstSeenAt: string | null; lastSeenAt: string | null }> = [];
+    try {
+      const teamAccounts = await db
+        .select({ id: interviewerAccountsTable.id, displayName: interviewerAccountsTable.displayName })
+        .from(interviewerAccountsTable)
+        .where(teamFilter(interviewerAccountsTable.teamId, teamId));
+      const offlineAccounts = teamAccounts.filter((account) => !onlineAccountIds.has(account.id));
+      const offlineIds = offlineAccounts.map((account) => account.id);
+      const seen = new Map<string, { firstSeenAt: Date; lastSeenAt: Date }>();
+      if (offlineIds.length > 0) {
+        const result = await pool.query<{ accountId: string; firstSeen: Date | string | null; lastSeen: Date | string | null }>(
+          `select account_id as "accountId",
+                  min(entered_at) as "firstSeen",
+                  max(coalesce(exited_at, entered_at)) as "lastSeen"
+             from page_visits
+            where ${teamSqlCondition('"team_id"', "$2")}
+              and account_id = any($1::text[])
+            group by account_id`,
+          [offlineIds, teamId],
+        );
+        for (const row of result.rows) {
+          if (row.firstSeen && row.lastSeen) {
+            seen.set(row.accountId, { firstSeenAt: new Date(row.firstSeen), lastSeenAt: new Date(row.lastSeen) });
+          }
+        }
+      }
+      offline = offlineAccounts
+        .map((account) => {
+          const seenRow = seen.get(account.id);
+          return {
+            userId: account.id,
+            name: account.displayName,
+            firstSeenAt: seenRow?.firstSeenAt.toISOString() ?? null,
+            lastSeenAt: seenRow?.lastSeenAt.toISOString() ?? null,
+          };
+        })
+        .sort((left, right) => {
+          const leftTime = left.lastSeenAt ? Date.parse(left.lastSeenAt) : 0;
+          const rightTime = right.lastSeenAt ? Date.parse(right.lastSeenAt) : 0;
+          if (rightTime !== leftTime) return rightTime - leftTime;
+          return left.name.localeCompare(right.name);
+        });
+    } catch (error) {
+      // The offline roster is a nicety; the online list must still render.
+      req.log.warn({ err: error }, "Offline roster lookup failed");
+    }
     res.json(
       GetPresenceResponse.parse({
         onlineCount: rows.length,
+        offline,
         entries: rows.map((row) => ({
           userId: row.accountId,
           name: (row.accountId && names.get(row.accountId)) || UNKNOWN_USER_LABEL,
@@ -402,7 +452,7 @@ router.get("/presence/stats", async (req, res): Promise<void> => {
     const name = names.get(userId) ?? UNKNOWN_USER_LABEL;
     const stats = await getAccountStats(userId, teamId);
     const online = await db
-      .select({ notifyPermission: presenceHeartbeatsTable.notifyPermission })
+      .select({ ip: presenceHeartbeatsTable.ip, updatedAt: presenceHeartbeatsTable.updatedAt, notifyPermission: presenceHeartbeatsTable.notifyPermission })
       .from(presenceHeartbeatsTable)
       .where(
         and(
@@ -419,7 +469,38 @@ router.get("/presence/stats", async (req, res): Promise<void> => {
       else if (session.notifyPermission === "denied" || session.notifyPermission === "default") notifyDenied += 1;
       else notifyUnknown += 1;
     }
-    res.json(GetPresenceStatsResponse.parse({ ...stats, name, notifyGranted, notifyDenied, notifyUnknown }));
+    // Recent distinct IPs for this person: page-visit history merged with
+    // any currently online session, most recent first.
+    const ipsByAddress = new Map<string, { ip: string; lastSeenAt: Date; online: boolean }>();
+    try {
+      const visitIps = await pool.query<{ ip: string; lastSeen: Date | string }>(
+        `select ip, max(coalesce(exited_at, entered_at)) as "lastSeen"
+           from page_visits
+          where ${teamSqlCondition('"team_id"', "$2")}
+            and account_id = $1
+            and ip <> ''
+          group by ip
+          order by "lastSeen" desc
+          limit 20`,
+        [userId, teamId],
+      );
+      for (const row of visitIps.rows) {
+        ipsByAddress.set(row.ip, { ip: row.ip, lastSeenAt: new Date(row.lastSeen), online: false });
+      }
+    } catch (error) {
+      req.log.warn({ err: error }, "Presence IP history lookup failed");
+    }
+    for (const session of online) {
+      if (!session.ip) continue;
+      const existing = ipsByAddress.get(session.ip);
+      const seenAt = existing && existing.lastSeenAt > session.updatedAt ? existing.lastSeenAt : session.updatedAt;
+      ipsByAddress.set(session.ip, { ip: session.ip, lastSeenAt: seenAt, online: true });
+    }
+    const ips = [...ipsByAddress.values()]
+      .sort((left, right) => Number(right.online) - Number(left.online) || right.lastSeenAt.getTime() - left.lastSeenAt.getTime())
+      .slice(0, 10)
+      .map((entry) => ({ ip: entry.ip, lastSeenAt: entry.lastSeenAt.toISOString(), online: entry.online }));
+    res.json(GetPresenceStatsResponse.parse({ ...stats, name, notifyGranted, notifyDenied, notifyUnknown, ips }));
   } catch (error) {
     req.log.error({ err: error }, "Presence stats failed");
     res.status(503).json({ error: "Presence unavailable" });

@@ -10,9 +10,7 @@ import { CadWorkspacePage } from "./CadWorkspacePage";
 const mocks = vi.hoisted(() => ({
   listLibrary: vi.fn(),
   iconPolicy: vi.fn(),
-  session: vi.fn(),
   getCadStorageStatus: vi.fn(),
-  updateIconPolicy: vi.fn(),
   createBot: vi.fn(),
   updateBot: vi.fn(),
   deleteBot: vi.fn(),
@@ -29,10 +27,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@workspace/api-client-react", () => ({
   getListCadLibraryQueryKey: () => ["/api/cad/library"],
   getGetCadIconPolicyQueryKey: () => ["/api/cad/icon-policy"],
-  getGetSessionQueryKey: () => ["/api/auth/session"],
   useGetCadIconPolicy: mocks.iconPolicy,
-  useGetSession: mocks.session,
-  updateCadIconPolicy: mocks.updateIconPolicy,
   getCadStorageStatus: mocks.getCadStorageStatus,
   useListCadLibrary: mocks.listLibrary,
   createCadBot: mocks.createBot,
@@ -122,10 +117,11 @@ function renderPage(
   },
   statusError?: Error,
   cachedCadStatus?: CadStorageStatus,
+  enabledIcons: readonly string[] = DEFAULT_CAD_ICON_IDS,
 ) {
   mocks.listLibrary.mockReturnValue({ data: library, isLoading: false });
   mocks.iconPolicy.mockReturnValue({
-    data: { enabledIcons: [...DEFAULT_CAD_ICON_IDS] },
+    data: { enabledIcons: [...enabledIcons] },
     isLoading: false,
     isError: false,
   });
@@ -167,10 +163,8 @@ function dropTarget(element: Element, data: Record<string, string>, files: File[
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.session.mockReturnValue({ data: { role: "coordinator" } });
   mocks.createBot.mockResolvedValue(bot);
   mocks.updateBot.mockResolvedValue(bot);
-  mocks.updateIconPolicy.mockImplementation(async (value) => value);
   mocks.createFolder.mockResolvedValue(intakeFolder);
   mocks.updateModel.mockResolvedValue(model());
   mocks.deleteModel.mockResolvedValue(undefined);
@@ -267,21 +261,14 @@ describe("CAD workspace tree", () => {
     await waitFor(() => expect(mocks.updateBot).toHaveBeenCalledWith("bot-1", { icon: "bot" }));
   });
 
-  it("lets admins disable icon choices and hides that control from other roles", async () => {
-    const { unmount } = renderPage();
-    const componentIcon = screen.getByTestId("cad-icon-policy-component");
-    expect(componentIcon).toBeChecked();
-    fireEvent.click(componentIcon);
-    fireEvent.click(screen.getByTestId("button-save-cad-icon-policy"));
-
-    await waitFor(() => expect(mocks.updateIconPolicy).toHaveBeenCalledWith({
-      enabledIcons: DEFAULT_CAD_ICON_IDS.filter((icon) => icon !== "component"),
-    }));
-
-    unmount();
-    mocks.session.mockReturnValue({ data: { role: "interviewer" } });
-    renderPage();
+  it("keeps the team's enabled icons out of the page chrome and in the bot picker", async () => {
+    // The admin policy panel now lives in Workspace settings → Operations.
+    renderPage(undefined, undefined, undefined, undefined, ["boxes", "bot"]);
     expect(screen.queryByTestId("cad-icon-policy")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId("cad-bot-icon-trigger-bot-1"));
+    expect(screen.getByTestId("cad-bot-icon-option-bot-1-boxes")).toBeInTheDocument();
+    expect(screen.getByTestId("cad-bot-icon-option-bot-1-bot")).toBeInTheDocument();
+    expect(screen.queryByTestId("cad-bot-icon-option-bot-1-wrench")).not.toBeInTheDocument();
   });
 
   it("shows only the models in the selected location", async () => {

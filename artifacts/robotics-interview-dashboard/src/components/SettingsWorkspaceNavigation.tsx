@@ -24,7 +24,7 @@ const BASE_SECTIONS: SettingsNavigationItem[] = [
   { id: "team", label: "Team", description: "Team members, access, inbox, and naming rules.", keywords: "members roles passwords access workspace mailbox email rules" },
   { id: "branding", label: "Branding", description: "Shared team colors, logo, background, and default theme.", keywords: "color logo background image theme default light dark locked" },
   { id: "chat", label: "Chat", description: "Team chat behavior, assistant conversation settings, and app adjustments.", keywords: "slow mode messages app adjustments feature requests assistant" },
-  { id: "operations", label: "Operations", description: "Live updates, broadcasts, and data controls.", keywords: "refresh notifications broadcast data reset parts order blocked ip signin network address tinyurl short link alias redirect t" },
+  { id: "operations", label: "Operations", description: "Live updates, broadcasts, and data controls.", keywords: "refresh notifications broadcast data reset parts order blocked ip signin network address tinyurl short link alias redirect cad bot icons models t" },
 ];
 
 export function getSettingsNavigationItems({
