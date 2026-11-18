@@ -3,12 +3,9 @@ import {
   ArrowUpRight,
   Award,
   CalendarDays,
+  ChevronDown,
   ExternalLink,
-  MapPin,
-  Radio,
-  School,
   Trophy,
-  UsersRound,
   X,
 } from "lucide-react";
 import {
@@ -61,46 +58,111 @@ export function ChatFtcMentionToken({ reference }: { reference: FtcMentionRefere
 }
 
 function formatEventDate(date: string | null): string | null {
-  if (!date) return null;
-  const parsed = new Date(date);
-  if (!Number.isFinite(parsed.getTime())) return null;
+  const value = date?.trim();
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return value;
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(parsed);
 }
 
-function eventDateLabel(event: FtcEvent): string | null {
-  const start = formatEventDate(event.dateStart);
-  const end = formatEventDate(event.dateEnd);
-  if (start && end && start !== end) return `${start}–${end}`;
-  return start ?? end;
-}
-
-function displayLocation(parts: Array<string | null | undefined>): string | null {
-  const values = parts.map(value => value?.trim()).filter((value): value is string => Boolean(value));
-  return values.length ? values.join(", ") : null;
-}
-
-function officialLink(url: string | null, label: string) {
-  if (!url) return null;
+function officialHref(url: string | null): string | null {
+  const value = url?.trim();
+  if (!value) return null;
   let parsed: URL;
   try {
-    parsed = new URL(url);
+    parsed = new URL(value);
   } catch {
     return null;
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+  return parsed.toString();
+}
+
+function ProfileField({ label, value, isLink = false }: { label: string; value: string | number | null; isLink?: boolean }) {
+  const text = typeof value === "string" ? value.trim() : value == null ? "" : String(value);
+  const href = isLink && text ? officialHref(text) : null;
   return (
-    <a href={parsed.toString()} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-[#c5d8da] px-3 text-xs font-semibold text-[#126d7b] transition hover:bg-[#eef8f7] dark:border-[#35515e] dark:text-[#8fd7e0] dark:hover:bg-[#1c3843]">
-      {label}<ExternalLink size={13} aria-hidden="true" />
-    </a>
+    <div className="min-w-0 rounded-lg bg-white/75 px-3 py-2 dark:bg-[#122630]/70">
+      <dt className="text-[10px] font-bold uppercase tracking-[.1em] text-[#5b6f76] dark:text-[#b2c1c7]">{label}</dt>
+      <dd className="mt-1 break-words text-sm leading-5 text-[#344e58] dark:text-[#d6e1e5]" data-testid={`ftc-field-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+        {href
+          ? <a href={href} target="_blank" rel="noreferrer" className="inline-flex min-h-10 max-w-full items-center gap-1 break-all font-medium text-[#126d7b] underline decoration-[#9dc9cc] underline-offset-2 transition hover:text-[#0c5360] focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:text-[#8fd7e0] dark:decoration-[#527a83] dark:hover:text-[#b5edf1] dark:focus-visible:outline-[#8fd7e0]">{text}<ExternalLink size={12} className="shrink-0" aria-hidden="true" /></a>
+          : text || <span className="italic text-[#61747a] dark:text-[#a9bbc2]">Not listed</span>}
+      </dd>
+    </div>
   );
 }
 
-function DetailLine({ icon, children }: { icon: ReactNode; children: ReactNode }) {
-  return <p className="flex items-start gap-2 text-sm text-[#52666e] dark:text-[#c1d0d7]"><span className="mt-0.5 shrink-0 text-[#16869a] dark:text-[#6fc3cf]">{icon}</span><span>{children}</span></p>;
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <h3 className="text-[11px] font-bold uppercase tracking-[.1em] text-[#5d7178] dark:text-[#b2c1c7]">{children}</h3>;
 }
 
-function SectionLabel({ children }: { children: ReactNode }) {
-  return <h3 className="text-[10px] font-bold uppercase tracking-[.12em] text-[#77888d] dark:text-[#9eb0b8]">{children}</h3>;
+function TeamFields({ team }: { team: FtcTeam }) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <SectionLabel>Team identity</SectionLabel>
+        <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+          <ProfileField label="Team number" value={team.teamNumber} />
+          <ProfileField label="Display team number" value={team.displayTeamNumber} />
+          <ProfileField label="Full name" value={team.nameFull} />
+          <ProfileField label="Short name" value={team.nameShort} />
+        </dl>
+      </div>
+      <div className="space-y-2">
+        <SectionLabel>School and location</SectionLabel>
+        <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+          <ProfileField label="School" value={team.schoolName} />
+          <ProfileField label="City" value={team.city} />
+          <ProfileField label="State or province" value={team.stateProv} />
+          <ProfileField label="Country" value={team.country} />
+        </dl>
+      </div>
+      <div className="space-y-2">
+        <SectionLabel>Team details</SectionLabel>
+        <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+          <ProfileField label="Website" value={team.website} isLink />
+          <ProfileField label="Rookie year" value={team.rookieYear} />
+          <ProfileField label="Robot name" value={team.robotName} />
+          <ProfileField label="Home region" value={team.homeRegion} />
+        </dl>
+      </div>
+    </div>
+  );
+}
+
+function EventFields({ event }: { event: FtcEvent }) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2">
+        <SectionLabel>Event details</SectionLabel>
+        <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+          <ProfileField label="Season" value={event.season} />
+          <ProfileField label="Event code" value={event.code} />
+          <ProfileField label="Name" value={event.name} />
+          <ProfileField label="Type" value={event.typeName} />
+          <ProfileField label="Start date" value={formatEventDate(event.dateStart)} />
+          <ProfileField label="End date" value={formatEventDate(event.dateEnd)} />
+        </dl>
+      </div>
+      <div className="space-y-2">
+        <SectionLabel>Location</SectionLabel>
+        <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+          <ProfileField label="Venue" value={event.venue} />
+          <ProfileField label="City" value={event.city} />
+          <ProfileField label="State or province" value={event.stateProv} />
+          <ProfileField label="Country" value={event.country} />
+        </dl>
+      </div>
+      <div className="space-y-2">
+        <SectionLabel>Official links</SectionLabel>
+        <dl className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
+          <ProfileField label="Website" value={event.website} isLink />
+          <ProfileField label="Live stream" value={event.liveStreamUrl} isLink />
+        </dl>
+      </div>
+    </div>
+  );
 }
 
 function FtcMentionDialog({ reference, onClose }: { reference: FtcMentionReference; onClose: () => void }) {
@@ -108,8 +170,8 @@ function FtcMentionDialog({ reference, onClose }: { reference: FtcMentionReferen
     ? `FTC Team ${reference.teamNumber}`
     : `FTC Event ${reference.eventCode}`;
   return (
-    <ModalOverlay onClose={onClose} label={title} testId="dialog-ftc-mention" className="max-h-[min(90dvh,760px)] max-w-2xl rounded-t-3xl border border-[#d7e4e5] bg-white shadow-2xl sm:rounded-3xl dark:border-[#304955] dark:bg-[#12232d]">
-      <div className="flex items-start gap-3 border-b border-[#e5eded] px-5 py-4 dark:border-[#304955]">
+    <ModalOverlay onClose={onClose} label={title} testId="dialog-ftc-mention" className="flex max-h-[min(90dvh,760px)] max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-[#d7e4e5] bg-white shadow-2xl sm:rounded-3xl dark:border-[#304955] dark:bg-[#12232d]">
+      <div className="flex shrink-0 items-start gap-3 border-b border-[#e5eded] px-5 py-4 dark:border-[#304955]">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#e4f3f1] text-[#137989] dark:bg-[#203f48] dark:text-[#8fd7e0]">
           {reference.kind === "team" ? <Award size={20} /> : <CalendarDays size={20} />}
         </span>
@@ -117,9 +179,9 @@ function FtcMentionDialog({ reference, onClose }: { reference: FtcMentionReferen
           <p className="text-[10px] font-bold uppercase tracking-[.14em] text-[#16869a] dark:text-[#6fc3cf]">FIRST Tech Challenge · {reference.season}</p>
           <h2 className="mt-1 break-words text-lg font-bold leading-6 text-[#183a4b] dark:text-[#edf5f7]" data-testid="text-ftc-profile-title">{title}</h2>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close FTC details" data-testid="button-close-ftc-details" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#667b83] transition hover:bg-[#eef4f4] hover:text-[#183a4b] dark:text-[#a9bbc2] dark:hover:bg-[#203742] dark:hover:text-white"><X size={17} /></button>
+        <button type="button" onClick={onClose} aria-label="Close FTC details" data-testid="button-close-ftc-details" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-[#667b83] transition hover:bg-[#eef4f4] hover:text-[#183a4b] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:text-[#a9bbc2] dark:hover:bg-[#203742] dark:hover:text-white dark:focus-visible:outline-[#8fd7e0]"><X size={17} /></button>
       </div>
-      <div className="max-h-[calc(min(90dvh,760px)-74px)] overflow-y-auto p-5">
+      <div className="min-h-0 flex-1 overflow-y-auto p-5">
         {reference.kind === "team"
           ? <FtcTeamDetails reference={reference} />
           : <FtcEventDetails reference={reference} />}
@@ -144,31 +206,23 @@ function FtcTeamDetails({ reference }: { reference: Extract<FtcMentionReference,
 }
 
 function TeamProfile({ team, events }: { team: FtcTeam; events: FtcEvent[] }) {
-  const teamName = team.nameFull ?? team.nameShort ?? team.schoolName ?? `Team ${team.teamNumber}`;
-  const location = displayLocation([team.city, team.stateProv, team.country]);
+  const teamName = team.nameFull?.trim() || team.nameShort?.trim() || team.schoolName?.trim() || `Team ${team.teamNumber}`;
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-[#d8e8e7] bg-[#f5faf9] p-4 dark:border-[#2c4b55] dark:bg-[#182f39]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-xs font-bold text-[#16869a] dark:text-[#6fc3cf]">FTC {team.displayTeamNumber ?? team.teamNumber}</p>
+            <p className="font-mono text-xs font-bold text-[#16869a] dark:text-[#6fc3cf]">FTC {team.displayTeamNumber?.trim() || team.teamNumber}</p>
             <h3 className="mt-1 break-words text-xl font-bold tracking-tight text-[#183a4b] dark:text-[#edf5f7]" data-testid="text-ftc-team-name">{teamName}</h3>
-            {team.schoolName && team.schoolName !== teamName && <p className="mt-1 text-sm text-[#63747c] dark:text-[#a9bbc2]">{team.schoolName}</p>}
           </div>
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#16869a] shadow-sm dark:bg-[#203b46] dark:text-[#8fd7e0]"><Trophy size={19} /></span>
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {location && <DetailLine icon={<MapPin size={15} />}>{location}</DetailLine>}
-          {team.robotName && <DetailLine icon={<Radio size={15} />}>Robot: {team.robotName}</DetailLine>}
-          {team.rookieYear && <DetailLine icon={<School size={15} />}>Rookie year: {team.rookieYear}</DetailLine>}
-          {team.homeRegion && <DetailLine icon={<UsersRound size={15} />}>Home region: {team.homeRegion}</DetailLine>}
-        </div>
-        {team.website && <div className="mt-4">{officialLink(team.website, "Team website")}</div>}
+        <div className="mt-4"><TeamFields team={team} /></div>
       </section>
       <section>
         <div className="mb-2 flex items-center justify-between gap-3">
           <SectionLabel>Events this season</SectionLabel>
-          <span className="text-[11px] text-[#7d8c91] dark:text-[#9eb0b8]">{events.length} listed</span>
+          <span className="text-xs font-medium text-[#61747a] dark:text-[#b0c0c7]">{events.length} listed</span>
         </div>
         {events.length
           ? <div className="grid gap-2 sm:grid-cols-2">{events.map(event => <EventSummary key={`${event.season}-${event.code}`} event={event} />)}</div>
@@ -179,13 +233,21 @@ function TeamProfile({ team, events }: { team: FtcTeam; events: FtcEvent[] }) {
 }
 
 function EventSummary({ event }: { event: FtcEvent }) {
-  const location = displayLocation([event.city, event.stateProv]);
   return (
-    <div className="rounded-xl border border-[#e0eaea] p-3 dark:border-[#304955]" data-testid={`ftc-team-event-${event.code.toLowerCase()}`}>
-      <p className="text-sm font-semibold text-[#183a4b] dark:text-[#edf5f7]">{event.name ?? event.code}</p>
-      <p className="mt-1 text-[11px] text-[#16869a] dark:text-[#6fc3cf]">{event.code}{event.typeName ? ` · ${event.typeName}` : ""}</p>
-      {(eventDateLabel(event) || location) && <p className="mt-1.5 text-xs text-[#687b82] dark:text-[#a9bbc2]">{[eventDateLabel(event), location].filter(Boolean).join(" · ")}</p>}
-    </div>
+    <details className="group min-w-0 rounded-xl border border-[#e0eaea] bg-white/55 p-3 dark:border-[#304955] dark:bg-[#122630]/45" data-testid={`ftc-team-event-${event.code.toLowerCase()}`}>
+      <summary className="flex min-h-10 cursor-pointer list-none items-start justify-between gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:focus-visible:outline-[#8fd7e0] [&::-webkit-details-marker]:hidden">
+        <span className="min-w-0">
+          <span className="block break-words text-sm font-semibold text-[#183a4b] dark:text-[#edf5f7]">{event.name?.trim() || event.code}</span>
+          <span className="mt-1 block break-words text-xs font-medium text-[#61747a] dark:text-[#b0c0c7]">{event.code} · {event.typeName?.trim() || "Type not listed"}</span>
+        </span>
+        <span className="inline-flex min-h-10 shrink-0 items-center gap-1 text-xs font-semibold text-[#126d7b] dark:text-[#8fd7e0]">
+          <span className="group-open:hidden">View details</span>
+          <span className="hidden group-open:inline">Hide details</span>
+          <ChevronDown size={15} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="mt-3 border-t border-[#e0eaea] pt-3 dark:border-[#304955]"><EventFields event={event} /></div>
+    </details>
   );
 }
 
@@ -201,45 +263,48 @@ function FtcEventDetails({ reference }: { reference: Extract<FtcMentionReference
   if (query.isError || !query.data) return <ErrorProfile onRetry={() => void query.refetch()} />;
   const { event, teams } = query.data;
   if (!event) return <p className="rounded-xl bg-[#fff7e2] p-4 text-sm text-[#79580e] dark:bg-[#352e1a] dark:text-[#f0d77c]">This event is not listed for the {reference.season} season.</p>;
-  const location = displayLocation([event.venue, event.city, event.stateProv, event.country]);
-  const dates = eventDateLabel(event);
   return (
     <div className="space-y-5">
       <section className="rounded-2xl border border-[#d8e8e7] bg-[#f5faf9] p-4 dark:border-[#2c4b55] dark:bg-[#182f39]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-xs font-bold text-[#16869a] dark:text-[#6fc3cf]">{event.code}{event.typeName ? ` · ${event.typeName}` : ""}</p>
-            <h3 className="mt-1 break-words text-xl font-bold tracking-tight text-[#183a4b] dark:text-[#edf5f7]" data-testid="text-ftc-event-name">{event.name ?? event.code}</h3>
-            {dates && <p className="mt-1 text-sm text-[#63747c] dark:text-[#a9bbc2]">{dates}</p>}
+            <p className="min-w-0 break-words font-mono text-xs font-bold text-[#16869a] dark:text-[#6fc3cf]">{event.code}{event.typeName ? ` · ${event.typeName}` : ""}</p>
+            <h3 className="mt-1 break-words text-xl font-bold tracking-tight text-[#183a4b] dark:text-[#edf5f7]" data-testid="text-ftc-event-name">{event.name?.trim() || event.code}</h3>
           </div>
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-[#16869a] shadow-sm dark:bg-[#203b46] dark:text-[#8fd7e0]"><CalendarDays size={19} /></span>
         </div>
-        {location && <div className="mt-4"><DetailLine icon={<MapPin size={15} />}>{location}</DetailLine></div>}
-        <div className="mt-4 flex flex-wrap gap-2">
-          {officialLink(event.website, "Event website")}
-          {officialLink(event.liveStreamUrl, "Live stream")}
-        </div>
+        <div className="mt-4"><EventFields event={event} /></div>
       </section>
       <section>
         <div className="mb-2 flex items-center justify-between gap-3">
           <SectionLabel>Teams attending</SectionLabel>
-          <span className="text-[11px] text-[#7d8c91] dark:text-[#9eb0b8]">{teams.length} listed</span>
+          <span className="text-xs font-medium text-[#61747a] dark:text-[#b0c0c7]">{teams.length} listed</span>
         </div>
         {teams.length
-          ? <div className="grid gap-2 sm:grid-cols-2">{teams.slice(0, 24).map(team => <TeamSummary key={team.teamNumber} team={team} />)}</div>
+          ? <div className="grid gap-2 sm:grid-cols-2">{teams.map(team => <TeamSummary key={team.teamNumber} team={team} />)}</div>
           : <p className="rounded-xl border border-dashed border-[#d2dfdf] px-3 py-4 text-sm text-[#75858a] dark:border-[#35515e] dark:text-[#a9bbc2]">No attending teams are listed yet.</p>}
-        {teams.length > 24 && <p className="mt-2 text-xs text-[#75858a] dark:text-[#a9bbc2]">Showing the first 24 teams.</p>}
       </section>
     </div>
   );
 }
 
 function TeamSummary({ team }: { team: FtcTeam }) {
+  const teamName = team.nameFull?.trim() || team.nameShort?.trim() || team.schoolName?.trim() || "Official FTC team";
   return (
-    <div className="flex min-w-0 items-start gap-2.5 rounded-xl border border-[#e0eaea] p-3 dark:border-[#304955]" data-testid={`ftc-event-team-${team.teamNumber}`}>
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e4f3f1] font-mono text-[10px] font-bold text-[#137989] dark:bg-[#203f48] dark:text-[#8fd7e0]"><Award size={14} /></span>
-      <span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b] dark:text-[#edf5f7]">Team {team.displayTeamNumber ?? team.teamNumber}</span><span className="block truncate text-xs text-[#718188] dark:text-[#a9bbc2]">{team.nameFull ?? team.nameShort ?? team.schoolName ?? "Official FTC team"}</span></span>
-    </div>
+    <details className="group min-w-0 rounded-xl border border-[#e0eaea] bg-white/55 p-3 dark:border-[#304955] dark:bg-[#122630]/45" data-testid={`ftc-event-team-${team.teamNumber}`}>
+      <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:focus-visible:outline-[#8fd7e0] [&::-webkit-details-marker]:hidden">
+        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#e4f3f1] font-mono text-[10px] font-bold text-[#137989] dark:bg-[#203f48] dark:text-[#8fd7e0]"><Award size={14} /></span>
+        <span className="min-w-0"><span className="block break-words text-xs font-bold text-[#16869a] dark:text-[#6fc3cf]">FTC {team.displayTeamNumber?.trim() || team.teamNumber}</span><span className="block break-words text-sm font-semibold text-[#183a4b] dark:text-[#edf5f7]">{teamName}</span></span>
+        </span>
+        <span className="inline-flex min-h-10 shrink-0 items-center gap-1 text-xs font-semibold text-[#126d7b] dark:text-[#8fd7e0]">
+          <span className="group-open:hidden">View details</span>
+          <span className="hidden group-open:inline">Hide details</span>
+          <ChevronDown size={15} className="transition-transform group-open:rotate-180" aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="mt-3 border-t border-[#e0eaea] pt-3 dark:border-[#304955]"><TeamFields team={team} /></div>
+    </details>
   );
 }
 
@@ -248,5 +313,5 @@ function LoadingProfile({ label }: { label: string }) {
 }
 
 function ErrorProfile({ onRetry }: { onRetry: () => void }) {
-  return <div role="alert" data-testid="status-ftc-error" className="rounded-xl border border-[#e8c8c4] bg-[#fff6f4] p-4 dark:border-[#754943] dark:bg-[#331f20]"><p className="text-sm font-semibold text-[#9f3b33] dark:text-[#efaaa2]">FIRST data could not be loaded.</p><p className="mt-1 text-xs text-[#80534e] dark:text-[#d7a39d]">Check the connection and try again.</p><button type="button" onClick={onRetry} data-testid="button-retry-ftc-details" className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white hover:bg-[#106d7a] dark:bg-[#1d7381] dark:hover:bg-[#248a9b]">Retry<ArrowUpRight size={13} /></button></div>;
+  return <div role="alert" data-testid="status-ftc-error" className="rounded-xl border border-[#e8c8c4] bg-[#fff6f4] p-4 dark:border-[#754943] dark:bg-[#331f20]"><p className="text-sm font-semibold text-[#9f3b33] dark:text-[#efaaa2]">FIRST data could not be loaded.</p><p className="mt-1 text-xs text-[#80534e] dark:text-[#d7a39d]">Check the connection and try again.</p><button type="button" onClick={onRetry} data-testid="button-retry-ftc-details" className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white hover:bg-[#106d7a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:bg-[#1d7381] dark:hover:bg-[#248a9b] dark:focus-visible:outline-[#8fd7e0]">Retry<ArrowUpRight size={13} /></button></div>;
 }
