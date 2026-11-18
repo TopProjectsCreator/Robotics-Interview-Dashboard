@@ -21,6 +21,7 @@
     "test:passkey-browser": "node browser-tests/passkey.browser.mjs",
     "test:workspace-access-browser": "node browser-tests/workspace-access.browser.mjs",
     "test:parts-camera-browser": "node browser-tests/parts-camera.browser.mjs",
+    "test:cad-bot-icon-picker-browser": "node browser-tests/cad-bot-icon-picker.browser.mjs",
     "test:lowmem": "vitest run --config vitest.lowmem.config.ts"
   },
   "devDependencies": {
