@@ -1014,6 +1014,7 @@ export async function runAssistantWorkspaceTool(
          from "interview_chat_messages"
         where ${teamSqlCondition('"team_id"', "$1")}
           and "conversation_scope" = 'shared' and "conversation_peer" is null
+          and "ghosted_at" is null
         order by "created_at" desc limit $2`,
       [context.teamId, limit],
     );
@@ -1054,6 +1055,7 @@ export async function runAssistantWorkspaceTool(
          from "interview_chat_messages"
         where ${teamSqlCondition('"team_id"', "$1")}
           and "conversation_scope" = 'channel' and "conversation_peer" = $2
+           and "ghosted_at" is null
           and "created_at" >= $3 and "created_at" < $4
         order by "created_at" asc limit $5`,
       [context.teamId, channel.id, start, endExclusive, limit],

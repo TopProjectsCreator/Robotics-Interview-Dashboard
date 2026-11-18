@@ -9761,6 +9761,77 @@ export const useDeleteChatMessage = <TError = ErrorType<unknown>,
       return useMutation(getDeleteChatMessageMutationOptions(options));
     }
 
+export const getGhostDeletedChatMessageUrl = (messageId: string,) => {
+
+
+
+
+  return `/api/queue/chat/${messageId}/ghost`
+}
+
+/**
+ * @summary Hide an already-deleted chat message from all chat views
+ */
+export const ghostDeletedChatMessage = async (messageId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getGhostDeletedChatMessageUrl(messageId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getGhostDeletedChatMessageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ghostDeletedChatMessage>>, TError,{messageId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof ghostDeletedChatMessage>>, TError,{messageId: string}, TContext> => {
+
+const mutationKey = ['ghostDeletedChatMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof ghostDeletedChatMessage>>, {messageId: string}> = (props) => {
+          const {messageId} = props ?? {};
+
+          return  ghostDeletedChatMessage(messageId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type GhostDeletedChatMessageMutationResult = NonNullable<Awaited<ReturnType<typeof ghostDeletedChatMessage>>>
+
+    export type GhostDeletedChatMessageMutationError = ErrorType<void>
+
+    /**
+ * @summary Hide an already-deleted chat message from all chat views
+ */
+export const useGhostDeletedChatMessage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof ghostDeletedChatMessage>>, TError,{messageId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof ghostDeletedChatMessage>>,
+        TError,
+        {messageId: string},
+        TContext
+      > => {
+      return useMutation(getGhostDeletedChatMessageMutationOptions(options));
+    }
+
 export const getListInterviewWhiteboardsUrl = (params?: ListInterviewWhiteboardsParams,) => {
   const normalizedParams = new URLSearchParams();
 

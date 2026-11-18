@@ -2832,6 +2832,28 @@ paths:
       responses:
         "204":
           description: Message deleted
+  /queue/chat/{messageId}/ghost:
+    post:
+      operationId: ghostDeletedChatMessage
+      tags: [queue]
+      summary: Hide an already-deleted chat message from all chat views
+      parameters:
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted-message marker hidden
+        "400":
+          description: Invalid message id
+        "403":
+          description: Only coordinators and admins can ghost messages
+        "404":
+          description: Message not found
+        "409":
+          description: Message is not deleted or was already ghosted
   /whiteboards:
     get:
       operationId: listInterviewWhiteboards

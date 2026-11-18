@@ -21,6 +21,7 @@ type StoredMessage = {
   activities: [];
   reactions: [];
   createdAt: string;
+  deletedAt?: string | null;
 };
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -488,5 +489,133 @@ describe("chat attachment round trip", () => {
       String(input).includes("/api/storage/objects/chat-delete-1234") && init?.method === "DELETE",
     );
     expect(storageRequest?.[1]).toMatchObject({ method: "DELETE", credentials: "include" });
+  });
+
+  it("lets a coordinator ghost a deleted message and removes it from the shared chat", async () => {
+    const deletedMessage: StoredMessage = {
+      id: "ghost-target",
+      author: "Jordan",
+      message: "",
+      scope: "shared",
+      peer: null,
+      parentMessageId: null,
+      pinnedAt: null,
+      activities: [],
+      reactions: [],
+      createdAt: "2026-09-30T12:00:00.000Z",
+      deletedAt: "2026-09-30T12:05:00.000Z",
+    };
+    let isGhosted = false;
+    const requests: Array<{ url: URL; init?: RequestInit }> = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const rawUrl = input instanceof Request ? input.url : String(input);
+      const url = new URL(rawUrl, window.location.origin);
+      requests.push({ url, init });
+
+      if (url.pathname === "/api/auth/session") {
+        return jsonResponse({ authenticated: true, label: "Alex", interviewerId: "alex-id", role: "coordinator" });
+      }
+      if (url.pathname === "/api/queue/chat/ghost-target/ghost" && init?.method === "POST") {
+        isGhosted = true;
+        return new Response(null, { status: 204 });
+      }
+      if (url.pathname === "/api/queue/chat") {
+        return jsonResponse({ items: isGhosted ? [] : [deletedMessage], scope: "shared", peer: null });
+      }
+      if (url.pathname === "/api/queue/chat/conversations") {
+        return jsonResponse({ items: [], shared: null, channels: [] });
+      }
+      if (url.pathname === "/api/queue/chat/channels") return jsonResponse({ items: [] });
+      if (url.pathname === "/api/diagnostics") return jsonResponse({ ok: true });
+      return jsonResponse({ items: [], interviewerLabels: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <SettingsProvider>
+            <WouterRouter>
+              <InterviewChatPanel applicantIds={[]} />
+            </WouterRouter>
+          </SettingsProvider>
+          <DialogHost />
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByTestId("chat-message-deleted-ghost-target");
+    fireEvent.click(await screen.findByTestId("button-ghost-chat-message-ghost-target"));
+    await screen.findByTestId("app-dialog");
+    fireEvent.click(screen.getByTestId("app-dialog-confirm"));
+
+    await waitFor(() => {
+      expect(requests.some(({ url, init }) =>
+        url.pathname === "/api/queue/chat/ghost-target/ghost" && init?.method === "POST",
+      )).toBe(true);
+      expect(screen.queryByTestId("chat-message-deleted-ghost-target")).not.toBeInTheDocument();
+    });
+    const ghostRequest = requests.find(({ url, init }) =>
+      url.pathname === "/api/queue/chat/ghost-target/ghost" && init?.method === "POST",
+    );
+    expect(ghostRequest?.init).toMatchObject({ method: "POST", credentials: "include" });
+  });
+
+  it("does not show ghosting to custom chat moderators", async () => {
+    const deletedMessage: StoredMessage = {
+      id: "custom-role-ghost-target",
+      author: "Jordan",
+      message: "",
+      scope: "shared",
+      peer: null,
+      parentMessageId: null,
+      pinnedAt: null,
+      activities: [],
+      reactions: [],
+      createdAt: "2026-09-30T12:00:00.000Z",
+      deletedAt: "2026-09-30T12:05:00.000Z",
+    };
+    let sessionLoaded = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const rawUrl = input instanceof Request ? input.url : String(input);
+      const url = new URL(rawUrl, window.location.origin);
+      if (url.pathname === "/api/auth/session") {
+        sessionLoaded = true;
+        return jsonResponse({
+          authenticated: true,
+          label: "Alex",
+          interviewerId: "alex-id",
+          role: "interviewer",
+          customRoleId: "custom-moderator",
+          permissions: ["chat.moderate"],
+        });
+      }
+      if (url.pathname === "/api/queue/chat") {
+        return jsonResponse({ items: [deletedMessage], scope: "shared", peer: null });
+      }
+      if (url.pathname === "/api/queue/chat/conversations") {
+        return jsonResponse({ items: [], shared: null, channels: [] });
+      }
+      if (url.pathname === "/api/queue/chat/channels") return jsonResponse({ items: [] });
+      if (url.pathname === "/api/diagnostics") return jsonResponse({ ok: true });
+      return jsonResponse({ items: [], interviewerLabels: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <SettingsProvider>
+            <WouterRouter>
+              <InterviewChatPanel applicantIds={[]} />
+            </WouterRouter>
+          </SettingsProvider>
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+
+    await screen.findByTestId("chat-message-deleted-custom-role-ghost-target");
+    await waitFor(() => expect(sessionLoaded).toBe(true));
+    expect(screen.queryByTestId("button-ghost-chat-message-custom-role-ghost-target")).not.toBeInTheDocument();
   });
 });

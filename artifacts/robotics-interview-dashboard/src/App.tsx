@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
    FileUp, FileSpreadsheet, Filter, Flag, GripVertical, Forward, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
-   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Lock, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, SquareSlash, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
+   Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Lock, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, SquareSlash, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash, EyeOff,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import {
@@ -24,7 +24,7 @@ import {
    useSearchFtcMentions, getSearchFtcMentionsQueryKey,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
-   useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
+   useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useGhostDeletedChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam, useListTeamRoles, getListTeamRolesQueryKey, useAssignCustomRole,
    useGetPresence, getGetPresenceQueryKey,
@@ -6961,6 +6961,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   };
   const updateChatMessage = useUpdateChatMessage();
   const deleteChatMessage = useDeleteChatMessage();
+  const ghostDeletedChatMessage = useGhostDeletedChatMessage();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<InterviewChatMessage | null>(null);
   const [forwardingFrom, setForwardingFrom] = useState<InterviewChatMessage | null>(null);
@@ -8389,6 +8390,29 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       },
     );
   };
+  const ghostChatMessage = async (item: InterviewChatMessage) => {
+    const isAdminChat = session.data?.role === "coordinator" || session.data?.role === "admin";
+    if (demoMode || !isAdminChat || !item.deletedAt) return;
+    if (ghostDeletedChatMessage.isPending || !(await confirmAction({
+      title: "Ghost this deleted message?",
+      detail: "This permanently removes the deleted marker from everyone’s chat. Replies stay visible but are no longer linked to this message.",
+      danger: true,
+      confirmLabel: "Ghost message",
+    }))) return;
+    setChatError("");
+    ghostDeletedChatMessage.mutate(
+      { messageId: item.id },
+      {
+        onSuccess: () => {
+          if (replyingTo?.id === item.id) setReplyingTo(null);
+          setOlderChat(current => current.filter(message => message.id !== item.id));
+          void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+          void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
+        },
+        onError: error => setChatError(error instanceof Error ? error.message : "Couldn't ghost that deleted message."),
+      },
+    );
+  };
   const retryFailedAiReply = async () => {
     if (demoMode) { setChatError("AI actions are disabled in this demo."); return; }
     const pendingReply = failedAiReply;
@@ -8832,18 +8856,23 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     const editing = editingMessageId === item.id;
     const mentionedYou = messageMentionsInterviewer(item.message, activeInterviewer, mentionPeople);
     return <div key={item.id} id={`chat-message-${item.id}`} data-chat-message-id={item.id} data-mentioned-you={mentionedYou || undefined} className={`chat-message-card group relative rounded-xl border border-[#e1e9e8] bg-white p-3 transition-colors hover:border-[#c7dddd] ${mentionedYou ? "chat-message-mentioned" : ""} ${item.parentMessageId ? "ml-6 border-l-2 border-l-[#9bcfce]" : ""}`}>
-      {!item.deletedAt && <div className="chat-message-actions pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-        <div className="chat-message-quick-react flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
-          {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
-        </div>
-        <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
-          {item.author === "AI assistant" && <ChatActionTooltip label="Copy response"><CopyButton text={item.message} testId={`button-copy-chat-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]" /></ChatActionTooltip>}
-          <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => { setPickerFor(pickerFor === item.id ? null : item.id); setEmojiOpen(false); }} aria-label="Add reaction" aria-expanded={pickerFor === item.id} data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
-          <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
-          <ChatActionTooltip label="Forward message"><button type="button" onClick={() => openForwardDialog(item)} aria-label={`Forward ${item.author}'s message`} data-testid={`button-forward-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><Forward size={15} /></button></ChatActionTooltip>
-          <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); }, onError: error => setChatError(error instanceof Error ? error.message : "Couldn't pin that message.") })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
-           {canManage && <><ChatActionTooltip label="Edit message"><button type="button" onClick={() => beginEdit(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Edit message" data-testid={`button-edit-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] disabled:opacity-50"><Pencil size={15} /></button></ChatActionTooltip><ChatActionTooltip label="Delete message"><button type="button" onClick={() => removeChatMessage(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Delete message" data-testid={`button-delete-chat-message-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><Trash2 size={15} /></button></ChatActionTooltip></>}
-        </div>
+      {(!item.deletedAt || (isAdminChat && !demoMode)) && <div className="chat-message-actions pointer-events-none absolute right-2 top-0 z-10 flex -translate-y-1/2 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        {!item.deletedAt && <>
+          <div className="chat-message-quick-react flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
+            {["👍", "😂", "🙏"].map(emoji => <ChatActionTooltip key={emoji} label={`React ${emoji}`}><button type="button" onClick={() => react(item.id, emoji)} aria-label={`React with ${emoji}`} className="flex h-7 w-7 items-center justify-center rounded-md text-base transition hover:bg-[#edf4f3]">{emoji}</button></ChatActionTooltip>)}
+          </div>
+          <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)]">
+            {item.author === "AI assistant" && <ChatActionTooltip label="Copy response"><CopyButton text={item.message} testId={`button-copy-chat-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]" /></ChatActionTooltip>}
+            <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => { setPickerFor(pickerFor === item.id ? null : item.id); setEmojiOpen(false); }} aria-label="Add reaction" aria-expanded={pickerFor === item.id} data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
+            <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
+            <ChatActionTooltip label="Forward message"><button type="button" onClick={() => openForwardDialog(item)} aria-label={`Forward ${item.author}'s message`} data-testid={`button-forward-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><Forward size={15} /></button></ChatActionTooltip>
+            <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); }, onError: error => setChatError(error instanceof Error ? error.message : "Couldn't pin that message.") })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
+            {canManage && <><ChatActionTooltip label="Edit message"><button type="button" onClick={() => beginEdit(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Edit message" data-testid={`button-edit-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] disabled:opacity-50"><Pencil size={15} /></button></ChatActionTooltip><ChatActionTooltip label="Delete message"><button type="button" onClick={() => removeChatMessage(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Delete message" data-testid={`button-delete-chat-message-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><Trash2 size={15} /></button></ChatActionTooltip></>}
+          </div>
+        </>}
+        {item.deletedAt && isAdminChat && !demoMode && <div className="flex items-center gap-0.5 rounded-lg border border-[#dce5e5] bg-white p-1 shadow-[0_3px_12px_rgba(24,58,75,0.14)] dark:border-[#344954] dark:bg-[#182b35]">
+          <ChatActionTooltip label="Ghost deleted message"><button type="button" onClick={() => void ghostChatMessage(item)} disabled={ghostDeletedChatMessage.isPending} aria-label="Ghost deleted message" data-testid={`button-ghost-chat-message-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] dark:text-[#c0d3db] dark:hover:bg-[#243b46] dark:hover:text-[#7dd3c7] disabled:opacity-50"><EyeOff size={14} /></button></ChatActionTooltip>
+        </div>}
       </div>}
       {item.parentMessageId && <div className="mb-2 flex items-center gap-1.5 text-[11px] text-[#7c8c91]"><Reply size={12} className="text-[#16869a]" /><span>Replying to <strong className="text-[#52666e]">{parent?.author ?? "another message"}</strong>{parentPreview ? ` — ${parentPreview}${parentPreview.length >= 110 ? "…" : ""}` : ""}</span></div>}
       <div className="flex items-center justify-between gap-2">

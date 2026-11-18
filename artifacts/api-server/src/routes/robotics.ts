@@ -139,6 +139,7 @@ import {
   ReorderQueueResponse,
   UpdateChatMessageBody,
   UpdateChatMessageResponse,
+  GhostDeletedChatMessageParams,
   UploadChatCustomEmojiBody,
   UploadChatCustomEmojiResponse,
   UpdateApplicantBody,
@@ -217,7 +218,10 @@ import { checkAiMentionAllowed, checkDuplicatePost, checkPostAllowed, recordPost
 import { applicantVersion, displaySettingsVersion, notModified, queueVersion, sendVersioned } from "../lib/httpCache";
 import { teamFilter, teamSqlCondition } from "../lib/teams";
 import { CHAT_EXPORT_CONTENT_TYPES, chatExportConversationLabel, chatExportFileName, chatExportHeader, parseChatExportFormat, parseChatExportLastParam, rowToChunk, type ChatExportRow } from "../lib/chatExport";
-import { assistantChatPostAuthorizationFailure } from "../lib/interviewChatAuthorization";
+import {
+  assistantChatPostAuthorizationFailure,
+  ghostDeletedChatMessageAuthorizationFailure,
+} from "../lib/interviewChatAuthorization";
 import { presenceSessionHash, accountNamesById } from "./presence";
 import { getAccountStats } from "../lib/presence";
 import { formatPresenceStats, resolvePresenceUser } from "../lib/assistantPresenceStats";
@@ -5700,15 +5704,18 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
                 (select count(*)::int from chat_message_reads cr
                  join interview_chat_messages mr on mr.id = cr.message_id
                  where mr.conversation_scope = 'direct' and position($1 in mr.conversation_peer) > 0
+                   and mr.ghosted_at is null
                    and cr.reader_id = $3
                    and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as rc,
                 (select max(cr.read_at) from chat_message_reads cr
                  join interview_chat_messages mr on mr.id = cr.message_id
                  where mr.conversation_scope = 'direct' and position($1 in mr.conversation_peer) > 0
+                   and mr.ghosted_at is null
                    and cr.reader_id = $3
                    and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as r
            from interview_chat_messages
           where conversation_scope = 'direct' and position($1 in conversation_peer) > 0
+            and ghosted_at is null
             and (team_id = $2 or ($2 = 'default' and team_id is null))`,
         [account.displayName, teamId, account.id],
       );
@@ -5721,15 +5728,18 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
                   (select count(*)::int from chat_message_reads cr
                    join interview_chat_messages mr on mr.id = cr.message_id
                    where mr.conversation_scope = 'channel' and mr.conversation_peer = any($1::text[])
+                     and mr.ghosted_at is null
                      and cr.reader_id = $3
                      and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as rc,
                   (select max(cr.read_at) from chat_message_reads cr
                    join interview_chat_messages mr on mr.id = cr.message_id
                    where mr.conversation_scope = 'channel' and mr.conversation_peer = any($1::text[])
+                     and mr.ghosted_at is null
                      and cr.reader_id = $3
                      and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as r
              from interview_chat_messages
             where conversation_scope = 'channel' and conversation_peer = any($1::text[])
+              and ghosted_at is null
               and (team_id = $2 or ($2 = 'default' and team_id is null))`,
           [accessibleIds, teamId, account.id],
         );
@@ -5739,7 +5749,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
         `select count(*)::int as rc, max(cr.read_at) as r
            from chat_message_reads cr
            join interview_chat_messages m on m.id = cr.message_id
-          where m.conversation_scope = 'shared' and cr.reader_id = $2
+         where m.conversation_scope = 'shared' and m.ghosted_at is null and cr.reader_id = $2
             and (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))`,
         [teamId, account.id],
       );
@@ -5764,6 +5774,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
          from interview_chat_messages m
         where m.conversation_scope = 'direct'
           and position($1 in m.conversation_peer) > 0
+          and m.ghosted_at is null
           and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
         order by m.conversation_peer, m.created_at desc`,
       [account.displayName, teamId, account.displayName, account.id],
@@ -5795,6 +5806,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
              from interview_chat_messages m
             where m.conversation_scope = 'channel'
               and m.conversation_peer = any($1::text[])
+              and m.ghosted_at is null
               and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
             order by m.conversation_peer, m.created_at desc`,
           [accessibleIds, teamId, account.displayName, account.id],
@@ -5835,6 +5847,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
                )) as "isUnread"
          from interview_chat_messages
         where conversation_scope = 'shared' and conversation_peer is null
+          and ghosted_at is null
           and (team_id = $1 or ($1 = 'default' and team_id is null))
         order by created_at desc
         limit 1`,
@@ -5990,6 +6003,7 @@ async function lastChannelActivity(
        from interview_chat_messages
       where conversation_scope = 'channel'
         and conversation_peer = any($1::text[])
+        and ghosted_at is null
         and (team_id = $2 or ($2 = 'default' and team_id is null))
       order by conversation_peer, created_at desc`,
     [channelIds, teamId],
@@ -6309,16 +6323,16 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     const { rows } = await pool.query(
        `select (select count(*)::int from interview_chat_messages m
          where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
-           and m.conversation_scope = $2 and ${peerCondition}) as n,
+           and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null) as n,
         (select max(m.created_at) from interview_chat_messages m
          where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
-           and m.conversation_scope = $2 and ${peerCondition}) as m,
+           and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null) as m,
          (select max(m.edited_at) from interview_chat_messages m
           where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
-            and m.conversation_scope = $2 and ${peerCondition}) as e,
+            and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null) as e,
          (select max(m.deleted_at) from interview_chat_messages m
           where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
-            and m.conversation_scope = $2 and ${peerCondition}) as d,
+            and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null) as d,
         (select max(r.created_at) from chat_message_reactions r
          where (r.team_id = $1 or ($1 = 'default' and r.team_id is null))) as r,
         (select max(p.created_at) from chat_polls p
@@ -6326,16 +6340,16 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
         (select max(v.created_at) from chat_poll_votes v where v.message_id in (
            select m2.id from interview_chat_messages m2
            where (m2.team_id = $1 or ($1 = 'default' and m2.team_id is null))
-             and m2.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "m2.")}
+             and m2.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "m2.")} and m2.ghosted_at is null
             order by m2.created_at desc limit 100)) as v,
          (select count(*)::int from chat_message_reads cr
           join interview_chat_messages mr on mr.id = cr.message_id
           where (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))
-            and mr.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "mr.")}) as rc,
+            and mr.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "mr.")} and mr.ghosted_at is null) as rc,
          (select max(cr.read_at) from chat_message_reads cr
           join interview_chat_messages mr on mr.id = cr.message_id
           where (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))
-            and mr.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "mr.")}) as rr`,
+            and mr.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "mr.")} and mr.ghosted_at is null) as rr`,
       [teamId, conversation.scope, ...peerParams],
     );
       const row = rows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null; r: Date | null; p: Date | null; v: Date | null; rc: number; rr: Date | null };
@@ -6346,6 +6360,7 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     const conversationFilters = [
       teamFilter(interviewChatMessagesTable.teamId, teamId),
       eq(interviewChatMessagesTable.conversationScope, conversation.scope),
+      isNull(interviewChatMessagesTable.ghostedAt),
       conversation.key === null
         ? isNull(interviewChatMessagesTable.conversationPeer)
         : eq(interviewChatMessagesTable.conversationPeer, conversation.key),
@@ -6419,7 +6434,7 @@ router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> =
     if (last !== null) {
       const { rows } = await pool.query(
         `select m.created_at, m.id from interview_chat_messages m
-         where ${teamCondition} and m.conversation_scope = $2 and ${peerCondition}
+         where ${teamCondition} and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null
          order by m.created_at desc, m.id desc
          limit 1 offset $${3 + peerParams.length}`,
         [teamId, conversation.scope, ...peerParams, last - 1],
@@ -6449,7 +6464,7 @@ router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> =
       const { rows } = await pool.query(
         `select m.id, m.author, m.message, m.parent_message_id, m.edited_at, m.deleted_at, m.activities, m.created_at
          from interview_chat_messages m
-         where ${teamCondition} and m.conversation_scope = $2 and ${peerCondition}${lowerBoundSql}${cursorSql}
+         where ${teamCondition} and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null${lowerBoundSql}${cursorSql}
          order by m.created_at asc, m.id asc
          limit $${params.length}`,
         params,
@@ -7005,7 +7020,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
       conversationPeer: interviewChatMessagesTable.conversationPeer,
     })
       .from(interviewChatMessagesTable)
-      .where(and(eq(interviewChatMessagesTable.id, parentMessageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
+      .where(and(eq(interviewChatMessagesTable.id, parentMessageId), isNull(interviewChatMessagesTable.ghostedAt), teamFilter(interviewChatMessagesTable.teamId, teamId)))
       .limit(1);
     if (!parent || parent.conversationScope !== conversation.scope || parent.conversationPeer !== conversation.key) {
       res.status(400).json({ error: "The message being replied to was not found." });
@@ -7469,6 +7484,74 @@ router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<
   res.status(204).end();
 });
 
+router.post("/queue/chat/:messageId/ghost", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId) : undefined;
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+
+  const authorizationFailure = ghostDeletedChatMessageAuthorizationFailure(account.role);
+  if (authorizationFailure) {
+    res.status(authorizationFailure.status).json({ error: authorizationFailure.error });
+    return;
+  }
+
+  const params = GhostDeletedChatMessageParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: "Invalid message id." });
+    return;
+  }
+  const messageId = params.data.messageId;
+  const teamId = await requestTeamId(req);
+  const [existingMessage] = await db.select({
+    id: interviewChatMessagesTable.id,
+    deletedAt: interviewChatMessagesTable.deletedAt,
+    ghostedAt: interviewChatMessagesTable.ghostedAt,
+  }).from(interviewChatMessagesTable)
+    .where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
+    .limit(1);
+  if (!existingMessage) {
+    res.status(404).json({ error: "Message not found." });
+    return;
+  }
+  if (!existingMessage.deletedAt) {
+    res.status(409).json({ error: "Only deleted messages can be ghosted." });
+    return;
+  }
+  if (existingMessage.ghostedAt) {
+    res.status(409).json({ error: "This message was already ghosted." });
+    return;
+  }
+
+  const ghosted = await db.transaction(async (tx) => {
+    const [updated] = await tx.update(interviewChatMessagesTable)
+      .set({ ghostedAt: new Date(), ghostedBy: account.id })
+      .where(and(
+        eq(interviewChatMessagesTable.id, messageId),
+        isNotNull(interviewChatMessagesTable.deletedAt),
+        isNull(interviewChatMessagesTable.ghostedAt),
+        teamFilter(interviewChatMessagesTable.teamId, teamId),
+      ))
+      .returning({ id: interviewChatMessagesTable.id });
+    if (!updated) return false;
+
+    // Keep replies in the conversation without retaining a visible reference
+    // to a tombstone that no longer appears in chat.
+    await tx.update(interviewChatMessagesTable)
+      .set({ parentMessageId: null })
+      .where(and(
+        eq(interviewChatMessagesTable.parentMessageId, messageId),
+        teamFilter(interviewChatMessagesTable.teamId, teamId),
+      ));
+    return true;
+  });
+  if (!ghosted) {
+    res.status(409).json({ error: "This message was already ghosted." });
+    return;
+  }
+  pushRealtimeHint("interview_chat_messages", "UPDATE");
+  res.status(204).end();
+});
+
 function scheduledChatResponse(row: typeof scheduledChatMessagesTable.$inferSelect) {
   return {
     id: row.id,
@@ -7591,7 +7674,7 @@ router.post("/queue/chat/scheduled", requireAdmin, async (req, res): Promise<voi
       conversationPeer: interviewChatMessagesTable.conversationPeer,
     })
       .from(interviewChatMessagesTable)
-      .where(and(eq(interviewChatMessagesTable.id, parentMessageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
+      .where(and(eq(interviewChatMessagesTable.id, parentMessageId), isNull(interviewChatMessagesTable.ghostedAt), teamFilter(interviewChatMessagesTable.teamId, teamId)))
       .limit(1);
     if (!parent || parent.conversationScope !== conversation.scope || parent.conversationPeer !== conversation.key) {
       res.status(400).json({ error: "The message being replied to was not found." });
@@ -7787,7 +7870,7 @@ async function deliverScheduledChat(row: typeof scheduledChatMessagesTable.$infe
         conversationPeer: interviewChatMessagesTable.conversationPeer,
       })
         .from(interviewChatMessagesTable)
-        .where(and(eq(interviewChatMessagesTable.id, row.parentMessageId), teamFilter(interviewChatMessagesTable.teamId, team)))
+        .where(and(eq(interviewChatMessagesTable.id, row.parentMessageId), isNull(interviewChatMessagesTable.ghostedAt), teamFilter(interviewChatMessagesTable.teamId, team)))
         .limit(1);
       if (parent && parent.conversationScope === scope && parent.conversationPeer === key) {
         parentMessageId = parent.id;

@@ -3659,6 +3659,16 @@ export const DeleteChatMessageResponse = zod.void()
 
 
 /**
+ * @summary Hide an already-deleted chat message from all chat views
+ */
+export const GhostDeletedChatMessageParams = zod.object({
+  "messageId": zod.coerce.string()
+})
+
+export const GhostDeletedChatMessageResponse = zod.void()
+
+
+/**
  * @summary List whiteboards available in the current interviewer conversation
  */
 export const listInterviewWhiteboardsQueryScopeDefault = `shared`;
