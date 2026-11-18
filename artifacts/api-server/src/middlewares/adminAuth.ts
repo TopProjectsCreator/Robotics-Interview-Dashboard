@@ -306,7 +306,7 @@ export function requireCoordinator(
     }
     const path = (typeof req.originalUrl === "string" ? req.originalUrl : req.path ?? "")
       .split("?", 1)[0].replace(/^\/api(?=\/|$)/, "");
-    const adminOnly = /^\/(?:auth\/(?:roles|blocked-ips|interviewers\/[^/]+\/(?:custom-role|role|password)|interviewers\/passwords|interviewers\/[^/]+$|teams\/)|workspaces\/visibility|cad\/icon-policy|dashboard\/workspace-usage|assistant\/(?:usage|tool-policy|integration-policy)|tiny-urls(?:\/|$))/.test(path);
+    const adminOnly = /^\/(?:auth\/(?:roles|blocked-ips|interviewers\/[^/]+\/(?:custom-role|role|password)|interviewers\/passwords|interviewers\/[^/]+$|teams\/)|workspaces\/visibility|cad\/icon-policy|dashboard\/workspace-usage|assistant\/(?:usage|tool-policy|integration-policy)|tiny-urls(?:\/|$)|team-assessments(?:\/|$))/.test(path);
     const customRolePermissions = (req as Request & { customRolePermissions?: string[] }).customRolePermissions;
     if (customRolePermissions && !adminOnly) {
       next();

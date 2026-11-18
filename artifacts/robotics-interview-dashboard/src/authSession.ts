@@ -57,6 +57,7 @@ const WORKSPACE_RETURN_PATHS = new Set([
   "/chat",
   "/attendance",
   "/big-screen",
+  "/team-assessments",
   "/parts/assistant",
   "/parts",
   "/cad",

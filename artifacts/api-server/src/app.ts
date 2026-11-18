@@ -12,7 +12,7 @@ import { sitemapHandler } from "./routes/sitemap";
 import { attachAdminSession } from "./middlewares/adminAuth";
 import { isDatabaseConnectionError } from "./lib/databaseErrors";
 import { and, eq } from "drizzle-orm";
-import { db, interviewerAccountsTable, teamRolesTable, DEFAULT_TEAM_ID } from "@workspace/db";
+import { db, interviewerAccountsTable, teamAssessmentSubmissionsTable, teamAssessmentsTable, teamRolesTable, DEFAULT_TEAM_ID } from "@workspace/db";
 import { isAdminRole } from "./lib/roles";
 import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted, workspaceGrantedPermissions, workspaceVisibilityFallback } from "./lib/routePermissions";
 import { readWorkspaceVisibility, userCanSeeWorkspace } from "./lib/workspaceAccess";
@@ -21,6 +21,8 @@ import { normalizePermissions, permissionsForBuiltInRole } from "@workspace/api-
 import { UCP_AGENT_PROFILE_PATH, publicOriginFromHeaders } from "./lib/publicOrigin";
 import { rememberPublicOriginFromHeaders } from "./lib/agentProfile";
 import { tinyUrlRedirectHandler } from "./routes/tinyUrls";
+import { teamFilter } from "./lib/teams";
+import { hasOutstandingTeamAssessments } from "./lib/teamAssessmentRules";
 
 const app: Express = express();
 
@@ -168,6 +170,7 @@ app.use("/api/queue/custom-emojis", express.json({ limit: "1mb" }));
 app.use("/api/spreadsheets", express.json({ limit: "10mb" }));
 app.use("/api/parts/catalog/identify-image", express.json({ limit: "4.1mb" }));
 app.use("/api/assistant/questions", express.json({ limit: "8mb" }));
+app.use("/api/team-assessments", express.json({ limit: "512kb" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -185,6 +188,17 @@ app.use("/api", async (req, res, next) => {
     return;
   }
   try {
+    const pathname = req.originalUrl.split("?", 1)[0];
+    const assessmentUploadCleanup = req.method === "DELETE" &&
+      /^\/api\/storage\/objects\/(?:secondary\/)?team-assessments\/[A-Za-z0-9_-]+\/[a-f0-9-]{36}\/[A-Za-z0-9_-]+\/[a-f0-9-]{36}$/i.test(pathname);
+    if (
+      pathname === "/api/team-assessments" ||
+      pathname.startsWith("/api/team-assessments/") ||
+      assessmentUploadCleanup
+    ) {
+      next();
+      return;
+    }
     const [account] = await db.select({
       role: interviewerAccountsTable.role,
       customRoleId: interviewerAccountsTable.customRoleId,
@@ -253,6 +267,72 @@ app.use("/api", async (req, res, next) => {
   } catch (error) {
     req.log.error({ err: error }, "Custom role permission lookup failed");
     res.status(503).json({ error: "Permissions are temporarily unavailable." });
+  }
+});
+
+// A required assessment is an API access boundary, not only a client-side
+// navigation rule. Keep auth/session endpoints available so the client can
+// render the assessment inbox, but reject ordinary workspace calls until the
+// signed-in member has submitted every active required assessment.
+app.use("/api", async (req, res, next) => {
+  const pathname = req.originalUrl.split("?", 1)[0];
+  const assessmentUploadCleanup = req.method === "DELETE" &&
+    /^\/api\/storage\/objects\/(?:secondary\/)?team-assessments\/[A-Za-z0-9_-]+\/[a-f0-9-]{36}\/[A-Za-z0-9_-]+\/[a-f0-9-]{36}$/i.test(pathname);
+  if (
+    pathname === "/api/team-assessments" ||
+    pathname.startsWith("/api/team-assessments/") ||
+    assessmentUploadCleanup ||
+    pathname === "/api/auth/session" ||
+    pathname === "/api/auth/logout" ||
+    pathname === "/api/healthz"
+  ) {
+    next();
+    return;
+  }
+  const interviewerId = (req as typeof req & { interviewerId?: string }).interviewerId;
+  if (!interviewerId) {
+    next();
+    return;
+  }
+  try {
+    const [account] = await db.select({
+      role: interviewerAccountsTable.role,
+      teamId: interviewerAccountsTable.teamId,
+    }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId)).limit(1);
+    if (!account || isAdminRole(account.role)) {
+      next();
+      return;
+    }
+    const teamId = account.teamId?.trim() || DEFAULT_TEAM_ID;
+    const required = await db.select({ id: teamAssessmentsTable.id })
+      .from(teamAssessmentsTable)
+      .where(and(
+        eq(teamAssessmentsTable.teamId, teamId),
+        eq(teamAssessmentsTable.status, "published"),
+        eq(teamAssessmentsTable.required, true),
+      ));
+    if (!required.length) {
+      next();
+      return;
+    }
+    const submitted = await db.select({ assessmentId: teamAssessmentSubmissionsTable.assessmentId })
+      .from(teamAssessmentSubmissionsTable)
+      .where(and(
+        eq(teamAssessmentSubmissionsTable.teamId, teamId),
+        eq(teamAssessmentSubmissionsTable.interviewerId, interviewerId),
+      ));
+    const submittedIds = new Set(submitted.map((row) => row.assessmentId));
+    if (required.some((assessment) => !submittedIds.has(assessment.id))) {
+      res.status(403).json({
+        error: "Submit your required team assessments before continuing.",
+        code: "ASSESSMENTS_REQUIRED",
+      });
+      return;
+    }
+    next();
+  } catch (error) {
+    req.log.error({ err: error }, "Required assessment access check failed");
+    res.status(503).json({ error: "Required assessment access is temporarily unavailable." });
   }
 });
 

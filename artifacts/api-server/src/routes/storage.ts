@@ -15,7 +15,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { createReadStream, readFileSync } from 'node:fs';
 import express, { Router, type IRouter, type Request, type Response } from 'express';
-import { cadPreviewJobsTable, currentInstance, db, chunkedUploadsTable, teamsTable } from '@workspace/db';
+import { cadPreviewJobsTable, currentInstance, db, chunkedUploadsTable, teamsTable, teamAssessmentSubmissionsTable } from '@workspace/db';
 import { materializeChunkedUpload } from '../lib/chunkedUploads';
 import { logger } from "../lib/logger";
 import { storageInstanceRestricted } from '../lib/objectStorage';
@@ -62,6 +62,7 @@ import {
 } from "../lib/chunkedUploads";
 import { isPrivateObjectReferenced } from "../lib/privateObjectReferences";
 import { canReadTeamBrandingObject } from "../lib/teamBackgroundVisibility";
+import { isTeamAssessmentFileReferenced } from "../lib/teamAssessmentRules";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
@@ -1435,8 +1436,17 @@ router.get(
  * background; `generated/cad/<teamId>/…` holds CAD files produced by the
  * assistant. Paths outside those prefixes are public to the team.
  */
-async function teamScopedObjectAllowed(wildcardPath: string, teamId: string): Promise<boolean> {
+async function teamScopedObjectAllowed(
+  wildcardPath: string,
+  teamId: string,
+  interviewerId?: string,
+  role?: string,
+): Promise<boolean> {
   const parts = wildcardPath.replace(/^secondary\//, "").split("/");
+  if (parts[0] === "team-assessments") {
+    if (parts.length !== 5 || parts[1] !== teamId || !/^[a-f0-9-]{36}$/i.test(parts[4] ?? "")) return false;
+    return parts[2] === interviewerId || role === "coordinator" || role === "admin";
+  }
   if (parts[0] === "team-branding") {
     return parts.length === 3 && parts[1] === teamId;
   }
@@ -1499,7 +1509,12 @@ router.get('/storage/objects/*path', requireAdmin, async (req: Request, res: Res
       }
     }
 
-    if (!(await teamScopedObjectAllowed(wildcardPath, teamId))) {
+    if (!(await teamScopedObjectAllowed(
+      wildcardPath,
+      teamId,
+      authenticatedInterviewerId(req),
+      (req as Request & { interviewerRole?: string }).interviewerRole,
+    ))) {
       res.status(404).json({ error: 'Object not found' });
       return;
     }
@@ -1577,7 +1592,12 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
     const wildcardPath = Array.isArray(raw) ? raw.join('/') : raw;
     const objectPath = `/objects/${wildcardPath}`;
 
-    if (!(await teamScopedObjectAllowed(wildcardPath, await requestTeamId(req)))) {
+    if (!(await teamScopedObjectAllowed(
+      wildcardPath,
+      await requestTeamId(req),
+      authenticatedInterviewerId(req),
+      (req as Request & { interviewerRole?: string }).interviewerRole,
+    ))) {
       res.status(404).json({ error: 'Object not found' });
       return;
     }
@@ -1604,6 +1624,17 @@ router.delete('/storage/objects/*path', requireAdmin, async (req: Request, res: 
       await db.delete(chunkedUploadsTable).where(eq(chunkedUploadsTable.uploadId, uploadId));
       res.status(200).json({ ok: true, deleted: true });
       return;
+    }
+
+    if (wildcardPath.replace(/^secondary\//, "").startsWith("team-assessments/")) {
+      const teamId = await requestTeamId(req);
+      const submissions = await db.select({ answers: teamAssessmentSubmissionsTable.answers })
+        .from(teamAssessmentSubmissionsTable)
+        .where(eq(teamAssessmentSubmissionsTable.teamId, teamId));
+      if (isTeamAssessmentFileReferenced(submissions, objectPath)) {
+        res.status(200).json({ ok: true, deleted: false, reason: 'referenced' });
+        return;
+      }
     }
 
     if (await isPrivateObjectReferenced(objectPath)) {

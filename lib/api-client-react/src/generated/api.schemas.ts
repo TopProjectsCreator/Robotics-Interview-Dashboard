@@ -5,6 +5,227 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type TeamAssessmentQuestionType = typeof TeamAssessmentQuestionType[keyof typeof TeamAssessmentQuestionType];
+
+
+export const TeamAssessmentQuestionType = {
+  single_choice: 'single_choice',
+  multiple_choice: 'multiple_choice',
+  long_answer: 'long_answer',
+  likert: 'likert',
+  ranking: 'ranking',
+  file_upload: 'file_upload',
+  slider: 'slider',
+  style_picker: 'style_picker',
+} as const;
+
+export interface TeamAssessmentQuestion {
+  /**
+     * @minLength 1
+     * @maxLength 64
+     */
+  id: string;
+  type: TeamAssessmentQuestionType;
+  /**
+     * @minLength 1
+     * @maxLength 500
+     */
+  prompt: string;
+  required: boolean;
+  /**
+     * @maxItems 12
+     * @items.maxLength 160
+     */
+  options?: string[];
+  /**
+     * @maxItems 12
+     * @items.maxLength 160
+     */
+  correctAnswers?: string[];
+  min?: number;
+  max?: number;
+  step?: number;
+  /** @maxLength 80 */
+  minLabel?: string;
+  /** @maxLength 80 */
+  maxLabel?: string;
+  /**
+     * @minimum 1
+     * @maximum 3
+     */
+  fileLimit?: number;
+}
+
+export type TeamAssessmentKind = typeof TeamAssessmentKind[keyof typeof TeamAssessmentKind];
+
+
+export const TeamAssessmentKind = {
+  quiz: 'quiz',
+  survey: 'survey',
+} as const;
+
+export type TeamAssessmentStatus = typeof TeamAssessmentStatus[keyof typeof TeamAssessmentStatus];
+
+
+export const TeamAssessmentStatus = {
+  draft: 'draft',
+  published: 'published',
+  paused: 'paused',
+} as const;
+
+export type TeamAssessmentStylePreset = typeof TeamAssessmentStylePreset[keyof typeof TeamAssessmentStylePreset];
+
+
+export const TeamAssessmentStylePreset = {
+  robotics: 'robotics',
+  ocean: 'ocean',
+  sunrise: 'sunrise',
+  forest: 'forest',
+} as const;
+
+export interface TeamAssessment {
+  id: string;
+  title: string;
+  description: string;
+  kind: TeamAssessmentKind;
+  status: TeamAssessmentStatus;
+  required: boolean;
+  stylePreset: TeamAssessmentStylePreset;
+  questions: TeamAssessmentQuestion[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TeamAssessmentInputKind = typeof TeamAssessmentInputKind[keyof typeof TeamAssessmentInputKind];
+
+
+export const TeamAssessmentInputKind = {
+  quiz: 'quiz',
+  survey: 'survey',
+} as const;
+
+export type TeamAssessmentInputStylePreset = typeof TeamAssessmentInputStylePreset[keyof typeof TeamAssessmentInputStylePreset];
+
+
+export const TeamAssessmentInputStylePreset = {
+  robotics: 'robotics',
+  ocean: 'ocean',
+  sunrise: 'sunrise',
+  forest: 'forest',
+} as const;
+
+export interface TeamAssessmentInput {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  title: string;
+  /** @maxLength 1000 */
+  description: string;
+  kind: TeamAssessmentInputKind;
+  required: boolean;
+  stylePreset: TeamAssessmentInputStylePreset;
+  /**
+     * @minItems 1
+     * @maxItems 50
+     */
+  questions: TeamAssessmentQuestion[];
+}
+
+export type TeamAssessmentListItem = TeamAssessment & {
+  assignedCount: number;
+  responseCount: number;
+};
+
+export interface TeamAssessmentList {
+  items: TeamAssessmentListItem[];
+}
+
+export interface RequiredTeamAssessmentList {
+  items: TeamAssessment[];
+}
+
+export type TeamAssessmentSubmissionInputAnswers = { [key: string]: unknown };
+
+export interface TeamAssessmentSubmissionInput {
+  answers: TeamAssessmentSubmissionInputAnswers;
+}
+
+export interface TeamAssessmentSubmissionReceipt {
+  assessmentId: string;
+  submittedAt: string;
+  /** @nullable */
+  score?: number | null;
+  /** @nullable */
+  maxScore?: number | null;
+}
+
+export interface TeamAssessmentUploadInput {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 5242880
+     */
+  size: number;
+  /** @maxLength 120 */
+  contentType: string;
+}
+
+export interface TeamAssessmentUploadUrl {
+  uploadURL: string;
+  objectPath: string;
+}
+
+export type TeamAssessmentCompletionStatus = typeof TeamAssessmentCompletionStatus[keyof typeof TeamAssessmentCompletionStatus];
+
+
+export const TeamAssessmentCompletionStatus = {
+  pending: 'pending',
+  submitted: 'submitted',
+} as const;
+
+/**
+ * @nullable
+ */
+export type TeamAssessmentCompletionAnswers = { [key: string]: unknown } | null;
+
+export interface TeamAssessmentCompletion {
+  interviewerId: string;
+  memberName: string;
+  status: TeamAssessmentCompletionStatus;
+  /** @nullable */
+  score: number | null;
+  /** @nullable */
+  maxScore: number | null;
+  /** @nullable */
+  submittedAt: string | null;
+  /** @nullable */
+  answers: TeamAssessmentCompletionAnswers;
+}
+
+export type TeamAssessmentQuestionSummaryDistributionItem = {
+  value: string;
+  count: number;
+};
+
+export interface TeamAssessmentQuestionSummary {
+  questionId: string;
+  answeredCount: number;
+  distribution: TeamAssessmentQuestionSummaryDistributionItem[];
+}
+
+export interface TeamAssessmentResults {
+  assessment: TeamAssessment;
+  assignedCount: number;
+  responseCount: number;
+  completions: TeamAssessmentCompletion[];
+  summaries: TeamAssessmentQuestionSummary[];
+}
+
 export type SettingsAssistantInputLocalSettings = { [key: string]: unknown };
 
 export type SettingsAssistantMessageRole = typeof SettingsAssistantMessageRole[keyof typeof SettingsAssistantMessageRole];

@@ -6,6 +6,7 @@ export type WorkspaceNavIcon =
   | "applicants"
   | "queue"
   | "attendance"
+  | "assessments"
   | "bigScreen"
   | "assistant"
   | "parts"
@@ -35,6 +36,7 @@ const WORKSPACE_LINKS: WorkspaceNavItem[] = [
 ];
 
 const INTERVIEW_LINKS: WorkspaceNavItem[] = [
+  { href: "/team-assessments", label: "Team assessments", iconKey: "assessments", kind: "section", workspace: "interview" },
   { href: "/applicants", label: "Applicants", iconKey: "applicants", kind: "section", workspace: "interview" },
   { href: "/queue", label: "Interview queue", iconKey: "queue", kind: "section", workspace: "interview" },
   { href: "/attendance", label: "Attendance", iconKey: "attendance", kind: "section", workspace: "interview" },
@@ -54,6 +56,7 @@ export function workspaceAreaForPath(location: string): WorkspaceArea {
   const path = location.split(/[?#]/, 1)[0].replace(/\/+$/, "") || "/";
 
   if (path === "/dashboard") return "overview";
+  if (path === "/team-assessments" || path.startsWith("/team-assessments/")) return "interview";
   if (path === "/cad" || path.startsWith("/cad/")) return "cad";
   if (path === "/code" || path.startsWith("/code/")) return "code";
   if (path === "/custom-workspaces" || path.startsWith("/custom-workspaces/")) return "overview";
@@ -96,7 +99,7 @@ export function getWorkspaceNavigation(
     return [
       ...workspaces,
       ...INTERVIEW_LINKS.filter((item) =>
-        isVisible(item) || (canViewApplicants && item.href === "/applicants"),
+        isVisible(item) || (canViewApplicants && item.href === "/applicants") || item.href === "/team-assessments",
       ),
     ];
   }

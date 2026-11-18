@@ -154,6 +154,9 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "interviewer_accounts",
     "team_blocked_ips",
     "team_roles",
+    "team_assessments",
+    "team_assessment_assignments",
+    "team_assessment_submissions",
     "maildrop_inboxes",
     "personal_notepad",
     "onshape_mcp_connections",
@@ -453,6 +456,42 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `create index if not exists "chat_productivity_usage_events_team_created_idx"
        on "chat_productivity_usage_events" ("team_id", "created_at")`,
     `create table if not exists "team_name_rules" ("team_id" text primary key, "rules" jsonb not null default '[]'::jsonb check (jsonb_typeof("rules") = 'array'), "updated_at" timestamptz not null default now())`,
+    `create table if not exists "team_assessments" (
+       "id" text primary key,
+       "team_id" text not null,
+       "title" text not null check (length("title") between 1 and 120),
+       "description" text not null default '',
+       "kind" text not null check ("kind" in ('quiz', 'survey')),
+       "status" text not null default 'draft' check ("status" in ('draft', 'published', 'paused')),
+       "required" boolean not null default true,
+       "style_preset" text not null default 'robotics' check ("style_preset" in ('robotics', 'ocean', 'sunrise', 'forest')),
+       "questions" jsonb not null default '[]'::jsonb check (jsonb_typeof("questions") = 'array'),
+       "created_by" text not null,
+       "created_at" timestamptz not null default now(),
+       "updated_at" timestamptz not null default now()
+     )`,
+    `create index if not exists "team_assessments_team_status_idx" on "team_assessments" ("team_id", "status", "updated_at")`,
+    `create table if not exists "team_assessment_assignments" (
+       "id" text primary key,
+       "team_id" text not null,
+       "assessment_id" text not null references "team_assessments"("id") on delete cascade,
+       "interviewer_id" text not null,
+       "assigned_at" timestamptz not null default now(),
+       unique ("assessment_id", "interviewer_id")
+     )`,
+    `create index if not exists "team_assessment_assignments_team_member_idx" on "team_assessment_assignments" ("team_id", "interviewer_id")`,
+    `create table if not exists "team_assessment_submissions" (
+       "id" text primary key,
+       "team_id" text not null,
+       "assessment_id" text not null references "team_assessments"("id") on delete cascade,
+       "interviewer_id" text not null,
+       "answers" jsonb not null check (jsonb_typeof("answers") = 'object'),
+       "score" integer,
+       "max_score" integer,
+       "submitted_at" timestamptz not null default now(),
+       unique ("assessment_id", "interviewer_id")
+     )`,
+    `create index if not exists "team_assessment_submissions_team_assessment_idx" on "team_assessment_submissions" ("team_id", "assessment_id", "submitted_at")`,
     `create table if not exists "assistant_model_policies" (
        "team_id" text primary key,
        "default_model" text not null,

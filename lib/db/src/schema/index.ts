@@ -42,3 +42,4 @@ export * from "./ingestedEmails";
 export * from "./maildropInboxes";
 export * from "./cadPreviewJobs";
 export * from "./tinyUrls";
+export * from "./teamAssessments";

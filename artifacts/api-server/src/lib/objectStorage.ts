@@ -490,6 +490,19 @@ export class ObjectStorageService {
     return { uploadURL: value, objectPath: `${objectPathPrefix(instance)}${id}` };
   }
 
+  async mintTeamAssessmentUpload(teamId: string, interviewerId: string, assessmentId: string): Promise<{ uploadURL: string; objectPath: string }> {
+    const objectId = randomUUID();
+    const path = `team-assessments/${teamId}/${interviewerId}/${assessmentId}/${objectId}`;
+    const { value, instance } = await writeWithFailover("Failed to mint assessment upload URL", async (target) => {
+      const { data, error } = await supabaseFor(target)
+        .storage.from(storageBucket(target))
+        .createSignedUploadUrl(path, { upsert: false });
+      if (error || !data?.signedUrl) throw new Error(error?.message ?? "unknown error");
+      return data.signedUrl;
+    });
+    return { uploadURL: value, objectPath: `${objectPathPrefix(instance)}${path}` };
+  }
+
   async listUploads(limit = 20): Promise<{ name: string; objectPath: string; createdAt: string | null }[]> {
     const found = new Map<string, { name: string; objectPath: string; createdAt: string | null }>();
     let lastError: unknown = null;

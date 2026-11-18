@@ -19,7 +19,7 @@ describe("workspace navigation", () => {
   });
 
   it("shows interview navigation only inside interview routes", () => {
-    for (const path of ["/interview", "/interview/assistant", "/applicants", "/queue", "/attendance", "/big-screen"]) {
+    for (const path of ["/interview", "/interview/assistant", "/applicants", "/queue", "/attendance", "/big-screen", "/team-assessments", "/team-assessments/assessment-1/results"]) {
       expect(workspaceAreaForPath(path)).toBe("interview");
     }
     expect(getWorkspaceNavigation("interview").map(({ label }) => label)).toEqual([
@@ -28,6 +28,7 @@ describe("workspace navigation", () => {
       "Parts",
       "CAD",
       "Code",
+      "Team assessments",
       "Applicants",
       "Interview queue",
       "Attendance",
@@ -134,9 +135,9 @@ describe("workspace navigation", () => {
     const rosterOnly = new Set<WorkspaceKey>(["chat"]);
     expect(
       getWorkspaceNavigation("interview", rosterOnly, true).map(({ label }) => label),
-    ).toEqual(["Chat", "Applicants"]);
+    ).toEqual(["Chat", "Team assessments", "Applicants"]);
     expect(
       getWorkspaceNavigation("interview", rosterOnly, false).map(({ label }) => label),
-    ).toEqual(["Chat"]);
+    ).toEqual(["Chat", "Team assessments"]);
   });
 });

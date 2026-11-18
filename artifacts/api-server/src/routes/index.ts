@@ -17,6 +17,7 @@ import assistantProvidersRouter from "./assistantProviders";
 import teamAccessCodeRouter from "./teamAccessCode";
 import ftcEventsRouter from "./ftcEvents";
 import tinyUrlsRouter from "./tinyUrls";
+import teamAssessmentsRouter from "./teamAssessments";
 
 const router: IRouter = Router();
 
@@ -39,5 +40,6 @@ router.use(codeRouter);
 router.use(customWorkspacesRouter);
 router.use(featureRequestsRouter);
 router.use(tinyUrlsRouter);
+router.use(teamAssessmentsRouter);
 
 export default router;

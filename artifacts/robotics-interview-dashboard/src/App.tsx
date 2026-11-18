@@ -11,7 +11,8 @@ import {
 import { useTheme } from "next-themes";
 import {
    getGetApplicantQueryKey, getGetAssistantConversationMessagesQueryKey, getGetAssistantPromptQueueQueryKey, getGetDashboardSummaryQueryKey, getGetDisplayStateQueryKey, getGetPartsDashboardQueryKey, getListPartsCatalogQueryKey, getListAssistantModelsQueryKey, getGetAssistantModelPolicyQueryKey, getGetAssistantModelPolicyHistoryQueryKey, getGetAssistantProviderConfigurationQueryKey, getGetAssistantIntegrationPolicyQueryKey,
-   getListAssistantConversationsQueryKey, getGetAssistantConversationShareQueryKey,
+    getListAssistantConversationsQueryKey, getGetAssistantConversationShareQueryKey,
+    getGetRequiredTeamAssessmentsQueryKey, useGetRequiredTeamAssessments,
    getGetInterviewChatQueryKey, getGetQueueQueryKey, getGetQueueLabelsQueryKey,   getGetSessionQueryKey, getListApplicantsQueryKey, getListImportHistoryQueryKey, getGetAssistantConfigQueryKey,
    getEffectiveTeamBranding,
   getListChatCustomEmojisQueryKey, useListChatCustomEmojis,
@@ -98,6 +99,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 const CadWorkspacePage = lazy(() => import("@/pages/CadWorkspacePage").then((m) => ({ default: m.CadWorkspacePage })));
+import { RequiredAssessmentFlow, TeamAssessmentEditorPage, TeamAssessmentResultsPage, TeamAssessmentsPage } from "@/pages/TeamAssessmentsPage";
 const CodeWorkspacePage = lazy(() => import("@/pages/CodeWorkspacePage").then((m) => ({ default: m.CodeWorkspacePage })));
 const CustomWorkspacesPage = lazy(() => import("@/pages/CustomWorkspacesPage").then((m) => ({ default: m.CustomWorkspacesPage })));
 const CustomWorkspaceAppPage = lazy(() => import("@/pages/CustomWorkspaceAppPage").then((m) => ({ default: m.CustomWorkspaceAppPage })));
@@ -4260,6 +4262,14 @@ function Shell({
   };
   const fullscreen = useFullscreen();
   const session = useGetSession({ query: { queryKey: getGetSessionQueryKey(), enabled: !demoMode } });
+  const assessmentGateQuery = useGetRequiredTeamAssessments({
+    query: {
+      queryKey: getGetRequiredTeamAssessmentsQueryKey(),
+      enabled: !demoMode && session.data?.authenticated === true &&
+        session.data.role !== "coordinator" && session.data.role !== "admin",
+      refetchInterval: 30_000,
+    },
+  });
   const teamBranding = useEffectiveTeamBranding(session.data?.teamId, session.data?.interviewerId, !demoMode && session.data?.authenticated === true);
   const backgroundCount = teamBranding.data?.backgrounds.length ?? 0;
   const teamTheme = useTeamTheme(session.data?.teamId, !demoMode && session.data?.authenticated === true);
@@ -4426,6 +4436,14 @@ function Shell({
   const canViewApplicants = !demoMode && canSessionUsePermission(sessionWithViews, "applicants.view");
   const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
   const isDashboardPath = demoMode ? demoView === "overview" : shellPath === "/dashboard";
+  const isTeamAssessmentsPath = !demoMode && (shellPath === "/team-assessments" || shellPath.startsWith("/team-assessments/"));
+  const assessmentGateLoading = isSignedIn &&
+    session.data?.role !== "coordinator" && session.data?.role !== "admin" &&
+    assessmentGateQuery.isLoading;
+  const requiredAssessments = assessmentGateQuery.data?.items ?? [];
+  const assessmentGateActive = isSignedIn &&
+    session.data?.role !== "coordinator" && session.data?.role !== "admin" &&
+    requiredAssessments.length > 0;
   const isInterviewPath = !demoMode && (
     shellPath === "/interview" ||
     shellPath.startsWith("/interview/") ||
@@ -4465,6 +4483,7 @@ function Shell({
       ? canSessionUsePermission(session.data, "customWorkspaces.view")
       : false;
   const restrictedAllowed = demoMode ||
+    isTeamAssessmentsPath ||
     canOpenCustomWorkspaceRoute ||
     // /dashboard is the per-user home: every signed-in account can open it and
     // sees only their own workspaces there.
@@ -4491,6 +4510,8 @@ function Shell({
   }, [blockedFromCurrent, setLocation, homeWorkspace]);
   if (!demoMode && session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!demoMode && !session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
+  if (assessmentGateLoading) return <div className="min-h-[100dvh] bg-[hsl(var(--background))] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
+  if (assessmentGateActive && shellPath !== "/team-assessments") return <RequiredAssessmentFlow items={requiredAssessments} />;
   if (workspaceVisibilityLoading && !isDashboardPath) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (blockedFromCurrent) return null;
   const workspaceArea = demoMode
@@ -4504,6 +4525,7 @@ function Shell({
     applicants: UsersRound,
     queue: ClipboardList,
     attendance: ClipboardCheck,
+    assessments: ClipboardCheck,
     bigScreen: MonitorCheck,
     assistant: Bot,
     parts: Box,
@@ -4521,6 +4543,20 @@ function Shell({
     return true;
     })
     .map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
+  if (
+    !demoMode &&
+    (session.data?.role === "coordinator" || session.data?.role === "admin") &&
+    !regularNav.some((item) => item.href === "/team-assessments")
+  ) {
+    regularNav.push({
+      href: "/team-assessments",
+      label: "Team assessments",
+      iconKey: "assessments",
+      icon: ClipboardCheck,
+      kind: "section",
+      workspace: "interview",
+    });
+  }
   const demoNav = [
     { href: "/demo?view=overview", label: "Overview", icon: LayoutDashboard, kind: "section" as const, workspace: "chat" as WorkspaceKey, demoView: "overview" as DemoView },
     { href: "/demo?view=chat", label: "Chat", icon: MessageSquare, kind: "workspace" as const, workspace: "chat" as WorkspaceKey, demoView: "chat" as DemoView },
@@ -12057,6 +12093,9 @@ function Router() {
         <Route path="/assistant/scheduled-tasks"><Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><RecurringTasksPage /></Suspense></Shell></Route>
         <Route path="/spreadsheets/:id">{({ id }) => <Shell><Suspense fallback={<div className="p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-6 h-64 w-full" /></div>}><SpreadsheetEditor spreadsheetId={id} /></Suspense></Shell>}</Route>
         <Route path="/attendance"><Shell><AttendancePage /></Shell></Route>
+        <Route path="/team-assessments"><Shell><TeamAssessmentsPage /></Shell></Route>
+        <Route path="/team-assessments/:id/edit">{({ id }) => <Shell><TeamAssessmentEditorPage assessmentId={id} /></Shell>}</Route>
+        <Route path="/team-assessments/:id/results">{({ id }) => <Shell><TeamAssessmentResultsPage assessmentId={id} /></Shell>}</Route>
         <Route path="/big-screen"><Shell><BigScreenPage /></Shell></Route>
         <Route path="/parts/assistant"><Shell><ConversationAssistant partsMode /></Shell></Route>
         <Route path="/parts"><Shell><PartsPage /></Shell></Route>

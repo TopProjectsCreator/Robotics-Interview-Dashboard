@@ -10,6 +10,10 @@ describe("getSafeAuthReturnPath", () => {
   it("preserves a return to the recurring task owner page", () => {
     expect(getSafeAuthReturnPath("/assistant/scheduled-tasks")).toBe("/assistant/scheduled-tasks");
   });
+
+  it("preserves a return to the required team assessment inbox", () => {
+    expect(getSafeAuthReturnPath("/team-assessments")).toBe("/team-assessments");
+  });
 });
 
 describe("clearUserScopedRecords", () => {

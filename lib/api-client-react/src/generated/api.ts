@@ -278,6 +278,7 @@ import type {
   RandomTeamCode,
   RemoveTeamBackground,
   ReorderQueueInput,
+  RequiredTeamAssessmentList,
   ScheduledChatInput,
   ScheduledChatList,
   ScheduledChatMessage,
@@ -306,6 +307,14 @@ import type {
   SystemUsage,
   TeamAccessCodeInput,
   TeamAccessCodeUpdate,
+  TeamAssessment,
+  TeamAssessmentInput,
+  TeamAssessmentList,
+  TeamAssessmentResults,
+  TeamAssessmentSubmissionInput,
+  TeamAssessmentSubmissionReceipt,
+  TeamAssessmentUploadInput,
+  TeamAssessmentUploadUrl,
   TeamBranding,
   TeamCreateInput,
   TeamCreateResponse,
@@ -366,6 +375,743 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
   }
   return result;
 };
+
+export const getListTeamAssessmentsUrl = () => {
+
+
+
+
+  return `/api/team-assessments`
+}
+
+/**
+ * @summary List assessments and completion counts for the signed-in team
+ */
+export const listTeamAssessments = async ( options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessmentList> => {
+
+  return customFetch<TeamAssessmentList>(getListTeamAssessmentsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamAssessmentsQueryKey = () => {
+    return [
+    `/api/team-assessments`
+    ] as const;
+    }
+
+
+export const getListTeamAssessmentsQueryOptions = <TData = Awaited<ReturnType<typeof listTeamAssessments>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamAssessments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamAssessmentsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamAssessments>>> = ({ signal }) => listTeamAssessments({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamAssessments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamAssessmentsQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamAssessments>>>
+export type ListTeamAssessmentsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List assessments and completion counts for the signed-in team
+ */
+
+export function useListTeamAssessments<TData = Awaited<ReturnType<typeof listTeamAssessments>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamAssessments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamAssessmentsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateTeamAssessmentUrl = () => {
+
+
+
+
+  return `/api/team-assessments`
+}
+
+/**
+ * @summary Create a team assessment draft
+ */
+export const createTeamAssessment = async (teamAssessmentInput: TeamAssessmentInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessment> => {
+
+  return customFetch<TeamAssessment>(getCreateTeamAssessmentUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamAssessmentInput)
+  }
+);}
+
+
+
+
+
+export const getCreateTeamAssessmentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamAssessment>>, TError,{data: BodyType<TeamAssessmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createTeamAssessment>>, TError,{data: BodyType<TeamAssessmentInput>}, TContext> => {
+
+const mutationKey = ['createTeamAssessment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createTeamAssessment>>, {data: BodyType<TeamAssessmentInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createTeamAssessment(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateTeamAssessmentMutationResult = NonNullable<Awaited<ReturnType<typeof createTeamAssessment>>>
+    export type CreateTeamAssessmentMutationBody = BodyType<TeamAssessmentInput>
+    export type CreateTeamAssessmentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Create a team assessment draft
+ */
+export const useCreateTeamAssessment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createTeamAssessment>>, TError,{data: BodyType<TeamAssessmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createTeamAssessment>>,
+        TError,
+        {data: BodyType<TeamAssessmentInput>},
+        TContext
+      > => {
+      return useMutation(getCreateTeamAssessmentMutationOptions(options));
+    }
+
+export const getGetRequiredTeamAssessmentsUrl = () => {
+
+
+
+
+  return `/api/team-assessments/required`
+}
+
+/**
+ * @summary List required assessments awaiting the signed-in member
+ */
+export const getRequiredTeamAssessments = async ( options?: Parameters<typeof customFetch>[1]): Promise<RequiredTeamAssessmentList> => {
+
+  return customFetch<RequiredTeamAssessmentList>(getGetRequiredTeamAssessmentsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetRequiredTeamAssessmentsQueryKey = () => {
+    return [
+    `/api/team-assessments/required`
+    ] as const;
+    }
+
+
+export const getGetRequiredTeamAssessmentsQueryOptions = <TData = Awaited<ReturnType<typeof getRequiredTeamAssessments>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRequiredTeamAssessments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetRequiredTeamAssessmentsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getRequiredTeamAssessments>>> = ({ signal }) => getRequiredTeamAssessments({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getRequiredTeamAssessments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetRequiredTeamAssessmentsQueryResult = NonNullable<Awaited<ReturnType<typeof getRequiredTeamAssessments>>>
+export type GetRequiredTeamAssessmentsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List required assessments awaiting the signed-in member
+ */
+
+export function useGetRequiredTeamAssessments<TData = Awaited<ReturnType<typeof getRequiredTeamAssessments>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getRequiredTeamAssessments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetRequiredTeamAssessmentsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetTeamAssessmentUrl = (assessmentId: string,) => {
+
+
+
+
+  return `/api/team-assessments/${assessmentId}`
+}
+
+/**
+ * @summary Get an assessment for team administration
+ */
+export const getTeamAssessment = async (assessmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessment> => {
+
+  return customFetch<TeamAssessment>(getGetTeamAssessmentUrl(assessmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamAssessmentQueryKey = (assessmentId: string,) => {
+    return [
+    `/api/team-assessments/${assessmentId}`
+    ] as const;
+    }
+
+
+export const getGetTeamAssessmentQueryOptions = <TData = Awaited<ReturnType<typeof getTeamAssessment>>, TError = ErrorType<unknown>>(assessmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAssessment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamAssessmentQueryKey(assessmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamAssessment>>> = ({ signal }) => getTeamAssessment(assessmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: assessmentId !== null && assessmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamAssessment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamAssessmentQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamAssessment>>>
+export type GetTeamAssessmentQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get an assessment for team administration
+ */
+
+export function useGetTeamAssessment<TData = Awaited<ReturnType<typeof getTeamAssessment>>, TError = ErrorType<unknown>>(
+ assessmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAssessment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamAssessmentQueryOptions(assessmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateTeamAssessmentUrl = (assessmentId: string,) => {
+
+
+
+
+  return `/api/team-assessments/${assessmentId}`
+}
+
+/**
+ * @summary Update a draft or paused assessment
+ */
+export const updateTeamAssessment = async (assessmentId: string,
+    teamAssessmentInput: TeamAssessmentInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessment> => {
+
+  return customFetch<TeamAssessment>(getUpdateTeamAssessmentUrl(assessmentId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamAssessmentInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateTeamAssessmentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamAssessment>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateTeamAssessment>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentInput>}, TContext> => {
+
+const mutationKey = ['updateTeamAssessment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateTeamAssessment>>, {assessmentId: string;data: BodyType<TeamAssessmentInput>}> = (props) => {
+          const {assessmentId,data} = props ?? {};
+
+          return  updateTeamAssessment(assessmentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateTeamAssessmentMutationResult = NonNullable<Awaited<ReturnType<typeof updateTeamAssessment>>>
+    export type UpdateTeamAssessmentMutationBody = BodyType<TeamAssessmentInput>
+    export type UpdateTeamAssessmentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Update a draft or paused assessment
+ */
+export const useUpdateTeamAssessment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateTeamAssessment>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateTeamAssessment>>,
+        TError,
+        {assessmentId: string;data: BodyType<TeamAssessmentInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateTeamAssessmentMutationOptions(options));
+    }
+
+export const getPublishTeamAssessmentUrl = (assessmentId: string,) => {
+
+
+
+
+  return `/api/team-assessments/${assessmentId}/publish`
+}
+
+/**
+ * @summary Publish and assign a required assessment to the team
+ */
+export const publishTeamAssessment = async (assessmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessment> => {
+
+  return customFetch<TeamAssessment>(getPublishTeamAssessmentUrl(assessmentId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getPublishTeamAssessmentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof publishTeamAssessment>>, TError,{assessmentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof publishTeamAssessment>>, TError,{assessmentId: string}, TContext> => {
+
+const mutationKey = ['publishTeamAssessment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof publishTeamAssessment>>, {assessmentId: string}> = (props) => {
+          const {assessmentId} = props ?? {};
+
+          return  publishTeamAssessment(assessmentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PublishTeamAssessmentMutationResult = NonNullable<Awaited<ReturnType<typeof publishTeamAssessment>>>
+
+    export type PublishTeamAssessmentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Publish and assign a required assessment to the team
+ */
+export const usePublishTeamAssessment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof publishTeamAssessment>>, TError,{assessmentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof publishTeamAssessment>>,
+        TError,
+        {assessmentId: string},
+        TContext
+      > => {
+      return useMutation(getPublishTeamAssessmentMutationOptions(options));
+    }
+
+export const getPauseTeamAssessmentUrl = (assessmentId: string,) => {
+
+
+
+
+  return `/api/team-assessments/${assessmentId}/pause`
+}
+
+/**
+ * @summary Pause a published assessment without deleting responses
+ */
+export const pauseTeamAssessment = async (assessmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessment> => {
+
+  return customFetch<TeamAssessment>(getPauseTeamAssessmentUrl(assessmentId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getPauseTeamAssessmentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseTeamAssessment>>, TError,{assessmentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pauseTeamAssessment>>, TError,{assessmentId: string}, TContext> => {
+
+const mutationKey = ['pauseTeamAssessment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pauseTeamAssessment>>, {assessmentId: string}> = (props) => {
+          const {assessmentId} = props ?? {};
+
+          return  pauseTeamAssessment(assessmentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PauseTeamAssessmentMutationResult = NonNullable<Awaited<ReturnType<typeof pauseTeamAssessment>>>
+
+    export type PauseTeamAssessmentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Pause a published assessment without deleting responses
+ */
+export const usePauseTeamAssessment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseTeamAssessment>>, TError,{assessmentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pauseTeamAssessment>>,
+        TError,
+        {assessmentId: string},
+        TContext
+      > => {
+      return useMutation(getPauseTeamAssessmentMutationOptions(options));
+    }
+
+export const getGetTeamAssessmentResultsUrl = (assessmentId: string,) => {
+
+
+
+
+  return `/api/team-assessments/${assessmentId}/results`
+}
+
+/**
+ * @summary Review team completion and assessment responses
+ */
+export const getTeamAssessmentResults = async (assessmentId: string, options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessmentResults> => {
+
+  return customFetch<TeamAssessmentResults>(getGetTeamAssessmentResultsUrl(assessmentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTeamAssessmentResultsQueryKey = (assessmentId: string,) => {
+    return [
+    `/api/team-assessments/${assessmentId}/results`
+    ] as const;
+    }
+
+
+export const getGetTeamAssessmentResultsQueryOptions = <TData = Awaited<ReturnType<typeof getTeamAssessmentResults>>, TError = ErrorType<unknown>>(assessmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAssessmentResults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTeamAssessmentResultsQueryKey(assessmentId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTeamAssessmentResults>>> = ({ signal }) => getTeamAssessmentResults(assessmentId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: assessmentId !== null && assessmentId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTeamAssessmentResults>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTeamAssessmentResultsQueryResult = NonNullable<Awaited<ReturnType<typeof getTeamAssessmentResults>>>
+export type GetTeamAssessmentResultsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Review team completion and assessment responses
+ */
+
+export function useGetTeamAssessmentResults<TData = Awaited<ReturnType<typeof getTeamAssessmentResults>>, TError = ErrorType<unknown>>(
+ assessmentId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTeamAssessmentResults>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTeamAssessmentResultsQueryOptions(assessmentId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSubmitTeamAssessmentUrl = (assessmentId: string,) => {
+
+
+
+
+  return `/api/team-assessments/${assessmentId}/submissions`
+}
+
+/**
+ * @summary Submit the signed-in member's assessment answers
+ */
+export const submitTeamAssessment = async (assessmentId: string,
+    teamAssessmentSubmissionInput: TeamAssessmentSubmissionInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessmentSubmissionReceipt> => {
+
+  return customFetch<TeamAssessmentSubmissionReceipt>(getSubmitTeamAssessmentUrl(assessmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamAssessmentSubmissionInput)
+  }
+);}
+
+
+
+
+
+export const getSubmitTeamAssessmentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitTeamAssessment>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentSubmissionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitTeamAssessment>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentSubmissionInput>}, TContext> => {
+
+const mutationKey = ['submitTeamAssessment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitTeamAssessment>>, {assessmentId: string;data: BodyType<TeamAssessmentSubmissionInput>}> = (props) => {
+          const {assessmentId,data} = props ?? {};
+
+          return  submitTeamAssessment(assessmentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitTeamAssessmentMutationResult = NonNullable<Awaited<ReturnType<typeof submitTeamAssessment>>>
+    export type SubmitTeamAssessmentMutationBody = BodyType<TeamAssessmentSubmissionInput>
+    export type SubmitTeamAssessmentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Submit the signed-in member's assessment answers
+ */
+export const useSubmitTeamAssessment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitTeamAssessment>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentSubmissionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitTeamAssessment>>,
+        TError,
+        {assessmentId: string;data: BodyType<TeamAssessmentSubmissionInput>},
+        TContext
+      > => {
+      return useMutation(getSubmitTeamAssessmentMutationOptions(options));
+    }
+
+export const getRequestTeamAssessmentUploadUrlUrl = (assessmentId: string,) => {
+
+
+
+
+  return `/api/team-assessments/${assessmentId}/uploads/request-url`
+}
+
+/**
+ * @summary Request a private upload URL for an assessment response
+ */
+export const requestTeamAssessmentUploadUrl = async (assessmentId: string,
+    teamAssessmentUploadInput: TeamAssessmentUploadInput, options?: Parameters<typeof customFetch>[1]): Promise<TeamAssessmentUploadUrl> => {
+
+  return customFetch<TeamAssessmentUploadUrl>(getRequestTeamAssessmentUploadUrlUrl(assessmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(teamAssessmentUploadInput)
+  }
+);}
+
+
+
+
+
+export const getRequestTeamAssessmentUploadUrlMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestTeamAssessmentUploadUrl>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestTeamAssessmentUploadUrl>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentUploadInput>}, TContext> => {
+
+const mutationKey = ['requestTeamAssessmentUploadUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestTeamAssessmentUploadUrl>>, {assessmentId: string;data: BodyType<TeamAssessmentUploadInput>}> = (props) => {
+          const {assessmentId,data} = props ?? {};
+
+          return  requestTeamAssessmentUploadUrl(assessmentId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestTeamAssessmentUploadUrlMutationResult = NonNullable<Awaited<ReturnType<typeof requestTeamAssessmentUploadUrl>>>
+    export type RequestTeamAssessmentUploadUrlMutationBody = BodyType<TeamAssessmentUploadInput>
+    export type RequestTeamAssessmentUploadUrlMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Request a private upload URL for an assessment response
+ */
+export const useRequestTeamAssessmentUploadUrl = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestTeamAssessmentUploadUrl>>, TError,{assessmentId: string;data: BodyType<TeamAssessmentUploadInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestTeamAssessmentUploadUrl>>,
+        TError,
+        {assessmentId: string;data: BodyType<TeamAssessmentUploadInput>},
+        TContext
+      > => {
+      return useMutation(getRequestTeamAssessmentUploadUrlMutationOptions(options));
+    }
 
 export const getHealthCheckUrl = () => {
 

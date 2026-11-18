@@ -9,6 +9,596 @@ import * as zod from 'zod';
 
 
 /**
+ * @summary List assessments and completion counts for the signed-in team
+ */
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemIdMax = 64;
+
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemPromptMax = 500;
+
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemOptionsItemMax = 160;
+
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemOptionsMax = 12;
+
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemCorrectAnswersItemMax = 160;
+
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemCorrectAnswersMax = 12;
+
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemMinLabelMax = 80;
+
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemMaxLabelMax = 80;
+
+export const listTeamAssessmentsResponseItemsItemOneQuestionsItemFileLimitMax = 3;
+
+
+
+export const ListTeamAssessmentsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['quiz', 'survey']),
+  "status": zod.enum(['draft', 'published', 'paused']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(listTeamAssessmentsResponseItemsItemOneQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(listTeamAssessmentsResponseItemsItemOneQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(listTeamAssessmentsResponseItemsItemOneQuestionsItemOptionsItemMax)).max(listTeamAssessmentsResponseItemsItemOneQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(listTeamAssessmentsResponseItemsItemOneQuestionsItemCorrectAnswersItemMax)).max(listTeamAssessmentsResponseItemsItemOneQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(listTeamAssessmentsResponseItemsItemOneQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(listTeamAssessmentsResponseItemsItemOneQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(listTeamAssessmentsResponseItemsItemOneQuestionsItemFileLimitMax).optional()
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}).and(zod.object({
+  "assignedCount": zod.number().int(),
+  "responseCount": zod.number().int()
+})))
+})
+
+
+/**
+ * @summary Create a team assessment draft
+ */
+export const createTeamAssessmentBodyTitleMax = 120;
+
+export const createTeamAssessmentBodyDescriptionMax = 1000;
+
+export const createTeamAssessmentBodyQuestionsItemIdMax = 64;
+
+export const createTeamAssessmentBodyQuestionsItemPromptMax = 500;
+
+export const createTeamAssessmentBodyQuestionsItemOptionsItemMax = 160;
+
+export const createTeamAssessmentBodyQuestionsItemOptionsMax = 12;
+
+export const createTeamAssessmentBodyQuestionsItemCorrectAnswersItemMax = 160;
+
+export const createTeamAssessmentBodyQuestionsItemCorrectAnswersMax = 12;
+
+export const createTeamAssessmentBodyQuestionsItemMinLabelMax = 80;
+
+export const createTeamAssessmentBodyQuestionsItemMaxLabelMax = 80;
+
+export const createTeamAssessmentBodyQuestionsItemFileLimitMax = 3;
+
+export const createTeamAssessmentBodyQuestionsMax = 50;
+
+
+
+export const CreateTeamAssessmentBody = zod.object({
+  "title": zod.string().min(1).max(createTeamAssessmentBodyTitleMax),
+  "description": zod.string().max(createTeamAssessmentBodyDescriptionMax),
+  "kind": zod.enum(['quiz', 'survey']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(createTeamAssessmentBodyQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(createTeamAssessmentBodyQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(createTeamAssessmentBodyQuestionsItemOptionsItemMax)).max(createTeamAssessmentBodyQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(createTeamAssessmentBodyQuestionsItemCorrectAnswersItemMax)).max(createTeamAssessmentBodyQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(createTeamAssessmentBodyQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(createTeamAssessmentBodyQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(createTeamAssessmentBodyQuestionsItemFileLimitMax).optional()
+})).min(1).max(createTeamAssessmentBodyQuestionsMax)
+})
+
+export const createTeamAssessmentResponseQuestionsItemIdMax = 64;
+
+export const createTeamAssessmentResponseQuestionsItemPromptMax = 500;
+
+export const createTeamAssessmentResponseQuestionsItemOptionsItemMax = 160;
+
+export const createTeamAssessmentResponseQuestionsItemOptionsMax = 12;
+
+export const createTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax = 160;
+
+export const createTeamAssessmentResponseQuestionsItemCorrectAnswersMax = 12;
+
+export const createTeamAssessmentResponseQuestionsItemMinLabelMax = 80;
+
+export const createTeamAssessmentResponseQuestionsItemMaxLabelMax = 80;
+
+export const createTeamAssessmentResponseQuestionsItemFileLimitMax = 3;
+
+
+
+export const CreateTeamAssessmentResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['quiz', 'survey']),
+  "status": zod.enum(['draft', 'published', 'paused']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(createTeamAssessmentResponseQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(createTeamAssessmentResponseQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(createTeamAssessmentResponseQuestionsItemOptionsItemMax)).max(createTeamAssessmentResponseQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(createTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax)).max(createTeamAssessmentResponseQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(createTeamAssessmentResponseQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(createTeamAssessmentResponseQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(createTeamAssessmentResponseQuestionsItemFileLimitMax).optional()
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary List required assessments awaiting the signed-in member
+ */
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemIdMax = 64;
+
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemPromptMax = 500;
+
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemOptionsItemMax = 160;
+
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemOptionsMax = 12;
+
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemCorrectAnswersItemMax = 160;
+
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemCorrectAnswersMax = 12;
+
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemMinLabelMax = 80;
+
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemMaxLabelMax = 80;
+
+export const getRequiredTeamAssessmentsResponseItemsItemQuestionsItemFileLimitMax = 3;
+
+
+
+export const GetRequiredTeamAssessmentsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['quiz', 'survey']),
+  "status": zod.enum(['draft', 'published', 'paused']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemOptionsItemMax)).max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemCorrectAnswersItemMax)).max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(getRequiredTeamAssessmentsResponseItemsItemQuestionsItemFileLimitMax).optional()
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}))
+})
+
+
+/**
+ * @summary Get an assessment for team administration
+ */
+export const GetTeamAssessmentParams = zod.object({
+  "assessmentId": zod.coerce.string()
+})
+
+export const getTeamAssessmentResponseQuestionsItemIdMax = 64;
+
+export const getTeamAssessmentResponseQuestionsItemPromptMax = 500;
+
+export const getTeamAssessmentResponseQuestionsItemOptionsItemMax = 160;
+
+export const getTeamAssessmentResponseQuestionsItemOptionsMax = 12;
+
+export const getTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax = 160;
+
+export const getTeamAssessmentResponseQuestionsItemCorrectAnswersMax = 12;
+
+export const getTeamAssessmentResponseQuestionsItemMinLabelMax = 80;
+
+export const getTeamAssessmentResponseQuestionsItemMaxLabelMax = 80;
+
+export const getTeamAssessmentResponseQuestionsItemFileLimitMax = 3;
+
+
+
+export const GetTeamAssessmentResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['quiz', 'survey']),
+  "status": zod.enum(['draft', 'published', 'paused']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(getTeamAssessmentResponseQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(getTeamAssessmentResponseQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(getTeamAssessmentResponseQuestionsItemOptionsItemMax)).max(getTeamAssessmentResponseQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(getTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax)).max(getTeamAssessmentResponseQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(getTeamAssessmentResponseQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(getTeamAssessmentResponseQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(getTeamAssessmentResponseQuestionsItemFileLimitMax).optional()
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Update a draft or paused assessment
+ */
+export const UpdateTeamAssessmentParams = zod.object({
+  "assessmentId": zod.coerce.string()
+})
+
+export const updateTeamAssessmentBodyTitleMax = 120;
+
+export const updateTeamAssessmentBodyDescriptionMax = 1000;
+
+export const updateTeamAssessmentBodyQuestionsItemIdMax = 64;
+
+export const updateTeamAssessmentBodyQuestionsItemPromptMax = 500;
+
+export const updateTeamAssessmentBodyQuestionsItemOptionsItemMax = 160;
+
+export const updateTeamAssessmentBodyQuestionsItemOptionsMax = 12;
+
+export const updateTeamAssessmentBodyQuestionsItemCorrectAnswersItemMax = 160;
+
+export const updateTeamAssessmentBodyQuestionsItemCorrectAnswersMax = 12;
+
+export const updateTeamAssessmentBodyQuestionsItemMinLabelMax = 80;
+
+export const updateTeamAssessmentBodyQuestionsItemMaxLabelMax = 80;
+
+export const updateTeamAssessmentBodyQuestionsItemFileLimitMax = 3;
+
+export const updateTeamAssessmentBodyQuestionsMax = 50;
+
+
+
+export const UpdateTeamAssessmentBody = zod.object({
+  "title": zod.string().min(1).max(updateTeamAssessmentBodyTitleMax),
+  "description": zod.string().max(updateTeamAssessmentBodyDescriptionMax),
+  "kind": zod.enum(['quiz', 'survey']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(updateTeamAssessmentBodyQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(updateTeamAssessmentBodyQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(updateTeamAssessmentBodyQuestionsItemOptionsItemMax)).max(updateTeamAssessmentBodyQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(updateTeamAssessmentBodyQuestionsItemCorrectAnswersItemMax)).max(updateTeamAssessmentBodyQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(updateTeamAssessmentBodyQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(updateTeamAssessmentBodyQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(updateTeamAssessmentBodyQuestionsItemFileLimitMax).optional()
+})).min(1).max(updateTeamAssessmentBodyQuestionsMax)
+})
+
+export const updateTeamAssessmentResponseQuestionsItemIdMax = 64;
+
+export const updateTeamAssessmentResponseQuestionsItemPromptMax = 500;
+
+export const updateTeamAssessmentResponseQuestionsItemOptionsItemMax = 160;
+
+export const updateTeamAssessmentResponseQuestionsItemOptionsMax = 12;
+
+export const updateTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax = 160;
+
+export const updateTeamAssessmentResponseQuestionsItemCorrectAnswersMax = 12;
+
+export const updateTeamAssessmentResponseQuestionsItemMinLabelMax = 80;
+
+export const updateTeamAssessmentResponseQuestionsItemMaxLabelMax = 80;
+
+export const updateTeamAssessmentResponseQuestionsItemFileLimitMax = 3;
+
+
+
+export const UpdateTeamAssessmentResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['quiz', 'survey']),
+  "status": zod.enum(['draft', 'published', 'paused']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(updateTeamAssessmentResponseQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(updateTeamAssessmentResponseQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(updateTeamAssessmentResponseQuestionsItemOptionsItemMax)).max(updateTeamAssessmentResponseQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(updateTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax)).max(updateTeamAssessmentResponseQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(updateTeamAssessmentResponseQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(updateTeamAssessmentResponseQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(updateTeamAssessmentResponseQuestionsItemFileLimitMax).optional()
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Publish and assign a required assessment to the team
+ */
+export const PublishTeamAssessmentParams = zod.object({
+  "assessmentId": zod.coerce.string()
+})
+
+export const publishTeamAssessmentResponseQuestionsItemIdMax = 64;
+
+export const publishTeamAssessmentResponseQuestionsItemPromptMax = 500;
+
+export const publishTeamAssessmentResponseQuestionsItemOptionsItemMax = 160;
+
+export const publishTeamAssessmentResponseQuestionsItemOptionsMax = 12;
+
+export const publishTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax = 160;
+
+export const publishTeamAssessmentResponseQuestionsItemCorrectAnswersMax = 12;
+
+export const publishTeamAssessmentResponseQuestionsItemMinLabelMax = 80;
+
+export const publishTeamAssessmentResponseQuestionsItemMaxLabelMax = 80;
+
+export const publishTeamAssessmentResponseQuestionsItemFileLimitMax = 3;
+
+
+
+export const PublishTeamAssessmentResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['quiz', 'survey']),
+  "status": zod.enum(['draft', 'published', 'paused']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(publishTeamAssessmentResponseQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(publishTeamAssessmentResponseQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(publishTeamAssessmentResponseQuestionsItemOptionsItemMax)).max(publishTeamAssessmentResponseQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(publishTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax)).max(publishTeamAssessmentResponseQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(publishTeamAssessmentResponseQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(publishTeamAssessmentResponseQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(publishTeamAssessmentResponseQuestionsItemFileLimitMax).optional()
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Pause a published assessment without deleting responses
+ */
+export const PauseTeamAssessmentParams = zod.object({
+  "assessmentId": zod.coerce.string()
+})
+
+export const pauseTeamAssessmentResponseQuestionsItemIdMax = 64;
+
+export const pauseTeamAssessmentResponseQuestionsItemPromptMax = 500;
+
+export const pauseTeamAssessmentResponseQuestionsItemOptionsItemMax = 160;
+
+export const pauseTeamAssessmentResponseQuestionsItemOptionsMax = 12;
+
+export const pauseTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax = 160;
+
+export const pauseTeamAssessmentResponseQuestionsItemCorrectAnswersMax = 12;
+
+export const pauseTeamAssessmentResponseQuestionsItemMinLabelMax = 80;
+
+export const pauseTeamAssessmentResponseQuestionsItemMaxLabelMax = 80;
+
+export const pauseTeamAssessmentResponseQuestionsItemFileLimitMax = 3;
+
+
+
+export const PauseTeamAssessmentResponse = zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['quiz', 'survey']),
+  "status": zod.enum(['draft', 'published', 'paused']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(pauseTeamAssessmentResponseQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(pauseTeamAssessmentResponseQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(pauseTeamAssessmentResponseQuestionsItemOptionsItemMax)).max(pauseTeamAssessmentResponseQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(pauseTeamAssessmentResponseQuestionsItemCorrectAnswersItemMax)).max(pauseTeamAssessmentResponseQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(pauseTeamAssessmentResponseQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(pauseTeamAssessmentResponseQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(pauseTeamAssessmentResponseQuestionsItemFileLimitMax).optional()
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Review team completion and assessment responses
+ */
+export const GetTeamAssessmentResultsParams = zod.object({
+  "assessmentId": zod.coerce.string()
+})
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemIdMax = 64;
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemPromptMax = 500;
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemOptionsItemMax = 160;
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemOptionsMax = 12;
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemCorrectAnswersItemMax = 160;
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemCorrectAnswersMax = 12;
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemMinLabelMax = 80;
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemMaxLabelMax = 80;
+
+export const getTeamAssessmentResultsResponseAssessmentQuestionsItemFileLimitMax = 3;
+
+
+
+export const GetTeamAssessmentResultsResponse = zod.object({
+  "assessment": zod.object({
+  "id": zod.string(),
+  "title": zod.string(),
+  "description": zod.string(),
+  "kind": zod.enum(['quiz', 'survey']),
+  "status": zod.enum(['draft', 'published', 'paused']),
+  "required": zod.boolean(),
+  "stylePreset": zod.enum(['robotics', 'ocean', 'sunrise', 'forest']),
+  "questions": zod.array(zod.object({
+  "id": zod.string().min(1).max(getTeamAssessmentResultsResponseAssessmentQuestionsItemIdMax),
+  "type": zod.enum(['single_choice', 'multiple_choice', 'long_answer', 'likert', 'ranking', 'file_upload', 'slider', 'style_picker']),
+  "prompt": zod.string().min(1).max(getTeamAssessmentResultsResponseAssessmentQuestionsItemPromptMax),
+  "required": zod.boolean(),
+  "options": zod.array(zod.string().max(getTeamAssessmentResultsResponseAssessmentQuestionsItemOptionsItemMax)).max(getTeamAssessmentResultsResponseAssessmentQuestionsItemOptionsMax).optional(),
+  "correctAnswers": zod.array(zod.string().max(getTeamAssessmentResultsResponseAssessmentQuestionsItemCorrectAnswersItemMax)).max(getTeamAssessmentResultsResponseAssessmentQuestionsItemCorrectAnswersMax).optional(),
+  "min": zod.number().optional(),
+  "max": zod.number().optional(),
+  "step": zod.number().optional(),
+  "minLabel": zod.string().max(getTeamAssessmentResultsResponseAssessmentQuestionsItemMinLabelMax).optional(),
+  "maxLabel": zod.string().max(getTeamAssessmentResultsResponseAssessmentQuestionsItemMaxLabelMax).optional(),
+  "fileLimit": zod.number().int().min(1).max(getTeamAssessmentResultsResponseAssessmentQuestionsItemFileLimitMax).optional()
+})),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+}),
+  "assignedCount": zod.number().int(),
+  "responseCount": zod.number().int(),
+  "completions": zod.array(zod.object({
+  "interviewerId": zod.string(),
+  "memberName": zod.string(),
+  "status": zod.enum(['pending', 'submitted']),
+  "score": zod.number().int().nullable(),
+  "maxScore": zod.number().int().nullable(),
+  "submittedAt": zod.coerce.date().nullable(),
+  "answers": zod.record(zod.string(), zod.unknown()).nullable()
+})),
+  "summaries": zod.array(zod.object({
+  "questionId": zod.string(),
+  "answeredCount": zod.number().int(),
+  "distribution": zod.array(zod.object({
+  "value": zod.string(),
+  "count": zod.number().int()
+}))
+}))
+})
+
+
+/**
+ * @summary Submit the signed-in member's assessment answers
+ */
+export const SubmitTeamAssessmentParams = zod.object({
+  "assessmentId": zod.coerce.string()
+})
+
+export const SubmitTeamAssessmentBody = zod.object({
+  "answers": zod.record(zod.string(), zod.unknown())
+})
+
+export const SubmitTeamAssessmentResponse = zod.object({
+  "assessmentId": zod.string(),
+  "submittedAt": zod.coerce.date(),
+  "score": zod.number().int().nullish(),
+  "maxScore": zod.number().int().nullish()
+})
+
+
+/**
+ * @summary Request a private upload URL for an assessment response
+ */
+export const RequestTeamAssessmentUploadUrlParams = zod.object({
+  "assessmentId": zod.coerce.string()
+})
+
+export const requestTeamAssessmentUploadUrlBodyNameMax = 255;
+
+export const requestTeamAssessmentUploadUrlBodySizeMax = 5242880;
+
+export const requestTeamAssessmentUploadUrlBodyContentTypeMax = 120;
+
+
+
+export const RequestTeamAssessmentUploadUrlBody = zod.object({
+  "name": zod.string().min(1).max(requestTeamAssessmentUploadUrlBodyNameMax),
+  "size": zod.number().int().min(1).max(requestTeamAssessmentUploadUrlBodySizeMax),
+  "contentType": zod.string().max(requestTeamAssessmentUploadUrlBodyContentTypeMax)
+})
+
+export const RequestTeamAssessmentUploadUrlResponse = zod.object({
+  "uploadURL": zod.string().url(),
+  "objectPath": zod.string()
+})
+
+
+/**
  * Returns server health status
  * @summary Health check
  */
