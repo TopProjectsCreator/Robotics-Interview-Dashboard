@@ -469,7 +469,7 @@ function TeamSummary({
   season: number;
   onNavigate: (reference: FtcMentionReference) => void;
 }) {
-  const teamName = team.nameFull?.trim() || team.nameShort?.trim() || team.schoolName?.trim() || "Official FTC team";
+  const teamName = team.nameShort?.trim() || team.schoolName?.trim() || `Team ${team.teamNumber}`;
   return (
     <button
       type="button"

@@ -173,20 +173,85 @@ describe("FTC chat mention previews", () => {
   });
 
   it("opens an attending team as a full profile from its event", () => {
+    const officialTeamName = "BioBuzz Robotics, Sponsored by Acme, Example Corp, and More";
+    vi.mocked(useGetFtcEventProfile).mockReturnValue({
+      data: {
+        ...eventProfile,
+        teams: [{
+          ...teamProfile.team,
+          nameFull: officialTeamName,
+        }],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    vi.mocked(useGetFtcTeamProfile).mockReturnValue({
+      data: {
+        ...teamProfile,
+        team: { ...teamProfile.team, nameFull: officialTeamName },
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+
     openEventWidget();
 
     expect(screen.getByTestId("text-ftc-event-name")).toHaveTextContent("Cascade Open");
     expectContractFieldsRendered("FtcEvent", screen.getByTestId("dialog-ftc-mention"));
     const team = screen.getByTestId("ftc-event-team-23442");
-    expect(team).toHaveTextContent("BioBuzz");
+    expect(team).toHaveTextContent("Buzz");
+    expect(team).not.toHaveTextContent(officialTeamName);
+    expect(team).toHaveTextContent("FTC 23442");
     expect(team).toHaveAccessibleName("Open FTC Team 23442, 2026 season profile");
     expect(team).toHaveClass("focus-visible:outline");
     fireEvent.click(team);
 
     expect(screen.getByTestId("text-ftc-profile-title")).toHaveTextContent("FTC Team 23442");
-    expect(screen.getByTestId("text-ftc-team-name")).toHaveTextContent("BioBuzz");
+    expect(screen.getByTestId("text-ftc-team-name")).toHaveTextContent(officialTeamName);
     expectContractFieldsRendered("FtcTeam", screen.getByTestId("dialog-ftc-mention"));
+    expect(screen.getByTestId("ftc-field-full-name")).toHaveTextContent(officialTeamName);
     expect(useGetFtcTeamProfile).toHaveBeenLastCalledWith(23442, { season: 2026 }, expect.anything());
+  });
+
+  it("uses school or team-number labels when an attendee has no concise team name", () => {
+    const teams = [
+      {
+        ...teamProfile.team,
+        teamNumber: 23443,
+        displayTeamNumber: "23443",
+        nameFull: "Falcon Robotics, Sponsored by Example Corporation",
+        nameShort: " ",
+        schoolName: "Harborview STEM Academy",
+      },
+      {
+        ...teamProfile.team,
+        teamNumber: 23444,
+        displayTeamNumber: "23444",
+        nameFull: "Eagle Robotics, Sponsored by Another Corporation",
+        nameShort: null,
+        schoolName: " ",
+      },
+    ];
+    vi.mocked(useGetFtcEventProfile).mockReturnValue({
+      data: { ...eventProfile, teams },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+
+    openEventWidget();
+
+    const schoolFallback = screen.getByTestId("ftc-event-team-23443");
+    expect(schoolFallback).toHaveTextContent("FTC 23443");
+    expect(schoolFallback).toHaveTextContent("Harborview STEM Academy");
+    expect(schoolFallback).not.toHaveTextContent("Falcon Robotics, Sponsored by Example Corporation");
+
+    const numberFallback = screen.getByTestId("ftc-event-team-23444");
+    expect(numberFallback).toHaveTextContent("FTC 23444");
+    expect(numberFallback).toHaveTextContent("Team 23444");
+    expect(numberFallback).not.toHaveTextContent("Eagle Robotics, Sponsored by Another Corporation");
   });
 
   it("shows the complete attending list when there are more than 24 teams", () => {
