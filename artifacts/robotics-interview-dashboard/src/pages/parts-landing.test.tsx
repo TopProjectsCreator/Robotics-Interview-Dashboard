@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -27,7 +28,10 @@ const privateRecordsResponse = {
 } as Response;
 
 function renderWithRouter(ui: ReactNode) {
-  return render(<Router>{ui}</Router>);
+  const testQueryClient = new QueryClient({
+    defaultOptions: { queries: { enabled: false, retry: false } },
+  });
+  return render(<QueryClientProvider client={testQueryClient}><Router>{ui}</Router></QueryClientProvider>);
 }
 
 function stubNetworkTransports() {

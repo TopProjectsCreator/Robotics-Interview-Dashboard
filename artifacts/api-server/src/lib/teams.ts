@@ -179,7 +179,6 @@ export function teamIdForAccount(account: { teamId?: string | null } | null | un
  * Drizzle condition matching rows belonging to `teamId`, including legacy
  * NULL rows when `teamId` is the default team. Pass a `team_id` column.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function teamFilter(column: any, teamId: string) {
   if (teamId === DEFAULT_TEAM_ID) {
     return or(eq(column, DEFAULT_TEAM_ID), isNull(column));

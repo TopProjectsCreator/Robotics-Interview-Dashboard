@@ -31,12 +31,9 @@ import {
   deleteCodeProject,
   deployCodeProject,
   getListCodeFilesQueryKey,
-  getListCodePresenceQueryKey,
   getListCodeProjectsQueryKey,
   getListCodeRevisionsQueryKey,
-  listCodeFiles,
   listCodePresence,
-  listCodeRevisions,
   updateCodeFile,
   updateCodePresence,
   updateCodeProject,
@@ -55,7 +52,6 @@ import {
   BIOBUZZ_SDK_VERSION,
   defaultSeedFiles,
   highlightJavaLine,
-  hubPathFor,
   lintJava,
   templateForKind,
   type JavaProblem,
@@ -351,7 +347,7 @@ export function CodeWorkspacePage({ demoMode = false }: { demoMode?: boolean } =
     data?: { projects: CodeProject[] };
     isLoading: boolean;
   };
-  const projectList = projects.data?.projects ?? [];
+  const projectList = useMemo(() => projects.data?.projects ?? [], [projects.data?.projects]);
   const project = projectList.find((item) => item.id === projectId) ?? null;
 
   const filesQuery = {

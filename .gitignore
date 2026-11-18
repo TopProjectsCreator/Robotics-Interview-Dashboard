@@ -85,7 +85,7 @@ supabase/.temp/
 .opencode/plugins/test-mode.js
 .opencode/agents/test.md
 
-Just all ofopencoode
+# Local LLM folders.
 .opencode/
 .opencode-runtime/
 .dev-secrets/

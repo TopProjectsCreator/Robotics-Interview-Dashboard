@@ -4055,7 +4055,7 @@ export const getGetPresenceUrl = () => {
 }
 
 /**
- * @summary List currently online coordinators
+ * @summary List currently online coordinators and offline team accounts
  */
 export const getPresence = async ( options?: Parameters<typeof customFetch>[1]): Promise<PresenceList> => {
 
@@ -4102,7 +4102,7 @@ export type GetPresenceQueryError = ErrorType<unknown>
 
 
 /**
- * @summary List currently online coordinators
+ * @summary List currently online coordinators and offline team accounts
  */
 
 export function useGetPresence<TData = Awaited<ReturnType<typeof getPresence>>, TError = ErrorType<unknown>>(

@@ -1670,9 +1670,29 @@ export interface WorkspaceUsageSummary {
   daily: WorkspaceUsageDay[];
 }
 
+export interface PresenceOfflineEntry {
+  userId: string;
+  /** Display name of the signed-in person */
+  name: string;
+  /** When this person was first seen (null if never seen) */
+  firstSeenAt: string | null;
+  /** When this person was most recently seen (null if never seen) */
+  lastSeenAt: string | null;
+}
+
+export interface PresenceIpEntry {
+  ip: string;
+  /** Most recent time an IP address was seen for this person */
+  lastSeenAt: string;
+  /** True when this IP has a currently online (2-minute window) session */
+  online: boolean;
+}
+
 export interface PresenceList {
   onlineCount: number;
   entries: PresenceEntry[];
+  /** Team accounts that are not currently online, with their last-seen times (null when never seen) */
+  offline: PresenceOfflineEntry[];
 }
 
 export interface PresenceHeartbeat {
@@ -1694,6 +1714,8 @@ export interface PresenceUserStats {
   visitCount: number;
   firstSeenAt: string | null;
   lastSeenAt: string | null;
+  /** Recent distinct IP addresses seen for this person, most recent first (currently online sessions are flagged) */
+  ips: PresenceIpEntry[];
   pages: PresenceUserStatsPagesItem[];
   /** Online sessions from this person with browser notifications granted */
   notifyGranted: number;

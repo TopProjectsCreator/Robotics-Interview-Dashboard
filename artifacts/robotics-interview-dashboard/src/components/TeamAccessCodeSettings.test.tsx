@@ -6,7 +6,7 @@ import { TeamAccessCodeSettings } from "./TeamAccessCodeSettings";
 let responseStatus = 200;
 let responseBody: unknown = { message: "Team access code updated." };
 
-const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
   const path = new URL(String(input), window.location.origin).pathname;
   if (path !== "/api/auth/teams/access-code") {
     return new Response(JSON.stringify({ error: "Not found" }), { status: 404 });

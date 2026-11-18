@@ -1252,7 +1252,7 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
     } catch (error) {
       const message = errorMessage(error, "Unable to add this part.");
       setNotice({ kind: "error", text: message });
-      throw new Error(message);
+      throw new Error(message, { cause: error });
     }
   };
 

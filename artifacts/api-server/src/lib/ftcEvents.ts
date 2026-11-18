@@ -47,8 +47,7 @@ const CACHE_ERROR_RETRY_MS = 5_000;
 
 function refreshCache<T>(key: string, load: () => Promise<T>): Promise<T> {
   loadErrors.delete(key);
-  let request: Promise<T>;
-  request = Promise.resolve()
+  const request = Promise.resolve()
     .then(load)
     .then(value => {
       const cachedAt = Date.now();

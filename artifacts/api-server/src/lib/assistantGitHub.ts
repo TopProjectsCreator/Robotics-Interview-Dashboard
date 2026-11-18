@@ -367,6 +367,8 @@ export async function runGitHubRepositoryTool(
     }
     const content = new TextDecoder("utf-8", { fatal: false })
       .decode(contentBytes)
+    // Repository text is untrusted; remove control characters before display.
+    // eslint-disable-next-line no-control-regex
       .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, "");
     state.readFiles.set(cacheKey, content);
     state.bytesRead += contentBytes.byteLength;

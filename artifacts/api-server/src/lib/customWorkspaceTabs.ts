@@ -6,6 +6,8 @@ export type CustomWorkspaceTab = {
 const MAX_TABS = 12;
 const MAX_MANIFEST_BYTES = 16_000;
 const TAB_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+// Reject ASCII control characters in custom tab manifests.
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 export function parseCustomWorkspaceTabs(raw: unknown): CustomWorkspaceTab[] {

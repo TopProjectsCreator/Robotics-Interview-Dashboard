@@ -31,9 +31,7 @@ import {
   previewWorkspaceHtml,
   WORKSPACE_VIEWPORTS,
   type WorkspaceTheme,
-  type WorkspaceViewport,
 } from "./customWorkspacePreview";
-import { runWorkspaceScript } from "./workspaceScript";
 
 const assistantTaskTool = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({
   type: "function" as const,
@@ -746,7 +744,7 @@ function cleanCodePath(path: string): string | null {
     cleaned.length < 1 ||
     cleaned.length > 255 ||
     cleaned.includes("..") ||
-    !/^[A-Za-z0-9_.$\-\/+]+$/.test(cleaned)
+    !/^[A-Za-z0-9_.$\x2f+-]+$/.test(cleaned)
   ) return null;
   return cleaned;
 }

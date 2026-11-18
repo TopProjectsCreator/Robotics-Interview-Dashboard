@@ -21,7 +21,7 @@ import { logger } from "../lib/logger";
 import { storageInstanceRestricted } from '../lib/objectStorage';
 import { and, eq, lt } from 'drizzle-orm';
 import { mkdtemp, open, readFile, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir, totalmem } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +40,6 @@ import {
   authenticatedInterviewerId,
   requestTeamId,
   requireAdmin,
-  requireCoordinator,
   requireWolverinesCoordinator,
   requireWorkspaceAccess,
   requireWorkspaceAccessOrCoordinator,
@@ -167,7 +166,6 @@ router.post(
  * Large Parasolid files use the authenticated signed-URL route above.
  * Requires auth. Body is raw media/document bytes (max 100 MB).
  */
-const CHAT_UPLOAD_MAX_BYTES = 100 * 1024 * 1024;
 const PARASOLID_PYTHON_PREVIEW_MAX_BYTES = 50 * 1024 * 1024;
 const PARASOLID_XT_PREVIEW_MAX_BYTES = 200 * 1024 * 1024;
 const PARASOLID_PREVIEW_MAX_OUTPUT_BYTES = 256 * 1024 * 1024;

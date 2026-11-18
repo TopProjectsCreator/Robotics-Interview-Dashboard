@@ -1,5 +1,5 @@
 import { createInsertSchema } from "drizzle-zod";
-import { integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
 
 /**

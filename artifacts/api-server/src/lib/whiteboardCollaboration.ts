@@ -7,7 +7,6 @@ import {
   runWithInstance,
   currentInstance,
   DEFAULT_TEAM_ID,
-  interviewerAccountsTable,
   interviewWhiteboardsTable,
   type DbInstance,
 } from "@workspace/db";

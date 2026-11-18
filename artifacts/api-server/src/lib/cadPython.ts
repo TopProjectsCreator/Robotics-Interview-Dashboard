@@ -147,7 +147,7 @@ function dockerUsableCad(): Promise<boolean> {
   return new Promise((resolve) => {
     const child = spawn("docker", ["image", "inspect", DOCKER_IMAGE, "--format", "{{.Id}}"], { timeout: 15000 });
     let found = false;
-    child.stdout?.on("data", (chunk) => { found = true; });
+    child.stdout?.on("data", () => { found = true; });
     child.on("error", () => resolve(false));
     child.on("close", (code) => resolve(code === 0 && found));
   });

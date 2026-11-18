@@ -24,7 +24,7 @@ describe("public assistant share page", () => {
   });
 
   it("loads only the anonymous transcript endpoint and reveals no unrelated data", async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, _init?: RequestInit) => {
       const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
       if (url.pathname === `/api/assistant/public-shares/${token}`) {
         return jsonResponse({

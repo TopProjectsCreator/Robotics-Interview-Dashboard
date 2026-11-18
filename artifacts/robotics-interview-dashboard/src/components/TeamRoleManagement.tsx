@@ -35,7 +35,7 @@ export function TeamRoleManagement({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<RoleDraft>(emptyDraft);
   const [notice, setNotice] = useState("");
-  const roles = rolesQuery.data?.roles ?? [];
+  const roles = useMemo(() => rolesQuery.data?.roles ?? [], [rolesQuery.data?.roles]);
   const selectedPermissions = useMemo(() => new Set(draft.permissions), [draft.permissions]);
 
   useEffect(() => {

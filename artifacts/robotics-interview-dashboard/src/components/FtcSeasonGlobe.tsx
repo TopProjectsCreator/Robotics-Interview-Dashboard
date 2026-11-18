@@ -71,6 +71,8 @@ function GlobeRenderer({
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+  const zoomRef = useRef(zoom);
+  zoomRef.current = zoom;
   const pausedRef = useRef(paused);
   const callbacksRef = useRef({ onSelect, onReady });
   pausedRef.current = paused;
@@ -98,7 +100,7 @@ function GlobeRenderer({
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
     camera.position.set(0, 0, 4.5);
-    camera.zoom = zoom;
+    camera.zoom = zoomRef.current;
     camera.updateProjectionMatrix();
     cameraRef.current = camera;
     const root = new THREE.Group();

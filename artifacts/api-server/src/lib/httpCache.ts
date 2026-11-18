@@ -40,7 +40,7 @@ export async function sendVersioned(
   version: () => Promise<string | null>,
   load: () => Promise<unknown>,
 ): Promise<void> {
-  let tag: string | null = null;
+  let tag: string | null;
   try {
     tag = await version();
   } catch {

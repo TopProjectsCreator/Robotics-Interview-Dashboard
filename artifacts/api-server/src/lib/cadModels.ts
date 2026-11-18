@@ -303,6 +303,8 @@ export function resolveCadUploadKind(
 ): { kind: CadWorkspaceFileKind; contentType: string } | { error: string } {
   const trimmedName = fileName.trim();
   if (!trimmedName) return { error: "The file needs a name." };
+  // File names must reject separators and control characters.
+  // eslint-disable-next-line no-control-regex
   if (trimmedName.length > 255 || /[\\/\u0000-\u001f\u007f]/.test(trimmedName)) {
     return { error: "Use a file name without path separators or control characters." };
   }

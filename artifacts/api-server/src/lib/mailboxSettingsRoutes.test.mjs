@@ -197,8 +197,8 @@ test("authenticated inbox routes keep team keys private and team-scoped", async 
   const keyA = "MAILBOX_ROUTE_PRIVATE_KEY_A";
   const keyAReplacement = "MAILBOX_ROUTE_PRIVATE_KEY_A_REPLACEMENT";
   const keyB = "MAILBOX_ROUTE_PRIVATE_KEY_B";
-  let encryptedA = null;
-  let encryptedB = null;
+  let encryptedA;
+  let encryptedB;
 
   try {
     const unauthenticated = await call("/system/mailbox", { method: "PUT", body: {

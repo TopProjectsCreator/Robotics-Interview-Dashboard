@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import express, { Router, type IRouter, type Request } from "express";
+import { Router, type IRouter, type Request } from "express";
 import {
   CreateCadBotBody,
   CreateCadBotResponse,
@@ -11,9 +11,7 @@ import {
   GetCadIconPolicyResponse,
   DeleteCadBotQueryParams,
   DeleteCadFolderParams,
-  DeleteCadFolderResponse,
   DeleteCadModelParams,
-  DeleteCadModelResponse,
   ListCadLibraryResponse,
   ListCadModelsQueryParams,
   ListCadModelsResponse,
@@ -39,7 +37,7 @@ import { pushRealtimeHint } from "../lib/realtime";
 import { ObjectStorageService } from "../lib/objectStorage";
 import { authenticatedInterviewerId } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
-import { CAD_ICON_IDS, DEFAULT_CAD_ICONS, normalizeCadIcons, type CadIconId } from "../lib/cadIconPolicy";
+import { CAD_ICON_IDS, normalizeCadIcons, type CadIconId } from "../lib/cadIconPolicy";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();

@@ -201,7 +201,7 @@ function readObject(
 }
 
 /** Reads the root `<model>` element of a 3MF part. */
-export function parseThreeMfModelXml(xml: string, fileName = "model.3mf"): ThreeMfModel {
+export function parseThreeMfModelXml(xml: string, _fileName = "model.3mf"): ThreeMfModel {
   const parser = new DOMParser();
   const document_ = parser.parseFromString(xml, "application/xml");
   const parseError = document_.getElementsByTagName("parsererror")[0];

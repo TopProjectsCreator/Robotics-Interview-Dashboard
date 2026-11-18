@@ -102,7 +102,7 @@ test("assistant shares expose only authorized transcripts and stop resolving aft
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
       const text = await response.text();
-      let responseBody = null;
+    let responseBody;
       try {
         responseBody = text ? JSON.parse(text) : null;
       } catch {

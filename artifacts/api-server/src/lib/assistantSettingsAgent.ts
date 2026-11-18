@@ -290,7 +290,7 @@ export async function runSettingsAgent(options: SettingsAgentRunOptions): Promis
   const changes: SettingsAgentChange[] = [];
   const localUpdates: Partial<Record<SettingsCapabilityId, unknown>> = {};
   const reads = new Map<SettingsCapabilityId, unknown>();
-  let model = options.model ?? await (options.resolveModel ?? getAssistantModel)(identity.teamId);
+  const model = options.model ?? await (options.resolveModel ?? getAssistantModel)(identity.teamId);
   const complete = options.complete ?? (async (input) =>
     await teamAssistantAI(identity.teamId).chat.completions.create(input as any) as unknown as Record<string, any>);
 

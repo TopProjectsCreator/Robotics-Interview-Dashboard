@@ -1306,10 +1306,10 @@ paths:
     get:
       operationId: getPresence
       tags: [presence]
-      summary: List currently online coordinators
+      summary: List currently online coordinators and offline team accounts
       responses:
         "200":
-          description: Online presence list
+          description: Online presence list with the offline team roster
           content:
             application/json:
               schema:
@@ -8168,11 +8168,48 @@ components:
         activeSeconds:
           type: integer
           minimum: 0
+    PresenceOfflineEntry:
+      type: object
+      required:
+        - userId
+        - name
+        - firstSeenAt
+        - lastSeenAt
+      properties:
+        userId:
+          type: string
+        name:
+          type: string
+          description: Display name of the signed-in person
+        firstSeenAt:
+          type: string
+          nullable: true
+          description: When this person was first seen (null if never seen)
+        lastSeenAt:
+          type: string
+          nullable: true
+          description: When this person was most recently seen (null if never seen)
+    PresenceIpEntry:
+      type: object
+      required:
+        - ip
+        - lastSeenAt
+        - online
+      properties:
+        ip:
+          type: string
+        lastSeenAt:
+          type: string
+          description: Most recent time an IP address was seen for this person
+        online:
+          type: boolean
+          description: True when this IP has a currently online (2-minute window) session
     PresenceList:
       type: object
       required:
         - onlineCount
         - entries
+        - offline
       properties:
         onlineCount:
           type: integer
@@ -8180,6 +8217,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PresenceEntry"
+        offline:
+          type: array
+          description: Team accounts that are not currently online, with their last-seen times (null when never seen)
+          items:
+            $ref: "#/components/schemas/PresenceOfflineEntry"
     PresenceHeartbeat:
       type: object
       required:
@@ -8201,6 +8243,7 @@ components:
         - notifyGranted
         - notifyDenied
         - notifyUnknown
+        - ips
       properties:
         userId:
           type: string
@@ -8219,6 +8262,11 @@ components:
         lastSeenAt:
           type: string
           nullable: true
+        ips:
+          type: array
+          description: Recent distinct IP addresses seen for this person, most recent first (currently online sessions are flagged)
+          items:
+            $ref: "#/components/schemas/PresenceIpEntry"
         pages:
           type: array
           items:

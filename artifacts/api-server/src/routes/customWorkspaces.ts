@@ -6,10 +6,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { Router, type Request, type Response } from "express";
 import { hasPermission, UpdateCustomWorkspaceTabsBody, UpdateCustomWorkspaceTabsResponse } from "@workspace/api-zod";
-import { openai } from "@workspace/integrations-openai-ai-server";
 import { teamAssistantAI } from "../lib/teamAssistantAi";
 import { DEFAULT_TEAM_ID, pool } from "@workspace/db";
-import type { NextFunction } from "express";
 import {
   authenticatedInterviewerId,
   requestTeamId,
@@ -38,29 +36,6 @@ import {
   buildRecordQuerySql,
   parseRecordQuery,
 } from "../lib/assistantCustomWorkspaceTools";
-
-/** Builder-management guard that also supports legacy admin accounts. */
-function requireCustomWorkspaceAdmin(req: Request, res: Response, next: NextFunction): void {
-  requireAdmin(req, res, () => {
-    const interviewerId = authenticatedInterviewerId(req);
-    if (!interviewerId) {
-      res.status(401).json({ error: "Interviewer session is invalid" });
-      return;
-    }
-    void accountById(interviewerId)
-      .then((account) => {
-        if (account?.role !== "coordinator" && account?.role !== "admin") {
-          res.status(403).json({ error: "Admins only" });
-          return;
-        }
-        next();
-      })
-      .catch((error) => {
-        req.log?.error?.({ err: error }, "Custom workspace admin check failed");
-        res.status(503).json({ error: "Authentication unavailable" });
-      });
-  });
-}
 
 const router = Router();
 const CAPABILITIES = new Set(["data", "llm"]);
@@ -337,7 +312,7 @@ async function repairWorkspaceHtml(
   if (!repairedHtml || !title || Buffer.byteLength(repairedHtml, "utf8") > MAX_HTML_BYTES) {
     throw new Error("The visual QA repair did not produce a valid app.");
   }
-  let repairedSourceFiles = sourceFiles;
+  let repairedSourceFiles: WorkspaceSourceFile[];
   if (Array.isArray(result.sourceFiles)) {
     const byPath = new Map(sourceFiles.map((file) => [file.path, file.content]));
     for (const file of result.sourceFiles) {

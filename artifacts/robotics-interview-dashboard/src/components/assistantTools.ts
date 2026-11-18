@@ -66,7 +66,7 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
   {
     id: "artifacts",
     label: "Boards & docs",
-    description: "Whiteboards, boards, documents, sheets.",
+    description: "Whiteboards, boards, documents, sheets, calendars.",
     tools: [
       { name: "list_collaboration_artifacts", label: "List artifacts", hint: "Find by kind", write: false },
       { name: "read_collaboration_artifact", label: "Read artifact", hint: "Before editing", write: false },
@@ -74,10 +74,12 @@ export const ASSISTANT_TOOL_GROUPS: AssistantToolGroup[] = [
       { name: "create_document", label: "Create document", hint: "Notes & prose", write: true },
       { name: "create_spreadsheet", label: "Create spreadsheet", hint: "Workbook grid", write: true },
       { name: "create_whiteboard", label: "Create whiteboard", hint: "Freeform canvas", write: true },
+      { name: "create_calendar", label: "Create calendar", hint: "Team schedule", write: true },
       { name: "edit_board", label: "Edit board", hint: "Cards & columns", write: true },
       { name: "edit_document", label: "Edit document", hint: "Append/replace", write: true },
       { name: "edit_spreadsheet", label: "Edit spreadsheet", hint: "Cells & rows", write: true },
       { name: "edit_whiteboard", label: "Edit whiteboard", hint: "Shapes & text", write: true },
+      { name: "edit_calendar", label: "Edit calendar", hint: "Events & feeds", write: true },
     ],
   },
   {

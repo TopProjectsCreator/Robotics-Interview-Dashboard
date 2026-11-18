@@ -315,7 +315,7 @@ export async function saveAssistantModelPolicy(
     throw new AssistantModelPolicyError("The model catalog is unavailable. The policy was not saved.", 503);
   }
   validatePolicyAgainstCatalog(policy, catalog);
-  const [{ assistantModelPoliciesTable, assistantModelPolicyHistoryTable, db }, { desc, eq, sql }] = await Promise.all([
+  const [{ assistantModelPoliciesTable, assistantModelPolicyHistoryTable, db }, { eq, sql }] = await Promise.all([
     import("@workspace/db"),
     import("drizzle-orm"),
   ]);

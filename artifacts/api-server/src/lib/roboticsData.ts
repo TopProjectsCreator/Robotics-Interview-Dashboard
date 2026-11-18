@@ -215,7 +215,7 @@ function isNameVariant(a: string, b: string): boolean {
 
 function editDistance(a: string, b: string): number {
   if (Math.abs(a.length - b.length) > 2) return 3;
-  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
   for (let i = 1; i <= a.length; i++) {
     let curr = i;
     let rowMin = curr;

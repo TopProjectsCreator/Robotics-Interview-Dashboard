@@ -77,7 +77,7 @@ function typeNames(value: unknown): string[] {
   const entries = Array.isArray(value) ? value : [value];
   return entries
     .filter((entry): entry is string => typeof entry === "string")
-    .map((entry) => entry.split(/[\/#]/).pop()?.toLowerCase() ?? "");
+    .map((entry) => entry.split(/[\x2f#]/).pop()?.toLowerCase() ?? "");
 }
 
 function collectJsonLdNodes(value: unknown, products: JsonRecord[], pageTypes: Set<string>) {

@@ -42,6 +42,7 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
     },
   });
   const saveNote = useUpdatePersonalNotepad();
+  const saveNoteMutation = saveNote.mutateAsync;
   const [content, setContent] = useState("");
   const [hydrated, setHydrated] = useState(false);
   const [saveState, setSaveState] = useState<"loading" | "saved" | "saving" | "error">("loading");
@@ -131,7 +132,7 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
     const timer = window.setTimeout(() => {
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
-        .then(() => saveNote.mutateAsync({ data: { content: draft } }))
+        .then(() => saveNoteMutation({ data: { content: draft } }))
         .then((saved) => {
           if (saved.content === latestContentRef.current) {
             lastSavedRef.current = saved.content;
@@ -146,7 +147,7 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
         });
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [content, hydrated, legacyStorageKey, saveNote.mutateAsync]);
+  }, [content, hydrated, legacyStorageKey, saveNoteMutation]);
 
   const closeNotepad = useCallback(async () => {
     const latest = latestContentRef.current;
@@ -158,7 +159,7 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
     try {
       const saved = await saveQueueRef.current
         .catch(() => undefined)
-        .then(() => saveNote.mutateAsync({ data: { content: latestContentRef.current } }));
+        .then(() => saveNoteMutation({ data: { content: latestContentRef.current } }));
       lastSavedRef.current = saved.content;
       lastObservedUpdatedAtRef.current = saved.updatedAt;
       hasUnsavedChangesRef.current = false;
@@ -167,7 +168,7 @@ export function PersonalNotepad({ accountKey, onClose }: { accountKey: string; o
     } catch {
       setSaveState("error");
     }
-  }, [legacyStorageKey, onClose, saveNote.mutateAsync]);
+  }, [legacyStorageKey, onClose, saveNoteMutation]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

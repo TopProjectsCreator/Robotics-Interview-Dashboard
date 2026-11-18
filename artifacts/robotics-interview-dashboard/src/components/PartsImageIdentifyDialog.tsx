@@ -189,6 +189,7 @@ export function PartsImageIdentifyDialog({
   }, []);
 
   useEffect(() => {
+    const videoElement = videoRef.current;
     if (!open) return;
 
     const requestId = ++cameraRequestId.current;
@@ -295,7 +296,7 @@ export function PartsImageIdentifyDialog({
         streamRef.current = null;
         stopStream(requestedStream);
       }
-      if (videoRef.current?.srcObject === requestedStream) videoRef.current.srcObject = null;
+      if (videoElement?.srcObject === requestedStream) videoElement.srcObject = null;
     };
   }, [open, cameraRetry, cameraSwitch]);
 

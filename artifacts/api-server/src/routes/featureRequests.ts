@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
-import { and, count, desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   db,
   primaryDb,
@@ -24,7 +24,7 @@ import {
   requireSiteOwner,
 } from "../middlewares/adminAuth";
 import { accountById } from "../lib/interviewerAccounts";
-import { getTeamById, teamFilter } from "../lib/teams";
+import { teamFilter } from "../lib/teams";
 import { activeRosterCountsByTeam } from "../lib/siteStats";
 
 const router: IRouter = Router();

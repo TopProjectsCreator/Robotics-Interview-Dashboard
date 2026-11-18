@@ -3,7 +3,6 @@ import {
   IdentifyPartsImageBody,
   IdentifyPartsImageResponse,
 } from "@workspace/api-zod";
-import { openai } from "@workspace/integrations-openai-ai-server";
 import { requireAdmin } from "../middlewares/adminAuth";
 import {
   decodePartsImage,

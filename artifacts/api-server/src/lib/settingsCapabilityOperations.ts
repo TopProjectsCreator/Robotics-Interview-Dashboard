@@ -14,7 +14,7 @@ import { chatSettingsTable, db, DEFAULT_TEAM_ID, teamNameRulesTable, teamsTable,
 import { getTeamMailboxSettings, forwardingAddress, saveTeamMailboxSettings } from "./maildrop";
 import { teamFilter } from "./teams";
 import { pushRealtimeHint } from "./realtime";
-import type { SettingsAgentAdapter, SettingsAgentIdentity } from "./assistantSettingsAgent";
+import type { SettingsAgentAdapter } from "./assistantSettingsAgent";
 
 import { normalizedBackgrounds, clampRotationSeconds, normalizedBrandingRow } from "./teamBranding";
 

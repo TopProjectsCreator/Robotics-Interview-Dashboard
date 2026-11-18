@@ -1034,19 +1034,6 @@ describe("custom workspace visual publish review", () => {
     let published = false;
     const draft = { ...workspace, status: "draft" };
     const publishedWorkspace = { ...workspace, status: "published" };
-    const frames = [
-      { type: "tool_start", id: "runtime-1", tool: "Check browser runtime", detail: "Opening the isolated draft." },
-      { type: "tool_start", id: "screenshot-light-1", tool: "Capture light theme screenshot", detail: "Rendering at 1280 × 900." },
-      { type: "tool_start", id: "screenshot-dark-1", tool: "Capture dark theme screenshot", detail: "Rendering at 1280 × 900." },
-      { type: "screenshot", id: "screenshot-light-1", theme: "light", image: "data:image/png;base64,bGlnaHQ=" },
-      { type: "screenshot", id: "screenshot-dark-1", theme: "dark", image: "data:image/png;base64,ZGFyaw==" },
-      { type: "tool_done", id: "runtime-1", passed: true, detail: "No JavaScript errors or failed resource loads." },
-      { type: "tool_start", id: "review-light-1", tool: "Review light theme contrast and layout", detail: "Checking layout." },
-      { type: "review", id: "review-light-1", theme: "light", passed: true, issues: [] },
-      { type: "tool_start", id: "review-dark-1", tool: "Review dark theme contrast and layout", detail: "Checking layout and contrast." },
-      { type: "review", id: "review-dark-1", theme: "dark", passed: true, issues: [] },
-      { type: "complete", workspace: publishedWorkspace },
-    ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });
@@ -1073,15 +1060,6 @@ describe("custom workspace visual publish review", () => {
 
   it("keeps the draft when the direct publish request fails", async () => {
     const draft = { ...workspace, status: "draft" };
-    const frames = [
-      { type: "tool_start", id: "runtime-1", tool: "Check browser runtime", detail: "Opening the isolated draft." },
-      { type: "tool_start", id: "screenshot-light-1", tool: "Capture light theme screenshot", detail: "Rendering at 1280 × 900." },
-      { type: "tool_start", id: "screenshot-dark-1", tool: "Capture dark theme screenshot", detail: "Rendering at 1280 × 900." },
-      { type: "screenshot", id: "screenshot-light-1", theme: "light", image: "data:image/png;base64,bGlnaHQ=" },
-      { type: "screenshot", id: "screenshot-dark-1", theme: "dark", image: "data:image/png;base64,ZGFyaw==" },
-      { type: "tool_done", id: "runtime-1", passed: false, detail: "JavaScript exception: render failed · Asset load failure: img missing.png" },
-      { type: "failed", message: "Browser runtime checks still found errors. The workspace remains a draft." },
-    ];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       if (path === "/api/assistant/questions/pending") return Response.json({ questions: [] });

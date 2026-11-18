@@ -127,7 +127,10 @@ export function permissionForRoute(method: string, rawPath: string): PermissionI
   }
   if (path.startsWith("/whiteboards") || path.startsWith("/boards") ||
       path.startsWith("/spreadsheets") || path.startsWith("/calendars")) {
-    if (path.startsWith("/calendars") && !read) return "collaboration.manage";
+    // Calendars are live team artifacts that any signed-in interviewer may
+    // create and edit (see the requireAdmin note on the /calendars routes),
+    // so calendar writes follow boards/spreadsheets rather than
+    // collaboration.manage.
     return read ? "collaboration.view" : "collaboration.edit";
   }
   if (path.startsWith("/feature-requests")) {

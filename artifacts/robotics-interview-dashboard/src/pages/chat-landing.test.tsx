@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { readFileSync } from "fs";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
@@ -28,7 +29,10 @@ import PublicDashboard from "./public-dashboard";
 const chatLandingStyles = readFileSync("src/pages/chat-landing.css", "utf8");
 
 function renderWithRouter(ui: ReactNode) {
-  return render(<Router>{ui}</Router>);
+  const testQueryClient = new QueryClient({
+    defaultOptions: { queries: { enabled: false, retry: false } },
+  });
+  return render(<QueryClientProvider client={testQueryClient}><Router>{ui}</Router></QueryClientProvider>);
 }
 
 function extractCssBlock(stylesheet: string, startIndex: number) {
@@ -132,7 +136,11 @@ const privateRecordsResponse = {
   }),
 } as Response;
 
-function stubNetworkTransports(fetchImplementation: typeof fetch = async () => privateRecordsResponse) {
+function stubNetworkTransports(fetchImplementation: typeof fetch = async (input) => (
+  requestPath(input) === "/api/public/ftc-globe"
+    ? jsonResponse({ season: 2026, teamCount: 0, eventCount: 0, points: [] })
+    : privateRecordsResponse
+)) {
   const fetchSpy = vi.fn(fetchImplementation);
   const eventSources: { close: ReturnType<typeof vi.fn>; onmessage: ((event: MessageEvent) => void) | null }[] = [];
   const eventSourceConstructor = vi.fn(function MockEventSource() {
@@ -405,7 +413,8 @@ describe("public chat discovery", () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
 
-      expect(network.fetchSpy).not.toHaveBeenCalled();
+      const requestedPaths = network.fetchSpy.mock.calls.map(([input]) => requestPath(input));
+      expect(requestedPaths.every((requestPath) => requestPath === "/api/public/ftc-globe")).toBe(true);
       expect(network.eventSourceConstructor).not.toHaveBeenCalled();
       expect(network.webSocketConstructor).not.toHaveBeenCalled();
       for (const canary of privateRecordCanaries) {
@@ -516,8 +525,11 @@ describe("public chat discovery", () => {
 
       await waitFor(() => {
         expect(window.location.pathname).toBe("/");
-        expect(queryClient.getQueryCache().getAll()).toHaveLength(0);
+        expect(queryClient.getQueryCache().getAll().every((query) => query.queryKey[0] === "/api/public/ftc-globe")).toBe(true);
       });
+      const remainingQueryData = JSON.stringify(queryClient.getQueryCache().getAll().map((query) => query.state.data));
+      expect(remainingQueryData).not.toContain(applicantCanary);
+      expect(remainingQueryData).not.toContain(chatCanary);
       if (publicPath === "/chat-landing") {
         fireEvent.click(screen.getByTestId("link-chat-entry"));
         await waitFor(() => expect(window.location.pathname).toBe("/chat-landing"));

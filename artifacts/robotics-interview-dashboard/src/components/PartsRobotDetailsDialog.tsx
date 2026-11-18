@@ -588,7 +588,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced, dem
         queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() }),
       ]);
     } catch (error) {
-      throw new Error(errorMessage(error, "Unable to update the saved cost."));
+      throw new Error(errorMessage(error, "Unable to update the saved cost."), { cause: error });
     }
   };
 
@@ -606,7 +606,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced, dem
       });
       await queryClient.invalidateQueries({ queryKey: getGetPartsRobotDetailsQueryKey(robot.id) });
     } catch (error) {
-      throw new Error(errorMessage(error, "Unable to save the supplier quote."));
+      throw new Error(errorMessage(error, "Unable to save the supplier quote."), { cause: error });
     }
   };
 

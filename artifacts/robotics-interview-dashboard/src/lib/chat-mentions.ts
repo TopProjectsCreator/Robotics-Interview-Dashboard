@@ -9,6 +9,29 @@ export type ChatMentionPerson = ChatMentionToken & {
   kind: "interviewer" | "group" | "assistant" | "applicant";
 };
 
+export type ChatObjectKind = "document" | "whiteboard" | "board" | "spreadsheet" | "calendar";
+
+/**
+ * A resolvable shared-artifact token pointing at something created in chat
+ * (document, Excalidraw whiteboard, task board or spreadsheet). `token` is a
+ * chat-safe title (disambiguated on duplicates), or the object's id when
+ * mentioned by id. `kind` tells the renderer how to open it; `idToken` is
+ * true when `token` is the raw id rather than the title.
+ */
+export type ChatObjectMention = ChatMentionToken & {
+  id: string;
+  title: string;
+  kind: ChatObjectKind;
+  detail: string;
+  idToken: boolean;
+};
+
+export type ObjectMentionSource = {
+  id: string;
+  title: string;
+  data: string;
+};
+
 /**
  * A resolvable `#channel-name` token. `token` is the channel name matched
  * after the `#` trigger (whitespace-normalized); `id` is the stable channel
@@ -39,7 +62,7 @@ export type ChatFtcMention =
  * available to every chat participant after reload.
  */
 export function findChatFtcMentions(text: string): ChatFtcMention[] {
-  const pattern = /(^|[^\p{L}\p{N}_.+\-])(@FTC Team (\d{4}) (\d{1,5})|@FTC Event (\d{4}) ([A-Za-z0-9]{3,20}))(?=$|[^\p{L}\p{N}_-])/giu;
+  const pattern = /(^|[^\p{L}\p{N}_.+-])(@FTC Team (\d{4}) (\d{1,5})|@FTC Event (\d{4}) ([A-Za-z0-9]{3,20}))(?=$|[^\p{L}\p{N}_-])/giu;
   const mentions: ChatFtcMention[] = [];
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(text))) {
@@ -125,6 +148,82 @@ export type ChannelMentionSource = {
   emoji?: string | null;
   memberCount?: number | null;
 };
+
+const OBJECT_KIND_LABELS: Record<ChatObjectKind, string> = {
+  document: "Document",
+  whiteboard: "Whiteboard",
+  board: "Board",
+  spreadsheet: "Spreadsheet",
+  calendar: "Calendar",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/**
+ * The chat artifacts all live in one table and are told apart by `data.kind`.
+ * Plain Excalidraw whiteboards have no `kind`, so absence means whiteboard.
+ */
+export function objectKindOfData(raw: string | undefined): ChatObjectKind | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) return undefined;
+    const kind = parsed.kind;
+    if (kind === "document" || kind === "board" || kind === "spreadsheet" || kind === "whiteboard" || kind === "calendar") return kind;
+    return "whiteboard";
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Builds the `@`-mention tokens for chat-created artifacts. Each object gets
+ * up to two tokens: its whitespace-normalized title (titles shared by two
+ * artifacts gain a `· Ref <id6>` suffix, mirroring applicant mentions) and
+ * its raw id, so `@the-report` and `@3f2a...` both resolve. Tokens that are
+ * ids carry `idToken: true` and are hidden from the picker but still match
+ * at render time.
+ */
+export function buildObjectMentions(
+  objects: readonly ObjectMentionSource[],
+  reservedTokens: readonly string[] = [],
+): ChatObjectMention[] {
+  const titleCounts = new Map<string, number>();
+  for (const object of objects) {
+    const key = object.title.trim().replace(/\s+/g, " ").toLowerCase();
+    if (!key) continue;
+    titleCounts.set(key, (titleCounts.get(key) ?? 0) + 1);
+  }
+
+  const usedTokens = new Set(reservedTokens.map(token => token.trim().toLowerCase()));
+  const mentions: ChatObjectMention[] = [];
+  for (const object of objects) {
+    const title = object.title.trim().replace(/\s+/g, " ");
+    const kind = objectKindOfData(object.data);
+    if (!title || !kind) continue;
+    const titleKey = title.toLowerCase();
+    const duplicate = (titleCounts.get(titleKey) ?? 0) > 1;
+    const refTag = object.id.replace(/[^a-z0-9]/gi, "").slice(0, 6).toUpperCase() || "REF";
+    const baseToken = duplicate ? `${title} · Ref ${refTag}` : title;
+    let titleToken = baseToken;
+    let collision = 0;
+    while (usedTokens.has(titleToken.toLowerCase())) {
+      collision += 1;
+      titleToken = `${baseToken} · ${refTag}-${collision}`;
+    }
+    usedTokens.add(titleToken.toLowerCase());
+    const detail = `${OBJECT_KIND_LABELS[kind]} · click to open`;
+    mentions.push({ token: titleToken, id: object.id, title, kind, detail, idToken: false });
+    const idToken = object.id.trim();
+    if (idToken && !usedTokens.has(idToken.toLowerCase())) {
+      usedTokens.add(idToken.toLowerCase());
+      mentions.push({ token: idToken, id: object.id, title, kind, detail, idToken: true });
+    }
+  }
+  return mentions;
+}
 
 /**
  * Builds the `#`-mention token list from the channels the signed-in account
@@ -226,6 +325,18 @@ export function findChatChannelMentions<T extends ChatChannelMention>(
   channels: readonly T[],
 ): ChatMentionMatch<T>[] {
   return findTriggeredMentions(text, channels, "#");
+}
+
+/**
+ * Finds `@artifact` references (documents, whiteboards, boards, spreadsheets)
+ * in message text. Same semantics as `findChatMentions` — titles, `Ref`
+ * disambiguators and raw ids all resolve to the same object.
+ */
+export function findChatObjectMentions<T extends ChatObjectMention>(
+  text: string,
+  objects: readonly T[],
+): ChatMentionMatch<T>[] {
+  return findTriggeredMentions(text, objects, "@");
 }
 
 export function messageMentionsInterviewer(

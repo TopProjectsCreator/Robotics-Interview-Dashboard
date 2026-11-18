@@ -215,6 +215,7 @@ export async function connectHubUsb(onStep: HubAdbStep = () => undefined): Promi
     throw new Error(
       "The hub refused the ADB connection. If it asks for authorization, accept it and retry. " +
         (error instanceof Error ? error.message : ""),
+    { cause: error },
     );
   }
   const adb = new Adb(transport);

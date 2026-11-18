@@ -126,7 +126,7 @@ export function ModalOverlay({
   backdropClassName = "bg-[#112433]/55",
   zIndex = 200,
 }: ModalOverlayProps) {
-  const { overlayProps, panelProps } = useModalOverlay({ label, onClose });
+  const { panelProps } = useModalOverlay({ label, onClose });
 
   if (typeof document === "undefined") return null;
 

@@ -437,7 +437,7 @@ export async function startCustomMcpConnection(input: {
     [apiKeyHeader]: apiKeyPrefix ? `${apiKeyPrefix} ${input.apiKey}` : input.apiKey,
   } : undefined;
   let requiredMetadataUrl: string | undefined;
-  let authChallenge = "";
+  let authChallenge: string;
   try {
     const tools = await listAt(endpointUrl, undefined, apiKeyHeaders);
     await pool.query(
@@ -453,7 +453,7 @@ export async function startCustomMcpConnection(input: {
     return { connected: true as const, connectionId, endpointUrl, toolCount: tools.length };
   } catch (error) {
     if (!(error instanceof McpAuthenticationRequiredError)) throw error;
-    if (input.apiKey) throw new Error("The API key was rejected. Check the key, header name, and prefix.");
+    if (input.apiKey) throw new Error("The API key was rejected. Check the key, header name, and prefix.", { cause: error });
     requiredMetadataUrl = error.resourceMetadataUrl;
     authChallenge = error.challenge;
   }

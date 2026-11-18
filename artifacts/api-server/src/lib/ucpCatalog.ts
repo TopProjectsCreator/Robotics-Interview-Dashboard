@@ -392,7 +392,6 @@ export async function fetchUcpCatalogSnapshot(
       }
       if (parsed.totalCount !== null) totalCount = parsed.totalCount;
       if (!parsed.hasNextPage) {
-        cursor = null;
         break;
       }
       if (!parsed.cursor) {

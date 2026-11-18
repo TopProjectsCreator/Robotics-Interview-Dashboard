@@ -14,7 +14,6 @@ import {
   runWithInstance,
   currentInstance,
   DEFAULT_TEAM_ID,
-  interviewerAccountsTable,
   interviewWhiteboardsTable,
   type DbInstance,
 } from "@workspace/db";
@@ -38,7 +37,6 @@ import { permissionsForAccount } from "./teamRoles";
 
 const MAX_DOCUMENT_DATA_BYTES = 1_500_000;
 const DOCUMENT_PATH = /^\/api\/whiteboards\/([^/]+)\/document-collab$/;
-const WHITEBOARD_PATH = /^\/api\/whiteboards\/[^/]+\/collab$/;
 const SESSION_COOKIE = "robotics_admin_session";
 const Y_UPDATE = 1;
 const AWARENESS_UPDATE = 2;

@@ -222,6 +222,8 @@ export async function saveTeamMailboxSettings(
     encryptedApiKey = null;
   } else if (apiKey !== undefined) {
     const normalizedKey = apiKey.trim();
+    // API keys must reject ASCII control characters before encryption.
+    // eslint-disable-next-line no-control-regex
     if (!normalizedKey || normalizedKey.length > 2048 || /[\u0000-\u001f\u007f]/.test(normalizedKey)) {
       throw new TypeError("Enter a valid Maildrop API key.");
     }

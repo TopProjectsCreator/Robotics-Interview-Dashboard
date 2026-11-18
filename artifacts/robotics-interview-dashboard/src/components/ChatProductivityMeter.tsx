@@ -102,6 +102,7 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
     },
   });
   const rangeReview = useReviewChatProductivityRange();
+  const resetRangeReview = rangeReview.reset;
   const updateSettings = useUpdateChatProductivitySettings();
   const status = statusQuery.data;
   const latest = status?.latest;
@@ -120,13 +121,13 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
 
   useEffect(() => {
     setSelectedRange("");
-    rangeReview.reset();
-  }, [scope, channelId]);
+    resetRangeReview();
+  }, [scope, channelId, resetRangeReview]);
 
   const chooseRange = (value: string) => {
     const range = value as ChatProductivityRangeInputRange | "";
     setSelectedRange(range);
-    rangeReview.reset();
+    resetRangeReview();
     if (!range) return;
     void rangeReview.mutateAsync({
       data: {
@@ -176,7 +177,7 @@ export function ChatProductivityMeter({ scope, channelId }: Props) {
           setAcknowledged(false);
           setSelectedRange("");
           setTab("latest");
-          rangeReview.reset();
+          resetRangeReview();
           updateSettings.reset();
         }
       }}>

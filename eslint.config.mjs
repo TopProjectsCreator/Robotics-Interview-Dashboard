@@ -14,6 +14,8 @@ export default tseslint.config(
       "artifacts/robotics-interview-dashboard/browser-tests/**",
       "artifacts/robotics-interview-dashboard/public/libarchive/**",
       "**/*.tsbuildinfo",
+      "**/.cache/**",
+      "**/.local/**",
       ".opencode*/**",
     ],
   },

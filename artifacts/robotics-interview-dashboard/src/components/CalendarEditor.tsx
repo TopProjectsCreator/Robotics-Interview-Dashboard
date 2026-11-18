@@ -273,8 +273,8 @@ export function CalendarEditor({ calendarId, assignees, onClose }: CalendarEdito
   const [notice, setNotice] = useState("");
 
   const calendar = query.data as Calendar | undefined;
-  const events = calendar?.data.events ?? [];
-  const feeds = calendar?.data.feeds ?? [];
+  const events = useMemo(() => calendar?.data.events ?? [], [calendar?.data.events]);
+  const feeds = useMemo(() => calendar?.data.feeds ?? [], [calendar?.data.feeds]);
 
   const filteredEvents = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -446,7 +446,7 @@ export function CalendarEditor({ calendarId, assignees, onClose }: CalendarEdito
       queryClient.invalidateQueries({ queryKey: getGetCalendarQueryKey(calendarId) });
     };
     void run();
-  }, [calendarId, feeds.length, queryClient, updateCalendar]);
+  }, [calendarId, feeds, queryClient, updateCalendar]);
 
   const apply = async (operation: CalendarOperationInput) => {
     setSaving(true);
@@ -618,7 +618,7 @@ export function CalendarEditor({ calendarId, assignees, onClose }: CalendarEdito
     try {
       const parsed = parseIcalText(text);
       let imported = 0;
-      let failed = 0;
+      const failed = 0;
       for (const item of parsed) {
         const result = await updateCalendar.mutateAsync({
           calendarId,

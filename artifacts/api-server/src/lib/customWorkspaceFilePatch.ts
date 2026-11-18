@@ -111,7 +111,6 @@ export function extractInlineScripts(html: string): string[] {
   const scripts: string[] = [];
   const pattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
   let match: RegExpExecArray | null;
-  // eslint-disable-next-line no-cond-assign
   while ((match = pattern.exec(html)) !== null) {
     if (/\bsrc\s*=/i.test(match[1])) continue;
     scripts.push(match[2]);

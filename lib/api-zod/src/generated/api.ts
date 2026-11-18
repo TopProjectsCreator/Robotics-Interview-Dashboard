@@ -1002,7 +1002,7 @@ export const PostPresenceHeartbeatResponse = zod.object({
 
 
 /**
- * @summary List currently online coordinators
+ * @summary List currently online coordinators and offline team accounts
  */
 export const GetPresenceResponse = zod.object({
   "onlineCount": zod.number().int(),
@@ -1016,7 +1016,13 @@ export const GetPresenceResponse = zod.object({
   "lastSeenAt": zod.string(),
   "isCurrent": zod.boolean(),
   "notifyPermission": zod.string().optional().describe('This session\'s browser Notification permission: granted, denied, default, or unsupported')
-}))
+})),
+  "offline": zod.array(zod.object({
+  "userId": zod.string(),
+  "name": zod.string().describe('Display name of the signed-in person'),
+  "firstSeenAt": zod.string().nullable().describe('When this person was first seen (null if never seen)'),
+  "lastSeenAt": zod.string().nullable().describe('When this person was most recently seen (null if never seen)')
+})).describe('Team accounts that are not currently online, with their last-seen times (null when never seen)')
 })
 
 
@@ -1035,6 +1041,11 @@ export const GetPresenceStatsResponse = zod.object({
   "visitCount": zod.number().int(),
   "firstSeenAt": zod.string().nullable(),
   "lastSeenAt": zod.string().nullable(),
+  "ips": zod.array(zod.object({
+  "ip": zod.string(),
+  "lastSeenAt": zod.string().describe('Most recent time an IP address was seen for this person'),
+  "online": zod.boolean().describe('True when this IP has a currently online (2-minute window) session')
+})).describe('Recent distinct IP addresses seen for this person, most recent first (currently online sessions are flagged)'),
   "pages": zod.array(zod.object({
   "page": zod.string(),
   "visits": zod.number().int(),

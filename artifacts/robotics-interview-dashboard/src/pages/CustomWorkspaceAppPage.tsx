@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { useTheme } from "next-themes";
@@ -52,7 +52,7 @@ export function CustomWorkspaceAppPage({
     refetchInterval: 30_000,
   });
   const workspace = demoWorkspace ?? workspaceQuery.data;
-  const tabs = workspace?.tabs ?? [];
+  const tabs = useMemo(() => workspace?.tabs ?? [], [workspace?.tabs]);
   const activeTab = tabId ? tabs.find((tab) => tab.id === tabId) : tabs[0];
   const activeTabId = activeTab?.id ?? null;
 

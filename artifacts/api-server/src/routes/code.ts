@@ -12,7 +12,7 @@ import { pushRealtimeHint } from "../lib/realtime";
 const router: IRouter = Router();
 const codeAccess = requireWorkspaceAccess("code");
 
-const PATH_PATTERN = /^[A-Za-z0-9_.$\-\/+]{1,255}$/;
+const PATH_PATTERN = /^[A-Za-z0-9_.$\x2f+]{1,255}$/;
 
 function cleanName(value: unknown, max: number): string | null {
   if (typeof value !== "string") return null;

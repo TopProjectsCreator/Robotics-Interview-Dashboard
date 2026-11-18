@@ -100,7 +100,7 @@ export async function validateCompatibleEndpoint(value: string): Promise<string>
     }
   } catch (error) {
     if (error instanceof Error && error.message.includes("public addresses")) throw error;
-    throw new Error("The endpoint host could not be verified as public.");
+    throw new Error("The endpoint host could not be verified as public.", { cause: error });
   }
   url.hash = "";
   return url.toString().replace(/\/+$/, "");

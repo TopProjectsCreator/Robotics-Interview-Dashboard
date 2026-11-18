@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "wouter";
 import {
   ArrowRight, Bot, Boxes, Check, ChevronRight, Copy, Download, FileText, Globe,
@@ -306,8 +306,8 @@ export default function AgentsMdPage() {
                 <Li><strong>One conversation model, three scopes:</strong> the shared team channel, 1:1 direct messages, and invite-only channels (admins create; invited accounts read/post; everyone else sees nothing).</Li>
                 <Li><strong>Rich messages:</strong> markdown (headings, lists, tables with CSV/Excel export, fenced code, inline images, sanitized raw SVG, <Mono>&lt;details&gt;</Mono> blocks), 4000-character cap, up to 3 attachments per message, HEIC photos auto-converted.</Li>
                 <Li><strong>Every file type is a preview:</strong> images, audio/video, PDF, Office docs, spreadsheets rendered as tables, JSON pretty-printed, archives browsable as trees, and 3D models (.glb/.stl/.obj/.ply/.3mf/.step/.iges/.brep/.x_t/.x_b) rendered inline in chat.</Li>
-                <Li><strong>Social layer:</strong> reactions, replies/threads with parent previews, pinned sticky bar with jump-to, read receipts (“Read by …”), edited/deleted badges, per-channel slow mode, custom team emoji uploads with <Mono>:name:</Mono> shortcodes (≤512 KB png/jpeg/gif/webp), full emoji picker.</Li>
-                <Li><strong>@ai in chat:</strong> mention <Mono>@ai</Mono> and the assistant answers in-thread with tool-use “activity pills” and a retry banner if the reply can’t be confirmed.</Li>
+                <Li><strong>Social layer:</strong> reactions, replies/threads with parent previews, pinned sticky bar with jump-to, read receipts (“Read by …”; authors see their own messages, admins see every message they can access), edited/deleted badges, per-channel slow mode, custom team emoji uploads with <Mono>:name:</Mono> shortcodes (≤512 KB png/jpeg/gif/webp), full emoji picker.</Li>
+                <Li><strong>@ai in chat:</strong> mention <Mono>@ai</Mono> and the assistant answers in-thread with tool-use “activity pills” and a retry banner if the reply can’t be confirmed. It can create and edit the shared artifacts above — including team calendars — and posts its answers as cards or @mentions you can click.</Li>
                 <Li><strong>Schedule it:</strong> natural-language “tomorrow at 9am” → parsed in the user’s timezone into an editable date/time; delivered server-side even if every browser is closed; includes polls, replies, attachments; failed sends give up honestly after a few attempts; cancel anytime.</Li>
                 <Li><strong>Polls:</strong> question + 2–8 options, changeable votes, live percentage bars; posted polls ride along with scheduled messages.</Li>
                 <Li><strong>Moderation:</strong> authors edit/delete their own; coordinators &amp; chat.moderate roles moderate everything; server-side spam guards against floods and duplicate posts.</Li>
@@ -321,7 +321,7 @@ export default function AgentsMdPage() {
             <H3><FileText size={17} className="text-[var(--agents-amber)]" /> 04.2 — Documents, spreadsheets, whiteboards, boards &amp; calendars</H3>
             <Panel>
               <Ul>
-                <Li><strong>Created from the chat create menu (+):</strong> Document, Whiteboard, Board, Spreadsheet — each is posted into chat as a shareable card.</Li>
+                <Li><strong>Created from the chat create menu (+):</strong> Document, Whiteboard, Board, Spreadsheet, Calendar — each is posted into chat as a shareable card.</Li>
                 <Li><strong>Documents:</strong> rich-text collaborative editor with live cursors, autosave, conflict handling, version history — full screen.</Li>
                 <Li><strong>Spreadsheets:</strong> multi-sheet workbooks — formulas, charts, XLSX import/export, recorded macros (replayed as edits, never arbitrary code), ~5&nbsp;s autosave, conflict banner if a teammate saves first.</Li>
                 <Li><strong>Whiteboards:</strong> shared Excalidraw canvases — draw together, persisted, open from chat in full screen.</Li>
@@ -400,7 +400,7 @@ export default function AgentsMdPage() {
               <Ul>
                 <Li><strong>Recurring tasks:</strong> owned by you; <Mono>active / paused / running / succeeded / failed / cancelled / interrupted</Mono> states; cadence language like “Every Monday, Wednesday”; next-run preview; per-run history with output and last-error box; pause/resume/edit (prompt, frequency, time, weekdays, timezone)/cancel.</Li>
                 <Li><strong>Broadcasts:</strong> admins send popups from Workspace settings → Broadcast to the whole team (or one person, picked by name); optionally mirrored as OS notifications; delivery to everyone online or a specific person; short-lived by default.</Li>
-                <Li><strong>Presence:</strong> “Live now” pills in admin settings show who is online by name, their page and rough region, with coordinator kick and per-person drill-down (visits, sessions, first/last seen).</Li>
+                <Li><strong>Presence:</strong> “Live now” pills in admin settings show who is online by name, their page and rough region, with coordinator kick and per-person drill-down (IP addresses, visits, sessions, first/last seen). Offline teammates are listed beneath with their last-seen time and open the same drill-down.</Li>
               </Ul>
             </Panel>
 

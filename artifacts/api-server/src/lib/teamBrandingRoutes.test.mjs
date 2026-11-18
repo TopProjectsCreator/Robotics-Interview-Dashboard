@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
-import { GetTeamBrandingResponse } from "../../../../lib/api-zod/src/generated/api.ts";
 import { dbMockExports } from "./testDbExports.mjs";
 
 registerHooks({

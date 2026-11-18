@@ -72,6 +72,8 @@ export function getSafeAuthReturnPath(value: string | null | undefined): string 
     !candidate.startsWith("/") ||
     candidate.startsWith("//") ||
     candidate.includes("\\") ||
+    // Reject ASCII control characters so return paths cannot contain hidden data.
+    // eslint-disable-next-line no-control-regex
     /[\u0000-\u001f\u007f]/.test(candidate)
   ) {
     return DEFAULT_AUTH_RETURN_PATH;

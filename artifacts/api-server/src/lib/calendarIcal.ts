@@ -251,7 +251,7 @@ export async function fetchIcalFeed(url: string, fetchFn: typeof fetch = fetch):
     return events;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("That feed took too long to load.");
+      throw new Error("That feed took too long to load.", { cause: error });
     }
     throw error;
   } finally {

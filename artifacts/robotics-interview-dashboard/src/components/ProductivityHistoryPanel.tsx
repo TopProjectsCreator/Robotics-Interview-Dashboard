@@ -110,6 +110,7 @@ export function ProductivityHistoryPanel({ scope, channelId }: Props) {
               key={value}
               type="button"
               aria-pressed={range === value}
+              aria-label={`Show ${label.toLowerCase()} productivity history`}
               onClick={() => setRange(value as ChatProductivityHistoryRange)}
               data-testid={`button-history-range-${value}`}
               className={`rounded-md px-2.5 py-1.5 text-[11px] font-semibold transition ${

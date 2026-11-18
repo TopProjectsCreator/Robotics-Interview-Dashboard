@@ -120,7 +120,7 @@ export function DocumentEditor({
         name: activeInterviewer,
         color: colorForInterviewer(activeInterviewer),
       }),
-    [activeInterviewer, documentRecord.id],
+    [activeInterviewer, documentRecord.data, documentRecord.id],
   );
   const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStatus>("connecting");
   const [documentSaveStatus, setDocumentSaveStatus] = useState<"saving" | "saved" | "error">("saved");

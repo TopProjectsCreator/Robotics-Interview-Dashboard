@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { ArrowLeft, Check, ClipboardCheck, Code2, Copy, Eye, FilePenLine, FilePlus, FileSearch, Files, FileSymlink, LoaderCircle, MessageSquareText, MoveDown, MoveUp, PanelsTopLeft, Pause, Plus, Rocket, Sparkles, Square, Trash2, Wrench, type LucideIcon } from "lucide-react";
+import { Check, ClipboardCheck, Code2, Copy, Eye, FilePenLine, FilePlus, FileSearch, Files, FileSymlink, LoaderCircle, MessageSquareText, MoveDown, MoveUp, PanelsTopLeft, Pause, Plus, Rocket, Sparkles, Square, Trash2, Wrench, type LucideIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { getGetSessionQueryKey, useGetSession, type AssistantBuilderRunResponse, type CustomWorkspace, type CustomWorkspaceVersion } from "@workspace/api-client-react";
 import { hasPermission } from "@workspace/api-zod";
@@ -697,6 +697,14 @@ export function CustomWorkspacesPage() {
     item.status === "draft" &&
     (Number(item.critiqueRounds ?? 0) < 5 || Number(item.verifiedCritiqueRounds ?? 0) < 5),
   ) ?? items[0] ?? null, [items, selected]);
+  const activeId = active?.id;
+  const activeStatus = active?.status;
+  const activeAccessMode = active?.accessMode;
+  const activeTabs = useMemo(() => active?.tabs ?? [], [active?.tabs]);
+  const activeAllowedInterviewerIds = useMemo(
+    () => active?.allowedInterviewerIds ?? [],
+    [active?.allowedInterviewerIds],
+  );
   const initialRequest = typeof active?.prompt === "string" && active.prompt.trim()
     ? active.prompt
     : null;
@@ -709,18 +717,18 @@ export function CustomWorkspacesPage() {
     );
   }, [items, workspaceSearch]);
   useEffect(() => {
-    setTabDraft(active?.tabs ?? []);
+    setTabDraft(activeTabs);
     setTabSettingsError("");
     setTabSettingsMessage("");
-  }, [active?.id, JSON.stringify(active?.tabs ?? [])]);
+  }, [activeId, activeTabs]);
   useEffect(() => { builderRunRef.current = builderRun; }, [builderRun]);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     const result = await request<{ workspaces: Workspace[] }>(API);
     setItems(result.workspaces);
     setSelected((current) => current && result.workspaces.find((item) => item.id === current.id) || null);
-  };
-  useEffect(() => { void refresh().catch((err) => setError(err.message)); }, []);
+  }, []);
+  useEffect(() => { void refresh().catch((err) => setError(err.message)); }, [refresh]);
   useEffect(() => {
     if (!canManage) return;
     void request<{ questions: AgentQuestion[] }>("/api/assistant/questions/pending")
@@ -750,8 +758,9 @@ export function CustomWorkspacesPage() {
     return () => { active = false; };
   }, [canManage]);
   useEffect(() => {
-    if (!canManage || !builderRun || !["queued", "running", "waiting_for_answer"].includes(builderRun.status)) return;
-    const runId = builderRun.id;
+    const runId = builderRun?.id;
+    const runStatus = builderRun?.status;
+    if (!canManage || !runId || !["queued", "running", "waiting_for_answer"].includes(runStatus ?? "")) return;
     let active = true;
     const refreshRun = async () => {
       try {
@@ -773,7 +782,7 @@ export function CustomWorkspacesPage() {
       active = false;
       window.clearInterval(timer);
     };
-  }, [canManage, builderRun?.id, builderRun?.status]);
+  }, [canManage, builderRun?.id, builderRun?.status, refresh]);
   const refreshedBuilderDrafts = useRef(new Set<string>());
   useEffect(() => {
     if (!builderRun || !["queued", "running", "waiting_for_answer"].includes(builderRun.status)) return;
@@ -781,7 +790,7 @@ export function CustomWorkspacesPage() {
     if (refreshedBuilderDrafts.current.has(builderRun.id)) return;
     refreshedBuilderDrafts.current.add(builderRun.id);
     void refresh().catch(() => {});
-  }, [builderRun?.id, builderRun?.status, builderRun?.activities.length]);
+  }, [builderRun, refresh]);
   useEffect(() => {
     if (!canManage) return;
     void request<{ items: { id: string; question: string; activities: { tool: string; detail: string; input?: string; output?: string }[] }[] }>("/api/assistant/history")
@@ -840,9 +849,9 @@ export function CustomWorkspacesPage() {
     return () => { active = false; };
   }, [canManage]);
   useEffect(() => {
-    setAccessMode(active?.accessMode ?? "team");
-    setAllowedInterviewerIds(active?.allowedInterviewerIds ?? []);
-  }, [active?.id, active?.accessMode, JSON.stringify(active?.allowedInterviewerIds ?? [])]);
+    setAccessMode(activeAccessMode ?? "team");
+    setAllowedInterviewerIds(activeAllowedInterviewerIds);
+  }, [activeId, activeAccessMode, activeAllowedInterviewerIds]);
   useEffect(() => {
     if (!canManageAccess) return;
     setTeamMembersLoading(true);
@@ -854,18 +863,18 @@ export function CustomWorkspacesPage() {
   useEffect(() => {
     setPreviewVersion(null);
     setPreviewVersionWorkspaceId(null);
-    if (!active || !canManage) {
+    if (!activeId || !canManage) {
       setVersions([]);
       return;
     }
     let current = true;
-    void request<{ versions: Version[] }>(`${API}/${active.id}/versions`)
+    void request<{ versions: Version[] }>(`${API}/${activeId}/versions`)
       .then((result) => { if (current) setVersions(result.versions); })
       .catch((err) => { if (current) setError(err instanceof Error ? err.message : "Could not load version history."); });
     return () => { current = false; };
-  }, [active?.id, active?.status, canManage]);
+  }, [activeId, activeStatus, canManage]);
   useEffect(() => {
-    if (!active || !canManage) {
+    if (!activeId || !canManage) {
       setSourceFiles([]);
       setSourceFilesWorkspaceId(null);
       setSelectedSourcePath("");
@@ -875,22 +884,22 @@ export function CustomWorkspacesPage() {
     setSourceFiles([]);
     setSourceFilesWorkspaceId(null);
     setSelectedSourcePath("index.html");
-    void request<{ files: WorkspaceFile[] }>(`${API}/${active.id}/files`)
+    void request<{ files: WorkspaceFile[] }>(`${API}/${activeId}/files`)
       .then(({ files }) => {
         if (!current) return;
         setSourceFiles(files);
-        setSourceFilesWorkspaceId(active.id);
+        setSourceFilesWorkspaceId(activeId);
         setSelectedSourcePath((current) => files.some((file) => file.path === current) ? current : files[0]?.path ?? "");
       })
       .catch((err) => {
         if (!current) return;
         setSourceFiles([]);
-        setSourceFilesWorkspaceId(active.id);
+        setSourceFilesWorkspaceId(activeId);
         setSelectedSourcePath("");
         setError(err instanceof Error ? err.message : "Could not load the source files.");
       });
     return () => { current = false; };
-  }, [active?.id, active?.status, canManage]);
+  }, [activeId, activeStatus, canManage]);
 
   useEffect(() => {
     const onMessage = async (event: MessageEvent<BridgeRequest>) => {
@@ -945,7 +954,7 @@ export function CustomWorkspacesPage() {
     return () => window.removeEventListener("message", onMessage);
   }, [active]);
 
-  const runBuilderAgent = async (question: string, beforeIds: Set<string>): Promise<BuilderRun | null> => {
+  const runBuilderAgent = useCallback(async (question: string, beforeIds: Set<string>): Promise<BuilderRun | null> => {
     const toolExposure = loadToolExposure();
     const { run: queued } = await request<AssistantBuilderRunResponse>("/api/assistant/custom-workspace-builder/runs", {
       method: "POST",
@@ -987,7 +996,7 @@ export function CustomWorkspacesPage() {
       setSelectedSourcePath((current) => files.some((file) => file.path === current) ? current : files[0]?.path ?? "");
     }
     return normalizedRun;
-  };
+  }, [active, selectedModel]);
 
   const generate = async () => {
     setError("");
@@ -997,8 +1006,7 @@ export function CustomWorkspacesPage() {
       const beforeIds = new Set(items.map((item) => item.id));
       const capabilityText = capabilities.length ? capabilities.join(", ") : "none";
       const run = await runBuilderAgent(`Build a custom workspace app for the team. Requirements: ${prompt}\n\nWhen the app has multiple useful views, create host sidebar subtabs using workspace.tabs.json and matching data-workspace-tab sections in index.html; do not build duplicate in-app global navigation. Make every app-specific visual yourself as original SVG/source assets: create a bespoke assets/icon.svg before finishing and add local SVG illustrations or decorative assets when the app needs them. Keep the icon compact (under 20 KB), recognizable for this app, and readable on both light and dark host surfaces; display it in the app interface. Do not use generic sparkle icons, stock placeholders, lorem ipsum, default test names, or a fixed mock template. This is a real tool, not a mock visual: NEVER seed, invent, or display mock, fake, sample, demo, or placeholder records. Build real interactions and useful app-specific content; if real records are unavailable, use a clear empty state with a real action to create the first record rather than presenting invented records as real. Only ever display records the user entered, uploaded, or saved through this app. Keep assets standalone, self-contained, local, and safe; do not fetch external images. Use window.workspaceAPI.data.query (search/filters/sort/pagination) for list screens where filtering or paging matters. Only grant these workspace capabilities: ${capabilityText}. Create the draft, then use the custom workspace file tools to inspect and refine its persistent source tree. Immediately after the initial draft and source files are saved, start critique round 1 and continue through all five independently verified rounds without waiting for Publish. If a critique or verification fails, keep editing and retry automatically. Keep it as a draft for coordinator review; do not publish.`, beforeIds);
-      const { workspaces } = await request<{ workspaces: Workspace[] }>(API);
-      const draft = workspaces.find((workspace) => !beforeIds.has(workspace.id) && workspace.status === "draft");
+      await request<{ workspaces: Workspace[] }>(API);
       if (run?.status === "waiting_for_answer") {
         setError("The builder is waiting for your answer. It will continue on the server after you respond.");
       } else if (run?.status === "failed" || run?.status === "interrupted" || run?.status === "paused") {
@@ -1061,7 +1069,7 @@ export function CustomWorkspacesPage() {
       setBuilderControlBusy(null);
     }
   };
-  const startExistingDraftReviews = async () => {
+  const startExistingDraftReviews = useCallback(async () => {
     if (!active || active.status !== "draft" || !canManage) return;
     const workspaceId = active.id;
     setBusy(true);
@@ -1095,7 +1103,7 @@ export function CustomWorkspacesPage() {
     } finally {
       setBusy(false);
     }
-  };
+  }, [active, canManage, items, refresh, runBuilderAgent]);
   useEffect(() => {
     if (
       !canManage ||
@@ -1131,7 +1139,7 @@ export function CustomWorkspacesPage() {
         setBusy(false);
       }
     })();
-  }, [active?.id, active?.status, active?.critiqueRounds, active?.verifiedCritiqueRounds, builderRun?.id, builderRun?.status, builderRun?.question, canManage, busy]);
+  }, [active, builderRun, canManage, busy, items, refresh, runBuilderAgent]);
   useEffect(() => {
     if (
       !canManage ||
@@ -1147,18 +1155,7 @@ export function CustomWorkspacesPage() {
 
     autoStartedDraftReviews.current.add(active.id);
     void startExistingDraftReviews();
-  }, [
-    active?.id,
-    active?.status,
-    active?.critiqueRounds,
-    active?.verifiedCritiqueRounds,
-    builderRunLoaded,
-    builderRun?.id,
-    builderRun?.status,
-    builderRun?.question,
-    canManage,
-    busy,
-  ]);
+  }, [active, builderRun, builderRunLoaded, canManage, busy, startExistingDraftReviews]);
   const publish = async () => {
     if (!active) return;
     if (Number(active.critiqueRounds ?? 0) < 5 || Number(active.verifiedCritiqueRounds ?? 0) < 5) {

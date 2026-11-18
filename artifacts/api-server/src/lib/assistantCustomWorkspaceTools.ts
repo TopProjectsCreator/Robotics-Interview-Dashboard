@@ -421,7 +421,7 @@ export async function listAssistantCustomWorkspaceTools(
         },
       });
     }
-    let declarations: WorkspaceToolDeclaration[] = [];
+    let declarations: WorkspaceToolDeclaration[];
     try {
       declarations = validateWorkspaceToolDeclarations(workspace.assistantTools ?? []);
     } catch {
@@ -515,7 +515,7 @@ export async function runAssistantCustomWorkspaceTool(
   if (!workspace) return { content: "That custom workspace is unavailable or you no longer have access. No data was changed.", detail: "workspace access denied" };
   const action = name.slice(20);
   const standard = standardWorkspaceActions.find((item) => item.action === action);
-  let declarations: WorkspaceToolDeclaration[] = [];
+  let declarations: WorkspaceToolDeclaration[];
   try {
     declarations = validateWorkspaceToolDeclarations(workspace.assistantTools ?? []);
   } catch {

@@ -46,6 +46,8 @@ export async function resolveAssistantProviderInput(
   const provider = await getAssistantProvider(input.providerId);
   if (!provider) throw new Error("Choose a supported provider from the catalog.");
   const modelId = input.modelId.trim();
+  // Control characters are invalid in model IDs and must be rejected.
+  // eslint-disable-next-line no-control-regex
   if (!modelId || modelId.length > 255 || /[\u0000-\u001f]/.test(modelId)) {
     throw new Error("Choose a valid model.");
   }

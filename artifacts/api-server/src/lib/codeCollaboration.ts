@@ -13,7 +13,6 @@ import {
   runWithInstance,
   currentInstance,
   codeFilesTable,
-  interviewerAccountsTable,
   DEFAULT_TEAM_ID,
   type DbInstance,
 } from "@workspace/db";

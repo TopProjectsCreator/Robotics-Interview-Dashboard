@@ -4,7 +4,6 @@ import { confirmAction } from "@/lib/dialogs";
 import {
   AlertCircle,
   CalendarDays,
-  Check,
   ChevronDown,
   ChevronUp,
   ClipboardList,
@@ -20,7 +19,6 @@ import {
   Table2,
   Tag,
   Trash2,
-  UserRound,
   X,
 } from "lucide-react";
 import {
@@ -153,7 +151,6 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   const [bulkText, setBulkText] = useState("");
   const [columnTitle, setColumnTitle] = useState("");
   const [columnColor, setColumnColor] = useState("#16869a");
-  const [renameTitle, setRenameTitle] = useState("");
   const [boardTitleDraft, setBoardTitleDraft] = useState("");
   const [boardDescriptionDraft, setBoardDescriptionDraft] = useState("");
   const [saving, setSaving] = useState(false);

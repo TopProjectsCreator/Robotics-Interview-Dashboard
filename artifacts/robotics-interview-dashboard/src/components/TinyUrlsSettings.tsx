@@ -30,7 +30,7 @@ const SCHEME_PATTERN = /^([a-z][a-z0-9+.-]*):/i;
 
 /** Mirror of the server: trim, reduce pasted short links to their alias, lowercase. */
 function normalizeAlias(input: string): string {
-  let alias = input.trim();
+  const alias = input.trim();
   const prefixMatch = alias.match(/^(?:https?:\/\/[^/\s]+)?\/?t\/([^/\s]+)\/?$/i);
   if (prefixMatch) return prefixMatch[1].toLowerCase();
   return alias.replace(/^\/+|\/+$/g, "").toLowerCase();

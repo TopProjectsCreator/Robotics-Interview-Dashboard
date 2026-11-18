@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { readFileSync } from "fs";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
@@ -14,7 +15,10 @@ const pricingStyles = readFileSync("src/pages/pricing.css", "utf8");
 const appShell = readFileSync("index.html", "utf8");
 
 function renderWithRouter(ui: ReactNode) {
-  return render(<Router>{ui}</Router>);
+  const testQueryClient = new QueryClient({
+    defaultOptions: { queries: { enabled: false, retry: false } },
+  });
+  return render(<QueryClientProvider client={testQueryClient}><Router>{ui}</Router></QueryClientProvider>);
 }
 
 afterEach(() => {

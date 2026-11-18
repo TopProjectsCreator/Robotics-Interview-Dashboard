@@ -474,7 +474,7 @@ describe("progressive Parts search", () => {
       .not.toBeChecked();
     teamB.unmount();
 
-    const reloadedTeamA = await renderPartsPage("team-a");
+    await renderPartsPage("team-a");
     expect(await screen.findByRole("checkbox", { name: "Use goBILDA FTC team prices" }))
       .toBeChecked();
   });

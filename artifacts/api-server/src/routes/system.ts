@@ -18,13 +18,6 @@ import {
   writeWorkspaceVisibility,
 } from "../lib/workspaceAccess";
 
-const MB = 1024 * 1024;
-
-function quotaEnv(name: string, fallbackMb: number): number {
-  const parsed = Number(process.env[name]);
-  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * MB) : fallbackMb * MB;
-}
-
 async function queryInt(sql: string, params: unknown[] = []): Promise<number | null> {
   try {
     const { rows } = await pool.query(sql, params);
@@ -102,7 +95,7 @@ function mailboxSettingsResponse(settings: Awaited<ReturnType<typeof getTeamMail
 router.get("/system/mailbox", requireInboxAdmin, async (req, res): Promise<void> => {
   try {
     res.json(mailboxSettingsResponse(await getTeamMailboxSettings(await requestTeamId(req))));
-  } catch (error) {
+  } catch {
     req.log.error("Team inbox settings read failed");
     res.status(500).json({ error: "Unable to read team inbox settings." });
   }
@@ -138,7 +131,7 @@ router.post("/system/mailbox/sync", requireInboxAdmin, async (req, res): Promise
   try {
     const teamId = await requestTeamId(req);
     res.json(await ingestMailboxIntoChat(teamId));
-  } catch (error) {
+  } catch {
     req.log.error("Manual team inbox check failed");
     res.status(500).json({ error: "Unable to check the team inbox." });
   }

@@ -10,7 +10,6 @@ import { getAssistantIntegrationPolicy, isMcpServerBlocked, ON_SHAPE_MCP_SERVER_
 
 const MCP_URL = "https://fs-mcp.labs.onshape.app/mcp";
 const AUTH_URL = "https://mcp-auth.labs.onshape.app";
-const PROTECTED_RESOURCE_METADATA = "https://fs-mcp.labs.onshape.app/.well-known/oauth-protected-resource";
 const OAUTH_METADATA_URL = `${AUTH_URL}/.well-known/oauth-authorization-server`;
 const REQUESTED_SCOPES = ["OAuth2Read", "OAuth2Write"];
 const MAX_TOOL_RESULT_CHARS = 18_000;
@@ -356,7 +355,7 @@ async function withMcpSession<T>(
   accessToken: string,
   action: (session: string | undefined) => Promise<T>,
 ): Promise<T> {
-  const { response, payload } = await mcpRequest(accessToken, undefined, {
+  const { response } = await mcpRequest(accessToken, undefined, {
     jsonrpc: "2.0",
     id: 1,
     method: "initialize",

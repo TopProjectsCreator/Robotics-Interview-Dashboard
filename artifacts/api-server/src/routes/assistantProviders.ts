@@ -13,7 +13,6 @@ import {
   ValidateAssistantProviderConfigurationResponse,
 } from "@workspace/api-zod";
 import {
-  getAssistantProvider,
   listAssistantProviders,
   listProviderModels,
 } from "../lib/assistantProviderCatalog";

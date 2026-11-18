@@ -79,6 +79,8 @@ export function validatePartsPreviewFile(
   if (
     !fileName ||
     fileName.length > 255 ||
+    // Reject path separators and ASCII control characters in uploaded names.
+    // eslint-disable-next-line no-control-regex
     /[\\/\u0000-\u001f\u007f]/.test(fileName)
   ) {
     return "Use a file name without path separators or control characters.";

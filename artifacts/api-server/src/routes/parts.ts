@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import express, { Router, type IRouter } from "express";
+import { Router, type IRouter } from "express";
 import {
   CreatePartsPriceSnapshotBody,
   CreatePartsPriceSnapshotParams,
@@ -105,7 +105,6 @@ import {
   fetchUcpCatalogSnapshot,
   gidNumericId,
   UCP_STOCK_STATUSES,
-  type UcpCatalogProduct,
 } from "../lib/ucpCatalog";
 import {
   publicOriginFromHeaders,
@@ -3026,7 +3025,7 @@ const SITEMAP_CRAWL_BACKLOG_DELAY_MS = 60 * 1000;
 const SITEMAP_RECHECK_MS = 6 * 60 * 60 * 1000;
 
 let sitemapCrawlTimer: ReturnType<typeof setTimeout> | null = null;
-let sitemapCrawlStopped = false;
+const sitemapCrawlStopped = false;
 
 /**
  * How long a crawler lease is held before another instance may take over.

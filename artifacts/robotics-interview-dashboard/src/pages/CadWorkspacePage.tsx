@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useMemo, useRef, useState, type DragEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
   Box,
-  Boxes,
   Check,
   ChevronRight,
   Download,
@@ -55,16 +54,6 @@ type Location =
   | { kind: "unfiled" }
   | { kind: "bot"; botId: string }
   | { kind: "folder"; folderId: string };
-
-function locationKey(location: Location): string {
-  if (location.kind === "unfiled") return "unfiled";
-  if (location.kind === "bot") return `bot:${location.botId}`;
-  return `folder:${location.folderId}`;
-}
-
-function sameLocation(a: Location, b: Location): boolean {
-  return locationKey(a) === locationKey(b);
-}
 
 /** The path of folder ids from the bot root down to `folderId`. */
 function buildAncestry(
@@ -129,8 +118,8 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const bots = library.data?.bots ?? [];
-  const folders = library.data?.folders ?? [];
-  const models = library.data?.models ?? [];
+  const folders = useMemo(() => library.data?.folders ?? [], [library.data?.folders]);
+  const models = useMemo(() => library.data?.models ?? [], [library.data?.models]);
 
   const refresh = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: getListCadLibraryQueryKey() });
@@ -721,7 +710,6 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                       }`}
                       data-testid={`cad-bot-${bot.id}`}
                     >
-                      <Boxes size={14} className="shrink-0" aria-hidden="true" />
                       <span className="truncate">{bot.name}</span>
                       <span className="shrink-0 text-[11px] text-muted-foreground">{rootCount}</span>
                     </button>

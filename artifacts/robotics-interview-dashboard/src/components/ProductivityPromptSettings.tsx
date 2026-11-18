@@ -22,7 +22,7 @@ export function ProductivityPromptSettings({ teamId }: { teamId: string }) {
 
   useEffect(() => {
     if (settings.data) setDraft(settings.data.customMessage);
-  }, [settings.data?.customMessage]);
+  }, [settings.data]);
 
   const save = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();

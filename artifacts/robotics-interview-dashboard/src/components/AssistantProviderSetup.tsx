@@ -100,8 +100,10 @@ export function AssistantProviderSetup({
   const validateMutation = useValidateAssistantProviderConfiguration();
   const saveMutation = useSaveAssistantProviderConfiguration();
   const removeMutation = useRemoveAssistantProviderConfiguration();
+  const resetValidation = validateMutation.reset;
+  const resetSave = saveMutation.reset;
 
-  const providers = catalogQuery.data?.items ?? [];
+  const providers = useMemo(() => catalogQuery.data?.items ?? [], [catalogQuery.data?.items]);
   const selectedProvider = providers.find((provider) => provider.id === providerId) ?? selectedProviderRecord;
   const models = modelQuery.data?.items ?? [];
   const selectedModel: AssistantProviderModelCatalogItem | undefined = models.find((model) => model.id === modelId);
@@ -124,14 +126,14 @@ export function AssistantProviderSetup({
     if (!open) {
       setApiKey("");
       setShowKey(false);
-      validateMutation.reset();
-      saveMutation.reset();
+      resetValidation();
+      resetSave();
       return;
     }
     priorFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const timer = window.setTimeout(() => closeRef.current?.focus(), 0);
     return () => window.clearTimeout(timer);
-  }, [open]);
+  }, [open, resetSave, resetValidation]);
 
   useEffect(() => {
     if (!open) return;

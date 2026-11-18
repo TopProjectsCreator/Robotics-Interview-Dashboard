@@ -87,8 +87,8 @@ async function locateCentralDirectory(source: ByteSource, signal?: AbortSignal):
 
   const view = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
   const entryCount = view.getUint16(eocd + 10, true);
-  let directorySize = view.getUint32(eocd + 12, true);
-  let directoryOffset = view.getUint32(eocd + 16, true);
+  const directorySize = view.getUint32(eocd + 12, true);
+  const directoryOffset = view.getUint32(eocd + 16, true);
 
   const needsZip64 =
     entryCount === 0xffff || directorySize === 0xffffffff || directoryOffset === 0xffffffff;

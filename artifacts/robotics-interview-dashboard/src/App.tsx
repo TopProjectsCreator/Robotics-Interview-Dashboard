@@ -5,7 +5,7 @@ import { Link, Redirect, Route, Router as WouterRouter, Switch, useLocation, use
 import DOMPurify from "dompurify";
 import {
    AlertCircle, ArrowRight, AtSign, BarChart3, Bot, Box, Boxes, CalendarDays, Check, ChevronDown, ChevronRight, ChevronUp, ClipboardList, Copy,
-   Dices, Coins, Disc3, FileUp, FileSpreadsheet, Filter, Flag, GripVertical, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
+   FileUp, FileSpreadsheet, Filter, Flag, GripVertical, Forward, LayoutDashboard, LogOut, Mail, Menu, MessageSquare, Monitor, Moon, PhoneCall, Printer,
    Mic, Pencil, Pin, Plus, RefreshCw, Reply, RotateCcw, Search, Settings, ShieldCheck, Lock, Smile, Sparkles, Sun, Trash2, Type, Upload, UsersRound, Volume1, Megaphone, ClipboardCheck, MonitorCheck, Bell, BellOff, Send, X, Maximize2, Minimize2, Paperclip, Globe, SquareTerminal, SquareSlash, Image as ImageIcon, Download, History, SmilePlus, FilePenLine, FileText, Clock, ExternalLink, Hash,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -23,10 +23,10 @@ import {
    useSearchFtcMentions, getSearchFtcMentionsQueryKey,
    useListInterviewWhiteboards, useCreateInterviewWhiteboard, useGetInterviewWhiteboardById, useUpdateInterviewWhiteboard, useCreateBoard,
    useListChatChannels, useCreateChatChannel, useUpdateChatChannel, useDeleteChatChannel, getListChatChannelsQueryKey,
-   useGenerateAssistantImage, useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
+   useDeleteApplicant, useRegenerateApplicant, useCallbackQueue, useToggleChatReaction, useToggleChatMessagePin, useUpdateChatMessage, useDeleteChatMessage, useCreateChatPoll, useVoteChatPoll,
   useListDashboardCharts, useCreateDashboardChart, useUpdateDashboardChart, useDeleteDashboardChart, getListDashboardChartsQueryKey,
   useListInterviewers, listInterviewers, getListInterviewersQueryKey, getListPasskeysQueryKey, useVerifyEventPasscode, useSetupInterviewerPassword, useCreateInterviewer, useUpdateInterviewerPassword, useResetAllInterviewerPasswords, useUpdateInterviewerRole, useDeleteInterviewer, useUpdateInterviewerName, useListPasskeys, useDeletePasskey, useCreateTeam, useListTeamRoles, getListTeamRolesQueryKey, useAssignCustomRole,
-  useGetPresence, usePostPresenceHeartbeat, getGetPresenceQueryKey,
+   useGetPresence, getGetPresenceQueryKey,
   useGetBroadcastCommands, getGetBroadcastCommandsQueryKey, usePostBroadcast,
   useGetDisplaySettings, getGetDisplaySettingsQueryKey, useUpdateDisplaySettings,
   useGetSeatingSettings, getGetSeatingSettingsQueryKey, useUpdateSeatingSettings, useAssignSeat,
@@ -47,13 +47,13 @@ import {
    useGetTeamMailboxSettings, getGetTeamMailboxSettingsQueryKey, useUpdateTeamMailboxSettings, useSyncTeamMailbox, getGetTeamNameRulesQueryKey,
   useInterpretApplicantSearch,
   useCreateSpreadsheet,
+  useCreateCalendar,
   getExportChatUrl,
   getInterviewChat,
-  getAssistantConversationMessages,
   listApplicants,
   regenerateApplicant,
 } from "@workspace/api-client-react";
-import type { EffectiveTeamBranding, FeatureRequest, InterviewerAccount } from "@workspace/api-client-react";
+import type { FeatureRequest, InterviewerAccount } from "@workspace/api-client-react";
 import { permissionsForBuiltInRole, hasPermission as hasCatalogPermission } from "@workspace/api-zod";
 import { InterviewerChatEmojiPicker } from "./components/InterviewerChatEmojiPicker";
 import { ChatProductivityMeter } from "./components/ChatProductivityMeter";
@@ -80,11 +80,11 @@ import { resolveAssistantModelSelection } from "./lib/assistantModelSelection";
 import { assistantWorkspaceGridClass } from "./lib/assistantWorkspaceLayout";
 import { classifyFile } from "./lib/fileFormats";
 import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "./lib/officePreview";
-import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantHistoryItemsItem, AssistantInput, AuthSession, DashboardCount, DashboardSummary, DisplayState, ExportChatParams, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
+import type { Applicant, ApplicantUpdate, AssistantActivity, AssistantConversationList, AssistantInput, AuthSession, DashboardCount, DisplayState, ExportChatParams, ImportPreview, InterviewChatMessage, QueueApplicant } from "@workspace/api-client-react";
 import type { LucideIcon } from "lucide-react";
 import { clearAuthSession, clearChatDraft, clearUserScopedRecords, consumeAuthSessionEndedByAnotherTab, consumeAuthSessionExpiredNotice, getAuthRedirectPath, getChatDraftStorageKey, getCurrentPathWithQuery, getSafeAuthReturnPath, getStoredAuthToken, hasActiveAuthSessionMarker, listenForAuthSessionEnd, loadChatDraft, markAuthSessionActive, markAuthSessionEndedByAnotherTab, markAuthSessionExpired, saveChatDraft, storeAuthToken } from "./authSession";
 import { getApplicantSignals, type ApplicantSignals } from "./applicantSignals";
-import { SettingsProvider, useWorkspaceSettings, avatarInitials, DEFAULT_SETTINGS, REFRESH_OPTIONS } from "./workspaceSettings";
+import { SettingsProvider, useWorkspaceSettings, avatarInitials, REFRESH_OPTIONS } from "./workspaceSettings";
 import { backgroundIndexAt } from "./lib/backgroundRotation";
 import { useTeamTheme, useEnforceTeamTheme, applyExplicitTeamThemeChoice, teamThemeQueryKey, type TeamTheme, type TeamThemePolicy } from "./useTeamTheme";
 import { useRealtimeSync } from "./useRealtimeSync";
@@ -129,20 +129,23 @@ const WhiteboardEditor = lazy(() => import("./components/WhiteboardEditor").then
 const RechartsView = lazy(() => import("./components/RechartsView").then((m) => ({ default: m.RechartsView })));
 const DocumentEditor = lazy(() => import("./components/DocumentEditor").then((m) => ({ default: m.DocumentEditor })));
 import { BoardEditor } from "./components/BoardEditor";
+import { CalendarEditor } from "./components/CalendarEditor";
 import { ModalOverlay, useModalOverlay } from "./components/ModalOverlay";
 import { BoardChatCard } from "./components/BoardChatCard";
 import { SpreadsheetChatCard } from "./components/SpreadsheetChatCard";
+import { CalendarChatCard } from "./components/CalendarChatCard";
 const ChatStlViewer = lazy(() => import("./components/ChatStlViewer").then((m) => ({ default: m.ChatStlViewer })));
 const ChatParasolidViewer = lazy(() => import("./components/ChatParasolidViewer").then((m) => ({ default: m.ChatParasolidViewer })));
 const SpreadsheetEditor = lazy(() => import("./components/SpreadsheetEditor").then((m) => ({ default: m.SpreadsheetEditor })));
 import { ChatMentionToken } from "./components/ChatMentionToken";
 import { ChatChannelToken } from "./components/ChatChannelToken";
 import { ChatFtcMentionProvider, ChatFtcMentionToken } from "./components/ChatFtcMention";
+import { ChatObjectMentionToken } from "./components/ChatObjectMentionToken";
 const ChatGlbViewer = lazy(() => import("./components/ChatGlbViewer").then((m) => ({ default: m.ChatGlbViewer })));
 const CadThreeMfViewer = lazy(() => import("./components/CadThreeMfViewer").then((m) => ({ default: m.CadThreeMfViewer })));
 const CadMeshViewer = lazy(() => import("./components/CadMeshViewer").then((m) => ({ default: m.CadMeshViewer })));
 const ChatStepViewer = lazy(() => import("./components/ChatStepViewer").then((m) => ({ default: m.ChatStepViewer })));
-import { buildApplicantMentionPeople, buildChannelMentions, findChatChannelMentions, findChatFtcMentions, findChatMentions, messageMentionsInterviewer, type ChatChannelMention, type ChatFtcMention, type ChatMentionMatch, type ChatMentionPerson } from "./lib/chat-mentions";
+import { buildApplicantMentionPeople, buildChannelMentions, buildObjectMentions, findChatChannelMentions, findChatFtcMentions, findChatMentions, findChatObjectMentions, messageMentionsInterviewer, type ChatChannelMention, type ChatFtcMention, type ChatMentionMatch, type ChatMentionPerson, type ChatObjectMention } from "./lib/chat-mentions";
 import { filterSlashCommands, findSlashCommandTrigger, type ChatSlashCommand } from "./lib/chatSlashCommands";
 import { isDocumentData } from "./components/documentCollaboration";
 import {
@@ -789,7 +792,7 @@ function SettingsModal({
       allowedSenders: mailboxSenders,
       ...(apiKey ? { apiKey } : {}),
     } }, {
-      onSuccess: (saved) => {
+    onSuccess: (saved) => {
         setMailboxEnabled(saved.enabled);
         setMailboxSenders(saved.allowedSenders);
         setMailboxKeyDraft("");
@@ -810,7 +813,7 @@ function SettingsModal({
       allowedSenders: mailboxSenders,
       removeApiKey: true,
     } }, {
-      onSuccess: (saved) => {
+    onSuccess: () => {
         setMailboxEnabled(false);
         setMailboxKeyDraft("");
         void qc.invalidateQueries({ queryKey: getGetTeamMailboxSettingsQueryKey() });
@@ -1382,7 +1385,7 @@ function SettingsModal({
       </section>
       {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-live-now">
         <p className={sectionLabel}>Live now</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window), shown by name instead of IP address. Kick sign-in sessions you don’t recognise — they must log in again to return.</p>
+        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window). Click a person to see their IP addresses and usage. Kick sign-in sessions you don’t recognise — they must log in again to return. Teammates who are not online are listed below — click them to see when they were last active.</p>
         <div className="mt-2"><PresencePanel /></div>
       </div>}
       {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-blocked-ips">
@@ -1838,7 +1841,7 @@ function ErrorState({ onRetry, compact = false }: { onRetry?: () => void; compac
   return <div className={`flex ${compact ? "min-h-[160px]" : "min-h-[320px]"} flex-col items-center justify-center gap-3 text-center`} data-testid="status-error"><AlertCircle className="text-[#bd5047]" /><p className="font-semibold">Control link unavailable</p><p className="text-sm text-[#63747c]">The live event data could not be reached.</p>{onRetry && <button onClick={onRetry} data-testid="button-retry" className="rounded-lg bg-[#183a4b] px-4 py-2 text-sm font-semibold text-white">Retry connection</button>}</div>;
 }
 
-function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionPerson[] = [], channelRefs: readonly ChatChannelMention[] = [], onChannelOpen?: (channelId: string) => void): ReactNode[] {
+function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionPerson[] = [], channelRefs: readonly ChatChannelMention[] = [], onChannelOpen?: (channelId: string) => void, objectRefs: readonly ChatObjectMention[] = [], onObjectOpen?: (object: ChatObjectMention) => void, onPersonOpen?: (person: ChatMentionPerson) => void): ReactNode[] {
   const tokenPattern = /(!\[[^\]]*\]\((?:https?:\/\/|\/api\/storage\/)[^)]+\)|\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]\((?:https?:\/\/|mailto:|\/api\/storage\/)[^)]+\)|\*[^*]+\*|_[^_]+_)/g;
   const nodes: ReactNode[] = [];
   let cursor = 0;
@@ -1848,11 +1851,13 @@ function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionP
     type InlineMatch =
       | (ChatMentionMatch<ChatMentionPerson> & { type: "person" })
       | (ChatMentionMatch<ChatChannelMention> & { type: "channel" })
-      | (ChatFtcMention & { type: "ftc" });
+      | (ChatFtcMention & { type: "ftc" })
+      | (ChatMentionMatch<ChatObjectMention> & { type: "object" });
     const inlineMatches: InlineMatch[] = [
       ...findChatMentions(segment, mentionPeople).map(person => ({ ...person, type: "person" as const })),
       ...findChatChannelMentions(segment, channelRefs).map(channel => ({ ...channel, type: "channel" as const })),
       ...findChatFtcMentions(segment).map(reference => ({ ...reference, type: "ftc" as const })),
+      ...findChatObjectMentions(segment, objectRefs).map(object => ({ ...object, type: "object" as const })),
     ].sort((left, right) => left.start - right.start || right.end - left.end);
     if (!inlineMatches.length) {
       nodes.push(segment);
@@ -1863,11 +1868,13 @@ function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionP
       if (entry.start < textCursor) continue; // overlapping reference inside a consumed token
       if (entry.start > textCursor) nodes.push(segment.slice(textCursor, entry.start));
       if (entry.type === "person") {
-        nodes.push(<ChatMentionToken key={`mention-${key++}`} mentionText={entry.text} person={entry.person} />);
+        nodes.push(<ChatMentionToken key={`mention-${key++}`} mentionText={entry.text} person={entry.person} onOpen={onPersonOpen} />);
       } else if (entry.type === "channel") {
         nodes.push(<ChatChannelToken key={`channel-${key++}`} mentionText={entry.text} channel={entry.person} onOpen={onChannelOpen} />);
-      } else {
+      } else if (entry.type === "ftc") {
         nodes.push(<ChatFtcMentionToken key={`ftc-${key++}`} reference={entry} />);
+      } else {
+        nodes.push(<ChatObjectMentionToken key={`object-${key++}`} mentionText={entry.text} object={entry.person} onOpen={onObjectOpen} />);
       }
       textCursor = entry.end;
     }
@@ -1893,11 +1900,11 @@ function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionP
         ? <AuthenticatedChatAttachment key={tokenKey} src={link[2]} name={link[1]} />
         : <a key={tokenKey} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">{link[1]}</a>);
     } else if (token.startsWith("**") || token.startsWith("__")) {
-      nodes.push(<strong key={tokenKey}>{renderInlineMarkdown(token.slice(2, -2), mentionPeople, channelRefs, onChannelOpen)}</strong>);
+      nodes.push(<strong key={tokenKey}>{renderInlineMarkdown(token.slice(2, -2), mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</strong>);
     } else if (token.startsWith("`")) {
       nodes.push(<code key={tokenKey} className="rounded bg-[#edf4f3] px-1 py-0.5 font-mono text-[.9em] text-[#315a61]">{token.slice(1, -1)}</code>);
     } else if (token.startsWith("*") || token.startsWith("_")) {
-      nodes.push(<em key={tokenKey}>{renderInlineMarkdown(token.slice(1, -1), mentionPeople, channelRefs, onChannelOpen)}</em>);
+      nodes.push(<em key={tokenKey}>{renderInlineMarkdown(token.slice(1, -1), mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</em>);
     }
     cursor = match.index + token.length;
   }
@@ -2473,13 +2480,13 @@ function parseChatIframeEmbed(text: string): ParsedChatIframe {
   }
   const rawSrc = (attributes.src ?? "").trim();
   if (!rawSrc) return { ok: false, source, reason: "the snippet has no src link" };
-  let embedUrl: URL | null = null;
+  let embedUrl: URL;
   try {
     embedUrl = new URL(rawSrc, window.location.href);
   } catch {
-    embedUrl = null;
+    return { ok: false, source, reason: "only https links can be embedded" };
   }
-  if (!embedUrl || embedUrl.protocol !== "https:") return { ok: false, source, reason: "only https links can be embedded" };
+  if (embedUrl.protocol !== "https:") return { ok: false, source, reason: "only https links can be embedded" };
   if (embedUrl.username || embedUrl.password) return { ok: false, source, reason: "links containing login details cannot be embedded" };
   if (embedUrl.origin === window.location.origin) return { ok: false, source, reason: "dashboard pages cannot embed themselves" };
   const host = embedUrl.hostname.toLowerCase();
@@ -2561,7 +2568,7 @@ function stripMarkdownCell(cell: string): string {
     .trim();
 }
 
-function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [], channelRefs = [], onChannelOpen }: {
+function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [], channelRefs = [], onChannelOpen, objectRefs = [], onObjectOpen, onPersonOpen }: {
   header: string[];
   rows: string[][];
   aligns: ("left" | "center" | "right")[];
@@ -2569,6 +2576,9 @@ function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [
   mentionPeople?: readonly ChatMentionPerson[];
   channelRefs?: readonly ChatChannelMention[];
   onChannelOpen?: (channelId: string) => void;
+  objectRefs?: readonly ChatObjectMention[];
+  onObjectOpen?: (object: ChatObjectMention) => void;
+  onPersonOpen?: (person: ChatMentionPerson) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const fileBase = `ai-table-${new Date().toISOString().slice(0, 10)}`;
@@ -2603,13 +2613,13 @@ function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [
             <tr className="chat-markdown-table-header">
               {header.map((cell, cellIndex) => (
                 <th key={`th-${tableKey}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="chat-markdown-table-heading border-b px-3 py-2 font-semibold">
-                  {renderInlineMarkdown(cell, mentionPeople, channelRefs, onChannelOpen)}
+                  {renderInlineMarkdown(cell, mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {bodyRowsFallback(rows, aligns, tableKey, mentionPeople, channelRefs, onChannelOpen)}
+            {bodyRowsFallback(rows, aligns, tableKey, mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}
           </tbody>
         </table>
       </div>
@@ -2623,12 +2633,12 @@ function MarkdownTableExport({ header, rows, aligns, tableKey, mentionPeople = [
   );
 }
 
-function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right")[], tableKey: string, mentionPeople: readonly ChatMentionPerson[] = [], channelRefs: readonly ChatChannelMention[] = [], onChannelOpen?: (channelId: string) => void) {
+function bodyRowsFallback(rows: string[][], aligns: ("left" | "center" | "right")[], tableKey: string, mentionPeople: readonly ChatMentionPerson[] = [], channelRefs: readonly ChatChannelMention[] = [], onChannelOpen?: (channelId: string) => void, objectRefs: readonly ChatObjectMention[] = [], onObjectOpen?: (object: ChatObjectMention) => void, onPersonOpen?: (person: ChatMentionPerson) => void) {
   return rows.map((row, rowIndex) => (
     <tr key={`tr-${tableKey}-${rowIndex}`} className="chat-markdown-table-row">
       {row.map((cell, cellIndex) => (
         <td key={`td-${tableKey}-${rowIndex}-${cellIndex}`} style={{ textAlign: aligns[cellIndex] ?? "left" }} className="chat-markdown-table-cell border-b px-3 py-2 align-top">
-          {renderInlineMarkdown(cell, mentionPeople, channelRefs, onChannelOpen)}
+          {renderInlineMarkdown(cell, mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}
         </td>
       ))}
     </tr>
@@ -2678,7 +2688,7 @@ function findRawBlocks(source: string): RawBlock[] {
 
 const DETAILS_SUMMARY_PATTERN = /^\s*<summary\b[^>]*>([\s\S]*?)<\/summary\s*>/i;
 
-function MarkdownDetails({ text, mentionPeople, channelRefs = [], onChannelOpen }: { text: string; mentionPeople: readonly ChatMentionPerson[]; channelRefs?: readonly ChatChannelMention[]; onChannelOpen?: (channelId: string) => void }) {
+function MarkdownDetails({ text, mentionPeople, channelRefs = [], onChannelOpen, objectRefs = [], onObjectOpen, onPersonOpen }: { text: string; mentionPeople: readonly ChatMentionPerson[]; channelRefs?: readonly ChatChannelMention[]; onChannelOpen?: (channelId: string) => void; objectRefs?: readonly ChatObjectMention[]; onObjectOpen?: (object: ChatObjectMention) => void; onPersonOpen?: (person: ChatMentionPerson) => void }) {
   const attributes = text.match(/^<details\b([^>]*)>/i)?.[1] ?? "";
   const isOpen = /(^|[\s"'])open(\s|=|["']|$)/i.test(attributes);
   const inner = text.replace(/^<details\b[^>]*>/i, "").replace(/<\/details\s*>$/i, "");
@@ -2689,10 +2699,10 @@ function MarkdownDetails({ text, mentionPeople, channelRefs = [], onChannelOpen 
     <details open={isOpen} className="chat-markdown-details my-2 overflow-hidden rounded-xl border">
       <summary className="chat-markdown-details-summary flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[13px] font-semibold">
         <ChevronRight className="chat-markdown-details-marker size-3.5 shrink-0 transition-transform" />
-        <span className="min-w-0 flex-1">{renderInlineMarkdown(summarySource || "Details", mentionPeople, channelRefs, onChannelOpen)}</span>
+        <span className="min-w-0 flex-1">{renderInlineMarkdown(summarySource || "Details", mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</span>
       </summary>
       <div className="chat-markdown-details-body border-t px-3 py-2 text-[13px]">
-        <MarkdownContent source={body.trim()} className="text-[13px]" mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} />
+        <MarkdownContent source={body.trim()} className="text-[13px]" mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} objectRefs={objectRefs} onObjectOpen={onObjectOpen} onPersonOpen={onPersonOpen} />
       </div>
     </details>
   );
@@ -2704,12 +2714,18 @@ function MarkdownContent({
   mentionPeople = [],
   channelRefs = [],
   onChannelOpen,
+  objectRefs = [],
+  onObjectOpen,
+  onPersonOpen,
 }: {
   source: string;
   className?: string;
   mentionPeople?: readonly ChatMentionPerson[];
   channelRefs?: readonly ChatChannelMention[];
   onChannelOpen?: (channelId: string) => void;
+  objectRefs?: readonly ChatObjectMention[];
+  onObjectOpen?: (object: ChatObjectMention) => void;
+  onPersonOpen?: (person: ChatMentionPerson) => void;
 }) {
   const capped = source.length > MARKDOWN_MAX_CHARS ? `${source.slice(0, MARKDOWN_MAX_CHARS)}\n\n…(truncated)` : source;
   const blocks: ReactNode[] = [];
@@ -2720,16 +2736,16 @@ function MarkdownContent({
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
-    blocks.push(<p key={`paragraph-${key++}`}>{renderInlineMarkdown(paragraph.join(" "), mentionPeople, channelRefs, onChannelOpen)}</p>);
+    blocks.push(<p key={`paragraph-${key++}`}>{renderInlineMarkdown(paragraph.join(" "), mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</p>);
     paragraph.length = 0;
   };
   const flushLists = () => {
     if (orderedItems.length) {
-      blocks.push(<ol key={`ordered-${key++}`} className="list-decimal space-y-1 pl-5">{orderedItems.map(item => <li key={`ordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople, channelRefs, onChannelOpen)}</li>)}</ol>);
+      blocks.push(<ol key={`ordered-${key++}`} className="list-decimal space-y-1 pl-5">{orderedItems.map(item => <li key={`ordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</li>)}</ol>);
       orderedItems.length = 0;
     }
     if (unorderedItems.length) {
-      blocks.push(<ul key={`unordered-${key++}`} className="list-disc space-y-1 pl-5">{unorderedItems.map(item => <li key={`unordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople, channelRefs, onChannelOpen)}</li>)}</ul>);
+      blocks.push(<ul key={`unordered-${key++}`} className="list-disc space-y-1 pl-5">{unorderedItems.map(item => <li key={`unordered-item-${key++}`}>{renderInlineMarkdown(item, mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</li>)}</ul>);
       unorderedItems.length = 0;
     }
   };
@@ -2769,7 +2785,7 @@ function MarkdownContent({
           if (rowCells.length === header.length) bodyRows.push(rowCells);
         }
         const tableKey = `table-${key++}`;
-        blocks.push(<MarkdownTableExport key={tableKey} header={header} rows={bodyRows} aligns={aligns} tableKey={tableKey} mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} />);
+        blocks.push(<MarkdownTableExport key={tableKey} header={header} rows={bodyRows} aligns={aligns} tableKey={tableKey} mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} objectRefs={objectRefs} onObjectOpen={onObjectOpen} onPersonOpen={onPersonOpen} />);
         for (let skip = 1; skip <= consumed; skip += 1) allLines[lineIndex + skip] = "";
         return;
       }
@@ -2778,7 +2794,7 @@ function MarkdownContent({
     if (heading) {
       flush();
       const Heading = `h${Math.min(heading[1].length, 4)}` as "h1" | "h2" | "h3" | "h4";
-      blocks.push(<Heading key={`heading-${key++}`} className="font-semibold tracking-[-.02em] text-[#183a4b]">{renderInlineMarkdown(heading[2], mentionPeople, channelRefs, onChannelOpen)}</Heading>);
+      blocks.push(<Heading key={`heading-${key++}`} className="font-semibold tracking-[-.02em] text-[#183a4b]">{renderInlineMarkdown(heading[2], mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</Heading>);
       return;
     }
     if (trimmed === "```robotics-mini-tool") {
@@ -2810,7 +2826,7 @@ function MarkdownContent({
     const quote = trimmed.match(/^>\s?(.+)$/);
     if (quote) {
       flush();
-      blocks.push(<blockquote key={`quote-${key++}`} className="border-l-2 border-[#8cc5c5] pl-3 italic text-[#63747c]">{renderInlineMarkdown(quote[1], mentionPeople, channelRefs, onChannelOpen)}</blockquote>);
+      blocks.push(<blockquote key={`quote-${key++}`} className="border-l-2 border-[#8cc5c5] pl-3 italic text-[#63747c]">{renderInlineMarkdown(quote[1], mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</blockquote>);
       return;
     }
     if (/^([-*_])(?:\s*\1){2,}$/.test(trimmed)) {
@@ -2820,7 +2836,7 @@ function MarkdownContent({
     }
     if (/^(?:!\[[^\]]*\]|\[[^\]]+\])\(\/api\/storage\/objects\/[^)]+\)$/.test(trimmed)) {
       flush();
-      blocks.push(<div key={`attachment-${key++}`}>{renderInlineMarkdown(trimmed, mentionPeople, channelRefs, onChannelOpen)}</div>);
+      blocks.push(<div key={`attachment-${key++}`}>{renderInlineMarkdown(trimmed, mentionPeople, channelRefs, onChannelOpen, objectRefs, onObjectOpen, onPersonOpen)}</div>);
       return;
     }
     if (orderedItems.length || unorderedItems.length) flushLists();
@@ -2835,7 +2851,7 @@ function MarkdownContent({
     if (start > rawCursor) renderTextSegment(capped.slice(rawCursor, start));
     flush();
     if (rawBlock.tag === "details") {
-      blocks.push(<MarkdownDetails key={`details-${key++}`} text={rawBlock.text} mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} />);
+      blocks.push(<MarkdownDetails key={`details-${key++}`} text={rawBlock.text} mentionPeople={mentionPeople} channelRefs={channelRefs} onChannelOpen={onChannelOpen} objectRefs={objectRefs} onObjectOpen={onObjectOpen} onPersonOpen={onPersonOpen} />);
     } else if (rawBlock.tag === "iframe") {
       // A snippet quoted inside a ``` fence is code, not a live embed.
       const embed = parseChatIframeEmbed(rawBlock.text);
@@ -3196,7 +3212,6 @@ function usePresenceHeartbeat(enabled: boolean, page: string) {
   useEffect(() => {
     if (!enabled) return;
     let stopped = false;
-    let timer: ReturnType<typeof setInterval> | undefined;
     const sendBeat = (visible: boolean, keepalive = false) => {
       fetch(`${import.meta.env.BASE_URL}api/presence/heartbeat`, {
         method: "POST",
@@ -3212,7 +3227,7 @@ function usePresenceHeartbeat(enabled: boolean, page: string) {
     };
     const beat = () => sendBeat(document.visibilityState === "visible");
     beat();
-    timer = setInterval(() => {
+    const timer = setInterval(() => {
       if (!stopped && document.visibilityState === "visible") beat();
     }, 30000);
     const onVisibilityChange = () => sendBeat(document.visibilityState === "visible", true);
@@ -3236,7 +3251,11 @@ function timeAgoShort(iso: string): string {
   if (seconds < 60) return `${seconds}s ago`;
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.floor(minutes / 60)}h ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(iso).toLocaleDateString();
 }
 
 function formatDuration(totalSeconds: number): string {
@@ -3280,6 +3299,31 @@ function PresenceUserModal({ userId, name, onClose }: { userId: string; name: st
               {stats.data.firstSeenAt ? `First seen ${new Date(stats.data.firstSeenAt).toLocaleString()}` : "Never seen"}
               {stats.data.lastSeenAt ? ` · last seen ${new Date(stats.data.lastSeenAt).toLocaleString()}` : ""}
             </p>
+            <div className="mt-3 rounded-xl bg-[#f4f8f7] p-3" data-testid="presence-ips">
+              <p className="mono text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">IP addresses</p>
+              {stats.data.ips.length > 0 ? (
+                <ul className="mt-2 space-y-1.5">
+                  {stats.data.ips.map((entry) => (
+                    <li key={entry.ip} className="flex flex-wrap items-center justify-between gap-2 text-xs" data-testid={`presence-ip-${entry.ip}`}>
+                      <span className="mono font-semibold text-[#38555e]">{entry.ip}</span>
+                      {entry.online ? (
+                        <span className="flex items-center gap-1.5 rounded-full bg-[#dff3ec] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#1d7a5f]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#28a47f]" /> Online now</span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-[#7b8a8f]"><span className="h-1.5 w-1.5 rounded-full bg-[#c3ced1]" /> Last seen {timeAgoShort(entry.lastSeenAt)}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-xs text-[#8a999d]">No IP addresses recorded for this person yet.</p>
+              )}
+            </div>
+            {stats.data.notifyGranted + stats.data.notifyDenied + stats.data.notifyUnknown === 0 ? (
+              <div className="mt-3 rounded-xl bg-[#f4f8f7] p-3" data-testid="presence-notify-status">
+                <p className="mono text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">Browser notifications</p>
+                <p className="mt-2 text-[11px] leading-5 text-[#8a999d]">{name} is not online right now — notification status is shown while they have an active session.</p>
+              </div>
+            ) : (
             <div className="mt-3 rounded-xl bg-[#f4f8f7] p-3" data-testid="presence-notify-status">
               <p className="mono text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">Browser notifications · online sessions</p>
               <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
@@ -3289,6 +3333,7 @@ function PresenceUserModal({ userId, name, onClose }: { userId: string; name: st
               </div>
               {stats.data.notifyGranted === 0 && <p className="mt-2 text-[11px] leading-5 text-[#8a999d]">{name} has not accepted pushes on any online session — broadcasts only appear as in-app popups. Ask them to tap the bell in the top bar.</p>}
             </div>
+            )}
             <p className="mono mt-4 text-[10px] uppercase tracking-[.16em] text-[#16869a]">Pages visited most</p>
             {stats.data.pages.length > 0 ? (
               <div className="mt-2 space-y-3">
@@ -3372,6 +3417,7 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
   if (presence.isLoading) return <Skeleton className="h-14" />;
   if (presence.isError || !presence.data) return <p className="text-sm text-[#7c8c91]">Presence unavailable. <button onClick={() => presence.refetch()} className="font-semibold text-[#16869a]">Retry</button></p>;
   const entries = presence.data.entries;
+  const offline = presence.data.offline ?? [];
   return (
     <div>
       <div className="flex items-center gap-2">
@@ -3388,7 +3434,7 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
             return (
             <div key={`${entryKey}-${entry.lastSeenAt}`} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#e3ebeb] bg-white px-3 py-2 text-xs dark:border-[#31495a] dark:bg-[#0f1e27]" data-testid="presence-entry">
               {attributable ? (
-                <button onClick={() => setSelectedUser({ userId: entry.userId, name: entry.name })} title={`View usage for ${entry.name}`} data-testid={`presence-user-${entry.userId}`} className="rounded font-semibold text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">
+                <button onClick={() => setSelectedUser({ userId: entry.userId, name: entry.name })} title={`View IP addresses and usage for ${entry.name}`} data-testid={`presence-user-${entry.userId}`} className="rounded font-semibold text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">
                   {entry.name}
                 </button>
               ) : (
@@ -3430,6 +3476,28 @@ function PresencePanel() { const streamHealthy = useRealtimeHealthy();
       ) : (
         <p className="mt-3 text-sm text-[#7c8c91]">No active sessions seen recently.</p>
       )}
+      <div className="mt-4 border-t border-[#e5ecec] pt-3 dark:border-[#273c48]" data-testid="presence-offline">
+        <p className="mono text-[10px] uppercase tracking-[.16em] text-[#7c8c91] dark:text-[#93a8b2]">Offline · {offline.length}</p>
+        {offline.length > 0 ? (
+          <div className="mt-2 space-y-2">
+            {offline.map((person) => (
+              <div key={person.userId} className="flex flex-wrap items-center gap-2 rounded-xl border border-[#e3ebeb] bg-white px-3 py-2 text-xs opacity-90 dark:border-[#31495a] dark:bg-[#0f1e27]" data-testid="presence-offline-entry">
+                <button onClick={() => setSelectedUser({ userId: person.userId, name: person.name })} title={`View activity for ${person.name}`} data-testid={`presence-offline-user-${person.userId}`} className="rounded font-semibold text-[#16869a] underline decoration-[#9bcfce] underline-offset-2 hover:text-[#106d7a]">
+                  {person.name}
+                </button>
+                <span className="flex items-center gap-1.5 rounded-full bg-[#eef3f2] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[#63747c] dark:bg-[#16262f] dark:text-[#93a8b2]">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#c3ced1]" /> Offline
+                </span>
+                <span className="mono ml-auto flex items-center gap-1.5 text-[#8a999d]" title={person.lastSeenAt ? `Last seen ${new Date(person.lastSeenAt).toLocaleString()}` : "Never seen on this team"}>
+                  {person.lastSeenAt ? `Last seen ${timeAgoShort(person.lastSeenAt)}` : "Never seen"}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-xs text-[#8a999d]">Everyone on the team is online.</p>
+        )}
+      </div>
       {selectedUser && <PresenceUserModal userId={selectedUser.userId} name={selectedUser.name} onClose={() => setSelectedUser(null)} />}
       {kickTarget && (
         <div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center bg-[#112433]/45 p-4" onClick={() => setKickTarget(null)} data-testid="kick-confirm">
@@ -3509,6 +3577,8 @@ function passwordExposureConfirmation(count: number): string {
   return `This password has appeared in known breach data ${count} ${count === 1 ? "time" : "times"}. A unique password is safer. Continue with it anyway?`;
 }
 
+// This screen is retained for the legacy password flow, but routing uses AuthPage.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function LegacyLogin() {
   const [password, setPassword] = useState("");
   const [eventPassword, setEventPassword] = useState("");
@@ -4326,14 +4396,15 @@ function Shell({
     session.data?.teamId,
     sessionUserId,
   );
+  const { refetch: refetchCustomWorkspaces } = customWorkspacesQuery;
   useEffect(() => {
     if (demoMode) return;
     const refreshCustomWorkspaces = () => {
-      void customWorkspacesQuery.refetch();
+      void refetchCustomWorkspaces();
     };
     window.addEventListener("custom-workspaces:refresh", refreshCustomWorkspaces);
     return () => window.removeEventListener("custom-workspaces:refresh", refreshCustomWorkspaces);
-  }, [demoMode, customWorkspacesQuery.refetch]);
+  }, [demoMode, refetchCustomWorkspaces]);
   const customWorkspaces = demoMode ? DEMO_CUSTOM_WORKSPACES : customWorkspacesQuery.data ?? [];
   // Accounts always have a role; default a missing one to the most restricted
   // role so legacy role-based settings keep working (as before the per-user switch).
@@ -5431,7 +5502,7 @@ function Applicants() {
     {printOpen && <PrintRoster applicants={list.data?.items ?? []} onClose={() => setPrintOpen(false)} />}
   </div>;
 }
-function ApplicantRow({ applicant: a, index, onSelect, onDragStart, onDragEnd, onMove }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void; onMove: (lane: string) => void }) {
+function ApplicantRow({ applicant: a, index: _index, onSelect, onDragStart, onDragEnd, onMove }: { applicant: Applicant; index: number; onSelect: () => void; onDragStart: () => void; onDragEnd?: () => void; onMove: (lane: string) => void }) {
   const tone = a.aiRecommendation.toLowerCase().includes("advance") ? "teal" : a.aiRecommendation.toLowerCase().includes("decline") ? "red" : "yellow";
   const signals = getApplicantSignals(a);
   const { settings } = useWorkspaceSettings();
@@ -5522,7 +5593,7 @@ async function copyTextToClipboard(text: string): Promise<void> {
     textarea.style.opacity = "0";
     document.body.appendChild(textarea);
     textarea.select();
-    let copied = false;
+    let copied: boolean;
     try {
       copied = document.execCommand("copy");
     } catch {
@@ -6060,11 +6131,10 @@ function AudioCard() {
   </section>;
 }
 
-function AttendancePanel({ applicants, pending, onMark, onMarkAll }: {
+function AttendancePanel({ applicants, pending, onMark }: {
   applicants: Applicant[];
   pending: boolean;
   onMark: (id: string, patch: AttendancePatch) => void;
-  onMarkAll: () => void;
 }) {
   const roleSession = useGetSession({ query: { queryKey: getGetSessionQueryKey() } });
   const canManageAttendance = canSessionUsePermission(roleSession.data, "attendance.manage");
@@ -6391,8 +6461,8 @@ async function prepareChatFile(file: File): Promise<PreparedChatFile> {
       outName = converted.name;
       sourceType = "image/jpeg";
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith("timeout:")) throw new Error("timeout");
-      throw new Error("unreadable-heic");
+      if (error instanceof Error && error.message.startsWith("timeout:")) throw new Error("timeout", { cause: error });
+      throw new Error("unreadable-heic", { cause: error });
     }
   }
   return {
@@ -6422,6 +6492,27 @@ function parseSpreadsheetChatMessage(message: string): { id: string; title: stri
   if (!match) return null;
   return { id: match[1], title: match[2]?.trim() || "Shared spreadsheet" };
 }
+function parseCalendarChatMessage(message: string): { id: string; title: string } | null {
+  const match = message.match(/^\[\[calendar:([a-f0-9-]+)\]\]\s*(.*)$/i);
+  if (!match) return null;
+  return { id: match[1], title: match[2]?.trim() || "Shared calendar" };
+}
+// Compose the body of a forwarded chat message. The forwarded copy keeps the
+// original markdown (attachments, embeds and mentions included) under a bold
+// attribution line, with the poll options summarized so the forward is
+// self-describing; poll votes and read receipts never carry over. Capped to
+// the composer's limit so the server never has to silently truncate it.
+function buildForwardedMessage(item: Pick<InterviewChatMessage, "author" | "message" | "poll">, originLabel: string): string {
+  const attribution = `**Forwarded from ${item.author} · ${originLabel}**`;
+  const pollLine = item.poll?.options?.length
+    ? `\n**Poll options:** ${item.poll.options.map(option => option.text.trim()).filter(Boolean).join(" · ")}`
+    : "";
+  const full = `${attribution}\n${item.message}${pollLine}`;
+  if (full.length <= CHAT_MESSAGE_MAX_CHARS) return full;
+  const ellipsis = "\n…";
+  const room = Math.max(0, CHAT_MESSAGE_MAX_CHARS - attribution.length - pollLine.length - ellipsis.length - 1);
+  return `${attribution}\n${item.message.slice(0, room).replace(/\s+$/, "")}${pollLine}${ellipsis}`;
+}
 
 function formatChatDateTime(value: string): string {
   const date = new Date(value);
@@ -6433,6 +6524,31 @@ function formatChatDateTime(value: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(date);
+}
+
+// Read receipts default to time-of-day only. When the read happened on a
+// different calendar day than the message was sent, the time alone is
+// ambiguous, so the date is included as well (with the year only when it
+// differs from the message's year).
+function formatChatReadReceipt(readAt: string, sentAt: string): string {
+  const read = new Date(readAt);
+  if (!Number.isFinite(read.getTime())) return "Unknown time";
+  const sent = new Date(sentAt);
+  const sameDay = Number.isFinite(sent.getTime())
+    && read.getFullYear() === sent.getFullYear()
+    && read.getMonth() === sent.getMonth()
+    && read.getDate() === sent.getDate();
+  if (sameDay) {
+    return read.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  }
+  const includeYear = !Number.isFinite(sent.getTime()) || read.getFullYear() !== sent.getFullYear();
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    ...(includeYear ? { year: "numeric" as const } : {}),
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(read);
 }
 
 function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { applicantIds: string[]; tall?: boolean; demoMode?: boolean }) { const streamHealthy = useRealtimeHealthy();
@@ -6456,7 +6572,11 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     () => new Map(customEmojiItems.map(emoji => [emoji.name, emoji.imagePath])),
     [customEmojiItems],
   );
-  const interviewerLabels = useGetQueueLabels({ query: { queryKey: getGetQueueLabelsQueryKey(), enabled: !demoMode } }).data?.interviewerLabels ?? queue.data?.interviewerLabels ?? [];
+  const interviewerLabelsQuery = useGetQueueLabels({ query: { queryKey: getGetQueueLabelsQueryKey(), enabled: !demoMode } });
+  const interviewerLabels = useMemo(
+    () => interviewerLabelsQuery.data?.interviewerLabels ?? queue.data?.interviewerLabels ?? [],
+    [interviewerLabelsQuery.data?.interviewerLabels, queue.data?.interviewerLabels],
+  );
   const [conversationPeer, setConversationPeer] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
     return new URLSearchParams(window.location.search).get("peer")?.trim() || null;
@@ -6695,14 +6815,19 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const chatStickRef = useRef(true);
   const chatLoadGuardRef = useRef(false);
   const chatAnchorRef = useRef<{ prevH: number; prevTop: number } | null>(null);
-  const scopedChatItems = chat.data && chat.data.scope === conversationScope
-    && (conversationChannelId
-      ? chat.data.channel?.id === conversationChannelId
-      : chat.data.peer === (conversationPeer ?? null))
-    ? chat.data.items
-    : [];
-  const visibleOlderChat = olderChatConversationId === conversationId ? olderChat : [];
-  const chatItems = useMemo(() => mergeChatItems(visibleOlderChat, scopedChatItems), [scopedChatItems, visibleOlderChat]);
+  const scopedChatItems = useMemo(
+    () => chat.data && chat.data.scope === conversationScope
+      && (conversationChannelId
+        ? chat.data.channel?.id === conversationChannelId
+        : chat.data.peer === (conversationPeer ?? null))
+      ? chat.data.items
+      : [],
+    [chat.data, conversationScope, conversationChannelId, conversationPeer],
+  );
+  const chatItems = useMemo(
+    () => mergeChatItems(olderChatConversationId === conversationId ? olderChat : [], scopedChatItems),
+    [olderChatConversationId, conversationId, olderChat, scopedChatItems],
+  );
   const replyCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of chatItems) {
@@ -6802,6 +6927,11 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const deleteChatMessage = useDeleteChatMessage();
   const [pickerFor, setPickerFor] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<InterviewChatMessage | null>(null);
+  const [forwardingFrom, setForwardingFrom] = useState<InterviewChatMessage | null>(null);
+  const [forwardTargetKey, setForwardTargetKey] = useState("");
+  const [forwardError, setForwardError] = useState("");
+  const [forwardNotice, setForwardNotice] = useState("");
+  const [forwarding, setForwarding] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [pollOpen, setPollOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState("");
@@ -6847,6 +6977,8 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const [activeWhiteboardId, setActiveWhiteboardId] = useState<string | null>(null);
   const [boardOpen, setBoardOpen] = useState(false);
   const [activeBoardId, setActiveBoardId] = useState<string | null>(null);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [activeCalendarId, setActiveCalendarId] = useState<string | null>(null);
   const [whiteboardError, setWhiteboardError] = useState("");
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const whiteboards = useListInterviewWhiteboards(chatParams, {
@@ -6859,6 +6991,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
   const createWhiteboard = useCreateInterviewWhiteboard();
   const createBoardMutation = useCreateBoard();
   const createSpreadsheetMutation = useCreateSpreadsheet();
+  const createCalendarMutation = useCreateCalendar();
   const getWhiteboard = useGetInterviewWhiteboardById(
     activeWhiteboardId ?? "",
     chatParams,
@@ -7025,7 +7158,8 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                 ? `Couldn't convert "${displayName}" (iPhone photo).`
                 : error instanceof Error && error.message.startsWith("timeout:")
                   ? `Timed out (${error.message.slice(8)}) on "${displayName}". Try a smaller image or faster connection.`
-                  : "Couldn't prepare attachments. Try again."),
+                : "Couldn't prepare attachments. Try again."),
+          { cause: error },
         );
       }
     };
@@ -7120,7 +7254,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       }
       uploadedIds.push(objectId);
       collectedIds.push(objectId);
-      const safeName = prepared.name.replace(/[\[\]\r\n]/g, "_");
+      const safeName = prepared.name.replace(/[[\]\r\n]/g, "_");
       embeds.push(prepared.inlineImage
         ? `![${safeName}](/api/storage/objects/${objectId})`
         : `[${safeName}](/api/storage/objects/${objectId})`);
@@ -7300,6 +7434,19 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       ...matches.filter(person => person.kind === "applicant").slice(0, 8),
     ];
   }, [mentionPeople, mentionQuery]);
+  // Chat-created artifacts (document/whiteboard/board/calendar/spreadsheet)
+  // are mentionable by title or id and open on click.
+  const objectMentions = useMemo<ChatObjectMention[]>(() => buildObjectMentions(
+    (whiteboards.data?.items ?? []).map(item => ({ id: item.id, title: item.title, data: item.data })),
+    [...mentionLabels, "all", "ai"],
+  ), [whiteboards.data?.items, mentionLabels]);
+  const objectMentionPicker = useMemo(() => {
+    const query = mentionQuery.trim().toLowerCase();
+    return objectMentions
+      .filter(object => !object.idToken)
+      .filter(object => !query || `${object.title} @${object.id} ${object.kind}`.toLowerCase().includes(query))
+      .slice(0, 6);
+  }, [objectMentions, mentionQuery]);
   const filteredMentionSuggestions = useMemo(() => [
     ...filteredMentionPeople.map(person => ({
       kind: "person" as const,
@@ -7326,7 +7473,15 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       detail: `Event · ${event.code}${event.typeName ? ` · ${event.typeName}` : ""}${[event.city, event.stateProv].filter(Boolean).length ? ` · ${[event.city, event.stateProv].filter(Boolean).join(", ")}` : ""}`,
       event,
     })),
-  ], [filteredMentionPeople, currentFtcMentionResults]);
+    ...objectMentionPicker.map(object => ({
+      kind: "object" as const,
+      key: `object-${object.id}`,
+      token: object.token,
+      label: object.title,
+      detail: object.detail,
+      object,
+    })),
+  ], [filteredMentionPeople, currentFtcMentionResults, objectMentionPicker]);
   const selectedMentionIndex = Math.min(mentionActiveIndex, Math.max(0, filteredMentionSuggestions.length - 1));
   const channelMentions = useMemo<ChatChannelMention[]>(
     () => buildChannelMentions(channels.map(channel => ({ id: channel.id, name: channel.name, emoji: channel.emoji, memberCount: channel.members?.length ?? 0 }))),
@@ -7356,6 +7511,20 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setConversationPeer(null);
     setConversationChannelId(channelId);
   }, [channels]);
+  // Clicking an @person mention opens the DM with them (applicant/group/assistant
+  // mentions stay inert — they are references, not chat targets).
+  const openMentionedPerson = useCallback((person: ChatMentionPerson) => {
+    if (person.kind !== "interviewer") return;
+    if (!interviewerLabels.some(label => label.toLowerCase() === person.token.trim().toLowerCase())) {
+      setChatError("That teammate isn’t available to you.");
+      return;
+    }
+    setMentionOpen(false);
+    setChannelMentionOpen(false);
+    setSlashOpen(false);
+    setConversationChannelId(null);
+    setConversationPeer(person.token.trim());
+  }, [interviewerLabels]);
   const activeWhiteboard = activeWhiteboardId
     ? getWhiteboard.data ?? whiteboards.data?.items.find(item => item.id === activeWhiteboardId) ?? null
     : null;
@@ -7384,6 +7553,13 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       : conversationPeer ? `${returnPath}?peer=${encodeURIComponent(conversationPeer)}` : returnPath;
     const returnTo = selectedConversation;
     setLocation(`/spreadsheets/${id}?returnTo=${encodeURIComponent(returnTo)}`);
+  };
+  const openCalendar = (id: string) => {
+    setActiveCalendarId(id);
+    setCalendarOpen(true);
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+    setScheduleOpen(false);
   };
   const createSharedDocument = async () => {
     if (demoMode) { setChatError("Creating shared files is disabled in this read-only demo."); return; }
@@ -7466,6 +7642,33 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       openSpreadsheet(saved.id);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Couldn't create the spreadsheet. Try again.";
+      setChatError(message);
+    }
+  };
+  const createSharedCalendar = async () => {
+    if (demoMode) { setChatError("Creating shared files is disabled in this read-only demo."); return; }
+    setChatError("");
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+    try {
+      const saved = await createCalendarMutation.mutateAsync({
+        data: {
+          title: "Team calendar",
+          ...conversationTarget,
+        },
+      });
+      setActiveCalendarId(saved.id);
+      setCalendarOpen(true);
+      await sendChat.mutateAsync({
+        data: {
+          author: activeInterviewer,
+          message: `[[calendar:${saved.id}]] ${saved.title}`,
+          ...conversationTarget,
+        },
+      });
+      await qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Couldn't create the calendar. Try again.";
       setChatError(message);
     }
   };
@@ -7696,9 +7899,45 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       el?.setSelectionRange(cursor, cursor);
     });
   };
+  const selectObjectMention = (object: ChatObjectMention) => {
+    const input = chatMessageInputRef.current;
+    const caret = input?.selectionStart ?? message.length;
+    const trigger = findMentionTrigger(message, caret);
+    if (!trigger) return;
+    const rest = message.slice(trigger.end);
+    const hasFollowingSpace = /^\s/.test(rest);
+    const next = `${message.slice(0, trigger.start)}@${object.token}${hasFollowingSpace ? "" : " "}${rest}`;
+    setMessage(next);
+    setMentionOpen(false);
+    setChannelMentionOpen(false);
+    setSlashOpen(false);
+    setMentionQuery("");
+    setChannelMentionQuery("");
+    requestAnimationFrame(() => {
+      const el = chatMessageInputRef.current;
+      el?.focus();
+      const cursor = trigger.start + 1 + object.token.length + (hasFollowingSpace ? 0 : 1);
+      el?.setSelectionRange(cursor, cursor);
+    });
+  };
+  // Opens the shared artifact referenced by an @mention.
+  const openMentionedObject = (object: ChatObjectMention) => {
+    setComposerMenuOpen(false);
+    setCreateMenuOpen(false);
+    if (object.kind === "document" || object.kind === "whiteboard") {
+      openWhiteboard(object.id);
+    } else if (object.kind === "board") {
+      openBoard(object.id);
+    } else if (object.kind === "calendar") {
+      openCalendar(object.id);
+    } else {
+      openSpreadsheet(object.id);
+    }
+  };
   const selectMention = (person: ChatMentionPerson) => selectMentionToken(person.token);
   const selectMentionSuggestion = (suggestion: (typeof filteredMentionSuggestions)[number]) => {
     if (suggestion.kind === "person") selectMention(suggestion.person);
+    else if (suggestion.kind === "object") selectObjectMention(suggestion.object);
     else selectMentionToken(suggestion.token);
   };
   const selectChannelMention = (channel: ChatChannelMention) => {
@@ -8061,13 +8300,6 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       onSuccess: () => { qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
     });
   };
-  const toggleMessagePin = (messageId: string) => {
-    if (demoMode) return;
-    togglePin.mutate({ messageId }, {
-      onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
-      onError: error => setChatError(error instanceof Error ? error.message : "Couldn't pin that message."),
-    });
-  };
   const beginEdit = (item: InterviewChatMessage) => {
     setPickerFor(null);
     setReplyingTo(null);
@@ -8405,6 +8637,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     setAiReplySavedNotice("");
     setMultiMessageNotice("");
     setExportNotice("");
+    setForwardNotice("");
     chatStickRef.current = true;
     const author = activeInterviewer;
     const uploadedIds: string[] = [];
@@ -8571,6 +8804,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
           {item.author === "AI assistant" && <ChatActionTooltip label="Copy response"><CopyButton text={item.message} testId={`button-copy-chat-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]" /></ChatActionTooltip>}
           <ChatActionTooltip label="Add reaction"><button type="button" onClick={() => { setPickerFor(pickerFor === item.id ? null : item.id); setEmojiOpen(false); }} aria-label="Add reaction" aria-expanded={pickerFor === item.id} data-testid={`button-reaction-add-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><SmilePlus size={16} /></button></ChatActionTooltip>
           <ChatActionTooltip label={replyingTo?.id === item.id ? "Cancel reply" : "Reply"}><button type="button" onClick={() => { setPickerFor(null); setReplyingTo(replyingTo?.id === item.id ? null : item); }} aria-label={`Reply to ${item.author}`} data-testid={`button-reply-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition ${replyingTo?.id === item.id ? "bg-[#e3f4f2] text-[#106d7a]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Reply size={16} /></button></ChatActionTooltip>
+          <ChatActionTooltip label="Forward message"><button type="button" onClick={() => openForwardDialog(item)} aria-label={`Forward ${item.author}'s message`} data-testid={`button-forward-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a]"><Forward size={15} /></button></ChatActionTooltip>
           <ChatActionTooltip label={item.pinnedAt ? "Unpin message" : "Pin message"}><button type="button" onClick={() => togglePin.mutate({ messageId: item.id }, { onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); }, onError: error => setChatError(error instanceof Error ? error.message : "Couldn't pin that message.") })} disabled={togglePin.isPending} aria-label={item.pinnedAt ? "Unpin message" : "Pin message"} data-testid={`button-pin-${item.id}`} className={`flex h-7 w-7 items-center justify-center rounded-md transition disabled:opacity-50 ${item.pinnedAt ? "bg-[#fff3cf] text-[#8a6508]" : "text-[#52666e] hover:bg-[#edf4f3] hover:text-[#16869a]"}`}><Pin size={15} className={item.pinnedAt ? "fill-current" : ""} /></button></ChatActionTooltip>
            {canManage && <><ChatActionTooltip label="Edit message"><button type="button" onClick={() => beginEdit(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Edit message" data-testid={`button-edit-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#52666e] transition hover:bg-[#edf4f3] hover:text-[#16869a] disabled:opacity-50"><Pencil size={15} /></button></ChatActionTooltip><ChatActionTooltip label="Delete message"><button type="button" onClick={() => removeChatMessage(item)} disabled={updateChatMessage.isPending || deleteChatMessage.isPending} aria-label="Delete message" data-testid={`button-delete-chat-message-${item.id}`} className="flex h-7 w-7 items-center justify-center rounded-md text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50"><Trash2 size={15} /></button></ChatActionTooltip></>}
         </div>
@@ -8594,6 +8828,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
           const sharedWhiteboard = parseWhiteboardChatMessage(item.message);
            const sharedBoard = parseBoardChatMessage(item.message);
           const sharedSpreadsheet = parseSpreadsheetChatMessage(item.message);
+          const sharedCalendar = parseCalendarChatMessage(item.message);
           return sharedDocument
              ? <button type="button" onClick={() => openWhiteboard(sharedDocument.id)} className="shared-document-card mt-2 flex w-full items-center gap-3 rounded-xl border p-3 text-left transition" data-testid={`button-open-document-${sharedDocument.id}`}><span className="shared-document-card-icon flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm"><FileText size={18} /></span><span className="min-w-0"><span className="shared-document-card-label block text-[10px] font-bold uppercase tracking-[.12em]">Shared document</span><span className="shared-document-card-title mt-0.5 block truncate text-sm font-semibold">{sharedDocument.title}</span><span className="shared-document-card-description mt-0.5 block text-[11px]">Open collaborative editor</span></span><ChevronRight size={16} className="shared-document-card-chevron ml-auto shrink-0" /></button>
             : sharedWhiteboard
@@ -8602,7 +8837,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                  ? <BoardChatCard boardId={sharedBoard.id} fallbackTitle={sharedBoard.title} onOpen={() => openBoard(sharedBoard.id)} />
                  : sharedSpreadsheet
                    ? <SpreadsheetChatCard spreadsheetId={sharedSpreadsheet.id} fallbackTitle={sharedSpreadsheet.title} onOpen={() => openSpreadsheet(sharedSpreadsheet.id)} />
-                 : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} channelRefs={channelMentions} onChannelOpen={openMentionedChannel} className="mt-1 text-[#52666e]" />;
+                   : sharedCalendar
+                     ? <CalendarChatCard calendarId={sharedCalendar.id} fallbackTitle={sharedCalendar.title} onOpen={() => openCalendar(sharedCalendar.id)} />
+                 : <MarkdownContent source={addTeamEmojiMarkdown(item.message, customEmojiPaths)} mentionPeople={mentionPeople} channelRefs={channelMentions} onChannelOpen={openMentionedChannel} objectRefs={objectMentions} onObjectOpen={openMentionedObject} onPersonOpen={openMentionedPerson} className="mt-1 text-[#52666e]" />;
         })()}
       <ActivityPills activities={item.activities ?? []} />
       {item.poll && <div className="mt-2 space-y-1.5" data-testid={`chat-poll-${item.id}`}>
@@ -8639,8 +8876,8 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         })}
         {replyCount > 0 && <span className="ml-1 inline-flex items-center rounded-full bg-[#edf4f3] px-2 py-1 text-[11px] font-semibold text-[#527079]">{replyCount} {replyCount === 1 ? "reply" : "replies"}</span>}
       </div>
-      {item.author.toLowerCase() === activeInterviewer.toLowerCase() && item.readBy?.length > 0 && <p className="mt-1.5 text-[10px] text-[#7c8c91] dark:text-[#a8bbc2]" data-testid={`chat-read-by-${item.id}`} aria-label={`Read by ${item.readBy.map((receipt) => receipt.readerName).join(", ")}`}>
-        Read by {item.readBy.map((receipt) => `${receipt.readerName} · ${new Date(receipt.readAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`).join(", ")}
+      {(isAdminChat || item.author.toLowerCase() === activeInterviewer.toLowerCase()) && item.readBy?.length > 0 && <p className="mt-1.5 text-[10px] text-[#7c8c91] dark:text-[#a8bbc2]" data-testid={`chat-read-by-${item.id}`} aria-label={`Read by ${item.readBy.map((receipt) => `${receipt.readerName} at ${formatChatDateTime(receipt.readAt)}`).join(", ")}`} title={item.readBy.map((receipt) => `${receipt.readerName} read at ${formatChatDateTime(receipt.readAt)}`).join("\n")}>
+        Read by {item.readBy.map((receipt) => `${receipt.readerName} · ${formatChatReadReceipt(receipt.readAt, item.createdAt)}`).join(", ")}
       </p>}
       {pickerFor === item.id && <div data-testid={`reaction-picker-${item.id}`}><InterviewerChatEmojiPicker
         dark={theme === "dark"}
@@ -8674,6 +8911,105 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
      return (channels.find(channel => channel.id === channelDialogId)?.members ?? [])
        .filter(member => !known.has(member.id));
    }, [channelAccounts, channels, channelDialogId]);
+   // Where a message can be forwarded to: the team conversation, every other
+   // interviewer (direct message), and every channel the user can see. The
+   // conversation being viewed is marked as the current one and disabled —
+   // forwarding a message into the same conversation is never useful.
+   const forwardOriginLabel = conversationChannelId
+     ? `# ${activeChannel?.name ?? "channel"}`
+     : conversationPeer ? `Direct message · ${conversationPeer}` : "Team conversation";
+   const forwardDestinations = (() => {
+     type ForwardDestination = {
+       key: string;
+       label: string;
+       detail: string;
+       scope: "shared" | "direct" | "channel";
+       recipient?: string;
+       channelId?: string;
+       channelEmoji?: string | null;
+       isCurrent: boolean;
+     };
+     const destinations: ForwardDestination[] = [{
+       key: "team",
+       label: "Team conversation",
+       detail: "Everyone on the team",
+       scope: "shared",
+       isCurrent: !conversationPeer && !conversationChannelId,
+     }];
+     for (const label of directTargets) {
+       destinations.push({
+         key: `direct:${label}`,
+         label: `Direct message · ${label}`,
+         detail: `Only you and ${label}`,
+         scope: "direct",
+         recipient: label,
+         isCurrent: Boolean(conversationPeer && conversationPeer.trim().toLowerCase() === label.trim().toLowerCase()),
+       });
+     }
+     for (const channelItem of stripChannels) {
+       destinations.push({
+         key: `channel:${channelItem.channelId}`,
+         label: `# ${channelItem.channelName}`,
+         detail: "Invite-only channel",
+         scope: "channel",
+         channelId: channelItem.channelId,
+         channelEmoji: channelItem.channelEmoji,
+         isCurrent: conversationChannelId === channelItem.channelId,
+       });
+     }
+     return destinations;
+   })();
+   const openForwardDialog = (item: InterviewChatMessage) => {
+     setPickerFor(null);
+     setForwardError("");
+     const firstAvailable = forwardDestinations.find(destination => !destination.isCurrent);
+     setForwardTargetKey(firstAvailable?.key ?? "");
+     setForwardingFrom(item);
+   };
+   const closeForwardDialog = () => {
+     setForwardingFrom(null);
+     setForwardError("");
+   };
+   const forwardMessage = async () => {
+     const item = forwardingFrom;
+     if (!item) return;
+     if (demoMode) { setForwardError("Forwarding is disabled in this read-only demo."); return; }
+     const destination = forwardDestinations.find(candidate => candidate.key === forwardTargetKey);
+     if (!destination || destination.isCurrent) {
+       setForwardError("Pick a different conversation to forward to.");
+       return;
+     }
+     setForwardError("");
+     setForwarding(true);
+     try {
+       const body = buildForwardedMessage(item, forwardOriginLabel);
+       await sendChat.mutateAsync({
+         data: {
+           author: activeInterviewer,
+           message: body,
+           scope: destination.scope,
+           ...(destination.recipient ? { recipient: destination.recipient } : {}),
+           ...(destination.channelId ? { channelId: destination.channelId } : {}),
+         },
+       });
+       // Refresh the destination so the forwarded copy shows up right away
+       // when the user switches to it.
+       const targetParams = {
+         limit: CHAT_PAGE_SIZE,
+         scope: destination.scope,
+         author: activeInterviewer,
+         ...(destination.recipient ? { peer: destination.recipient } : {}),
+         ...(destination.channelId ? { channelId: destination.channelId } : {}),
+       };
+       void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(targetParams) });
+       setForwardingFrom(null);
+       setForwardNotice(`Forwarded ${item.author}'s message to ${destination.label}.`);
+     } catch (error) {
+       setForwardError(serverErrorMessage(error, "Couldn't forward — nothing was posted. Try again."));
+     } finally {
+       setForwarding(false);
+     }
+   };
     return <section className={`chat-panel relative rounded-3xl border border-[#dce5e5] bg-white p-3 sm:p-4 ${tall ? "chat-panel-tall" : ""}`}>
        {decision && <DecisionOverlay state={decision} reduceMotion={settings.reduceMotion} onDone={handleDecisionDone} />}
        {/* One slim header row: title, conversation picker, and identity share a
@@ -8787,33 +9123,52 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
                {filteredSlashCommands.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">No matching commands.</p>}
             </div>
          </div>}
-            {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#10212b] dark:shadow-[0_12px_32px_rgba(0,0,0,0.4)]" data-testid="mention-menu">
-             <div className="border-b border-[#edf1f1] px-4 py-2.5 dark:border-[#263e49]"><p className="text-xs font-semibold text-[#52666e] dark:text-[#d5e0e0]">People, teams, and events</p><p className="mt-0.5 text-[11px] text-[#8a999d] dark:text-[#a9bbc2]">Search by team number/name or competition. Applicant mentions don’t notify applicants.</p></div>
-            <div className="max-h-64 overflow-y-auto p-1.5">
-                {filteredMentionSuggestions.map((suggestion, index) => <button
+           {mentionOpen && <div id="chat-mention-listbox" role="listbox" aria-label="Mention suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,320px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)] dark:border-[#355663] dark:bg-[#10212b] dark:shadow-[0_12px_32px_rgba(0,0,0,0.4)]" data-testid="mention-menu">
+             <div className="border-b border-[#edf1f1] px-4 py-2.5 dark:border-[#263e49]"><p className="text-xs font-semibold text-[#52666e] dark:text-[#d5e0e0]">People, applicants, teams, events, and shared objects</p><p className="mt-0.5 text-[11px] text-[#8a999d] dark:text-[#a9bbc2]">Search by name, team number, competition, or object title. Applicants aren’t notified by mentions.</p></div>
+             <div className="max-h-72 overflow-y-auto p-1.5">
+               {filteredMentionSuggestions.map((suggestion, index) => {
+                 const isPerson = suggestion.kind === "person";
+                 const ObjectIcon = suggestion.kind === "object"
+                   ? suggestion.object.kind === "document" ? FileText
+                     : suggestion.object.kind === "whiteboard" ? FilePenLine
+                       : suggestion.object.kind === "board" ? ClipboardList
+                         : suggestion.object.kind === "calendar" ? CalendarDays : FileSpreadsheet
+                   : null;
+                 const SuggestionIcon = suggestion.kind === "team" ? Hash : suggestion.kind === "event" ? CalendarDays : ObjectIcon;
+                 const testId = suggestion.kind === "person"
+                   ? `mention-option-${suggestion.token.toLowerCase().replaceAll(" ", "-")}`
+                   : suggestion.kind === "team"
+                     ? `mention-option-ftc-team-${suggestion.team.teamNumber}`
+                     : suggestion.kind === "event"
+                       ? `mention-option-ftc-event-${suggestion.event.code.toLowerCase()}`
+                       : `mention-option-object-${suggestion.object.id}`;
+                 return <button
                    key={suggestion.key}
-                  id={`chat-mention-option-${index}`}
-                  role="option"
-                  aria-selected={index === selectedMentionIndex}
-                  type="button"
-                  onMouseDown={event => event.preventDefault()}
-                  onMouseEnter={() => setMentionActiveIndex(index)}
+                   id={`chat-mention-option-${index}`}
+                   role="option"
+                   aria-selected={index === selectedMentionIndex}
+                   type="button"
+                   onMouseDown={event => event.preventDefault()}
+                   onMouseEnter={() => setMentionActiveIndex(index)}
                    onClick={() => selectMentionSuggestion(suggestion)}
                    className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left transition ${index === selectedMentionIndex ? "bg-[#edf4f3] dark:bg-[#1d3a47]" : "hover:bg-[#edf4f3] dark:hover:bg-[#1d3a47]"}`}
-                   data-testid={suggestion.kind === "person"
-                     ? `mention-option-${suggestion.token.toLowerCase().replaceAll(" ", "-")}`
-                     : `mention-option-ftc-${suggestion.kind}-${suggestion.kind === "team" ? suggestion.team.teamNumber : suggestion.event.code.toLowerCase()}`}
-                >
-                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${suggestion.kind === "person" ? "bg-[#dff4f2] text-[#12737d] dark:bg-[#21434b] dark:text-[#a8e7e2]" : "bg-[#e4f3f1] text-[#137989] dark:bg-[#203f48] dark:text-[#8fd7e0]"}`}>
-                     {suggestion.kind === "person" ? suggestion.initials : suggestion.kind === "team" ? <Hash size={15} /> : <CalendarDays size={15} />}
+                   data-testid={testId}
+                 >
+                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                     isPerson ? "bg-[#dff4f2] text-[#12737d] dark:bg-[#21434b] dark:text-[#a8e7e2]"
+                       : suggestion.kind === "object" ? "bg-[#fdf6dd] text-[#7a5a00] dark:bg-[#3a301b] dark:text-[#f5d779]"
+                         : "bg-[#e4f3f1] text-[#137989] dark:bg-[#203f48] dark:text-[#8fd7e0]"
+                   }`}>
+                     {isPerson ? suggestion.initials : SuggestionIcon && <SuggestionIcon size={15} />}
                    </span>
                    <span className="min-w-0"><span className="block truncate text-sm font-semibold text-[#183a4b] dark:text-[#e8eef2]">{suggestion.label}</span><span className="block truncate text-[11px] text-[#7c8c91] dark:text-[#a9bbc2]">{suggestion.detail || (suggestion.kind === "team" ? "Official FTC team" : "")}</span></span>
-                 </button>)}
+                 </button>;
+               })}
                {applicantMentionsQuery.isFetching && <p className="px-3 py-3 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">Loading applicant suggestions…</p>}
                {applicantMentionsQuery.isError && <p className="px-3 py-3 text-center text-xs text-[#a34d46] dark:text-[#ef948b]">Applicants couldn’t be loaded. Interviewer mentions still work.</p>}
-                {ftcMentionIsLoading && <p className="px-3 py-3 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">Searching FIRST teams and events…</p>}
-                {ftcMentionHasError && <p className="px-3 py-3 text-center text-xs text-[#a34d46] dark:text-[#ef948b]">Some FIRST team or event data couldn’t be loaded.</p>}
-                {filteredMentionSuggestions.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && !ftcMentionIsLoading && !ftcMentionHasError && <p className="px-3 py-4 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc9]">No matching people, teams, or events.</p>}
+               {ftcMentionIsLoading && <p className="px-3 py-3 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc2]">Searching FIRST teams and events…</p>}
+               {ftcMentionHasError && <p className="px-3 py-3 text-center text-xs text-[#a34d46] dark:text-[#ef948b]">Some FIRST team or event data couldn’t be loaded.</p>}
+               {filteredMentionSuggestions.length === 0 && !applicantMentionsQuery.isFetching && !applicantMentionsQuery.isError && !ftcMentionIsLoading && !ftcMentionHasError && <p className="px-3 py-4 text-center text-xs text-[#7c8c91] dark:text-[#a9bbc9]">No matching people, teams, events, or shared objects.</p>}
             </div>
          </div>}
            {channelMentionOpen && <div id="chat-channel-listbox" role="listbox" aria-label="Channel suggestions" className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(45dvh,260px)] w-full max-w-[360px] overflow-y-auto overscroll-contain rounded-2xl border border-[#d5e0e0] bg-white shadow-[0_12px_32px_rgba(24,58,75,0.2)]" data-testid="channel-mention-menu">
@@ -8838,7 +9193,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
             </div>
          </div>}
           {composerMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(60dvh,320px)] w-64 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-1.5 text-card-foreground shadow-xl" data-testid="composer-menu"><button type="button" onClick={() => { setComposerMenuOpen(false); chatFileInputRef.current?.click(); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-upload-files"><Upload size={16} className="text-primary" /><span><span className="block">Upload files</span><span className="block text-[11px] font-normal text-muted-foreground">Images, documents, 3D models, or audio</span></span></button><button type="button" onClick={() => { setComposerMenuOpen(false); setCreateMenuOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-open-create-menu"><Plus size={16} className="text-primary" /><span><span className="block">Create</span><span className="block text-[11px] font-normal text-muted-foreground">Choose a shared workspace item</span></span></button></div>}
-            {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(60dvh,340px)] w-72 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-xl" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-card-foreground">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-primary" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-muted-foreground">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-primary" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-muted-foreground">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending || createSpreadsheetMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-primary" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-muted-foreground">Track tasks, handoffs, and dates</span></span></button><button type="button" onClick={() => void createSharedSpreadsheet()} disabled={createSpreadsheetMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-spreadsheet"><FileSpreadsheet size={17} className="text-primary" /><span><span className="block">Spreadsheet</span><span className="block text-[11px] font-normal text-muted-foreground">A shared worksheet for tryout notes</span></span></button></div>}
+            {createMenuOpen && <div className="absolute bottom-[calc(100%+10px)] left-0 z-30 max-h-[min(60dvh,340px)] w-72 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-card p-2 text-card-foreground shadow-xl" data-testid="create-type-menu"><div className="flex items-center justify-between px-2 pb-1.5 pt-1"><p className="text-xs font-bold text-card-foreground">What would you like to create?</p><button type="button" onClick={() => setCreateMenuOpen(false)} aria-label="Close create menu" data-testid="button-close-create-menu" className="flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted"><X size={15} /></button></div><button type="button" onClick={() => void createSharedDocument()} disabled={createWhiteboard.isPending || sendChat.isPending || createSpreadsheetMutation.isPending || createCalendarMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-document"><FileText size={17} className="text-primary" /><span><span className="block">Document</span><span className="block text-[11px] font-normal text-muted-foreground">Collaborative notes and plans</span></span></button><button type="button" onClick={() => openWhiteboard()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted" data-testid="button-create-whiteboard"><FilePenLine size={17} className="text-primary" /><span><span className="block">Whiteboard</span><span className="block text-[11px] font-normal text-muted-foreground">Sketch ideas together</span></span></button><button type="button" onClick={() => void createSharedBoard()} disabled={createBoardMutation.isPending || sendChat.isPending || createSpreadsheetMutation.isPending || createCalendarMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-board"><ClipboardList size={17} className="text-primary" /><span><span className="block">Board</span><span className="block text-[11px] font-normal text-muted-foreground">Track tasks, handoffs, and dates</span></span></button><button type="button" onClick={() => void createSharedSpreadsheet()} disabled={createSpreadsheetMutation.isPending || sendChat.isPending || createCalendarMutation.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-spreadsheet"><FileSpreadsheet size={17} className="text-primary" /><span><span className="block">Spreadsheet</span><span className="block text-[11px] font-normal text-muted-foreground">A shared worksheet for tryout notes</span></span></button><button type="button" onClick={() => void createSharedCalendar()} disabled={createCalendarMutation.isPending || sendChat.isPending} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-foreground transition hover:bg-muted disabled:opacity-50" data-testid="button-create-calendar"><CalendarDays size={17} className="text-primary" /><span><span className="block">Calendar</span><span className="block text-[11px] font-normal text-muted-foreground">Team schedule, events, and feeds</span></span></button></div>}
          {emojiOpen && <InterviewerChatEmojiPicker
            dark={theme === "dark"}
            customEmojis={customEmojiItems}
@@ -8948,6 +9303,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         {aiReplySavedNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="ai-reply-retry-success">{aiReplySavedNotice}</p>}
         {multiMessageNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="multimessage-notice">{multiMessageNotice}</p>}
         {exportNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="export-notice">{exportNotice}</p>}
+        {forwardNotice && <p className="text-xs font-medium text-primary" role="status" data-testid="forward-notice">{forwardNotice}</p>}
         {chatError && <p className="text-xs text-[#ad4b43]" data-testid="chat-error">{chatError}</p>}
         {pollOpen && <div onKeyDown={event => { if (event.key === "Enter" && (event.target as HTMLElement)?.tagName === "INPUT") { event.preventDefault(); event.stopPropagation(); void submitPoll(); } }} data-testid="chat-poll-form" className="space-y-2 rounded-xl border border-[#c4dcda] bg-[#f4f9f8] p-3 dark:border-[#2f5560] dark:bg-[#13242e]">
           <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#16869a] dark:text-[#6fc3cf]">New poll</p>
@@ -8974,6 +9330,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
           ? <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><DocumentEditor document={activeWhiteboard} activeInterviewer={activeInterviewer} saving={false} error={whiteboardError} readOnly={!canEditCollaboration} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onTitleSave={() => { void qc.invalidateQueries({ queryKey: getListInterviewWhiteboardsQueryKey(chatParams) }); }} /></Suspense>
            : <Suspense fallback={<div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#183a4b]/40 p-4"><div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-[#385762] shadow-2xl">Loading editor…</div></div>}><WhiteboardEditor whiteboard={activeWhiteboard} saving={createWhiteboard.isPending || updateWhiteboard.isPending || sendChat.isPending} error={whiteboardError} readOnly={!canEditCollaboration} onClose={() => { setWhiteboardOpen(false); setActiveWhiteboardId(null); }} onSave={(title, data, share) => { void saveWhiteboard(title, data, share); }} /></Suspense>)}
        {boardOpen && activeBoardId && <BoardEditor boardId={activeBoardId} assignees={mentionLabels} onClose={() => { setBoardOpen(false); setActiveBoardId(null); }} />}
+       {calendarOpen && activeCalendarId && <CalendarEditor calendarId={activeCalendarId} assignees={mentionLabels} onClose={() => { setCalendarOpen(false); setActiveCalendarId(null); }} />}
        {channelDialogOpen && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#183a4b]/40 p-4" role="dialog" aria-modal="true" aria-label={channelDialogId ? "Channel settings" : "New invite-only channel"} data-testid="chat-channel-dialog">
          <div className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-[#dce5e5] bg-white p-5 shadow-2xl">
            <div className="flex items-start justify-between gap-3">
@@ -9051,6 +9408,58 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
            </div>}
          </div>
        </div>}
+       {forwardingFrom && <ModalOverlay onClose={closeForwardDialog} label="Forward message" testId="chat-forward-dialog" className="max-h-[85dvh] w-full max-w-md rounded-3xl border border-[#dce5e5] bg-white p-5 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c]">
+         <div className="flex items-start justify-between gap-3">
+           <div className="min-w-0"><h3 className="font-semibold text-[#385762] dark:text-[#e8eef2]">Forward message</h3><p className="mt-1 text-xs text-[#7c8c91] dark:text-[#a8bbc2]">Pick a conversation — a copy of this message is posted there under your name.</p></div>
+           <button type="button" onClick={closeForwardDialog} aria-label="Close forward dialog" data-testid="button-close-forward-dialog" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[#718189] transition hover:bg-[#edf1f1] dark:hover:bg-[#1d303c]"><X size={15} /></button>
+         </div>
+         <div className="mt-3 rounded-xl border border-[#e1e9e8] bg-[#f7faf9] p-2.5 dark:border-[#2a3f4c] dark:bg-[#10232d]" data-testid="forward-preview">
+           <p className="text-[10px] font-semibold uppercase tracking-[.08em] text-[#7c8c91] dark:text-[#93a8b2]">{forwardOriginLabel} · From {forwardingFrom.author}</p>
+           <p className="mt-1 line-clamp-3 whitespace-pre-wrap break-words text-xs leading-5 text-[#52666e] dark:text-[#c0d3db]">{forwardingFrom.message}</p>
+           {forwardingFrom.poll?.options?.length ? <p className="mt-1 text-[10px] font-semibold text-[#7c8c91] dark:text-[#93a8b2]">Poll: {forwardingFrom.poll.options.map(option => option.text).join(" · ")}</p> : null}
+         </div>
+         <div className="mt-3 max-h-64 space-y-1 overflow-y-auto rounded-xl border border-[#dce5e5] bg-[#f7faf9] p-1.5 dark:border-[#2a3f4c] dark:bg-[#10232d]" role="radiogroup" aria-label="Forward destination" data-testid="forward-destination-list">
+           {forwardDestinations.map(destination => {
+             const selected = destination.key === forwardTargetKey;
+             const channelEmoji = destination.channelEmoji;
+             const showEmoji = channelEmoji && !channelEmoji.startsWith(":");
+             const initials = destination.recipient
+               ? destination.recipient.trim().split(/\s+/).slice(0, 2).map(part => part[0]?.toUpperCase() ?? "").join("") || "?"
+               : "";
+             return <button
+               key={destination.key}
+               type="button"
+               role="radio"
+               aria-checked={selected}
+               disabled={destination.isCurrent}
+               onClick={() => setForwardTargetKey(destination.key)}
+               data-testid={`forward-destination-${destination.key}`}
+               className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition disabled:cursor-not-allowed disabled:opacity-55 ${selected ? "bg-[#e3f4f2] ring-1 ring-inset ring-[#16869a] dark:bg-[#15323a]" : "hover:bg-white dark:hover:bg-[#16282f]"}`}
+             >
+               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e4e9fb] text-[11px] font-bold uppercase leading-none text-[#2e4390] dark:bg-[#203d52] dark:text-[#b4c7ff]" aria-hidden="true">
+                 {destination.scope === "shared"
+                   ? <UsersRound size={15} />
+                   : destination.scope === "channel"
+                     ? (showEmoji ? <span className="text-base normal-case">{channelEmoji}</span> : <Hash size={15} />)
+                     : initials}
+               </span>
+               <span className="min-w-0 flex-1">
+                 <span className="block truncate text-xs font-semibold text-[#183a4b] dark:text-[#e8eef2]">{destination.label}</span>
+                 <span className="block truncate text-[10px] text-[#7c8c91] dark:text-[#93a8b2]">{destination.detail}</span>
+               </span>
+               {destination.isCurrent
+                 ? <span className="shrink-0 rounded-full bg-[#edf1f1] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[.08em] text-[#718189] dark:bg-[#1d303c] dark:text-[#93a8b2]">Current</span>
+                 : selected ? <Check size={15} className="shrink-0 text-[#16869a] dark:text-[#6fd3df]" aria-hidden="true" /> : null}
+             </button>;
+           })}
+           {forwardDestinations.every(destination => destination.isCurrent) && <p className="px-2 py-3 text-center text-xs text-[#7c8c91] dark:text-[#93a8b2]">No other conversations yet — invite a teammate or create a channel, then forward here.</p>}
+         </div>
+         {forwardError && <p className="mt-2 text-xs font-semibold text-[#ad4b43] dark:text-[#ffaaa2]" role="alert" data-testid="forward-error">{forwardError}</p>}
+         <div className="mt-4 flex gap-2">
+           <button type="button" onClick={() => void forwardMessage()} disabled={forwarding || !forwardTargetKey} data-testid="button-confirm-forward" className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-[#16869a] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#106d7a] disabled:opacity-50"><Forward size={13} aria-hidden="true" />{forwarding ? "Forwarding…" : "Forward message"}</button>
+           <button type="button" onClick={closeForwardDialog} disabled={forwarding} className="rounded-lg border border-[#d5e0e0] bg-white px-3 py-2 text-xs font-semibold text-[#52666e] transition hover:bg-[#f4f8f7] disabled:opacity-50 dark:border-[#355663] dark:bg-[#172b38] dark:text-[#c0d3db]">Cancel</button>
+         </div>
+       </ModalOverlay>}
   </section>;
 }
 function Queue() { const streamHealthy = useRealtimeHealthy();
@@ -9062,7 +9471,6 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
   const canManageQueue = canSessionUsePermission(session.data, "queue.manage");
   const canViewApplicants = canSessionUsePermission(viewSession, "applicants.view");
   const canEditApplicants = canSessionUsePermission(session.data, "applicants.edit");
-  const canViewChat = canSessionUsePermission(viewSession, "chat.view");
   const queue = useGetQueue({ query: { queryKey: getGetQueueQueryKey(), enabled: canViewQueue, refetchInterval: streamHealthy ? false : (refreshMs )} });
   const advance = useAdvanceQueue();
   const callback = useCallbackQueue();
@@ -9102,14 +9510,14 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     if (!canManageQueue) return;
     updateApplicant.mutate({ id, data: { interviewer } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
   };
-  const finishApplicant = (id: string) => {
+  const finishApplicant = useCallback((id: string) => {
     if (!canManageQueue) return;
     advance.mutate({ data: { applicantId: id } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
-  };
-  const setDecision = (id: string, decision: string) => {
+  }, [advance, canManageQueue, qc]);
+  const setDecision = useCallback((id: string, decision: string) => {
     if (!canManageQueue) return;
     updateApplicant.mutate({ id, data: { interviewDecision: decision } }, { onSuccess: () => { qc.invalidateQueries({ queryKey: getGetQueueQueryKey() }); qc.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); qc.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } });
-  };
+  }, [canManageQueue, qc, updateApplicant]);
   useEffect(() => {
     if (!resetOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -9177,7 +9585,7 @@ function Queue() { const streamHealthy = useRealtimeHealthy();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [queue.data, session.data?.label, focusedApplicantId]);
+  }, [queue.data, session.data?.label, focusedApplicantId, finishApplicant, setDecision]);
   if (queue.isLoading) return <><PageHeading eyebrow="Interview bay / live" title="Queue control" /><Skeleton className="h-64" /></>;
   if (queue.isError || !queue.data) return <ErrorState onRetry={() => queue.refetch()} />;
   const q = queue.data;
@@ -9541,7 +9949,7 @@ function Display() { const streamHealthy = useRealtimeHealthy();
       }
       lastUpdate.current = display.data.updatedAt;
     }
-  }, [display.data, isPreview]);
+  }, [display.data, displayTeamCode, isPreview]);
   if (display.isLoading) return <div className="min-h-[100dvh] bg-[#0d1b28] p-12 text-white"><Skeleton className="h-10 w-48" /></div>; if (display.isError || !display.data) return <div className="flex min-h-[100dvh] items-center justify-center bg-[#0d1b28] text-white"><ErrorState compact onRetry={() => display.refetch()} /></div>;
   const liveDisplay = display.data as DisplayState; const previewHeadline = isPreview ? (previewParams.get("headline") || "") : ""; const previewSubheadline = isPreview ? (previewParams.get("subheadline") || "") : ""; const d = isPreview ? { ...liveDisplay, headline: previewHeadline || liveDisplay.headline, subheadline: previewSubheadline || liveDisplay.subheadline } : liveDisplay; const applicants = ((isPreview && previewParams.get("showNames") === "0" ? [] : liveDisplay.currentApplicants) ?? []); const displayGridCols = applicants.length <= 1 ? "" : applicants.length === 2 ? "sm:grid-cols-2" : applicants.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2 lg:grid-cols-4"; const displayGridWidth = applicants.length >= 4 ? "max-w-6xl" : "max-w-4xl";
   return <main className={`${fullscreen.isFullscreen ? "fixed inset-0 z-50 w-screen" : ""} display-grid noise relative flex h-[100dvh] flex-col overflow-hidden bg-[#0d1b28] text-white`} data-testid="display-screen"><div className="scanline absolute left-0 top-[31%] h-px w-full opacity-50" /><header className="relative flex shrink-0 items-center justify-between p-5 md:p-7"><Logo dark teamName={d.teamName} /><div className="flex items-center gap-2"><FullscreenButton active={fullscreen.isFullscreen} onClick={fullscreen.toggleFullscreen} dark /><span className="hidden h-2 w-2 animate-pulse rounded-full bg-[#51d2ad] sm:block" /></div></header><section className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-7 py-4 text-center md:px-16"><p className="mono text-xs uppercase tracking-[.32em] text-[#f8c84a]">{d.mode || "Live interview queue"}</p><h1 className="mt-4 text-[clamp(2.4rem,6.5vw,6.8rem)] font-semibold leading-[.9] tracking-[-.07em]">{d.headline || "Please come to your corresponding interviewer"}</h1><p className="mx-auto mt-3 max-w-2xl text-[clamp(1rem,2vw,1.45rem)] text-[#9db6bd]">{d.subheadline || "Your interview team is ready for you."}</p>{applicants.length > 0 && <div className={`mx-auto mt-8 grid max-h-[45vh] w-full ${displayGridWidth} gap-5 overflow-hidden ${displayGridCols}`}>{applicants.map((applicant) => <div key={applicant.id} className="relative overflow-hidden rounded-3xl border border-[#39616d] bg-[#142c3b]/80 px-6 py-7 text-left backdrop-blur-sm" data-testid={`display-applicant-${applicant.id}`}><span className="mono text-[10px] uppercase tracking-[.25em] text-[#6f9ba2]">Corresponding interviewer</span><p className={`mt-4 break-words font-semibold tracking-[-.04em] ${applicants.length >= 4 ? "text-2xl md:text-3xl" : "text-3xl md:text-5xl"}`}>{applicant.name}</p><p className="mt-2 text-sm text-[#9db6bd]">Grade {applicant.grade} <span className="mx-2 text-[#4a7180]">/</span> {applicant.lane}</p><div className="absolute bottom-0 left-0 h-1 w-full bg-[#f8c84a]" /></div>)}</div>}{!applicants.length && <DisplayGallery />}</section><footer className="flex shrink-0 items-end justify-between p-5 md:p-7"><span className="mono text-[10px] uppercase tracking-[.2em] text-[#66848d]">Robotics team · Live interview operations</span><span className="mono text-[10px] text-[#66848d]">{new Date(d.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></footer>{!isPreview && <audio ref={audioRef} preload="none" data-testid="display-announcement-audio" />}</main>;
@@ -9637,6 +10045,8 @@ function activityMeta(tool: string): { label: string; Icon: LucideIcon } {
   if (tool === "create_document") return { label: "Created document", Icon: FileText };
   if (tool === "create_spreadsheet") return { label: "Created spreadsheet", Icon: FileSpreadsheet };
   if (tool === "create_whiteboard") return { label: "Created whiteboard", Icon: FilePenLine };
+  if (tool === "create_calendar") return { label: "Created calendar", Icon: CalendarDays };
+  if (tool === "edit_calendar") return { label: "Edited calendar", Icon: CalendarDays };
   if (tool === "edit_whiteboard") return { label: "Edited whiteboard", Icon: Pencil };
   if (tool === "edit_board") return { label: "Edited task board", Icon: ClipboardList };
   if (tool === "edit_document") return { label: "Edited document", Icon: Pencil };
@@ -9856,7 +10266,6 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const liveActivitiesRef = useRef<AssistantActivity[]>([]);
   const [attachments, setAttachments] = useState<{ fileName: string; objectPath: string; added: number; updated: number }[]>([]);
   const [attachError, setAttachError] = useState("");
-  const [attaching, setAttaching] = useState(false);
   const [onshapeConnected, setOnshapeConnected] = useState(false);
   const onshapeConnectedRef = useRef(false);
   const [onshapeReconnectRequired, setOnshapeReconnectRequired] = useState(false);
@@ -10017,7 +10426,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       },
     },
   });
-  const modelOptions = assistantModels.data?.items ?? [];
+  const modelOptions = useMemo(() => assistantModels.data?.items ?? [], [assistantModels.data?.items]);
   const rememberModel = (model: string) => {
     setSelectedModel(model);
     try {
@@ -10169,7 +10578,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     };
     void check();
     return () => { active = false; };
-  }, [assistantIdentity]);
+  }, [assistantIdentity, assistantSession.data?.interviewerId]);
 
   const refreshCustomMcpConnections = useCallback(async () => {
     if (!assistantSession.data?.interviewerId) return [];
@@ -10382,7 +10791,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     setCustomMcpApiKey("");
   };
 
-  const updateOnshapeStatus = (connected: boolean, detectExpired = false) => {
+  const updateOnshapeStatus = useCallback((connected: boolean, detectExpired = false) => {
     if (detectExpired && onshapeConnectedRef.current && !connected) {
       setOnshapeReconnectRequired(true);
       if (onshapeRetryQuestionRef.current && !questionDraftRef.current.trim()) {
@@ -10393,9 +10802,9 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     if (connected) setOnshapeReconnectRequired(false);
     onshapeConnectedRef.current = connected;
     setOnshapeConnected(connected);
-  };
+  }, [setQuestion]);
 
-  const refreshOnshapeStatus = async (detectExpired = false) => {
+  const refreshOnshapeStatus = useCallback(async (detectExpired = false) => {
     try {
       const authToken = getStoredAuthToken();
       const response = await fetch(`${import.meta.env.BASE_URL}api/onshape-mcp/status`, {
@@ -10408,7 +10817,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
     } catch {
       // Keep the last known status while the API is temporarily unavailable.
     }
-  };
+  }, [updateOnshapeStatus]);
 
   const connectOnshape = async () => {
     setOnshapeError("");
@@ -10519,7 +10928,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         creatingRef.current = false;
       },
     });
-  }, [scopedConversations, conversations.isLoading, activeConversationId, createConversation, partsMode]);
+  }, [scopedConversations, conversations.isLoading, activeConversationId, createConversation, partsMode, queryClient]);
 
   useEffect(() => {
     if (isStreaming || ask.isPending) return;
@@ -10575,14 +10984,13 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       void queryClient.invalidateQueries({ queryKey: getListPartsCatalogQueryKey() });
     }
     void refreshOnshapeStatus(true);
-  }, [activeConversationId, assistantPromptQueue.data?.items, partsMode]);
+  }, [activeConversationId, assistantPromptQueue.data?.items, partsMode, queryClient, refreshOnshapeStatus]);
 
   const attachFile = async (file: File) => {
     setAttachError("");
     const isExcel = /\.xlsx?$/i.test(file.name);
     if (!/\.(csv|tsv|xlsx|xls)$/i.test(file.name)) { setAttachError("Attach a roster file: CSV, TSV, or Excel."); return; }
     if (file.size > 15 * 1024 * 1024) { setAttachError("Files must be under 15 MB."); return; }
-    setAttaching(true);
     try {
       const contentType = file.type || (isExcel ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "text/csv");
       const requested = await attachmentUpload.mutateAsync({ data: { name: file.name, size: file.size, contentType } });
@@ -10594,8 +11002,6 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
       setAttachments(current => [...current, { fileName: file.name, objectPath: requested.objectPath, added: filePreview.diff.added, updated: filePreview.diff.updated }]);
     } catch {
       setAttachError("The file could not be attached. Try again.");
-    } finally {
-      setAttaching(false);
     }
   };
 
@@ -11582,7 +11988,7 @@ function AttendancePage() { const streamHealthy = useRealtimeHealthy();
         <button onClick={clearMarks} disabled={!canManageAttendance || updateApplicant.isPending} data-testid="button-attendance-clear" title="Reset everyone to unmarked (seats are kept)" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2] disabled:opacity-50">Clear marks</button>
         <button onClick={() => void copySummary()} data-testid="button-attendance-copy" className="rounded-xl border border-[#d5e0e0] px-4 py-2 text-xs font-semibold text-[#63747c] hover:bg-[#eef3f2]">{copied ? "Copied!" : "Copy summary"}</button>
       </div>
-      {visible.length ? <AttendancePanel applicants={visible} pending={updateApplicant.isPending} onMark={markAttendance} onMarkAll={markAllHere} /> : <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]">No students match this filter.</p>}
+      {visible.length ? <AttendancePanel applicants={visible} pending={updateApplicant.isPending} onMark={markAttendance} /> : <p className="rounded-2xl border border-[#dce5e5] bg-white p-6 text-center text-sm text-[#7c8c91]">No students match this filter.</p>}
     </>}
   </div>;
 }
