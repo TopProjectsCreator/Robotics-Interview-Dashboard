@@ -3363,7 +3363,7 @@ export const GetFtcTeamProfileResponse = zod.object({
 
 
 /**
- * @summary Get an FTC event profile and its teams
+ * @summary Get an FTC event profile, attending teams, and released matches
  */
 export const getFtcEventProfilePathEventCodeMin = 3;
 export const getFtcEventProfilePathEventCodeMax = 20;
@@ -3384,6 +3384,13 @@ export const getFtcEventProfileQuerySeasonMax = 2100;
 export const GetFtcEventProfileQueryParams = zod.object({
   "season": zod.coerce.number().int().min(getFtcEventProfileQuerySeasonMin).max(getFtcEventProfileQuerySeasonMax).optional()
 })
+
+export const getFtcEventProfileResponseMatchesItemSeriesMin = 0;
+
+
+
+
+
 
 export const GetFtcEventProfileResponse = zod.object({
   "season": zod.number().int(),
@@ -3414,6 +3421,18 @@ export const GetFtcEventProfileResponse = zod.object({
   "rookieYear": zod.number().int().nullable(),
   "robotName": zod.string().nullable(),
   "homeRegion": zod.string().nullable()
+})),
+  "matches": zod.array(zod.object({
+  "description": zod.string().nullable(),
+  "tournamentLevel": zod.enum(['qualification', 'playoff', 'practice', 'other']),
+  "series": zod.number().int().min(getFtcEventProfileResponseMatchesItemSeriesMin).nullable(),
+  "matchNumber": zod.number().int().min(1),
+  "redTeamNumbers": zod.array(zod.number().int().min(1)),
+  "blueTeamNumbers": zod.array(zod.number().int().min(1)),
+  "redScore": zod.number().nullable(),
+  "blueScore": zod.number().nullable(),
+  "resultStatus": zod.enum(['scheduled', 'unavailable', 'final', 'tie']),
+  "winningAlliance": zod.union([zod.literal('red'),zod.literal('blue'),zod.literal('tie'),zod.literal(null)]).nullable()
 }))
 })
 

@@ -15,7 +15,7 @@ import {
   useGetFtcEventProfile,
   useGetFtcTeamProfile,
 } from "@workspace/api-client-react";
-import type { FtcEvent, FtcTeam } from "@workspace/api-client-react";
+import type { FtcEvent, FtcEventMatch, FtcTeam } from "@workspace/api-client-react";
 import { ModalOverlay } from "./ModalOverlay";
 
 export type FtcMentionReference =
@@ -339,13 +339,15 @@ function FtcEventDetails({
   const query = useGetFtcEventProfile(reference.eventCode, { season: reference.season }, {
     query: {
       queryKey: getGetFtcEventProfileQueryKey(reference.eventCode, { season: reference.season }),
-      staleTime: 5 * 60 * 1000,
+      staleTime: 20 * 1000,
+      refetchInterval: 30 * 1000,
+      refetchIntervalInBackground: false,
       retry: false,
     },
   });
-  if (query.isLoading) return <LoadingProfile label="Loading official event details…" />;
-  if (query.isError || !query.data) return <ErrorProfile onRetry={() => void query.refetch()} />;
-  const { event, teams } = query.data;
+  if (query.isLoading) return <LoadingProfile label="Loading official event details and matches…" />;
+  if (query.isError || !query.data) return <ErrorProfile message="FIRST event details and match results could not be loaded." onRetry={() => void query.refetch()} />;
+  const { event, teams, matches } = query.data;
   if (!event) return <p className="rounded-xl bg-[#fff7e2] p-4 text-sm text-[#79580e] dark:bg-[#352e1a] dark:text-[#f0d77c]">This event is not listed for the {reference.season} season.</p>;
   return (
     <div className="space-y-5">
@@ -359,6 +361,15 @@ function FtcEventDetails({
         </div>
         <div className="mt-4"><EventFields event={event} /></div>
       </section>
+      <section aria-labelledby="ftc-event-matches-heading" data-testid="ftc-event-matches">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h3 id="ftc-event-matches-heading" className="text-[11px] font-bold uppercase tracking-[.1em] text-[#5d7178] dark:text-[#b2c1c7]">Matchups and results</h3>
+          <span className="text-xs font-medium text-[#61747a] dark:text-[#b0c0c7]">{matches.length} released</span>
+        </div>
+        {matches.length
+          ? <div className="grid gap-2 sm:grid-cols-2">{matches.map((match, index) => <FtcMatchCard key={`${match.tournamentLevel}-${match.series ?? "s"}-${match.matchNumber}-${index}`} match={match} />)}</div>
+          : <p className="rounded-xl border border-dashed border-[#d2dfdf] px-3 py-4 text-sm text-[#75858a] dark:border-[#35515e] dark:text-[#a9bbc2]" data-testid="ftc-event-matches-empty">No matchups have been released for this event yet.</p>}
+      </section>
       <section>
         <div className="mb-2 flex items-center justify-between gap-3">
           <SectionLabel>Teams attending</SectionLabel>
@@ -368,6 +379,83 @@ function FtcEventDetails({
           ? <div className="grid gap-2 sm:grid-cols-2">{teams.map(team => <TeamSummary key={team.teamNumber} team={team} season={reference.season} onNavigate={onNavigate} />)}</div>
           : <p className="rounded-xl border border-dashed border-[#d2dfdf] px-3 py-4 text-sm text-[#75858a] dark:border-[#35515e] dark:text-[#a9bbc2]">No attending teams are listed yet.</p>}
       </section>
+    </div>
+  );
+}
+
+function FtcMatchCard({ match }: { match: FtcEventMatch }) {
+  const level = match.tournamentLevel === "other"
+    ? "Event"
+    : match.tournamentLevel.charAt(0).toUpperCase() + match.tournamentLevel.slice(1);
+  const title = match.description?.trim() || `${level} match ${match.matchNumber}`;
+  const status = match.resultStatus === "scheduled"
+    ? "Awaiting results"
+    : match.resultStatus === "unavailable"
+      ? "Official result posted; scores unavailable"
+      : match.resultStatus === "tie"
+        ? "Tie"
+        : match.winningAlliance === "red"
+          ? "Red alliance won"
+          : match.winningAlliance === "blue"
+            ? "Blue alliance won"
+            : "Official result posted";
+  const hasScores = match.resultStatus === "final" || match.resultStatus === "tie";
+  return (
+    <article
+      aria-label={`${title}, ${status}`}
+      className="min-w-0 rounded-xl border border-[#dce8e8] bg-white/75 p-3 dark:border-[#304955] dark:bg-[#122630]/70"
+      data-testid={`ftc-match-${match.tournamentLevel}-${match.series ?? "s"}-${match.matchNumber}`}
+    >
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <h4 className="min-w-0 break-words text-sm font-bold text-[#183a4b] dark:text-[#edf5f7]">{title}</h4>
+        {match.series !== null && match.series > 0 && (
+          <span className="shrink-0 text-[10px] font-semibold text-[#61747a] dark:text-[#b0c0c7]">Series {match.series}</span>
+        )}
+      </div>
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <AllianceScore
+          name="Red alliance"
+          teamNumbers={match.redTeamNumbers}
+          score={hasScores ? match.redScore : null}
+          tone="red"
+        />
+        <AllianceScore
+          name="Blue alliance"
+          teamNumbers={match.blueTeamNumbers}
+          score={hasScores ? match.blueScore : null}
+          tone="blue"
+        />
+      </div>
+      <p className="mt-3 text-xs font-semibold text-[#52666e] dark:text-[#c1d0d7]" data-testid="ftc-match-result-status">
+        {status}
+      </p>
+    </article>
+  );
+}
+
+function AllianceScore({
+  name,
+  teamNumbers,
+  score,
+  tone,
+}: {
+  name: "Red alliance" | "Blue alliance";
+  teamNumbers: number[];
+  score: number | null;
+  tone: "red" | "blue";
+}) {
+  const colorClasses = tone === "red"
+    ? "border-[#e8c8c4] bg-[#fff6f4] text-[#9f3b33] dark:border-[#754943] dark:bg-[#331f20] dark:text-[#efaaa2]"
+    : "border-[#c6d9ee] bg-[#f2f7fc] text-[#285987] dark:border-[#395a78] dark:bg-[#1c2f42] dark:text-[#a8c8ee]";
+  return (
+    <div className={`min-w-0 rounded-lg border px-3 py-2 ${colorClasses}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-[.08em]">{name}</span>
+        {score !== null && <span className="font-mono text-base font-bold tabular-nums" aria-label={`${name} score ${score}`}>{score}</span>}
+      </div>
+      <p className="mt-1 break-words font-mono text-xs font-semibold" aria-label={`${name} teams ${teamNumbers.join(", ")}`}>
+        {teamNumbers.join(" · ")}
+      </p>
     </div>
   );
 }
@@ -406,6 +494,6 @@ function LoadingProfile({ label }: { label: string }) {
   return <div role="status" data-testid="status-ftc-loading" className="flex items-center gap-3 rounded-xl border border-[#dce8e8] bg-[#f7faf9] p-4 text-sm text-[#52666e] dark:border-[#304955] dark:bg-[#182d37] dark:text-[#c1d0d7]"><span className="h-4 w-4 animate-spin rounded-full border-2 border-[#16869a] border-t-transparent dark:border-[#6fc3cf] dark:border-t-transparent" />{label}</div>;
 }
 
-function ErrorProfile({ onRetry }: { onRetry: () => void }) {
-  return <div role="alert" data-testid="status-ftc-error" className="rounded-xl border border-[#e8c8c4] bg-[#fff6f4] p-4 dark:border-[#754943] dark:bg-[#331f20]"><p className="text-sm font-semibold text-[#9f3b33] dark:text-[#efaaa2]">FIRST data could not be loaded.</p><p className="mt-1 text-xs text-[#80534e] dark:text-[#d7a39d]">Check the connection and try again.</p><button type="button" onClick={onRetry} data-testid="button-retry-ftc-details" className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white hover:bg-[#106d7a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:bg-[#1d7381] dark:hover:bg-[#248a9b] dark:focus-visible:outline-[#8fd7e0]">Retry<ArrowUpRight size={13} /></button></div>;
+function ErrorProfile({ onRetry, message = "FIRST data could not be loaded." }: { onRetry: () => void; message?: string }) {
+  return <div role="alert" data-testid="status-ftc-error" className="rounded-xl border border-[#e8c8c4] bg-[#fff6f4] p-4 dark:border-[#754943] dark:bg-[#331f20]"><p className="text-sm font-semibold text-[#9f3b33] dark:text-[#efaaa2]">{message}</p><p className="mt-1 text-xs text-[#80534e] dark:text-[#d7a39d]">Check the connection and try again.</p><button type="button" onClick={onRetry} data-testid="button-retry-ftc-details" className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg bg-[#16869a] px-3 text-xs font-semibold text-white hover:bg-[#106d7a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:bg-[#1d7381] dark:hover:bg-[#248a9b] dark:focus-visible:outline-[#8fd7e0]">Retry<ArrowUpRight size={13} /></button></div>;
 }

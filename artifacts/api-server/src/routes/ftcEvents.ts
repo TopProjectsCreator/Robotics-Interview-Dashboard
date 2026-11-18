@@ -104,8 +104,8 @@ router.get("/queue/chat/ftc/events/:eventCode", requireAdmin, async (req, res): 
     }
     res.json(GetFtcEventProfileResponse.parse({ season, ...profile }));
   } catch (error) {
-    req.log.warn({ err: error, season, eventCode: path.data.eventCode }, "FTC event profile request failed");
-    res.status(502).json({ error: "FTC event details could not be loaded right now." });
+    req.log.warn({ err: error, season, eventCode: path.data.eventCode }, "FTC event details or match results could not be loaded");
+    res.status(502).json({ error: "FTC event details and match results could not be loaded right now." });
   }
 });
 

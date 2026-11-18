@@ -2859,10 +2859,67 @@ export interface FtcTeamProfileResponse {
   events: FtcEvent[];
 }
 
+export type FtcEventMatchTournamentLevel = typeof FtcEventMatchTournamentLevel[keyof typeof FtcEventMatchTournamentLevel];
+
+
+export const FtcEventMatchTournamentLevel = {
+  qualification: 'qualification',
+  playoff: 'playoff',
+  practice: 'practice',
+  other: 'other',
+} as const;
+
+export type FtcEventMatchResultStatus = typeof FtcEventMatchResultStatus[keyof typeof FtcEventMatchResultStatus];
+
+
+export const FtcEventMatchResultStatus = {
+  scheduled: 'scheduled',
+  unavailable: 'unavailable',
+  final: 'final',
+  tie: 'tie',
+} as const;
+
+/**
+ * @nullable
+ */
+export type FtcEventMatchWinningAlliance = typeof FtcEventMatchWinningAlliance[keyof typeof FtcEventMatchWinningAlliance] | null;
+
+
+export const FtcEventMatchWinningAlliance = {
+  red: 'red',
+  blue: 'blue',
+  tie: 'tie',
+} as const;
+
+export interface FtcEventMatch {
+  /** @nullable */
+  description: string | null;
+  tournamentLevel: FtcEventMatchTournamentLevel;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  series: number | null;
+  /** @minimum 1 */
+  matchNumber: number;
+  /** @items.minimum 1 */
+  redTeamNumbers: number[];
+  /** @items.minimum 1 */
+  blueTeamNumbers: number[];
+  /** @nullable */
+  redScore: number | null;
+  /** @nullable */
+  blueScore: number | null;
+  resultStatus: FtcEventMatchResultStatus;
+  /** @nullable */
+  winningAlliance: FtcEventMatchWinningAlliance;
+}
+
 export interface FtcEventProfileResponse {
   season: number;
   event: FtcEvent | null;
   teams: FtcTeam[];
+  matches: FtcEventMatch[];
 }
 
 export type FtcGlobePointKind = typeof FtcGlobePointKind[keyof typeof FtcGlobePointKind];

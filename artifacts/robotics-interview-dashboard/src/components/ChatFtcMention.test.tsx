@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatFtcMentionProvider, ChatFtcMentionToken } from "./ChatFtcMention";
 import { useGetFtcEventProfile, useGetFtcTeamProfile } from "@workspace/api-client-react";
@@ -98,6 +98,20 @@ const eventProfile = {
   season: 2026,
   event: teamProfile.events[0],
   teams: [teamProfile.team],
+  matches: [],
+};
+
+const releasedMatch = {
+  description: "Qualification 1",
+  tournamentLevel: "qualification" as const,
+  series: 0,
+  matchNumber: 1,
+  redTeamNumbers: [23332, 18439],
+  blueTeamNumbers: [11506, 12993],
+  redScore: 42,
+  blueScore: 39,
+  resultStatus: "final" as const,
+  winningAlliance: "red" as const,
 };
 
 function openTeamWidget() {
@@ -217,6 +231,96 @@ describe("FTC chat mention previews", () => {
     expect(screen.queryByText(/Showing the first/i)).not.toBeInTheDocument();
   });
 
+  it("shows released match teams, official scores, and the winning alliance", () => {
+    vi.mocked(useGetFtcEventProfile).mockReturnValue({
+      data: { ...eventProfile, matches: [releasedMatch] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    openEventWidget();
+
+    const card = screen.getByTestId("ftc-match-qualification-0-1");
+    expect(card).toHaveAccessibleName("Qualification 1, Red alliance won");
+    expect(card).toHaveTextContent("23332 · 18439");
+    expect(card).toHaveTextContent("11506 · 12993");
+    expect(card).toHaveTextContent("42");
+    expect(card).toHaveTextContent("39");
+    expect(card).toHaveTextContent("Red alliance won");
+  });
+
+  it("labels scheduled and unavailable matches without inventing scores", () => {
+    vi.mocked(useGetFtcEventProfile).mockReturnValue({
+      data: {
+        ...eventProfile,
+        matches: [
+          {
+            ...releasedMatch,
+            description: "Qualification 2",
+            matchNumber: 2,
+            redScore: null,
+            blueScore: null,
+            resultStatus: "scheduled",
+            winningAlliance: null,
+          },
+          {
+            ...releasedMatch,
+            description: "Playoff 1",
+            tournamentLevel: "playoff",
+            series: 1,
+            redScore: null,
+            blueScore: 18,
+            resultStatus: "unavailable",
+            winningAlliance: null,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    openEventWidget();
+
+    const scheduled = screen.getByTestId("ftc-match-qualification-0-2");
+    expect(scheduled).toHaveTextContent("Awaiting results");
+    expect(screen.queryByLabelText("Red alliance score 0")).not.toBeInTheDocument();
+    const unavailable = screen.getByTestId("ftc-match-playoff-1-1");
+    expect(unavailable).toHaveTextContent("Official result posted; scores unavailable");
+    expect(screen.queryByLabelText("Blue alliance score 18")).not.toBeInTheDocument();
+  });
+
+  it("shows a tie and an empty state when FIRST has no released matchups", () => {
+    vi.mocked(useGetFtcEventProfile).mockReturnValue({
+      data: {
+        ...eventProfile,
+        matches: [{
+          ...releasedMatch,
+          redScore: 0,
+          blueScore: 0,
+          resultStatus: "tie",
+          winningAlliance: "tie",
+        }],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    openEventWidget();
+    expect(screen.getByTestId("ftc-match-result-status")).toHaveTextContent("Tie");
+    expect(screen.getByTestId("ftc-match-qualification-0-1")).toHaveTextContent("0");
+    fireEvent.click(screen.getByTestId("button-close-ftc-details"));
+    cleanup();
+
+    vi.mocked(useGetFtcEventProfile).mockReturnValue({
+      data: eventProfile,
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    } as never);
+    openEventWidget();
+    expect(screen.getByTestId("ftc-event-matches-empty")).toHaveTextContent("No matchups have been released");
+  });
+
   it("uses one missing-value treatment for null and blank fields without creating invalid links", () => {
     vi.mocked(useGetFtcTeamProfile).mockReturnValue({
       data: {
@@ -317,6 +421,7 @@ describe("FTC chat mention previews", () => {
     } as never);
     openEventWidget();
 
+    expect(screen.getByTestId("status-ftc-error")).toHaveTextContent("FIRST event details and match results could not be loaded.");
     const retry = screen.getByTestId("button-retry-ftc-details");
     expect(retry).toHaveClass("focus-visible:outline");
     fireEvent.click(retry);
@@ -357,6 +462,6 @@ describe("FTC chat mention previews", () => {
     openTeamWidget();
     fireEvent.click(screen.getByTestId("ftc-team-event-cafo"));
 
-    expect(screen.getByRole("status")).toHaveTextContent("Loading official event details…");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading official event details and matches…");
   });
 });

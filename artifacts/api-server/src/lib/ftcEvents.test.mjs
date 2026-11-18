@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
+import { GetFtcEventProfileResponse } from "../../../../lib/api-zod/src/generated/api.ts";
 
 const {
   clearFtcEventCacheForTests,
@@ -249,6 +250,7 @@ test("team and event detail requests include the requested season", async (t) =>
     if (href.endsWith("/2024/teams?eventCode=CAFO")) {
       return response({ teams: [{ teamNumber: 23442, nameFull: "BioBuzz" }] });
     }
+    if (href.endsWith("/2024/matches/CAFO")) return response({ matches: [] });
     throw new Error(`Unexpected request ${url}`);
   });
 
@@ -258,6 +260,185 @@ test("team and event detail requests include the requested season", async (t) =>
   assert.equal(team.events[0].season, 2025);
   assert.equal(event.event?.name, "Cascade Regional");
   assert.equal(event.teams[0].teamNumber, 23442);
+  assert.deepEqual(event.matches, []);
+});
+
+test("event profile maps released matchups and official result outcomes", async (t) => {
+  withCredentials();
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async url => {
+    const href = String(url);
+    requests.push(href);
+    if (href.endsWith("/2026/events?eventCode=CAFO")) {
+      return response({ events: [{ code: "CAFO", name: "Cascade Open" }] });
+    }
+    if (href.endsWith("/2026/teams?eventCode=CAFO")) return response({ teams: [] });
+    if (href.endsWith("/2026/matches/CAFO")) {
+      return response({
+        count: 4,
+        matches: [
+          {
+            description: "Qualification 1",
+            tournamentLevel: "QUALIFICATION",
+            series: 0,
+            matchNumber: 1,
+            postResultTime: "2026-11-07T13:56:08.968",
+            scoreRedFinal: 42,
+            scoreBlueFinal: 39,
+            teams: [
+              { teamNumber: 12993, station: "Blue2" },
+              { teamNumber: 11506, station: "Blue1" },
+              { teamNumber: 18439, station: "Red2" },
+              { teamNumber: 23332, station: "Red1" },
+            ],
+          },
+          {
+            description: "Playoff 1",
+            tournamentLevel: "PLAYOFF",
+            series: 1,
+            matchNumber: 1,
+            postResultTime: "2026-11-07T14:56:08.968",
+            scoreRedFinal: 0,
+            scoreBlueFinal: 0,
+            teams: [
+              { teamNumber: 1001, station: "Red1" },
+              { teamNumber: 1002, station: "Red2" },
+              { teamNumber: 2001, station: "Blue1" },
+              { teamNumber: 2002, station: "Blue2" },
+            ],
+          },
+          {
+            description: "Qualification 34",
+            tournamentLevel: "QUALIFICATION",
+            series: 0,
+            matchNumber: 34,
+            postResultTime: null,
+            scoreRedFinal: 0,
+            scoreBlueFinal: 0,
+            teams: [
+              { teamNumber: 3001, station: "Red1" },
+              { teamNumber: 3002, station: "Red2" },
+              { teamNumber: 4001, station: "Blue1" },
+              { teamNumber: 4002, station: "Blue2" },
+            ],
+          },
+          {
+            description: "Qualification 35",
+            tournamentLevel: "QUALIFICATION",
+            series: 0,
+            matchNumber: 35,
+            postResultTime: "2026-11-07T15:56:08.968",
+            scoreRedFinal: null,
+            scoreBlueFinal: 18,
+            teams: [
+              { teamNumber: 5001, station: "Red1" },
+              { teamNumber: 5002, station: "Red2" },
+              { teamNumber: 6001, station: "Blue1" },
+              { teamNumber: 6002, station: "Blue2" },
+            ],
+          },
+          {
+            description: "Unreleased placeholder",
+            tournamentLevel: "QUALIFICATION",
+            matchNumber: 36,
+            teams: [{ teamNumber: 7001, station: "Red1" }],
+          },
+        ],
+      });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+
+  const profile = await getFtcEventProfile(2026, "CAFO");
+
+  assert.equal(profile.matches.length, 4);
+  assert.deepEqual(profile.matches[0], {
+    description: "Qualification 1",
+    tournamentLevel: "qualification",
+    series: 0,
+    matchNumber: 1,
+    redTeamNumbers: [23332, 18439],
+    blueTeamNumbers: [11506, 12993],
+    redScore: 42,
+    blueScore: 39,
+    resultStatus: "final",
+    winningAlliance: "red",
+  });
+  assert.equal(profile.matches[1].resultStatus, "tie");
+  assert.equal(profile.matches[1].redScore, 0);
+  assert.equal(profile.matches[1].blueScore, 0);
+  assert.equal(profile.matches[1].winningAlliance, "tie");
+  assert.equal(profile.matches[2].resultStatus, "scheduled");
+  assert.equal(profile.matches[2].redScore, null);
+  assert.equal(profile.matches[2].blueScore, null);
+  assert.equal(profile.matches[2].winningAlliance, null);
+  assert.equal(profile.matches[3].resultStatus, "unavailable");
+  assert.equal(profile.matches[3].redScore, null);
+  assert.equal(profile.matches[3].blueScore, 18);
+  assert.equal(profile.matches[3].winningAlliance, null);
+  assert.ok(requests.some(url => url.endsWith("/2026/matches/CAFO")));
+  assert.doesNotThrow(() => GetFtcEventProfileResponse.parse({ season: 2026, ...profile }));
+});
+
+test("event profile reports upstream match failures", async (t) => {
+  withCredentials();
+  t.mock.method(globalThis, "fetch", async url => {
+    const href = String(url);
+    if (href.endsWith("/2026/events?eventCode=CAFO")) {
+      return response({ events: [{ code: "CAFO", name: "Cascade Open" }] });
+    }
+    if (href.endsWith("/2026/teams?eventCode=CAFO")) return response({ teams: [] });
+    if (href.endsWith("/2026/matches/CAFO")) return response({ error: "temporarily unavailable" }, 503);
+    throw new Error(`Unexpected request ${url}`);
+  });
+
+  await assert.rejects(getFtcEventProfile(2026, "CAFO"), /FTC Events API returned 503/);
+});
+
+test("event match results refresh on a short cache window", async (t) => {
+  withCredentials();
+  let now = 1_000_000;
+  let currentScore = 42;
+  let matchRequests = 0;
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "fetch", async url => {
+    const href = String(url);
+    if (href.endsWith("/2026/events?eventCode=CAFO")) {
+      return response({ events: [{ code: "CAFO", name: "Cascade Open" }] });
+    }
+    if (href.endsWith("/2026/teams?eventCode=CAFO")) return response({ teams: [] });
+    if (href.endsWith("/2026/matches/CAFO")) {
+      matchRequests += 1;
+      return response({
+        matches: [{
+          tournamentLevel: "QUALIFICATION",
+          matchNumber: 1,
+          postResultTime: "2026-11-07T13:56:08.968",
+          scoreRedFinal: currentScore,
+          scoreBlueFinal: 39,
+          teams: [
+            { teamNumber: 10, station: "Red1" },
+            { teamNumber: 20, station: "Red2" },
+            { teamNumber: 30, station: "Blue1" },
+            { teamNumber: 40, station: "Blue2" },
+          ],
+        }],
+      });
+    }
+    throw new Error(`Unexpected request ${url}`);
+  });
+
+  const initial = await getFtcEventProfile(2026, "CAFO");
+  assert.equal(initial.matches[0].redScore, 42);
+  now += 21_000;
+  currentScore = 48;
+  await getFtcEventProfile(2026, "CAFO");
+  for (let attempt = 0; matchRequests < 2 && attempt < 50; attempt += 1) {
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(matchRequests, 2);
+  const refreshed = await getFtcEventProfile(2026, "CAFO");
+  assert.equal(refreshed.matches[0].redScore, 48);
 });
 
 test("public globe data includes every team and event with a mapped location", async (t) => {

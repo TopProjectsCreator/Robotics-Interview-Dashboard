@@ -2651,7 +2651,7 @@ paths:
     get:
       operationId: getFtcEventProfile
       tags: [queue]
-      summary: Get an FTC event profile and its teams
+      summary: Get an FTC event profile, attending teams, and released matches
       parameters:
         - name: eventCode
           in: path
@@ -9840,7 +9840,7 @@ components:
     FtcEventProfileResponse:
       type: object
       additionalProperties: false
-      required: [season, event, teams]
+      required: [season, event, teams, matches]
       properties:
         season: { type: integer }
         event:
@@ -9850,6 +9850,28 @@ components:
         teams:
           type: array
           items: { $ref: "#/components/schemas/FtcTeam" }
+        matches:
+          type: array
+          items: { $ref: "#/components/schemas/FtcEventMatch" }
+    FtcEventMatch:
+      type: object
+      additionalProperties: false
+      required: [description, tournamentLevel, series, matchNumber, redTeamNumbers, blueTeamNumbers, redScore, blueScore, resultStatus, winningAlliance]
+      properties:
+        description: { type: ["string", "null"] }
+        tournamentLevel: { type: string, enum: [qualification, playoff, practice, other] }
+        series: { type: ["integer", "null"], minimum: 0 }
+        matchNumber: { type: integer, minimum: 1 }
+        redTeamNumbers:
+          type: array
+          items: { type: integer, minimum: 1 }
+        blueTeamNumbers:
+          type: array
+          items: { type: integer, minimum: 1 }
+        redScore: { type: ["number", "null"] }
+        blueScore: { type: ["number", "null"] }
+        resultStatus: { type: string, enum: [scheduled, unavailable, final, tie] }
+        winningAlliance: { type: ["string", "null"], enum: [red, blue, tie, null] }
     FtcGlobePoint:
       type: object
       additionalProperties: false

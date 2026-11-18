@@ -9175,7 +9175,7 @@ export const getGetFtcEventProfileUrl = (eventCode: string,
 }
 
 /**
- * @summary Get an FTC event profile and its teams
+ * @summary Get an FTC event profile, attending teams, and released matches
  */
 export const getFtcEventProfile = async (eventCode: string,
     params?: GetFtcEventProfileParams, options?: Parameters<typeof customFetch>[1]): Promise<FtcEventProfileResponse> => {
@@ -9225,7 +9225,7 @@ export type GetFtcEventProfileQueryError = ErrorType<void>
 
 
 /**
- * @summary Get an FTC event profile and its teams
+ * @summary Get an FTC event profile, attending teams, and released matches
  */
 
 export function useGetFtcEventProfile<TData = Awaited<ReturnType<typeof getFtcEventProfile>>, TError = ErrorType<void>>(

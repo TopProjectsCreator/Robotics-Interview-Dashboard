@@ -6,10 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { FtcEvent } from './ftcEvent';
+import type { FtcEventMatch } from './ftcEventMatch';
 import type { FtcTeam } from './ftcTeam';
 
 export interface FtcEventProfileResponse {
   season: number;
   event: FtcEvent | null;
   teams: FtcTeam[];
+  matches: FtcEventMatch[];
 }
