@@ -47,10 +47,10 @@ const fieldTestIds: Record<string, Record<string, string>> = {
 function contractProperties(schemaName: string): string[] {
   const schemaStart = apiSpec.indexOf(`    ${schemaName}:\n`);
   expect(schemaStart, `${schemaName} should exist in the OpenAPI contract`).toBeGreaterThanOrEqual(0);
-  const nextSchema = apiSpec.slice(schemaStart + 1).search(/\n    [A-Z][A-Za-z0-9]+:\n/);
+  const nextSchema = apiSpec.slice(schemaStart + 1).search(/\n {4}[A-Z][A-Za-z0-9]+:\n/);
   const schemaBlock = apiSpec.slice(schemaStart, nextSchema < 0 ? undefined : schemaStart + 1 + nextSchema);
   const propertiesBlock = schemaBlock.split("      properties:\n")[1] ?? "";
-  return [...propertiesBlock.matchAll(/^        ([A-Za-z][A-Za-z0-9]*):/gm)].map(match => match[1]);
+  return [...propertiesBlock.matchAll(/^ {8}([A-Za-z][A-Za-z0-9]*):/gm)].map(match => match[1]);
 }
 
 function expectContractFieldsRendered(schemaName: "FtcTeam" | "FtcEvent", scope: HTMLElement = document.body) {
