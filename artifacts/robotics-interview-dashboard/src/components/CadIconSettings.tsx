@@ -55,9 +55,26 @@ export function CadIconSettings() {
             Choose which Lucide icons your team can use in the CAD workspace. Existing bots keep their current icon.
           </p>
         </div>
-        <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
-          {draft.length} selected
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+            {draft.length} selected
+          </span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setDraft([...DEFAULT_CAD_ICON_IDS]);
+              setNotice("");
+              setError("");
+            }}
+            disabled={saving || iconPolicy.isLoading || iconPolicy.isError ||
+              CAD_ICON_OPTIONS.every(({ id }) => draft.includes(id))}
+            data-testid="button-restore-all-cad-icons"
+          >
+            Restore all icons
+          </Button>
+        </div>
       </div>
 
       {iconPolicy.isError && (

@@ -72,6 +72,30 @@ describe("CadIconSettings", () => {
     }));
   });
 
+  it("restores the full icon catalog in the draft and saves it only on request", async () => {
+    mocks.getIconPolicy.mockReturnValue({
+      data: { enabledIcons: ["boxes", "component"] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    renderSettings();
+
+    fireEvent.click(screen.getByTestId("button-restore-all-cad-icons"));
+
+    for (const icon of DEFAULT_CAD_ICON_IDS) {
+      expect(screen.getByTestId(`cad-icon-policy-${icon}`)).toBeChecked();
+    }
+    expect(mocks.updateIconPolicy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("button-save-cad-icon-policy")).toBeEnabled();
+
+    fireEvent.click(screen.getByTestId("button-save-cad-icon-policy"));
+
+    await waitFor(() => expect(mocks.updateIconPolicy).toHaveBeenCalledWith({
+      enabledIcons: [...DEFAULT_CAD_ICON_IDS],
+    }));
+  });
+
   it("does not allow the last icon to be removed", () => {
     mocks.getIconPolicy.mockReturnValue({
       data: { enabledIcons: ["boxes"] },
