@@ -87,6 +87,17 @@ describe("FTC season globe", () => {
     });
   });
 
+  it("constrains the map stage and details panel within a single-column responsive grid", () => {
+    render(<FtcSeasonGlobe />);
+
+    expect(screen.getByTestId("layout-ftc-season-globe")).toHaveClass(
+      "min-w-0",
+      "grid-cols-1",
+      "lg:grid-cols-[minmax(0,1fr)_300px]",
+    );
+    expect(screen.getByTestId("stage-ftc-season-globe")).toHaveClass("min-w-0", "overflow-hidden");
+  });
+
   it("places east longitudes on the right side of the globe", () => {
     const east = pointPosition({ ...teamPoint, latitude: 0, longitude: 90 }, 1);
     const west = pointPosition({ ...teamPoint, latitude: 0, longitude: -90 }, 1);

@@ -258,6 +258,7 @@ function GlobeRenderer({
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.style.display = "block";
     renderer.domElement.style.width = "100%";
+    renderer.domElement.style.maxWidth = "100%";
     renderer.domElement.style.height = "100%";
     // Keep vertical page scrolling native while reserving two-finger pinches for the globe.
     renderer.domElement.style.touchAction = "pan-y";
@@ -637,8 +638,14 @@ export function FtcSeasonGlobe() {
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-[#2b5961] bg-[#153642] text-[#eaf5f0] shadow-[0_24px_60px_rgba(21,54,66,.17)] dark:border-[#315c61]" data-testid="card-ftc-season-globe">
-        <div className="grid min-h-[440px] lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="relative min-h-[350px] overflow-hidden sm:min-h-[480px]">
+        <div
+          className="grid min-w-0 grid-cols-1 min-h-[440px] lg:grid-cols-[minmax(0,1fr)_300px]"
+          data-testid="layout-ftc-season-globe"
+        >
+          <div
+            className="relative min-w-0 min-h-[350px] overflow-hidden sm:min-h-[480px]"
+            data-testid="stage-ftc-season-globe"
+          >
             <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[.14] [background-image:linear-gradient(rgba(157,221,210,.42)_1px,transparent_1px),linear-gradient(90deg,rgba(157,221,210,.42)_1px,transparent_1px)] [background-size:40px_40px] [mask-image:radial-gradient(ellipse_at_center,black,transparent_76%)]" />
             <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[min(95%,560px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#8bc8b6]/20 shadow-[0_0_90px_rgba(66,173,145,.09)]" />
             {data && points.length > 0 && (
@@ -726,7 +733,7 @@ export function FtcSeasonGlobe() {
             {rendererReady && <span className="sr-only" role="status">Interactive FTC globe loaded with {points.length.toLocaleString()} locations.</span>}
           </div>
 
-          <aside className="flex min-h-[300px] flex-col border-t border-white/10 bg-[#102a31]/65 p-5 sm:p-6 lg:border-l lg:border-t-0">
+          <aside className="flex min-w-0 min-h-[300px] flex-col border-t border-white/10 bg-[#102a31]/65 p-5 sm:p-6 lg:border-l lg:border-t-0">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="font-mono text-[9px] font-semibold uppercase tracking-[.15em] text-[#82aaa0]">Selected location</p>
