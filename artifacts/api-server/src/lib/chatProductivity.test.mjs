@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import test, { mock } from "node:test";
+import { buildProductivitySystemPrompt } from "./chatProductivityAnalysis.ts";
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -26,6 +27,7 @@ function createHarness(t, scoredMessages = []) {
     messageQueries: 0,
     contextQueries: 0,
     modelSettings: 0,
+    systemPrompts: [],
   };
 
   const tables = {
@@ -134,9 +136,29 @@ function createHarness(t, scoredMessages = []) {
       teamAssistantAI: () => ({
         chat: {
           completions: {
-            create: async () => {
+            create: async (request) => {
               calls.provider += 1;
-              return { choices: [{ message: { content: "{}" } }] };
+              calls.systemPrompts.push(
+                request.messages.find((message) => message.role === "system")?.content,
+              );
+              return {
+                choices: [{
+                  message: {
+                    content: JSON.stringify({
+                      team: {
+                        score: 5,
+                        summary: "Review summary",
+                        activities: [{ activity: "Review activity", assessment: "productive" }],
+                        breakdown: {
+                          projectProgress: 5,
+                          planningCoordination: 5,
+                          focusDiscipline: 5,
+                        },
+                      },
+                    }),
+                  },
+                }],
+              };
             },
           },
         },
@@ -189,4 +211,37 @@ test("selected range returns no assessment when only older context exists", asyn
   assert.equal(calls.snapshots, 0);
   assert.equal(calls.contextQueries, 0);
   assert.equal(calls.modelSettings, 0);
+});
+
+test("scheduled and selected-range reviews use the shared language-aware system prompt", async (t) => {
+  const calls = createHarness(t, [{
+    message: "Terminamos la prueba del motor.",
+    createdAt: new Date(),
+  }]);
+  const {
+    dispatchChatProductivityReviewForTeam,
+    reviewChatProductivityRange,
+  } = await import(`./chatProductivity.ts?language-prompt-${Date.now()}`);
+
+  await dispatchChatProductivityReviewForTeam("team-1");
+  const selectedAssessment = await reviewChatProductivityRange(
+    "team-1",
+    "shared",
+    "team",
+    "Team conversation",
+    "1h",
+  );
+
+  assert.ok(selectedAssessment, JSON.stringify(calls));
+  assert.equal(calls.systemPrompts.length, 2);
+  for (const prompt of calls.systemPrompts) {
+    assert.equal(typeof prompt, "string");
+    const window = /The score window is (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z) through (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)\./.exec(prompt);
+    assert.ok(window, prompt);
+    assert.equal(
+      prompt,
+      buildProductivitySystemPrompt(new Date(window[1]), new Date(window[2])),
+    );
+    assert.match(prompt, /summary and activity descriptions in the predominant language/);
+  }
 });
