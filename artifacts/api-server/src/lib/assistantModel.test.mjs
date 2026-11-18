@@ -90,6 +90,7 @@ const db = {
 
 mock.module("@workspace/db", {
   namedExports: {
+    currentInstance: () => "primary",
     DEFAULT_TEAM_ID: "default",
     assistantModelPoliciesTable,
     teamAssistantProvidersTable,

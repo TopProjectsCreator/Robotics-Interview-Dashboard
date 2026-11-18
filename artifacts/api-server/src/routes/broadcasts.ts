@@ -130,16 +130,18 @@ router.get("/broadcasts/commands", async (req, res): Promise<void> => {
     const now = new Date();
     // ?eventPassword scopes the public display to that team; otherwise the
     // signed-in user's team, otherwise default (current team safe).
-    let teamId = await requestTeamId(req);
+    let teamId: string;
     const commandsCode = typeof req.query.eventPassword === "string" ? req.query.eventPassword : "";
     if (commandsCode.trim()) {
-      try {
-        const { findTeamByCode } = await import("../lib/teams");
-        const team = await findTeamByCode(commandsCode);
-        if (team) teamId = team.id;
-      } catch {
-        // fall back
+      const { findTeamByCode } = await import("../lib/teams");
+      const team = await findTeamByCode(commandsCode);
+      if (!team) {
+        res.status(404).json({ error: "Invalid team access code." });
+        return;
       }
+      teamId = team.id;
+    } else {
+      teamId = await requestTeamId(req);
     }
     const rows = await db
       .select({

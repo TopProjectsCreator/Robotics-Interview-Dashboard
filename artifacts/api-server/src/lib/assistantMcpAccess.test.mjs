@@ -41,6 +41,7 @@ const db = {
 };
 mock.module("@workspace/db", {
   namedExports: {
+    currentInstance: () => "primary",
     db,
     DEFAULT_TEAM_ID: "default",
     interviewerAccountsTable: accountTable,

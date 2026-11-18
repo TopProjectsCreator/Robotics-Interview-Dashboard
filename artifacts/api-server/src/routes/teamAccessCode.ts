@@ -45,10 +45,10 @@ router.put("/auth/teams/access-code", requireCoordinator, async (req, res): Prom
       if (!teams.some((team) => team.id === teamId)) return "missing";
 
       const otherTeams = teams.filter((team) => team.id !== teamId);
-      if (hasTeamCode(code, otherTeams) || matchesLegacyTeamCode(code)) return "conflict";
+      if (await hasTeamCode(code, otherTeams) || matchesLegacyTeamCode(code)) return "conflict";
 
       const [updated] = await tx.update(teamsTable)
-        .set({ codeHash: hashTeamCode(code), updatedAt: new Date() })
+        .set({ codeHash: await hashTeamCode(code), updatedAt: new Date() })
         .where(eq(teamsTable.id, teamId))
         .returning({ id: teamsTable.id });
       return updated ? "updated" : "missing";

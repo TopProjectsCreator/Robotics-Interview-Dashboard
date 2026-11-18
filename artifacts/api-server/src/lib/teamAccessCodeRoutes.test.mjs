@@ -134,6 +134,7 @@ mock.module("@workspace/db", {
     hasSecondary: () => false,
     enterInstance: () => undefined,
     runWithInstance: (_instance, callback) => callback(),
+    currentInstance: () => "primary",
     teamsTable,
     interviewerAccountsTable: accountsTable,
     revokedSessionsTable,
@@ -205,9 +206,9 @@ test("team access code rotation is protected, validated, unique, private, and se
   });
 
   teamRows = [
-    { id: "team-a", name: "Team A", normalizedName: "team a", codeHash: hashTeamCode("Old-Team-Code") },
-    { id: "team-b", name: "Team B", normalizedName: "team b", codeHash: hashTeamCode("Used-Team-Code") },
-    { id: "default", name: "Default Team", normalizedName: "default team", codeHash: hashTeamCode("Previous-Default-Code") },
+    { id: "team-a", name: "Team A", normalizedName: "team a", codeHash: await hashTeamCode("Old-Team-Code") },
+    { id: "team-b", name: "Team B", normalizedName: "team b", codeHash: await hashTeamCode("Used-Team-Code") },
+    { id: "default", name: "Default Team", normalizedName: "default team", codeHash: await hashTeamCode("Previous-Default-Code") },
   ];
   const adminSession = createInterviewerSession("admin-a", "primary");
   const memberSession = createInterviewerSession("member-a", "primary");
@@ -226,6 +227,7 @@ test("team access code rotation is protected, validated, unique, private, and se
   assert.match(legacy.text, /already in use/);
 
   const submittedCode = "Fresh-Team-Code";
+  assert.equal((await findTeamByCode("Old-Team-Code"))?.id, "team-a");
   const success = await updateCode(`  ${submittedCode}  `, adminSession);
   assert.equal(success.status, 200);
   assert.deepEqual(JSON.parse(success.text), { message: "Team access code updated." });
@@ -233,7 +235,7 @@ test("team access code rotation is protected, validated, unique, private, and se
   const storedHash = teamRows.find((team) => team.id === "team-a")?.codeHash;
   assert.ok(storedHash);
   assert.notEqual(storedHash, submittedCode);
-  assert.equal(verifyTeamCodeHash(submittedCode, storedHash), true);
+  assert.equal(await verifyTeamCodeHash(submittedCode, storedHash), true);
   assert.equal(success.text.includes(storedHash), false);
 
   assert.equal(await findTeamByCode("Old-Team-Code"), null);

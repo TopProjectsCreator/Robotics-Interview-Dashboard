@@ -1240,7 +1240,7 @@ export function startAssistantPromptDispatcher(): void {
 
 async function assistantAccountForRequest(req: Request, res: ExpressResponse) {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) {
     res.status(401).json({ error: "Authentication required" });
     return undefined;
@@ -4972,7 +4972,7 @@ async function whiteboardConversationForAccount(
 
 router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsedQuery = ListInterviewWhiteboardsQueryParams.safeParse(req.query);
   if (!parsedQuery.success) { res.status(400).json({ error: "Invalid whiteboard conversation." }); return; }
@@ -5006,7 +5006,7 @@ router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
 
 router.post("/whiteboards", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = CreateInterviewWhiteboardBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A whiteboard title and valid Excalidraw data are required." }); return; }
@@ -5041,7 +5041,7 @@ router.post("/whiteboards", requireCoordinator, async (req, res): Promise<void> 
 
 router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = GetInterviewWhiteboardByIdParams.safeParse(req.params);
   const query = GetInterviewWhiteboardByIdQueryParams.safeParse(req.query);
@@ -5079,7 +5079,7 @@ router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise
 
 router.patch("/whiteboards/:whiteboardId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = UpdateInterviewWhiteboardParams.safeParse(req.params);
   const parsed = UpdateInterviewWhiteboardBody.safeParse(req.body);
@@ -5136,7 +5136,7 @@ function boardResponse(
 
 router.post("/boards", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = CreateBoardBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A board name and valid conversation are required." }); return; }
@@ -5166,7 +5166,7 @@ router.post("/boards", requireCoordinator, async (req, res): Promise<void> => {
 
 router.get("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = GetBoardParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid board request." }); return; }
@@ -5195,7 +5195,7 @@ router.get("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => 
 
 router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = UpdateBoardParams.safeParse(req.params);
   const parsed = UpdateBoardBody.safeParse(req.body);
@@ -5245,7 +5245,7 @@ router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<v
 
 router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = CreateSpreadsheetBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A spreadsheet title and valid conversation are required." }); return; }
@@ -5285,7 +5285,7 @@ router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void>
 
 router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = GetSpreadsheetParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid spreadsheet request." }); return; }
@@ -5317,7 +5317,7 @@ router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promi
 
 router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = UpdateSpreadsheetParams.safeParse(req.params);
   const parsed = UpdateSpreadsheetBody.safeParse(req.body);
@@ -5423,7 +5423,7 @@ function calendarResponse(
 // is not swallowed as part of the id.
 router.get("/calendars/:calendarId.ics", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = GetCalendarParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid calendar request." }); return; }
@@ -5448,7 +5448,7 @@ router.get("/calendars/:calendarId.ics", requireAdmin, async (req, res): Promise
 
 router.post("/calendars", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = CreateCalendarBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A calendar name and valid conversation are required." }); return; }
@@ -5475,7 +5475,7 @@ router.post("/calendars", requireAdmin, async (req, res): Promise<void> => {
 
 router.get("/calendars/:calendarId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = GetCalendarParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid calendar request." }); return; }
@@ -5503,7 +5503,7 @@ router.get("/calendars/:calendarId", requireAdmin, async (req, res): Promise<voi
 
 router.patch("/calendars/:calendarId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = UpdateCalendarParams.safeParse(req.params);
   const parsed = UpdateCalendarBody.safeParse(req.body);
@@ -5614,7 +5614,7 @@ function chatCustomEmojiResponse(emoji: typeof chatCustomEmojisTable.$inferSelec
 
 router.get("/queue/custom-emojis", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
 
   const teamId = await requestTeamId(req);
@@ -5626,7 +5626,7 @@ router.get("/queue/custom-emojis", requireAdmin, async (req, res): Promise<void>
 
 router.post("/queue/custom-emojis", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
 
   const parsed = UploadChatCustomEmojiBody.safeParse(req.body);
@@ -5693,7 +5693,7 @@ router.post("/queue/custom-emojis", requireCoordinator, async (req, res): Promis
 
 router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   try {
     const teamId = await requestTeamId(req);
@@ -5877,7 +5877,7 @@ router.get("/queue/chat/notifications", requireAdmin, async (req, res): Promise<
     return;
   }
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) {
     res.status(401).json({ error: "Authentication required" });
     return;
@@ -6068,7 +6068,7 @@ async function resolveChannelMembers(
 
 router.get("/queue/chat/channels", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   try {
     const teamId = await requestTeamId(req);
@@ -6108,7 +6108,7 @@ router.get("/queue/chat/channels", requireAdmin, async (req, res): Promise<void>
 
 router.post("/queue/chat/channels", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = CreateChatChannelBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A channel name is required." }); return; }
@@ -6173,7 +6173,7 @@ router.post("/queue/chat/channels", requireCoordinator, async (req, res): Promis
 
 router.patch("/queue/chat/channels/:channelId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = UpdateChatChannelParams.safeParse(req.params);
   const parsed = UpdateChatChannelBody.safeParse(req.body);
@@ -6263,7 +6263,7 @@ router.patch("/queue/chat/channels/:channelId", requireCoordinator, async (req, 
 
 router.delete("/queue/chat/channels/:channelId", requireCoordinator, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const params = DeleteChatChannelParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: "Invalid channel id." }); return; }
@@ -6300,7 +6300,7 @@ router.delete("/queue/chat/channels/:channelId", requireCoordinator, async (req,
 
 router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
   const conversation = await resolveChatConversation(req.query.scope, req.query.peer, account.displayName, teamId, {
@@ -6394,7 +6394,7 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
 // index-backed boundary row; deleted messages stream as `[message deleted]`.
 router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const format = parseChatExportFormat(req.query.format);
   if (!format) { res.status(400).json({ error: "Format must be csv, md, or txt." }); return; }
@@ -6524,7 +6524,7 @@ router.get("/queue/chat/export", requireAdmin, async (req, res): Promise<void> =
 
 router.get("/queue/chat/productivity", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
 
   const rawScope = req.query.scope;
@@ -6589,7 +6589,7 @@ const MAX_PRODUCTIVITY_HISTORY_ROWS = 10_000;
 
 router.get("/queue/chat/productivity/history", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
 
   const rawScope = req.query.scope;
@@ -6665,7 +6665,7 @@ router.get("/queue/chat/productivity/history", requireAdmin, async (req, res): P
 
 router.post("/queue/chat/productivity/review", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
 
   const parsed = ReviewChatProductivityRangeBody.safeParse(req.body);
@@ -6734,7 +6734,7 @@ router.post("/queue/chat/productivity/review", requireAdmin, async (req, res): P
 
 router.get("/queue/chat/productivity/settings", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   if (!isAdminRole(account.role)) {
     res.status(403).json({ error: "Only admins can view AI productivity settings." });
@@ -6753,7 +6753,7 @@ router.get("/queue/chat/productivity/settings", requireAdmin, async (req, res): 
 
 router.put("/queue/chat/productivity/settings", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
 
   const parsed = UpdateChatProductivitySettingsBody.safeParse(req.body);
@@ -6829,7 +6829,7 @@ router.put("/queue/chat/productivity/settings", requireAdmin, async (req, res): 
 
 router.post("/queue/chat/read", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = MarkInterviewChatReadBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "Provide valid chat message ids and a conversation." }); return; }
@@ -6942,7 +6942,7 @@ router.post("/chat/settings", requireCoordinator, async (req, res): Promise<void
 
 router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = SendInterviewChatBody.safeParse(req.body);
   if (!parsed.success || !parsed.data.message.trim()) {
@@ -7114,7 +7114,7 @@ router.post("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
 // one statement stays small.
 router.post("/queue/chat/multimessage", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   if (!isAdminRole(account.role)) {
     res.status(403).json({ error: "Admins only" });
@@ -7183,7 +7183,7 @@ function isSingleUnicodeEmoji(value: string): boolean {
 
 router.post("/queue/chat/:messageId/poll", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
@@ -7223,7 +7223,7 @@ router.post("/queue/chat/:messageId/poll", requireAdmin, async (req, res): Promi
 
 router.post("/queue/chat/:messageId/poll/vote", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
@@ -7270,7 +7270,7 @@ router.post("/queue/chat/:messageId/poll/vote", requireAdmin, async (req, res): 
 
 router.post("/queue/chat/:messageId/reactions", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
   const parsed = ToggleChatReactionBody.safeParse(req.body);
@@ -7354,7 +7354,7 @@ router.post("/queue/chat/:messageId/pin", requireAdmin, async (req, res): Promis
 
 router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
@@ -7429,7 +7429,7 @@ router.patch("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<v
 
 router.delete("/queue/chat/:messageId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
   const messageId = typeof req.params.messageId === "string" ? req.params.messageId : "";
@@ -7646,7 +7646,7 @@ Return only a JSON object with exactly these string fields: {"date":"YYYY-MM-DD"
 
 router.post("/queue/chat/scheduled", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account || !accountId) { res.status(401).json({ error: "Authentication required" }); return; }
   const parsed = CreateScheduledChatBody.safeParse(req.body);
   const body = parsed.success ? parsed.data.message.trim().slice(0, CHAT_MESSAGE_MAX_CHARS) : "";
@@ -7722,7 +7722,7 @@ router.post("/queue/chat/scheduled", requireAdmin, async (req, res): Promise<voi
 
 router.get("/queue/chat/scheduled", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
   const rows = await db.select().from(scheduledChatMessagesTable)
@@ -7737,7 +7737,7 @@ router.get("/queue/chat/scheduled", requireAdmin, async (req, res): Promise<void
 
 router.delete("/queue/chat/scheduled/:scheduledId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account || !accountId) { res.status(401).json({ error: "Authentication required" }); return; }
   const teamId = await requestTeamId(req);
   const scheduledId = typeof req.params.scheduledId === "string" ? req.params.scheduledId : "";
@@ -9064,7 +9064,7 @@ router.post("/assistant/scheduled-tasks/actions", requireAdmin, async (req, res)
   } as const;
   const toolName = toolByAction[parsed.data.action];
   const teamId = await requestTeamId(req);
-  const actionAccount = await accountById(accountId);
+  const actionAccount = await accountById(accountId, req);
   if (!actionAccount) {
     res.status(401).json({ error: "Authentication required" });
     return;
@@ -9125,7 +9125,7 @@ router.post("/assistant/ask", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) {
     res.status(401).json({ error: "Authentication required" });
     return;
@@ -9175,7 +9175,7 @@ router.post("/assistant/settings", requireAdmin, async (req, res): Promise<void>
     return;
   }
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) {
     res.status(401).json({ error: "Authentication required" });
     return;
@@ -9272,7 +9272,7 @@ router.post("/assistant/settings/stream", requireAdmin, async (req, res): Promis
     return;
   }
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) {
     res.status(401).json({ error: "Authentication required" });
     return;
@@ -9352,7 +9352,7 @@ router.post("/assistant/custom-workspace-builder/runs", requireCoordinator, asyn
     return;
   }
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account || !hasPermission(await permissionsForAccount(account), "customWorkspaces.manage")) {
     res.status(403).json({ error: "Custom workspace management permission required" });
     return;
@@ -9943,7 +9943,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
     return;
   }
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) {
     res.status(401).json({ error: "Authentication required" });
     return;
@@ -11129,7 +11129,7 @@ function onshapeCallbackOrigin(req: Request): string {
 
 router.get("/onshape-mcp/connect", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
-  const account = accountId ? await accountById(accountId) : undefined;
+  const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) {
     res.status(401).json({ error: "Authentication required" });
     return;

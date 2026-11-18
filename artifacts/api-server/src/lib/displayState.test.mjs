@@ -120,10 +120,23 @@ test("public display state scopes by event code and exposes only approved fields
   const queriedTeams = [];
   const displayedTeams = [];
   const settings = { announce: true, showNames: true };
+  let conditional = false;
+  let commandReads = 0;
+  const commandTeams = [];
 
   const database = Object.fromEntries(tableNames.map((name) => [name, {}]));
   Object.assign(database, {
-    db: {},
+    db: {
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            orderBy: () => ({
+              limit: async () => { commandReads += 1; return []; },
+            }),
+          }),
+        }),
+      }),
+    },
     pool: {},
     primaryDb: {},
     primaryPool: {},
@@ -165,7 +178,11 @@ test("public display state scopes by event code and exposes only approved fields
       applicantVersion: async (teamId) => `applicants:${teamId}`,
       queueVersion: async (teamId) => `queue:${teamId}`,
       displaySettingsVersion: async (teamId) => `settings:${teamId}`,
-      notModified: async () => false,
+      notModified: async (_req, res) => {
+        if (!conditional) return false;
+        res.status(304).end();
+        return true;
+      },
       sendVersioned: async () => {},
     },
   });
@@ -174,10 +191,11 @@ test("public display state scopes by event code and exposes only approved fields
       DEFAULT_TEAM_ID: "default",
       findTeamByCode: async (code) => {
         queriedTeams.push(code);
+        if (code === "DATABASE-UNAVAILABLE") throw new Error("test database unavailable");
         return code === "EVENT-123" ? team : null;
       },
       getTeamById: async () => team,
-      teamFilter: () => ({}),
+      teamFilter: (_column, teamId) => { commandTeams.push(teamId); return {}; },
       teamSqlCondition: () => "",
       sharedCatalogTeamSqlCondition: () => "",
       findAccountAnywhere: async () => null,
@@ -185,11 +203,14 @@ test("public display state scopes by event code and exposes only approved fields
   });
   t.after(() => mock.restoreAll());
 
-  const [{ default: express }, { default: roboticsRouter }] = await Promise.all([
+  const [{ default: express }, { default: roboticsRouter }, { default: broadcastsRouter }] = await Promise.all([
     import("express"),
     import("../routes/robotics.ts"),
+    import("../routes/broadcasts.ts"),
   ]);
   const app = express();
+  app.use((req, _res, next) => { req.log = { error() {} }; next(); });
+  app.use("/api", broadcastsRouter);
   app.use("/api", roboticsRouter);
   const server = app.listen(0, "127.0.0.1");
 
@@ -240,6 +261,26 @@ test("public display state scopes by event code and exposes only approved fields
     assert.deepEqual(await invalidResponse.json(), { error: "Invalid team access code." });
     assert.deepEqual(queriedTeams, ["EVENT-123", "EVENT-123", "NOT-A-TEAM"]);
     assert.deepEqual(displayedTeams, [team.id, team.id], "invalid codes must not load display data");
+
+    conditional = true;
+    assert.equal((await fetch(url)).status, 304);
+    const invalidConditional = await fetch(
+      `http://127.0.0.1:${address.port}/api/display/state?eventPassword=NOT-A-TEAM`,
+    );
+    assert.equal(invalidConditional.status, 404, "an ETag never bypasses current code verification");
+    assert.deepEqual(displayedTeams, [team.id, team.id]);
+
+    const commandsUrl = `http://127.0.0.1:${address.port}/api/broadcasts/commands`;
+    const commands = await fetch(`${commandsUrl}?eventPassword=EVENT-123`);
+    assert.equal(commands.status, 200);
+    assert.deepEqual(await commands.json(), { items: [] });
+    assert.equal(commandReads, 1);
+    assert.deepEqual(commandTeams, [team.id]);
+    const invalidCommands = await fetch(`${commandsUrl}?eventPassword=NOT-A-TEAM`);
+    assert.equal(invalidCommands.status, 404);
+    const unavailableCommands = await fetch(`${commandsUrl}?eventPassword=DATABASE-UNAVAILABLE`);
+    assert.equal(unavailableCommands.status, 503);
+    assert.equal(commandReads, 1, "invalid codes and outages must not fall back to another team's commands");
   } finally {
     if (server.listening) await new Promise((resolve) => server.close(resolve));
   }

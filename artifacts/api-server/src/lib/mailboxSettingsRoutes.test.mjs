@@ -54,6 +54,7 @@ function selectedRows(table, selection, condition) {
   if (table === accountTable) {
     const account = [...accounts.values()].find((row) => row.id === condition?.value);
     if (!account) return [];
+    if (!selection) return [{ ...account }];
     return [Object.fromEntries(Object.entries(selection ?? account).map(([key, column]) => [
       key,
       typeof column === "string" ? account[Object.keys(accountTable).find((name) => accountTable[name] === column)] : column,
@@ -112,6 +113,7 @@ mock.module("drizzle-orm", {
 });
 mock.module("@workspace/db", {
   namedExports: {
+    currentInstance: () => "primary",
     db,
     pool: {},
     DEFAULT_TEAM_ID: "default",

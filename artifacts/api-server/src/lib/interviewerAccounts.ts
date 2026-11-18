@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import type { Request } from "express";
+import { requestAccount } from "./requestAccount";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { db, interviewerAccountsTable, interviewQueueTable, DEFAULT_TEAM_ID, type InterviewerAccount } from "@workspace/db";
 
@@ -69,7 +71,8 @@ export async function updateQueueLabels(labels: string[], teamId: string = DEFAU
   return accounts;
 }
 
-export async function accountById(id: string): Promise<InterviewerAccount | undefined> {
+export async function accountById(id: string, req?: Request): Promise<InterviewerAccount | undefined> {
+  if (req) return requestAccount(req, id);
   const [account] = await db.select().from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, id)).limit(1);
   return account;
 }

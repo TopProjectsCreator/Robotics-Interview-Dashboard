@@ -1,4 +1,5 @@
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
+import { hashPassword, passwordHashMatches } from "../lib/passwordHash";
 import express from "express";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
@@ -694,26 +695,8 @@ function accountTeamId(account: { teamId?: string | null } | null | undefined): 
 async function requesterTeamId(req: Request): Promise<string> {
   const requesterId = (req as Request & { interviewerId?: string }).interviewerId;
   if (!requesterId) return DEFAULT_TEAM_ID;
-  const requester = await accountById(requesterId);
+  const requester = await accountById(requesterId, req);
   return accountTeamId(requester);
-}
-
-function hashPassword(password: string): string {
-  const salt = randomBytes(16);
-  return `${salt.toString("hex")}:${scryptSync(password, salt, 64).toString("hex")}`;
-}
-
-function passwordHashMatches(password: string, encoded: string | null): boolean {
-  if (!encoded) return false;
-  const [saltHex, hashHex] = encoded.split(":");
-  if (!saltHex || !hashHex) return false;
-  try {
-    const actual = scryptSync(password, Buffer.from(saltHex, "hex"), 64);
-    const expected = Buffer.from(hashHex, "hex");
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
-  } catch {
-    return false;
-  }
 }
 
 function publicAccount(account: { id: string; displayName: string; passwordHash: string | null; role: string; customRoleId?: string | null }) {
@@ -827,7 +810,7 @@ router.post("/auth/interviewers", async (req, res): Promise<void> => {
     teamId: team.id,
     displayName,
     normalizedName,
-    passwordHash: hashPassword(parsed.data.password),
+    passwordHash: await hashPassword(parsed.data.password),
     role: "interviewer",
   }).returning();
   if (!account) {
@@ -877,7 +860,7 @@ router.post("/auth/interviewers/setup", async (req, res): Promise<void> => {
   }
   if (await rejectUnsafePassword(req, res, parsed.data.password, parsed.data.confirmLowExposure)) return;
   const [updated] = await db.update(interviewerAccountsTable)
-    .set({ passwordHash: hashPassword(parsed.data.password), updatedAt: new Date() })
+    .set({ passwordHash: await hashPassword(parsed.data.password), updatedAt: new Date() })
     .where(eq(interviewerAccountsTable.id, account.id)).returning();
   if (!updated) {
     res.status(500).json({ error: "Could not set interviewer password." });
@@ -918,7 +901,7 @@ router.patch("/auth/interviewers/:interviewerId/password", requireCoordinator, a
     await rejectUnsafePassword(req, res, parsed.data.password, parsed.data.confirmLowExposure)
   ) return;
   const [updated] = await db.update(interviewerAccountsTable)
-    .set({ passwordHash: parsed.data.password === null ? null : hashPassword(parsed.data.password), updatedAt: new Date() })
+    .set({ passwordHash: parsed.data.password === null ? null : await hashPassword(parsed.data.password), updatedAt: new Date() })
     .where(eq(interviewerAccountsTable.id, account.id))
     .returning();
   if (!updated) {
@@ -1611,7 +1594,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
   }
   enterInstance(team.instance);
   const account = await accountById(parsed.data.interviewerId);
-  if (!account || accountTeamId(account) !== team.id || !passwordHashMatches(parsed.data.password, account.passwordHash)) {
+  if (!account || accountTeamId(account) !== team.id || !await passwordHashMatches(parsed.data.password, account.passwordHash)) {
     recordLoginFailure(ip);
     res.status(401).json({ error: "Incorrect interviewer or password" });
     return;
@@ -1720,7 +1703,7 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
     return;
   }
   // Team codes must be unique across teams so each code opens exactly one team.
-  if (hasTeamCode(teamCode, existingTeams)) {
+  if (await hasTeamCode(teamCode, existingTeams)) {
     res.status(409).json({ error: "That team access code is already in use. Pick another one." });
     return;
   }
@@ -1761,14 +1744,14 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
         id: teamsTable.id,
         codeHash: teamsTable.codeHash,
       }).from(teamsTable);
-      if (hasTeamCode(teamCode, currentTeams) || eventPasswordMatches(teamCode)) {
+      if (await hasTeamCode(teamCode, currentTeams) || eventPasswordMatches(teamCode)) {
         return { kind: "conflict" as const };
       }
       const [created] = await tx.insert(teamsTable).values({
         id: teamId,
         name: teamName,
         normalizedName: normalizedTeam,
-        codeHash: hashTeamCode(teamCode),
+        codeHash: await hashTeamCode(teamCode),
       }).returning();
       return created ? { kind: "created" as const, team: created } : { kind: "failed" as const };
     });
@@ -1787,7 +1770,7 @@ router.post("/auth/teams", async (req, res): Promise<void> => {
       teamId: team.id,
       displayName,
       normalizedName,
-      passwordHash: hashPassword(password),
+      passwordHash: await hashPassword(password),
       role: "coordinator",
     }).returning();
     if (!account) {

@@ -12,7 +12,7 @@ import { sitemapHandler } from "./routes/sitemap";
 import { attachAdminSession } from "./middlewares/adminAuth";
 import { isDatabaseConnectionError } from "./lib/databaseErrors";
 import { and, eq } from "drizzle-orm";
-import { db, interviewerAccountsTable, teamAssessmentSubmissionsTable, teamAssessmentsTable, teamRolesTable, DEFAULT_TEAM_ID } from "@workspace/db";
+import { db, teamAssessmentSubmissionsTable, teamAssessmentsTable, teamRolesTable, DEFAULT_TEAM_ID } from "@workspace/db";
 import { isAdminRole } from "./lib/roles";
 import { isUnauthenticatedOrSelfServiceRoute, routePermissionIsGranted, workspaceGrantedPermissions, workspaceVisibilityFallback } from "./lib/routePermissions";
 import { readWorkspaceVisibility, userCanSeeWorkspace } from "./lib/workspaceAccess";
@@ -23,6 +23,7 @@ import { rememberPublicOriginFromHeaders } from "./lib/agentProfile";
 import { tinyUrlRedirectHandler } from "./routes/tinyUrls";
 import { teamFilter } from "./lib/teams";
 import { hasOutstandingTeamAssessments } from "./lib/teamAssessmentRules";
+import { requestAccount } from "./lib/requestAccount";
 
 const app: Express = express();
 
@@ -199,11 +200,7 @@ app.use("/api", async (req, res, next) => {
       next();
       return;
     }
-    const [account] = await db.select({
-      role: interviewerAccountsTable.role,
-      customRoleId: interviewerAccountsTable.customRoleId,
-      teamId: interviewerAccountsTable.teamId,
-    }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId)).limit(1);
+    const account = await requestAccount(req, interviewerId);
     if (!account) {
       res.status(403).json({ error: "This action is not available for your account." });
       return;
@@ -295,10 +292,7 @@ app.use("/api", async (req, res, next) => {
     return;
   }
   try {
-    const [account] = await db.select({
-      role: interviewerAccountsTable.role,
-      teamId: interviewerAccountsTable.teamId,
-    }).from(interviewerAccountsTable).where(eq(interviewerAccountsTable.id, interviewerId)).limit(1);
+    const account = await requestAccount(req, interviewerId);
     if (!account || isAdminRole(account.role)) {
       next();
       return;

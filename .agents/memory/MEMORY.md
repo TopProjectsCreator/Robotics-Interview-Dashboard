@@ -72,3 +72,4 @@
 - [Custom role compatibility](custom-role-compatibility.md) — keep custom permissions separate from the existing account role and resolve assignments only within their team.
 - [FIRST FTC API host](first-ftc-api-host.md) — authenticated FTC Events API calls use `ftc-api.firstinspires.org`; the similarly named `ftc-events` host rejects the same credentials.
 - [FIRST FTC match result semantics](ftc-match-result-semantics.md) — a zero final score can be real; use FIRST's result-posted timestamp to distinguish results from schedule placeholders.
+- [Authorization performance tradeoffs](authorization-performance-tradeoffs.md) — improve repeated checks without delaying permission changes or changing existing display links.

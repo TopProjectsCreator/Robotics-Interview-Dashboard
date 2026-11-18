@@ -31,7 +31,7 @@ const db = {
               role: account.role,
             }].filter(row => match(row, condition));
             const rows = source.map(row => {
-              if (!selection) return row;
+              if (!selection) return { id: row.account_id, passwordHash: row.password_hash, role: row.role };
               return Object.fromEntries(Object.entries(selection).map(([key, column]) => [key, row[column]]));
             });
             return {
@@ -58,6 +58,7 @@ mock.module("@workspace/db", {
     interviewerAccountsTable,
     revokedSessionsTable,
     runWithInstance: (_instance, callback) => callback(),
+    currentInstance: () => "primary",
   },
 });
 mock.module("../lib/workspaceVisibility.ts", {

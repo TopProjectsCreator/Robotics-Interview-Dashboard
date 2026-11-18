@@ -1,4 +1,5 @@
-import { randomBytes, scryptSync, timingSafeEqual, createHash } from "node:crypto";
+import { randomBytes, timingSafeEqual, createHash, createHmac } from "node:crypto";
+import { deriveSecret } from "./asyncScrypt";
 import { eq, isNull, or } from "drizzle-orm";
 import { primaryDb, secondaryDb, teamsTable, interviewerAccountsTable, DEFAULT_TEAM_ID, normalizeTeamName, type DbInstance } from "@workspace/db";
 import { activeTeamDatabaseInstance } from "./activeTeamDatabase";
@@ -21,12 +22,12 @@ export function normalizeTeamCode(code: string): string {
  * rows remain visible to every team. New team-owned rows use a concrete ID.
  */
 
-export function hashTeamCode(code: string): string {
+export async function hashTeamCode(code: string): Promise<string> {
   const salt = randomBytes(16);
-  return `${salt.toString("hex")}:${scryptSync(normalizeTeamCode(code), salt, 64).toString("hex")}`;
+  return `${salt.toString("hex")}:${(await deriveSecret(normalizeTeamCode(code), salt)).toString("hex")}`;
 }
 
-export function verifyTeamCodeHash(code: string, encoded: string | null | undefined): boolean {
+export async function verifyTeamCodeHash(code: string, encoded: string | null | undefined): Promise<boolean> {
   if (!encoded) return false;
   const [saltHex, hashHex] = encoded.split(":");
   if (!saltHex || !hashHex) return false;
@@ -34,11 +35,11 @@ export function verifyTeamCodeHash(code: string, encoded: string | null | undefi
     const salt = Buffer.from(saltHex, "hex");
     const expected = Buffer.from(hashHex, "hex");
     const normalized = normalizeTeamCode(code);
-    const actual = scryptSync(normalized, salt, 64);
+    const actual = await deriveSecret(normalized, salt);
     if (actual.length === expected.length && timingSafeEqual(actual, expected)) return true;
     // Legacy rows hashed the caller-provided casing.
     if (normalized === code) return false;
-    const legacy = scryptSync(code, salt, 64);
+    const legacy = await deriveSecret(code, salt);
     return legacy.length === expected.length && timingSafeEqual(legacy, expected);
   } catch {
     return false;
@@ -51,11 +52,14 @@ export function teamCodesMatch(left: string, right: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function hasTeamCode(
+export async function hasTeamCode(
   code: string,
   teams: readonly { codeHash: string | null }[],
-): boolean {
-  return teams.some((team) => verifyTeamCodeHash(code, team.codeHash));
+): Promise<boolean> {
+  for (const team of teams) {
+    if (await verifyTeamCodeHash(code, team.codeHash)) return true;
+  }
+  return false;
 }
 
 export function matchesLegacyTeamCode(code: string): boolean {
@@ -84,7 +88,7 @@ export async function ensureDefaultTeam(instance: DbInstance = activeTeamDatabas
     return { id: DEFAULT_TEAM_ID, name: "Default Team" };
   }
   const adminPassword = process.env.ADMIN_PASSWORD?.trim();
-  const codeHash = adminPassword ? hashTeamCode(adminPassword) : hashTeamCode(randomBytes(16).toString("hex"));
+  const codeHash = await hashTeamCode(adminPassword || randomBytes(16).toString("hex"));
   try {
     const [created] = await handle.insert(teamsTable).values({
       id: DEFAULT_TEAM_ID,
@@ -107,6 +111,21 @@ export async function ensureDefaultTeam(instance: DbInstance = activeTeamDatabas
 
 export type ResolvedTeam = { id: string; name: string; instance: DbInstance };
 
+// This is a candidate index, not an authorization cache: every hit reads the
+// authoritative row and requires the exact verified hash to still be present.
+// Use the original casing in the key to preserve case-sensitive legacy hashes.
+const lookupKey = randomBytes(32);
+const verifiedCodes = new Map<string, { id: string; hash: string; expiresAt: number }>();
+const CODE_CACHE_TTL_MS = 5 * 60_000;
+const CODE_CACHE_LIMIT = 512;
+
+function rememberCode(key: string, id: string, hash: string): void {
+  if (verifiedCodes.size >= CODE_CACHE_LIMIT) {
+    verifiedCodes.delete(verifiedCodes.keys().next().value!);
+  }
+  verifiedCodes.set(key, { id, hash, expiresAt: Date.now() + CODE_CACHE_TTL_MS });
+}
+
 /** Find a team by access code on the active team database. */
 export async function findTeamByCode(code: string): Promise<ResolvedTeam | null> {
   const trimmed = code.trim();
@@ -114,10 +133,20 @@ export async function findTeamByCode(code: string): Promise<ResolvedTeam | null>
   const instance = activeTeamDatabaseInstance();
   const handle = databaseFor(instance);
   if (!handle) return null;
+  const key = createHmac("sha256", lookupKey).update(`${instance}\0${trimmed}`).digest("hex");
   try {
+    const cached = verifiedCodes.get(key);
+    if (cached && cached.expiresAt > Date.now()) {
+      const [team] = await handle.select().from(teamsTable).where(eq(teamsTable.id, cached.id)).limit(1);
+      if (team?.codeHash === cached.hash) return { ...team, instance };
+    }
+    verifiedCodes.delete(key);
     const teams = await handle.select().from(teamsTable);
     for (const team of teams) {
-      if (verifyTeamCodeHash(trimmed, team.codeHash)) return { ...team, instance };
+      if (await verifyTeamCodeHash(trimmed, team.codeHash)) {
+        rememberCode(key, team.id, team.codeHash!);
+        return { ...team, instance };
+      }
     }
     if (matchesLegacyTeamCode(trimmed)) {
       const defaultTeam = teams.find((team) => team.id === DEFAULT_TEAM_ID);

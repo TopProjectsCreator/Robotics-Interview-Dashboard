@@ -48,6 +48,7 @@ test("CAD storage status access is limited to Wolverines coordinators", async (t
       interviewerAccountsTable,
       revokedSessionsTable,
       runWithInstance: (_instance, callback) => callback(),
+      currentInstance: () => "primary",
     },
   });
   mock.module("drizzle-orm", {

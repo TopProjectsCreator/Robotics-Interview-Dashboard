@@ -7,6 +7,7 @@ import { userCanSeeWorkspace, type WorkspaceKey } from "../lib/workspaceVisibili
 import { readWorkspaceVisibility } from "../lib/workspaceAccess";
 import { ADMIN_SESSION_TTL_MS, isAdminSessionExpired } from "../lib/adminSessionPolicy";
 import { isAdminRole } from "../lib/roles";
+import { requestAccount } from "../lib/requestAccount";
 
 const SESSION_COOKIE = "robotics_admin_session";
 
@@ -110,25 +111,17 @@ export function authenticatedInterviewerId(req: Request): string | undefined {
 }
 
 /**
- * Team id for the signed-in account. Falls back to the default team when the
- * account is missing (pre-migration) or has a legacy NULL team_id, so the
- * current team's data stays reachable and is never lost.
+ * Team id for the signed-in account. Legacy NULL team ids and anonymous
+ * public reads use the default team; failed or missing signed-in lookups
+ * must not silently grant access to default-team data.
  */
 export async function requestTeamId(req: Request): Promise<string> {
   const { DEFAULT_TEAM_ID } = await import("@workspace/db");
   const interviewerId = authenticatedInterviewerId(req);
   if (!interviewerId) return DEFAULT_TEAM_ID;
-  try {
-    const { db, interviewerAccountsTable } = await import("@workspace/db");
-    const { eq } = await import("drizzle-orm");
-    const [account] = await db.select({ teamId: interviewerAccountsTable.teamId })
-      .from(interviewerAccountsTable)
-      .where(eq(interviewerAccountsTable.id, interviewerId))
-      .limit(1);
-    return account?.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID;
-  } catch {
-    return DEFAULT_TEAM_ID;
-  }
+  const account = await requestAccount(req, interviewerId);
+  if (!account) throw new Error("Signed-in account no longer exists");
+  return account.teamId?.trim() ? account.teamId : DEFAULT_TEAM_ID;
 }
 
 export function requestTeamIdSync(req: Request): string {
@@ -193,11 +186,8 @@ export function requireAdmin(
       res.status(401).json({ error: "Interviewer session is invalid" });
       return;
     }
-    db.select({ passwordHash: interviewerAccountsTable.passwordHash, role: interviewerAccountsTable.role })
-      .from(interviewerAccountsTable)
-      .where(eq(interviewerAccountsTable.id, interviewerId))
-      .limit(1)
-      .then(([account]) => {
+    requestAccount(req, interviewerId)
+      .then((account) => {
         if (!account?.passwordHash) {
           res.status(401).json({ error: "Password setup required" });
           return;
@@ -236,11 +226,8 @@ export function requireStaff(
       next();
       return;
     }
-    db.select({ role: interviewerAccountsTable.role })
-      .from(interviewerAccountsTable)
-      .where(eq(interviewerAccountsTable.id, interviewerId))
-      .limit(1)
-      .then(([account]) => {
+    requestAccount(req, interviewerId)
+      .then((account) => {
         if (!account?.role || !STAFF_ROLES.has(account.role)) {
           res.status(403).json({ error: "Not available for your role" });
           return;
@@ -280,8 +267,8 @@ export function requireSiteOwner(
 ): void {
   requireAdmin(req, res, () => {
     const interviewerId = (req as Request & { interviewerId?: string }).interviewerId;
-    isSiteOwner(interviewerId).then((owner) => {
-      if (!owner) {
+    requestAccount(req, interviewerId!).then((account) => {
+      if (!account?.isSiteOwner) {
         res.status(403).json({ error: "Site owner only" });
         return;
       }
@@ -312,11 +299,8 @@ export function requireCoordinator(
       next();
       return;
     }
-    db.select({ role: interviewerAccountsTable.role })
-      .from(interviewerAccountsTable)
-      .where(eq(interviewerAccountsTable.id, interviewerId))
-      .limit(1)
-      .then(([account]) => {
+    requestAccount(req, interviewerId)
+      .then((account) => {
         if (!isAdminRole(account?.role)) {
           res.status(403).json({ error: "Admins only" });
           return;
@@ -350,11 +334,8 @@ export function requireInboxAdmin(
       next();
       return;
     }
-    db.select({ role: interviewerAccountsTable.role })
-      .from(interviewerAccountsTable)
-      .where(eq(interviewerAccountsTable.id, interviewerId))
-      .limit(1)
-      .then(([account]) => {
+    requestAccount(req, interviewerId)
+      .then((account) => {
         if (account?.role !== "admin" && account?.role !== "coordinator") {
           res.status(403).json({ error: "Admins only" });
           return;
@@ -384,14 +365,8 @@ export function requireWolverinesCoordinator(
       res.status(401).json({ error: "Interviewer session is invalid" });
       return;
     }
-    db.select({
-      role: interviewerAccountsTable.role,
-      teamId: interviewerAccountsTable.teamId,
-    })
-      .from(interviewerAccountsTable)
-      .where(eq(interviewerAccountsTable.id, interviewerId))
-      .limit(1)
-      .then(([account]) => {
+    requestAccount(req, interviewerId)
+      .then((account) => {
         const teamId = account?.teamId?.trim() || DEFAULT_TEAM_ID;
         if (!isAdminRole(account?.role) || teamId !== DEFAULT_TEAM_ID) {
           res.status(403).json({ error: "Wolverines coordinators only" });
@@ -427,13 +402,9 @@ export function requireWorkspaceAccess(
         return;
       }
       void (async () => {
-        const [visibility, [account]] = await Promise.all([
+        const [visibility, account] = await Promise.all([
           readWorkspaceVisibility(await requestTeamId(req)),
-          db
-            .select({ role: interviewerAccountsTable.role })
-            .from(interviewerAccountsTable)
-            .where(eq(interviewerAccountsTable.id, interviewerId))
-            .limit(1),
+          requestAccount(req, interviewerId),
         ]);
         if (!userCanSeeWorkspace(visibility, interviewerId, account?.role, workspace)) {
           res.status(403).json({ error: message });
@@ -470,12 +441,8 @@ export function requireWorkspaceAccessOrCoordinator(
         return;
       }
       void (async () => {
-        const [[account], visibility] = await Promise.all([
-          db
-            .select({ role: interviewerAccountsTable.role })
-            .from(interviewerAccountsTable)
-            .where(eq(interviewerAccountsTable.id, interviewerId))
-            .limit(1),
+        const [account, visibility] = await Promise.all([
+          requestAccount(req, interviewerId),
           readWorkspaceVisibility(await requestTeamId(req)),
         ]);
         const role = account?.role;
