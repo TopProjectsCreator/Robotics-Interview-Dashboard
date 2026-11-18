@@ -171,6 +171,7 @@ import { getSettingsNavigationItems, SettingsWorkspaceNavigation, type SettingsS
 import { SettingsAssistantChat } from "./components/SettingsAssistantChat";
 import { BlockedIpsSettings } from "./components/BlockedIpsSettings";
 import { TinyUrlsSettings } from "./components/TinyUrlsSettings";
+import { CadIconSettings } from "./components/CadIconSettings";
 import { updateSettingsCapability } from "./settingsCapabilityRegistry";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
@@ -1276,6 +1277,7 @@ function SettingsModal({
   const settingsNavigationItems = getSettingsNavigationItems({
     canManageAssistant: canManageAssistant || isAdmin,
     canManageBranding,
+    canManageCadIcons: isAdmin,
   });
   const settingsAssistantLocalSettings = {
     "profile.displayName": settings.displayName,
@@ -1362,6 +1364,7 @@ function SettingsModal({
         <SettingRow title="Applicant photos" detail="Show profile photos in the list"><Toggle on={settings.showPhotos} onChange={(v) => update({ showPhotos: v })} testId="toggle-settings-photos" label="Applicant photos" /></SettingRow>
         <SettingRow title="Reduce motion" detail="Turns off animations and transitions"><Toggle on={settings.reduceMotion} onChange={(v) => update({ reduceMotion: v })} testId="toggle-settings-motion" label="Reduce motion" /></SettingRow>
       </div>}
+      {activeSettingsSection === "cad" && isAdmin && <CadIconSettings />}
       <section hidden={activeSettingsSection !== "assistant"}>
       <AIProviderSettingsCategory canManageProvider={canManageAssistant && session.data?.authenticated === true && Boolean(session.data.teamId)} onOpenProviderSetup={onOpenProviderSetup} />
       {isAdmin && session.data?.teamId && <AssistantGovernanceSettings teamId={session.data.teamId} />}

@@ -267,20 +267,9 @@ describe("CAD workspace tree", () => {
     await waitFor(() => expect(mocks.updateBot).toHaveBeenCalledWith("bot-1", { icon: "bot" }));
   });
 
-  it("lets admins disable icon choices and hides that control from other roles", async () => {
-    const { unmount } = renderPage();
-    const componentIcon = screen.getByTestId("cad-icon-policy-component");
-    expect(componentIcon).toBeChecked();
-    fireEvent.click(componentIcon);
-    fireEvent.click(screen.getByTestId("button-save-cad-icon-policy"));
-
-    await waitFor(() => expect(mocks.updateIconPolicy).toHaveBeenCalledWith({
-      enabledIcons: DEFAULT_CAD_ICON_IDS.filter((icon) => icon !== "component"),
-    }));
-
-    unmount();
-    mocks.session.mockReturnValue({ data: { role: "interviewer" } });
+  it("keeps team icon policy settings out of the CAD workspace", async () => {
     renderPage();
+    await waitFor(() => expect(mocks.getCadStorageStatus).toHaveBeenCalled());
     expect(screen.queryByTestId("cad-icon-policy")).not.toBeInTheDocument();
   });
 

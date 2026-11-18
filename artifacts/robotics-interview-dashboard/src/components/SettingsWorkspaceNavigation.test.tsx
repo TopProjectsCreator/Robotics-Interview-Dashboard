@@ -10,12 +10,14 @@ import {
 function NavigationHarness({
   canManageAssistant = true,
   canManageBranding = true,
+  canManageCadIcons = false,
 }: {
   canManageAssistant?: boolean;
   canManageBranding?: boolean;
+  canManageCadIcons?: boolean;
 }) {
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("profile");
-  const items = getSettingsNavigationItems({ canManageAssistant, canManageBranding });
+  const items = getSettingsNavigationItems({ canManageAssistant, canManageBranding, canManageCadIcons });
   return (
     <div className="dark">
       <div data-testid="responsive-layout" className="grid grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[14rem_minmax(0,1fr)] sm:grid-rows-1">
@@ -35,14 +37,16 @@ function NavigationHarness({
 describe("SettingsWorkspaceNavigation", () => {
   it("shows privileged sections only when the matching permission is available", () => {
     const restricted = getSettingsNavigationItems({ canManageAssistant: false, canManageBranding: false });
-    const allowed = getSettingsNavigationItems({ canManageAssistant: true, canManageBranding: true });
+    const allowed = getSettingsNavigationItems({ canManageAssistant: true, canManageBranding: true, canManageCadIcons: true });
 
     expect(restricted.map((item) => item.id)).not.toContain("assistant");
     expect(restricted.map((item) => item.id)).not.toContain("branding");
+    expect(restricted.map((item) => item.id)).not.toContain("cad");
     expect(restricted.map((item) => item.id)).toContain("team");
     expect(restricted.map((item) => item.id)).toContain("chat");
     expect(allowed.map((item) => item.id)).toContain("assistant");
     expect(allowed.map((item) => item.id)).toContain("branding");
+    expect(allowed.map((item) => item.id)).toContain("cad");
   });
 
   it("switches panels using tabs and supports arrow, Home, and End keys", () => {
