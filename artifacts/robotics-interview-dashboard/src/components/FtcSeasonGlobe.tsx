@@ -8,7 +8,7 @@ type GlobePoint = FtcGlobePoint;
 const DEFAULT_GLOBE_ZOOM = 1.2;
 const GLOBE_MARKER_REFERENCE_ZOOM = 1.8;
 const MIN_GLOBE_ZOOM = 0.75;
-export const MAX_GLOBE_ZOOM = 10;
+export const MAX_GLOBE_ZOOM = 200;
 const MAX_GLOBE_TILT = 1.2;
 const GLOBE_ZOOM_STEP = 0.2;
 export const GLOBE_DETAIL_ZOOM_THRESHOLD = 2.4;
@@ -26,6 +26,10 @@ export function clampGlobeTilt(value: number) {
 
 export function getGlobeMarkerZoomScale(zoom: number) {
   return GLOBE_MARKER_REFERENCE_ZOOM / clampGlobeZoom(zoom);
+}
+
+export function getGlobeRotationScale(zoom: number) {
+  return DEFAULT_GLOBE_ZOOM / clampGlobeZoom(zoom);
 }
 
 export function stepGlobeZoom(value: number, direction: -1 | 1) {
@@ -51,8 +55,62 @@ export function pointPosition(point: GlobePoint, radius: number, latitudeOffset 
   );
 }
 
-function makeEarthTexture(source = "ftc-globe-world.svg") {
-  const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}${source}`);
+export function findGlobePointAtScreen({
+  points,
+  markerOffsets,
+  root,
+  camera,
+  clientX,
+  clientY,
+  rect,
+  hitRadius = 24,
+}: {
+  points: GlobePoint[];
+  markerOffsets: Map<string, { latitude: number; longitude: number }>;
+  root: THREE.Group;
+  camera: THREE.PerspectiveCamera;
+  clientX: number;
+  clientY: number;
+  rect: Pick<DOMRect, "left" | "top" | "width" | "height">;
+  hitRadius?: number;
+}) {
+  root.updateMatrixWorld(true);
+  camera.updateMatrixWorld(true);
+  const cameraPosition = camera.getWorldPosition(new THREE.Vector3());
+  const cameraDirection = new THREE.Vector3();
+  let nearestPoint: GlobePoint | null = null;
+  let nearestDistanceSquared = hitRadius * hitRadius;
+  const projected = new THREE.Vector3();
+
+  for (const point of points) {
+    const offset = markerOffsets.get(point.id);
+    const latitude = THREE.MathUtils.degToRad(point.latitude + (offset?.latitude ?? 0));
+    const longitude = THREE.MathUtils.degToRad(point.longitude + (offset?.longitude ?? 0));
+    projected.set(
+      1.012 * Math.cos(latitude) * Math.sin(longitude),
+      1.012 * Math.sin(latitude),
+      1.012 * Math.cos(latitude) * Math.cos(longitude),
+    );
+    root.localToWorld(projected);
+    cameraDirection.subVectors(cameraPosition, projected);
+    if (projected.dot(cameraDirection) <= 0) continue;
+    projected.project(camera);
+    if (projected.z < -1 || projected.z > 1) continue;
+
+    const screenX = rect.left + ((projected.x + 1) * rect.width) / 2;
+    const screenY = rect.top + ((1 - projected.y) * rect.height) / 2;
+    const distanceSquared = (screenX - clientX) ** 2 + (screenY - clientY) ** 2;
+    if (distanceSquared <= nearestDistanceSquared) {
+      nearestDistanceSquared = distanceSquared;
+      nearestPoint = point;
+    }
+  }
+
+  return nearestPoint;
+}
+
+function makeEarthTexture(source = "ftc-globe-world.svg", onError?: () => void) {
+  const texture = new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}${source}`, undefined, undefined, onError);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.wrapS = THREE.RepeatWrapping;
   // Sphere U and east-positive longitude now advance in the same direction.
@@ -92,7 +150,7 @@ export function createGlobePointerGestureHandlers({
   onSelect,
 }: {
   onRotate: (deltaX: number, deltaY: number) => void;
-  onZoom: (delta: number) => void;
+  onZoom: (scale: number) => void;
   onSelect: (clientX: number, clientY: number) => void;
 }) {
   const touchPointers = new Map<number, { x: number; y: number }>();
@@ -160,7 +218,9 @@ export function createGlobePointerGestureHandlers({
         touchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
         if (touchPointers.size >= 2) {
           const distance = distanceBetweenTouches();
-          if (previousPinchDistance !== null) onZoom((distance - previousPinchDistance) * 0.005);
+          if (previousPinchDistance !== null) {
+            onZoom(THREE.MathUtils.clamp(distance / Math.max(1, previousPinchDistance), 0.5, 2));
+          }
           previousPinchDistance = distance;
           return;
         }
@@ -224,6 +284,8 @@ function GlobeRenderer({
   onSelect,
   onZoom,
   onReady,
+  onFailure,
+  onContextRestored,
 }: {
   points: GlobePoint[];
   dark: boolean;
@@ -231,18 +293,25 @@ function GlobeRenderer({
   paused: boolean;
   zoom: number;
   onSelect: (point: GlobePoint) => void;
-  onZoom: (delta: number) => void;
+  onZoom: (scale: number) => void;
   onReady: (ready: boolean) => void;
+  onFailure: (message: string) => void;
+  onContextRestored: () => void;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const zoomRef = useRef(zoom);
   zoomRef.current = zoom;
   const syncZoomRef = useRef<(value: number) => void>(() => undefined);
+  const requestDrawRef = useRef<() => void>(() => undefined);
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
+  const previousSelectedIdRef = useRef(selectedId);
+  const updateSelectionRef = useRef<(previousId: string | null, nextId: string | null) => void>(() => undefined);
   const pausedRef = useRef(paused);
-  const callbacksRef = useRef({ onSelect, onReady, onZoom });
+  const callbacksRef = useRef({ onSelect, onReady, onZoom, onFailure, onContextRestored });
   pausedRef.current = paused;
-  callbacksRef.current = { onSelect, onReady, onZoom };
+  callbacksRef.current = { onSelect, onReady, onZoom, onFailure, onContextRestored };
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -252,6 +321,7 @@ function GlobeRenderer({
       renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, powerPreference: "low-power" });
     } catch {
       callbacksRef.current.onReady(false);
+      callbacksRef.current.onFailure("Interactive rendering is unavailable. Showing the map overview instead.");
       return;
     }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -276,7 +346,18 @@ function GlobeRenderer({
     // Center high magnification on a populated region rather than empty equatorial ocean.
     root.rotation.x = 0.52;
     scene.add(root);
-    const baseTexture = makeEarthTexture();
+    let rendererDisposed = false;
+    let contextLost = false;
+    let baseTextureFailed = false;
+    let animation = 0;
+    let renderRequested = true;
+    const baseTexture = makeEarthTexture("ftc-globe-world.svg", () => {
+      if (rendererDisposed) return;
+      baseTextureFailed = true;
+      renderer.domElement.style.display = "none";
+      callbacksRef.current.onReady(false);
+      callbacksRef.current.onFailure("The globe texture could not load. Showing the map overview instead.");
+    });
     const earthMaterial = new THREE.MeshStandardMaterial({ map: baseTexture, roughness: 0.92, metalness: 0.02 });
     const globe = new THREE.Mesh(
       new THREE.SphereGeometry(1, 64, 48),
@@ -284,64 +365,50 @@ function GlobeRenderer({
     );
     root.add(globe);
     const markerOffsets = getMarkerOffsets(points);
-    const meshData: { mesh: THREE.InstancedMesh; points: GlobePoint[]; markerScale: number }[] = [];
-    const syncMarkerScales = (nextZoom: number) => {
-      const zoomScale = getGlobeMarkerZoomScale(nextZoom);
-      const helper = new THREE.Object3D();
-      for (const { mesh, points: entries, markerScale } of meshData) {
-        entries.forEach((point, index) => {
-          const offset = markerOffsets.get(point.id);
-          helper.position.copy(pointPosition(point, 1.012, offset?.latitude, offset?.longitude));
-          helper.scale.setScalar((point.id === selectedId ? markerScale * 2 : 1) * zoomScale);
-          helper.updateMatrix();
-          mesh.setMatrixAt(index, helper.matrix);
-        });
-        mesh.instanceMatrix.needsUpdate = true;
-      }
+    const markerZoomScale = { value: getGlobeMarkerZoomScale(zoomRef.current) };
+    const markerInstances = new Map<string, { mesh: THREE.InstancedMesh; point: GlobePoint; index: number }>();
+    const writeMarkerMatrix = (
+      mesh: THREE.InstancedMesh,
+      point: GlobePoint,
+      index: number,
+      helper: THREE.Object3D,
+      selected: boolean,
+      markNeedsUpdate = true,
+    ) => {
+      const offset = markerOffsets.get(point.id);
+      helper.position.copy(pointPosition(point, 1.012, offset?.latitude, offset?.longitude));
+      helper.scale.setScalar(selected ? 2 : 1);
+      helper.updateMatrix();
+      mesh.setMatrixAt(index, helper.matrix);
+      if (markNeedsUpdate) mesh.instanceMatrix.needsUpdate = true;
     };
     let detailTexture: THREE.Texture | null = null;
     let detailOverlay: THREE.Mesh | null = null;
     let detailLoadRequested = false;
-    let detailRequestId = 0;
+    let detailLoadAttempted = false;
     let cartographyTexture: THREE.Texture | null = null;
     let cartographyOverlay: THREE.Mesh | null = null;
     let cartographyLoadRequested = false;
-    let cartographyRequestId = 0;
-    const removeDetailOverlay = () => {
-      if (detailOverlay) {
-        root.remove(detailOverlay);
-        detailOverlay.geometry.dispose();
-        (detailOverlay.material as THREE.Material).dispose();
-        detailOverlay = null;
-      }
-      detailTexture?.dispose();
-      detailTexture = null;
-    };
-    const removeCartographyOverlay = () => {
-      if (cartographyOverlay) {
-        root.remove(cartographyOverlay);
-        cartographyOverlay.geometry.dispose();
-        (cartographyOverlay.material as THREE.Material).dispose();
-        cartographyOverlay = null;
-      }
-      cartographyTexture?.dispose();
-      cartographyTexture = null;
-    };
+    let cartographyLoadAttempted = false;
+    let disposed = false;
     const syncCartography = (nextZoom: number) => {
       if (!shouldUseGlobeCartography(nextZoom)) {
-        cartographyRequestId += 1;
-        cartographyLoadRequested = false;
-        removeCartographyOverlay();
+        if (!cartographyOverlay && !cartographyLoadRequested) cartographyLoadAttempted = false;
+        if (cartographyOverlay) cartographyOverlay.visible = false;
         return;
       }
-      if (cartographyOverlay || cartographyLoadRequested) return;
+      if (cartographyOverlay) {
+        cartographyOverlay.visible = true;
+        return;
+      }
+      if (cartographyLoadRequested || cartographyLoadAttempted) return;
 
       cartographyLoadRequested = true;
-      const requestId = ++cartographyRequestId;
+      cartographyLoadAttempted = true;
       new THREE.TextureLoader().load(
         `${import.meta.env.BASE_URL}${GLOBE_CARTOGRAPHY_TEXTURE}`,
         (texture) => {
-          if (requestId !== cartographyRequestId || !shouldUseGlobeCartography(zoomRef.current)) {
+          if (disposed) {
             texture.dispose();
             return;
           }
@@ -357,32 +424,39 @@ function GlobeRenderer({
             toneMapped: false,
           });
           cartographyOverlay = new THREE.Mesh(new THREE.SphereGeometry(1.003, 64, 48), material);
+          cartographyOverlay.visible = shouldUseGlobeCartography(zoomRef.current);
           root.add(cartographyOverlay);
+          requestDrawRef.current();
+          if (!baseTextureFailed && !contextLost) callbacksRef.current.onReady(true);
         },
         undefined,
         () => {
-          if (requestId === cartographyRequestId) {
+          if (!disposed) {
             cartographyLoadRequested = false;
-            console.error("Unable to load the Natural Earth city and waterbody texture.");
+            if (!shouldUseGlobeCartography(zoomRef.current)) cartographyLoadAttempted = false;
+            callbacksRef.current.onFailure("Some city and water details could not load; the base map remains available.");
           }
         },
       );
     };
     const syncDetail = (nextZoom: number) => {
       if (!shouldUseGlobeDetail(nextZoom)) {
-        detailRequestId += 1;
-        detailLoadRequested = false;
-        removeDetailOverlay();
+        if (!detailOverlay && !detailLoadRequested) detailLoadAttempted = false;
+        if (detailOverlay) detailOverlay.visible = false;
         return;
       }
-      if (detailOverlay || detailLoadRequested) return;
+      if (detailOverlay) {
+        detailOverlay.visible = true;
+        return;
+      }
+      if (detailLoadRequested || detailLoadAttempted) return;
 
       detailLoadRequested = true;
-      const requestId = ++detailRequestId;
+      detailLoadAttempted = true;
       new THREE.TextureLoader().load(
         `${import.meta.env.BASE_URL}${GLOBE_DETAIL_TEXTURE}`,
         (texture) => {
-          if (requestId !== detailRequestId || !shouldUseGlobeDetail(zoomRef.current)) {
+          if (disposed) {
             texture.dispose();
             return;
           }
@@ -398,13 +472,17 @@ function GlobeRenderer({
             toneMapped: false,
           });
           detailOverlay = new THREE.Mesh(new THREE.SphereGeometry(1.0015, 64, 48), material);
+          detailOverlay.visible = shouldUseGlobeDetail(zoomRef.current);
           root.add(detailOverlay);
+          requestDrawRef.current();
+          if (!baseTextureFailed && !contextLost) callbacksRef.current.onReady(true);
         },
         undefined,
         () => {
-          if (requestId === detailRequestId) {
+          if (!disposed) {
             detailLoadRequested = false;
-            console.error("Unable to load the Natural Earth close-up boundary texture.");
+            if (!shouldUseGlobeDetail(zoomRef.current)) detailLoadAttempted = false;
+            callbacksRef.current.onFailure("Close-up boundaries could not load; the base map remains available.");
           }
         },
       );
@@ -413,11 +491,11 @@ function GlobeRenderer({
       const boundedZoom = clampGlobeZoom(value);
       camera.zoom = boundedZoom;
       camera.updateProjectionMatrix();
-      syncMarkerScales(boundedZoom);
+      markerZoomScale.value = getGlobeMarkerZoomScale(boundedZoom);
       syncDetail(boundedZoom);
       syncCartography(boundedZoom);
+      requestDrawRef.current();
     };
-    syncZoomRef.current(zoomRef.current);
     const atmosphere = new THREE.Mesh(
       new THREE.SphereGeometry(1.025, 48, 36),
       new THREE.MeshBasicMaterial({ color: dark ? 0x81d4be : 0x348c79, transparent: true, opacity: 0.09, side: THREE.BackSide }),
@@ -434,41 +512,70 @@ function GlobeRenderer({
       if (!entries.length) return;
       const geometry = new THREE.SphereGeometry(scale, 8, 6);
       const material = new THREE.MeshBasicMaterial({ color, toneMapped: false });
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms.globeMarkerZoomScale = markerZoomScale;
+        shader.vertexShader = shader.vertexShader
+          .replace("#include <common>", "#include <common>\nuniform float globeMarkerZoomScale;")
+          .replace("#include <begin_vertex>", "#include <begin_vertex>\ntransformed *= globeMarkerZoomScale;");
+      };
+      material.customProgramCacheKey = () => "ftc-globe-marker-zoom-v1";
       const mesh = new THREE.InstancedMesh(geometry, material, entries.length);
       root.add(mesh);
-      meshData.push({ mesh, points: entries, markerScale: scale });
+      const helper = new THREE.Object3D();
+      entries.forEach((point, index) => {
+        markerInstances.set(point.id, { mesh, point, index });
+        writeMarkerMatrix(mesh, point, index, helper, point.id === selectedIdRef.current, false);
+      });
+      mesh.instanceMatrix.needsUpdate = true;
     };
     addPointSet(teamPoints, dark ? 0x74e0b3 : 0x087e72, 0.007);
     addPointSet(eventPoints, dark ? 0xffd46c : 0xc17e27, 0.010);
-    syncMarkerScales(zoomRef.current);
+    updateSelectionRef.current = (previousId, nextId) => {
+      if (previousId === nextId) return;
+      const helper = new THREE.Object3D();
+      if (previousId) {
+        const previous = markerInstances.get(previousId);
+        if (previous) writeMarkerMatrix(previous.mesh, previous.point, previous.index, helper, false);
+      }
+      if (nextId) {
+        const next = markerInstances.get(nextId);
+        if (next) writeMarkerMatrix(next.mesh, next.point, next.index, helper, true);
+      }
+      requestDrawRef.current();
+    };
 
-    const raycaster = new THREE.Raycaster();
-    const pointer = new THREE.Vector2();
     const gestures = createGlobePointerGestureHandlers({
       onRotate: (deltaX, deltaY) => {
-        root.rotation.y += deltaX * 0.006;
-        root.rotation.x = clampGlobeTilt(root.rotation.x + deltaY * 0.004);
+        const rotationScale = getGlobeRotationScale(camera.zoom);
+        root.rotation.y += deltaX * 0.006 * rotationScale;
+        root.rotation.x = clampGlobeTilt(root.rotation.x + deltaY * 0.004 * rotationScale);
+        requestDrawRef.current();
       },
-      onZoom: (delta) => callbacksRef.current.onZoom(delta),
+      onZoom: (scale) => callbacksRef.current.onZoom(scale),
       onSelect: (clientX, clientY) => {
         const rect = renderer.domElement.getBoundingClientRect();
-        pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
-        raycaster.setFromCamera(pointer, camera);
-        const hit = raycaster.intersectObjects(meshData.map((entry) => entry.mesh), false)[0];
-        if (hit?.instanceId !== undefined) {
-          const entry = meshData.find((item) => item.mesh === hit.object);
-          const point = entry?.points[hit.instanceId];
-          if (point) callbacksRef.current.onSelect(point);
-        }
+        const point = findGlobePointAtScreen({
+          points,
+          markerOffsets,
+          root,
+          camera,
+          clientX,
+          clientY,
+          rect,
+        });
+        if (point) callbacksRef.current.onSelect(point);
+        requestDrawRef.current();
       },
     });
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let requestDraw: () => void = () => undefined;
     const resize = () => {
       const width = Math.max(1, mount.clientWidth);
       const height = Math.max(1, mount.clientHeight);
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      requestDraw();
     };
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
@@ -486,6 +593,7 @@ function GlobeRenderer({
     const pointerUp = (event: PointerEvent) => {
       gestures.pointerUp(event);
       if (!gestures.isInteracting()) renderer.domElement.style.cursor = "grab";
+      requestDrawRef.current();
     };
     renderer.domElement.addEventListener("pointerdown", pointerDown);
     renderer.domElement.addEventListener("pointermove", pointerMove);
@@ -493,28 +601,64 @@ function GlobeRenderer({
     const pointerCancel = (event: PointerEvent) => {
       gestures.pointerCancel(event);
       if (!gestures.isInteracting()) renderer.domElement.style.cursor = "grab";
+      requestDrawRef.current();
     };
     renderer.domElement.addEventListener("pointercancel", pointerCancel);
 
-    let animation = 0;
     const draw = () => {
-      animation = requestAnimationFrame(draw);
-      if (!pausedRef.current && !reducedMotion && !gestures.isInteracting()) root.rotation.y += 0.0014;
-      renderer.render(scene, camera);
+      animation = 0;
+      if (baseTextureFailed || contextLost || rendererDisposed) return;
+      const shouldAnimate = !pausedRef.current && !reducedMotion && !gestures.isInteracting();
+      if (shouldAnimate) root.rotation.y += 0.0014 * getGlobeRotationScale(camera.zoom);
+      if (renderRequested || shouldAnimate) {
+        try {
+          renderer.render(scene, camera);
+        } catch {
+          contextLost = true;
+          renderer.domElement.style.display = "none";
+          callbacksRef.current.onReady(false);
+          callbacksRef.current.onFailure("The globe could not render. Showing the map overview instead.");
+          return;
+        }
+        renderRequested = false;
+      }
+      if (shouldAnimate) animation = requestAnimationFrame(draw);
     };
-    draw();
+    requestDraw = () => {
+      renderRequested = true;
+      if (!animation) animation = requestAnimationFrame(draw);
+    };
+    requestDrawRef.current = requestDraw;
+    const contextLostHandler = (event: Event) => {
+      event.preventDefault();
+      contextLost = true;
+      renderer.domElement.style.display = "none";
+      callbacksRef.current.onReady(false);
+      callbacksRef.current.onFailure("The globe renderer stopped unexpectedly. Showing the map overview until it recovers.");
+    };
+    const contextRestoredHandler = () => {
+      if (!rendererDisposed) callbacksRef.current.onContextRestored();
+    };
+    renderer.domElement.addEventListener("webglcontextlost", contextLostHandler);
+    renderer.domElement.addEventListener("webglcontextrestored", contextRestoredHandler);
+    syncZoomRef.current(zoomRef.current);
+    requestDraw();
     callbacksRef.current.onReady(true);
 
     return () => {
+      rendererDisposed = true;
+      disposed = true;
       cancelAnimationFrame(animation);
       observer.disconnect();
       syncZoomRef.current = () => undefined;
-      detailRequestId += 1;
-      cartographyRequestId += 1;
+      requestDrawRef.current = () => undefined;
+      updateSelectionRef.current = () => undefined;
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       renderer.domElement.removeEventListener("pointercancel", pointerCancel);
+      renderer.domElement.removeEventListener("webglcontextlost", contextLostHandler);
+      renderer.domElement.removeEventListener("webglcontextrestored", contextRestoredHandler);
       cameraRef.current = null;
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh || object instanceof THREE.InstancedMesh) {
@@ -529,12 +673,21 @@ function GlobeRenderer({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, [dark, points, selectedId]);
+  }, [dark, points]);
 
   useEffect(() => {
     if (!cameraRef.current) return;
     syncZoomRef.current(zoom);
   }, [zoom]);
+
+  useEffect(() => {
+    updateSelectionRef.current(previousSelectedIdRef.current, selectedId);
+    previousSelectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  useEffect(() => {
+    requestDrawRef.current();
+  }, [paused]);
 
   return <div ref={mountRef} className="absolute inset-0" aria-hidden="true" />;
 }
@@ -598,6 +751,8 @@ export function FtcSeasonGlobe() {
   const [paused, setPaused] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_GLOBE_ZOOM);
   const [rendererReady, setRendererReady] = useState(false);
+  const [rendererFailure, setRendererFailure] = useState<string | null>(null);
+  const [rendererEpoch, setRendererEpoch] = useState(0);
   const [dark, setDark] = useState(false);
   const [visiblePointCount, setVisiblePointCount] = useState(80);
   const points = useMemo(() => data?.points ?? [], [data?.points]);
@@ -650,15 +805,39 @@ export function FtcSeasonGlobe() {
             <div aria-hidden="true" className="pointer-events-none absolute left-1/2 top-1/2 aspect-square w-[min(95%,560px)] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#8bc8b6]/20 shadow-[0_0_90px_rgba(66,173,145,.09)]" />
             {data && points.length > 0 && (
               <GlobeRenderer
+                key={rendererEpoch}
                 points={points}
                 dark={dark}
                 selectedId={selected?.id ?? null}
                 paused={paused}
                 zoom={zoom}
                 onSelect={choosePoint}
-                onZoom={(delta) => setZoom((value) => clampGlobeZoom(value + delta))}
-                onReady={setRendererReady}
+                onZoom={(scale) => setZoom((value) => clampGlobeZoom(value * scale))}
+                onReady={(ready) => {
+                  setRendererReady(ready);
+                  if (ready) setRendererFailure(null);
+                }}
+                onFailure={setRendererFailure}
+                onContextRestored={() => setRendererEpoch((epoch) => epoch + 1)}
               />
+            )}
+            {data && points.length > 0 && !rendererReady && (
+              <img
+                src={`${import.meta.env.BASE_URL}ftc-globe-world.svg`}
+                alt=""
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 m-auto h-[88%] w-[92%] object-contain opacity-90"
+                data-testid="image-globe-fallback"
+              />
+            )}
+            {rendererFailure && (
+              <p
+                className="absolute bottom-16 left-4 right-16 z-10 max-w-xl rounded-lg border border-white/15 bg-[#102a31]/90 px-3 py-2 text-xs leading-5 text-[#d5e8e0] shadow-lg sm:bottom-20 sm:left-6"
+                role="status"
+                data-testid="status-globe-renderer"
+              >
+                {rendererFailure}
+              </p>
             )}
             {isLoading && <GlobeLoading />}
             {isError && (
@@ -719,7 +898,7 @@ export function FtcSeasonGlobe() {
                 <ZoomIn size={16} />
               </button>
               <span className="sr-only" role="status" aria-live="polite" data-testid="status-globe-zoom">
-                Globe zoom {Math.round(zoom * 100)} percent.
+                Globe zoom {Math.round(zoom * 100)} percent. Limits {Math.round(MIN_GLOBE_ZOOM * 100)} to {Math.round(MAX_GLOBE_ZOOM * 100)} percent.
               </span>
             </div>
             <div className="absolute bottom-4 left-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-white/10 bg-[#102a31]/80 px-3 py-2.5 font-mono text-[9px] text-[#c2d8d0] backdrop-blur sm:bottom-6 sm:left-6">

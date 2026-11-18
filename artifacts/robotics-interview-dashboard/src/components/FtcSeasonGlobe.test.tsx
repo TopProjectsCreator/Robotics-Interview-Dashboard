@@ -1,11 +1,68 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import * as THREE from "three";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { useGetFtcGlobeDataMock } = vi.hoisted(() => ({
+const { useGetFtcGlobeDataMock, globeRendererMock } = vi.hoisted(() => ({
   useGetFtcGlobeDataMock: vi.fn(),
+  globeRendererMock: {
+    failRenderer: true,
+    failRender: false,
+    rendererCount: 0,
+    renderCount: 0,
+    frameCallbacks: [] as FrameRequestCallback[],
+    textureRequests: [] as Array<{ url: string; texture: any; succeed: () => void; fail: () => void }>,
+  },
 }));
+
+vi.mock("three", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("three")>();
+
+  class MockWebGLRenderer {
+    domElement = document.createElement("canvas");
+
+    constructor() {
+      if (globeRendererMock.failRenderer) throw new Error("WebGL unavailable in this test");
+      globeRendererMock.rendererCount += 1;
+      this.domElement.getBoundingClientRect = () => ({
+        left: 0,
+        top: 0,
+        right: 500,
+        bottom: 500,
+        width: 500,
+        height: 500,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+    }
+
+    setPixelRatio() {}
+    setClearColor() {}
+    setSize() {}
+    render() {
+      if (globeRendererMock.failRender) throw new Error("render failure");
+      globeRendererMock.renderCount += 1;
+    }
+    dispose() {}
+  }
+
+  class MockTextureLoader {
+    load(url: string, onLoad?: (texture: InstanceType<typeof actual.Texture>) => void, _progress?: unknown, onError?: () => void) {
+      const texture = new actual.Texture();
+      globeRendererMock.textureRequests.push({
+        url,
+        texture,
+        succeed: () => onLoad?.(texture),
+        fail: () => onError?.(),
+      });
+      return texture;
+    }
+  }
+
+  return { ...actual, WebGLRenderer: MockWebGLRenderer, TextureLoader: MockTextureLoader };
+});
 
 vi.mock("@workspace/api-client-react", () => ({
   getGetFtcGlobeDataQueryKey: vi.fn(() => ["public", "ftc-globe"]),
@@ -16,10 +73,12 @@ import {
   clampGlobeTilt,
   clampGlobeZoom,
   createGlobePointerGestureHandlers,
+  findGlobePointAtScreen,
   FtcSeasonGlobe,
   GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD,
   MAX_GLOBE_ZOOM,
   getGlobeMarkerZoomScale,
+  getGlobeRotationScale,
   pointPosition,
   shouldUseGlobeCartography,
   shouldUseGlobeDetail,
@@ -73,6 +132,21 @@ const eventPoint = {
 
 describe("FTC season globe", () => {
   beforeEach(() => {
+    globeRendererMock.failRenderer = true;
+    globeRendererMock.failRender = false;
+    globeRendererMock.rendererCount = 0;
+    globeRendererMock.renderCount = 0;
+    globeRendererMock.frameCallbacks.length = 0;
+    globeRendererMock.textureRequests.length = 0;
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect() {}
+    });
+    vi.stubGlobal("requestAnimationFrame", vi.fn((callback: FrameRequestCallback) => {
+      globeRendererMock.frameCallbacks.push(callback);
+      return globeRendererMock.frameCallbacks.length;
+    }));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     useGetFtcGlobeDataMock.mockReturnValue({
       data: {
         season: 2026,
@@ -106,6 +180,54 @@ describe("FTC season globe", () => {
     expect(east.z).toBeCloseTo(0);
     expect(west.x).toBeCloseTo(-1);
     expect(west.z).toBeCloseTo(0);
+  });
+
+  it("keeps the front-facing marker selectable at extreme zoom", () => {
+    const root = new THREE.Group();
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+    camera.position.set(0, 0, 4.5);
+    camera.zoom = 200;
+    camera.updateProjectionMatrix();
+
+    expect(findGlobePointAtScreen({
+      points: [
+        { ...teamPoint, latitude: 0, longitude: 0 },
+        { ...eventPoint, latitude: 0, longitude: 180 },
+      ],
+      markerOffsets: new Map(),
+      root,
+      camera,
+      clientX: 210,
+      clientY: 220,
+      rect: { left: 10, top: 20, width: 400, height: 400 },
+    })?.id).toBe(teamPoint.id);
+  });
+
+  it("projects markers against the globe's initial explored region", () => {
+    const root = new THREE.Group();
+    root.rotation.y = THREE.MathUtils.degToRad(95);
+    root.rotation.x = 0.52;
+    root.updateMatrixWorld(true);
+    const localCenter = new THREE.Vector3(0, 0, 1).applyMatrix4(root.matrixWorld.clone().invert());
+    const centeredPoint = {
+      ...teamPoint,
+      latitude: THREE.MathUtils.radToDeg(Math.asin(localCenter.y)),
+      longitude: THREE.MathUtils.radToDeg(Math.atan2(localCenter.x, localCenter.z)),
+    };
+    const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+    camera.position.set(0, 0, 4.5);
+    camera.zoom = 200;
+    camera.updateProjectionMatrix();
+
+    expect(findGlobePointAtScreen({
+      points: [centeredPoint],
+      markerOffsets: new Map(),
+      root,
+      camera,
+      clientX: 210,
+      clientY: 220,
+      rect: { left: 10, top: 20, width: 400, height: 400 },
+    })?.id).toBe(teamPoint.id);
   });
 
   it("shows the selected team's identifiers and profile details", () => {
@@ -142,7 +264,8 @@ describe("FTC season globe", () => {
 
     const reset = screen.getByRole("button", { name: "Reset globe zoom" });
     while (!zoomIn.hasAttribute("disabled")) fireEvent.click(zoomIn);
-    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("1000 percent");
+    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("20000 percent");
+    expect(screen.getByTestId("status-globe-zoom")).toHaveTextContent("Limits 75 to 20000 percent.");
     expect(zoomIn).toBeDisabled();
     expect(reset).toBeEnabled();
 
@@ -155,6 +278,135 @@ describe("FTC season globe", () => {
     expect(zoomOut).toBeDisabled();
   });
 
+  it("shows a usable map fallback when WebGL cannot start", () => {
+    render(<FtcSeasonGlobe />);
+
+    expect(screen.getByTestId("image-globe-fallback")).toBeVisible();
+    expect(screen.getByTestId("status-globe-renderer")).toHaveTextContent(
+      "Interactive rendering is unavailable",
+    );
+    expect(screen.getByTestId("button-globe-point-team-team-2026-23442")).toBeEnabled();
+  });
+
+  it("falls back after a base texture failure and recreates the renderer after context restoration", () => {
+    globeRendererMock.failRenderer = false;
+    const { getByTestId, queryByTestId } = render(<FtcSeasonGlobe />);
+    expect(globeRendererMock.rendererCount).toBe(1);
+
+    const baseTexture = globeRendererMock.textureRequests.find((request) => request.url.includes("ftc-globe-world.svg"));
+    expect(baseTexture).toBeDefined();
+    act(() => baseTexture!.fail());
+    expect(getByTestId("image-globe-fallback")).toBeVisible();
+    expect(getByTestId("status-globe-renderer")).toHaveTextContent("globe texture could not load");
+
+    const canvas = getByTestId("stage-ftc-season-globe").querySelector("canvas");
+    expect(canvas).not.toBeNull();
+    act(() => canvas!.dispatchEvent(new Event("webglcontextlost", { cancelable: true })));
+    expect(getByTestId("status-globe-renderer")).toHaveTextContent("renderer stopped unexpectedly");
+    act(() => canvas!.dispatchEvent(new Event("webglcontextrestored")));
+
+    expect(globeRendererMock.rendererCount).toBe(2);
+    expect(queryByTestId("image-globe-fallback")).not.toBeInTheDocument();
+  });
+
+  it("shows the map fallback if a WebGL render call fails", () => {
+    globeRendererMock.failRenderer = false;
+    globeRendererMock.failRender = true;
+    render(<FtcSeasonGlobe />);
+
+    act(() => globeRendererMock.frameCallbacks.shift()?.(0));
+    expect(screen.getByTestId("image-globe-fallback")).toBeVisible();
+    expect(screen.getByTestId("status-globe-renderer")).toHaveTextContent("The globe could not render");
+  });
+
+  it("keeps one renderer and reuses delayed detail textures across zoom cycles", () => {
+    globeRendererMock.failRenderer = false;
+    const { unmount } = render(<FtcSeasonGlobe />);
+
+    const zoomIn = screen.getByRole("button", { name: "Zoom in on globe" });
+    while (Number(screen.getByTestId("status-globe-zoom").textContent?.match(/\d+/)?.[0]) < 420) {
+      fireEvent.click(zoomIn);
+    }
+    fireEvent.click(screen.getByTestId("button-globe-point-team-team-2026-23442"));
+    expect(globeRendererMock.rendererCount).toBe(1);
+    const boundaryRequests = globeRendererMock.textureRequests.filter((request) =>
+      request.url.includes("ftc-globe-boundaries-10m.svg"),
+    );
+    const cityRequests = globeRendererMock.textureRequests.filter((request) =>
+      request.url.includes("ftc-globe-hydrography-cities.svg"),
+    );
+    expect(boundaryRequests).toHaveLength(1);
+    expect(cityRequests).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset globe zoom" }));
+    const boundaryDispose = vi.spyOn(boundaryRequests[0].texture, "dispose");
+    act(() => {
+      boundaryRequests[0].succeed();
+      cityRequests[0].succeed();
+    });
+    while (Number(screen.getByTestId("status-globe-zoom").textContent?.match(/\d+/)?.[0]) < 420) {
+      fireEvent.click(zoomIn);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "Reset globe zoom" }));
+    while (Number(screen.getByTestId("status-globe-zoom").textContent?.match(/\d+/)?.[0]) < 420) {
+      fireEvent.click(zoomIn);
+    }
+
+    expect(globeRendererMock.rendererCount).toBe(1);
+    expect(globeRendererMock.textureRequests.filter((request) => request.url.includes("ftc-globe-boundaries-10m.svg"))).toHaveLength(1);
+    expect(boundaryDispose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Zoom out of globe" }));
+    expect(boundaryDispose).not.toHaveBeenCalled();
+    unmount();
+    expect(boundaryDispose).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports detail texture failures and retries after leaving close-up mode", () => {
+    globeRendererMock.failRenderer = false;
+    render(<FtcSeasonGlobe />);
+    const zoomIn = screen.getByRole("button", { name: "Zoom in on globe" });
+    while (Number(screen.getByTestId("status-globe-zoom").textContent?.match(/\d+/)?.[0]) < 260) {
+      fireEvent.click(zoomIn);
+    }
+    const firstRequest = globeRendererMock.textureRequests.find((request) =>
+      request.url.includes("ftc-globe-boundaries-10m.svg"),
+    );
+    expect(firstRequest).toBeDefined();
+    act(() => firstRequest!.fail());
+    expect(screen.getByTestId("status-globe-renderer")).toHaveTextContent(
+      "Close-up boundaries could not load",
+    );
+    expect(screen.queryByTestId("image-globe-fallback")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset globe zoom" }));
+    while (Number(screen.getByTestId("status-globe-zoom").textContent?.match(/\d+/)?.[0]) < 260) {
+      fireEvent.click(zoomIn);
+    }
+    expect(globeRendererMock.textureRequests.filter((request) =>
+      request.url.includes("ftc-globe-boundaries-10m.svg"),
+    )).toHaveLength(2);
+  });
+
+  it("stops rendering every frame when rotation is paused", () => {
+    globeRendererMock.failRenderer = false;
+    render(<FtcSeasonGlobe />);
+    expect(globeRendererMock.frameCallbacks).toHaveLength(1);
+
+    act(() => globeRendererMock.frameCallbacks.shift()?.(0));
+    expect(globeRendererMock.renderCount).toBe(1);
+    expect(globeRendererMock.frameCallbacks).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Pause globe rotation" }));
+    act(() => globeRendererMock.frameCallbacks.shift()?.(16));
+    expect(globeRendererMock.frameCallbacks).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Zoom in on globe" }));
+    expect(globeRendererMock.frameCallbacks).toHaveLength(1);
+    act(() => globeRendererMock.frameCallbacks.shift()?.(32));
+    expect(globeRendererMock.renderCount).toBe(3);
+    expect(globeRendererMock.frameCallbacks).toHaveLength(0);
+  });
+
   it("zooms in and out with two-finger pinches without rotating or selecting", () => {
     const onRotate = vi.fn();
     const onSelect = vi.fn();
@@ -162,63 +414,7 @@ describe("FTC season globe", () => {
     const gestures = createGlobePointerGestureHandlers({
       onRotate,
       onSelect,
-      onZoom: (delta) => { zoom = clampGlobeZoom(zoom + delta); },
-    });
-    const touch = (pointerId: number, clientX: number) => ({
-      pointerId,
-      pointerType: "touch",
-      clientX,
-      clientY: 100,
-    });
-
-    gestures.pointerDown(touch(1, 100));
-    gestures.pointerDown(touch(2, 200));
-    gestures.pointerMove(touch(2, 240));
-    expect(zoom).toBeCloseTo(1.4);
-    gestures.pointerUp(touch(1, 100));
-    gestures.pointerUp(touch(2, 240));
-
-    gestures.pointerDown(touch(3, 100));
-    gestures.pointerDown(touch(4, 200));
-    gestures.pointerMove(touch(4, 160));
-    expect(zoom).toBeCloseTo(1.2);
-    gestures.pointerUp(touch(3, 100));
-    gestures.pointerUp(touch(4, 160));
-
-    expect(onRotate).not.toHaveBeenCalled();
-    expect(onSelect).not.toHaveBeenCalled();
-  });
-
-  it("clamps zoom to the minimum and expanded maximum", () => {
-    expect(MAX_GLOBE_ZOOM).toBe(10);
-    expect(clampGlobeZoom(1.2 + 20)).toBe(10);
-    expect(clampGlobeZoom(1.2 - 20)).toBe(0.75);
-    expect(shouldUseGlobeDetail(1.2)).toBe(false);
-    expect(shouldUseGlobeDetail(2.39)).toBe(false);
-    expect(shouldUseGlobeDetail(2.4)).toBe(true);
-    expect(shouldUseGlobeCartography(GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD - 0.01)).toBe(false);
-    expect(shouldUseGlobeCartography(GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD)).toBe(true);
-    expect(shouldUseGlobeCartography(10)).toBe(true);
-  });
-
-  it("keeps globe tilt bounded while allowing higher-latitude exploration", () => {
-    expect(clampGlobeTilt(20)).toBeCloseTo(1.2);
-    expect(clampGlobeTilt(-20)).toBeCloseTo(-1.2);
-    expect(clampGlobeTilt(0.4)).toBeCloseTo(0.4);
-  });
-
-  it("keeps FTC markers readable without growing over close-up map details", () => {
-    expect(getGlobeMarkerZoomScale(1.2)).toBeCloseTo(1.5);
-    expect(getGlobeMarkerZoomScale(10)).toBeCloseTo(0.18);
-    expect(getGlobeMarkerZoomScale(0.1)).toBeCloseTo(2.4);
-  });
-
-  it("keeps pinch zoom bounded across the expanded range", () => {
-    let zoom = 9.9;
-    const gestures = createGlobePointerGestureHandlers({
-      onRotate: vi.fn(),
-      onSelect: vi.fn(),
-      onZoom: (delta) => { zoom = clampGlobeZoom(zoom + delta); },
+      onZoom: (scale) => { zoom = clampGlobeZoom(zoom * scale); },
     });
     const touch = (pointerId: number, clientX: number) => ({
       pointerId,
@@ -230,7 +426,73 @@ describe("FTC season globe", () => {
     gestures.pointerDown(touch(1, 100));
     gestures.pointerDown(touch(2, 200));
     gestures.pointerMove(touch(2, 300));
-    expect(zoom).toBe(10);
+    expect(zoom).toBeCloseTo(2.4);
+    gestures.pointerUp(touch(1, 100));
+    gestures.pointerUp(touch(2, 300));
+
+    gestures.pointerDown(touch(3, 100));
+    gestures.pointerDown(touch(4, 200));
+    gestures.pointerMove(touch(4, 150));
+    expect(zoom).toBeCloseTo(1.2);
+    gestures.pointerUp(touch(3, 100));
+    gestures.pointerUp(touch(4, 150));
+
+    expect(onRotate).not.toHaveBeenCalled();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("clamps zoom to the minimum and expanded maximum", () => {
+    expect(MAX_GLOBE_ZOOM).toBe(200);
+    expect(clampGlobeZoom(201.2)).toBe(200);
+    expect(clampGlobeZoom(1.2 - 20)).toBe(0.75);
+    expect(shouldUseGlobeDetail(1.2)).toBe(false);
+    expect(shouldUseGlobeDetail(2.39)).toBe(false);
+    expect(shouldUseGlobeDetail(2.4)).toBe(true);
+    expect(shouldUseGlobeCartography(GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD - 0.01)).toBe(false);
+    expect(shouldUseGlobeCartography(GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD)).toBe(true);
+    expect(shouldUseGlobeCartography(200)).toBe(true);
+  });
+
+  it("keeps globe tilt bounded while allowing higher-latitude exploration", () => {
+    expect(clampGlobeTilt(20)).toBeCloseTo(1.2);
+    expect(clampGlobeTilt(-20)).toBeCloseTo(-1.2);
+    expect(clampGlobeTilt(0.4)).toBeCloseTo(0.4);
+  });
+
+  it("keeps FTC markers readable without growing over close-up map details", () => {
+    expect(getGlobeMarkerZoomScale(1.2)).toBeCloseTo(1.5);
+    expect(getGlobeMarkerZoomScale(200)).toBeCloseTo(0.009);
+    expect(getGlobeMarkerZoomScale(0.1)).toBeCloseTo(2.4);
+  });
+
+  it("reduces rotation sensitivity during close-up exploration", () => {
+    expect(getGlobeRotationScale(1.2)).toBeCloseTo(1);
+    expect(getGlobeRotationScale(200)).toBeCloseTo(0.006);
+  });
+
+  it("keeps pinch zoom bounded across the expanded range", () => {
+    let zoom = 9.9;
+    const gestures = createGlobePointerGestureHandlers({
+      onRotate: vi.fn(),
+      onSelect: vi.fn(),
+      onZoom: (scale) => { zoom = clampGlobeZoom(zoom * scale); },
+    });
+    const touch = (pointerId: number, clientX: number) => ({
+      pointerId,
+      pointerType: "touch",
+      clientX,
+      clientY: 100,
+    });
+
+    gestures.pointerDown(touch(1, 100));
+    gestures.pointerDown(touch(2, 200));
+    gestures.pointerMove(touch(2, 300));
+    expect(zoom).toBeCloseTo(19.8);
+    gestures.pointerMove(touch(2, 600));
+    gestures.pointerMove(touch(2, 1000));
+    gestures.pointerMove(touch(2, 1800));
+    gestures.pointerMove(touch(2, 3500));
+    expect(zoom).toBe(200);
     gestures.pointerUp(touch(1, 100));
     gestures.pointerUp(touch(2, 300));
 

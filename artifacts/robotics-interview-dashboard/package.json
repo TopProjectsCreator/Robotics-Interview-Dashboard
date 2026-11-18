@@ -18,6 +18,7 @@
     "test:chat-upload-failure": "node browser-tests/chat-upload-failure.browser.mjs",
     "test:decision-overlay": "node browser-tests/decision-overlay.browser.mjs",
     "test:chat-landing-zoom": "node browser-tests/chat-landing-zoom.browser.mjs",
+    "test:globe-extreme-zoom": "node browser-tests/globe-extreme-zoom.browser.mjs",
     "test:passkey-browser": "node browser-tests/passkey.browser.mjs",
     "test:workspace-access-browser": "node browser-tests/workspace-access.browser.mjs",
     "test:parts-camera-browser": "node browser-tests/parts-camera.browser.mjs",
