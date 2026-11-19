@@ -774,7 +774,7 @@ export function CadWorkspacePage({ demoMode = false }: { demoMode?: boolean } = 
                       id={`cad-bot-icon-picker-${bot.id}`}
                       role="group"
                       aria-label={`Choose an icon for ${bot.name}`}
-                      className="relative z-30 mt-2 grid max-h-52 w-full max-w-64 grid-cols-3 gap-1.5 overflow-y-auto rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-xl lg:absolute lg:left-2 lg:top-12 lg:mt-0 lg:w-64"
+                      className="mt-2 grid w-full max-w-64 grid-cols-3 gap-1.5 rounded-xl border border-border bg-card p-2 text-card-foreground shadow-xl"
                       data-testid={`cad-bot-icon-picker-${bot.id}`}
                     >
                       {enabledIcons.map((icon) => {

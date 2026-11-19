@@ -182,19 +182,15 @@ afterEach(() => {
 });
 
 describe("CAD workspace tree", () => {
-  it("keeps the bot icon picker in document flow on narrow screens", () => {
+  it("keeps the bot icon picker in flow and lets the sidebar own its scrolling", () => {
     renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: "Choose icon for Scout" }));
 
-    expect(screen.getByTestId("cad-bot-icon-picker-bot-1")).toHaveClass(
-      "relative",
-      "mt-2",
-      "w-full",
-      "lg:absolute",
-      "lg:top-12",
-      "lg:mt-0",
-    );
+    const picker = screen.getByTestId("cad-bot-icon-picker-bot-1");
+    expect(picker).toHaveClass("mt-2", "grid", "w-full", "max-w-64");
+    expect(picker).not.toHaveClass("absolute", "max-h-52", "overflow-y-auto");
+    expect(picker.nextElementSibling?.tagName).toBe("UL");
   });
 
   it("marks the library layout for desktop viewport fill while preserving natural page flow on small screens", () => {
@@ -216,6 +212,7 @@ describe("CAD workspace tree", () => {
     expect(css).toMatch(/\.cad-workspace-main\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1 1 auto/s);
     expect(css).toMatch(/\.cad-library-layout\s*\{[^}]*min-height:\s*0;[^}]*flex:\s*1 1 auto/s);
     expect(css).toMatch(/\.cad-library-sidebar,\s*\.cad-model-panel\s*\{[^}]*overflow-y:\s*auto/s);
+    expect(css).toMatch(/\.cad-library-sidebar\s*\{[^}]*overscroll-behavior-y:\s*contain/s);
   });
 
   it("shows the failover notice when the permitted admin receives backup status", async () => {
