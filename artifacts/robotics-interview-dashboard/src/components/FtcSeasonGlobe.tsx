@@ -14,6 +14,9 @@ export const GLOBE_DETAIL_ZOOM_THRESHOLD = 2.4;
 export const GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD = 4;
 const GLOBE_DETAIL_TEXTURE = "ftc-globe-boundaries-10m.svg";
 const GLOBE_CARTOGRAPHY_TEXTURE = "ftc-globe-hydrography-cities.svg";
+const GLOBE_MAP_TILE_MIN_ZOOM = 3;
+const GLOBE_MAP_TILE_MAX_ZOOM = 11;
+const GLOBE_MAP_TILE_SEGMENTS = 8;
 
 export function clampGlobeZoom(value: number) {
   return Math.max(MIN_GLOBE_ZOOM, Math.min(MAX_GLOBE_ZOOM, value));
@@ -49,7 +52,70 @@ export function shouldUseGlobeCartography(zoom: number) {
   return zoom >= GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD;
 }
 
-export function pointPosition(point: GlobePoint, radius: number, latitudeOffset = 0, longitudeOffset = 0) {
+export function globeMapTileZoom(zoom: number) {
+  return THREE.MathUtils.clamp(
+    Math.ceil(Math.log2(clampGlobeZoom(zoom)) + 3),
+    GLOBE_MAP_TILE_MIN_ZOOM,
+    GLOBE_MAP_TILE_MAX_ZOOM,
+  );
+}
+
+function longitudeToTileX(longitude: number, zoom: number) {
+  const tileCount = 2 ** zoom;
+  return Math.floor(((longitude + 180) / 360) * tileCount);
+}
+
+function latitudeToTileY(latitude: number, zoom: number) {
+  const tileCount = 2 ** zoom;
+  const radians = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(latitude, -85.05112878, 85.05112878));
+  return Math.floor(((1 - Math.asinh(Math.tan(radians)) / Math.PI) / 2) * tileCount);
+}
+
+export function getGlobeMapTiles(longitude: number, latitude: number, zoom: number, aspect = 1) {
+  const tileZoom = globeMapTileZoom(zoom);
+  const tileCount = 2 ** tileZoom;
+  const safeLatitude = THREE.MathUtils.clamp(latitude, -84, 84);
+  const halfHeightDegrees = THREE.MathUtils.radToDeg(
+    Math.atan((3.5 * Math.tan(THREE.MathUtils.degToRad(34 / 2))) / clampGlobeZoom(zoom)),
+  );
+  const halfLongitudeDegrees = (halfHeightDegrees * Math.max(1, aspect)) /
+    Math.max(0.15, Math.cos(THREE.MathUtils.degToRad(safeLatitude)));
+  const centerX = longitudeToTileX(longitude, tileZoom);
+  const centerY = latitudeToTileY(safeLatitude, tileZoom);
+  const radiusX = Math.min(4, Math.max(1, Math.ceil(halfLongitudeDegrees / (360 / tileCount)) + 1));
+  const latitudeTop = Math.min(85.05112878, safeLatitude + halfHeightDegrees);
+  const latitudeBottom = Math.max(-85.05112878, safeLatitude - halfHeightDegrees);
+  const topY = latitudeToTileY(latitudeTop, tileZoom);
+  const bottomY = latitudeToTileY(latitudeBottom, tileZoom);
+  const radiusY = Math.min(4, Math.max(1, Math.ceil(Math.max(centerY - topY, bottomY - centerY)) + 1));
+  const tiles: Array<{ x: number; y: number; z: number; key: string }> = [];
+
+  for (let dy = -radiusY; dy <= radiusY; dy += 1) {
+    const y = centerY + dy;
+    if (y < 0 || y >= tileCount) continue;
+    for (let dx = -radiusX; dx <= radiusX; dx += 1) {
+      const x = ((centerX + dx) % tileCount + tileCount) % tileCount;
+      tiles.push({ x, y, z: tileZoom, key: `${tileZoom}/${x}/${y}` });
+    }
+  }
+
+  return tiles.sort((left, right) => {
+    const leftX = Math.min((left.x - centerX + tileCount) % tileCount, (centerX - left.x + tileCount) % tileCount);
+    const rightX = Math.min((right.x - centerX + tileCount) % tileCount, (centerX - right.x + tileCount) % tileCount);
+    return leftX ** 2 + (left.y - centerY) ** 2 - rightX ** 2 - (right.y - centerY) ** 2;
+  });
+}
+
+export function globeMapTileUrl(tile: { x: number; y: number; z: number }) {
+  return `https://tile.openstreetmap.de/${tile.z}/${tile.x}/${tile.y}.png`;
+}
+
+export function pointPosition(
+  point: Pick<GlobePoint, "latitude" | "longitude">,
+  radius: number,
+  latitudeOffset = 0,
+  longitudeOffset = 0,
+) {
   const lat = THREE.MathUtils.degToRad(point.latitude + latitudeOffset);
   const lon = THREE.MathUtils.degToRad(point.longitude + longitudeOffset);
   return new THREE.Vector3(
@@ -121,6 +187,41 @@ function makeEarthTexture(source = "ftc-globe-world.svg", onError?: () => void) 
   texture.repeat.x = 1;
   texture.offset.x = 0.25;
   return texture;
+}
+
+function createGlobeMapTileGeometry(tile: { x: number; y: number; z: number }) {
+  const tileCount = 2 ** tile.z;
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let row = 0; row <= GLOBE_MAP_TILE_SEGMENTS; row += 1) {
+    const mercatorY = (tile.y + row / GLOBE_MAP_TILE_SEGMENTS) / tileCount;
+    const latitude = THREE.MathUtils.radToDeg(Math.atan(Math.sinh(Math.PI * (1 - 2 * mercatorY))));
+    for (let column = 0; column <= GLOBE_MAP_TILE_SEGMENTS; column += 1) {
+      const longitude = ((tile.x + column / GLOBE_MAP_TILE_SEGMENTS) / tileCount) * 360 - 180;
+      const position = pointPosition({ latitude, longitude }, 1.006);
+      positions.push(position.x, position.y, position.z);
+      uvs.push(column / GLOBE_MAP_TILE_SEGMENTS, row / GLOBE_MAP_TILE_SEGMENTS);
+    }
+  }
+
+  const rowLength = GLOBE_MAP_TILE_SEGMENTS + 1;
+  for (let row = 0; row < GLOBE_MAP_TILE_SEGMENTS; row += 1) {
+    for (let column = 0; column < GLOBE_MAP_TILE_SEGMENTS; column += 1) {
+      const northwest = row * rowLength + column;
+      const northeast = northwest + 1;
+      const southwest = northwest + rowLength;
+      const southeast = southwest + 1;
+      indices.push(northwest, northeast, southeast, northwest, southeast, southwest);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  geometry.setIndex(indices);
+  return geometry;
 }
 
 function getMarkerOffsets(points: GlobePoint[]) {
@@ -395,6 +496,116 @@ function GlobeRenderer({
     let cartographyLoadRequested = false;
     let cartographyLoadAttempted = false;
     let disposed = false;
+    const mapTileLoader = new THREE.TextureLoader();
+    const loadedMapTiles = new Map<
+      string,
+      { mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>; texture: THREE.Texture }
+    >();
+    const pendingMapTileKeys = new Set<string>();
+    const failedMapTileKeys = new Set<string>();
+    const mapTileQueue: Array<{ x: number; y: number; z: number; key: string }> = [];
+    let desiredMapTileKeys = new Set<string>();
+    let activeMapTileLoads = 0;
+    let mapTileFailureReported = false;
+    let lastMapTileSync = 0;
+    let mapTileSyncTimer: ReturnType<typeof setTimeout> | null = null;
+    const disposeMapTile = (key: string) => {
+      const loaded = loadedMapTiles.get(key);
+      if (!loaded) return;
+      root.remove(loaded.mesh);
+      loaded.mesh.geometry.dispose();
+      loaded.mesh.material.dispose();
+      loaded.texture.dispose();
+      loadedMapTiles.delete(key);
+    };
+    const loadQueuedMapTiles = () => {
+      while (!disposed && activeMapTileLoads < 8 && mapTileQueue.length > 0) {
+        const tile = mapTileQueue.shift()!;
+        if (!desiredMapTileKeys.has(tile.key)) {
+          pendingMapTileKeys.delete(tile.key);
+          continue;
+        }
+        activeMapTileLoads += 1;
+        mapTileLoader.load(
+          globeMapTileUrl(tile),
+          (texture) => {
+            activeMapTileLoads -= 1;
+            pendingMapTileKeys.delete(tile.key);
+            if (disposed || !desiredMapTileKeys.has(tile.key)) {
+              texture.dispose();
+              loadQueuedMapTiles();
+              return;
+            }
+            texture.colorSpace = THREE.SRGBColorSpace;
+            const material = new THREE.MeshBasicMaterial({
+              map: texture,
+              side: THREE.DoubleSide,
+              toneMapped: false,
+            });
+            const mesh = new THREE.Mesh(createGlobeMapTileGeometry(tile), material);
+            mesh.name = `ftc-map-tile:${tile.key}`;
+            root.add(mesh);
+            loadedMapTiles.set(tile.key, { mesh, texture });
+            mapTileFailureReported = false;
+            requestDrawRef.current();
+            if (!baseTextureFailed && !contextLost) callbacksRef.current.onReady(true);
+            loadQueuedMapTiles();
+          },
+          undefined,
+          () => {
+            activeMapTileLoads -= 1;
+            pendingMapTileKeys.delete(tile.key);
+            if (!disposed && desiredMapTileKeys.has(tile.key)) {
+              failedMapTileKeys.add(tile.key);
+              if (!mapTileFailureReported) {
+                mapTileFailureReported = true;
+                callbacksRef.current.onFailure("Some close-up map tiles could not load; the globe overview remains available.");
+              }
+            }
+            loadQueuedMapTiles();
+          },
+        );
+      }
+    };
+    const syncMapTiles = (nextZoom = zoomRef.current) => {
+      const center = new THREE.Vector3(0, 0, 1).applyQuaternion(root.quaternion.clone().invert()).normalize();
+      const longitude = THREE.MathUtils.radToDeg(Math.atan2(center.x, center.z));
+      const latitude = THREE.MathUtils.radToDeg(Math.asin(THREE.MathUtils.clamp(center.y, -1, 1)));
+      const tiles = shouldUseGlobeCartography(nextZoom)
+        ? getGlobeMapTiles(longitude, latitude, nextZoom, camera.aspect)
+        : [];
+      desiredMapTileKeys = new Set(tiles.map((tile) => tile.key));
+
+      for (const key of loadedMapTiles.keys()) {
+        if (!desiredMapTileKeys.has(key)) disposeMapTile(key);
+      }
+      for (const key of failedMapTileKeys) {
+        if (!desiredMapTileKeys.has(key)) failedMapTileKeys.delete(key);
+      }
+      for (let index = mapTileQueue.length - 1; index >= 0; index -= 1) {
+        if (!desiredMapTileKeys.has(mapTileQueue[index].key)) {
+          pendingMapTileKeys.delete(mapTileQueue[index].key);
+          mapTileQueue.splice(index, 1);
+        }
+      }
+      for (const tile of tiles) {
+        if (
+          loadedMapTiles.has(tile.key)
+          || pendingMapTileKeys.has(tile.key)
+          || failedMapTileKeys.has(tile.key)
+        ) continue;
+        pendingMapTileKeys.add(tile.key);
+        mapTileQueue.push(tile);
+      }
+      loadQueuedMapTiles();
+    };
+    const scheduleMapTileSync = () => {
+      if (mapTileSyncTimer !== null) clearTimeout(mapTileSyncTimer);
+      mapTileSyncTimer = setTimeout(() => {
+        mapTileSyncTimer = null;
+        syncMapTiles();
+      }, 400);
+    };
     const syncCartography = (nextZoom: number) => {
       if (!shouldUseGlobeCartography(nextZoom)) {
         if (!cartographyOverlay && !cartographyLoadRequested) cartographyLoadAttempted = false;
@@ -498,6 +709,7 @@ function GlobeRenderer({
       markerZoomScale.value = getGlobeMarkerZoomScale(boundedZoom);
       syncDetail(boundedZoom);
       syncCartography(boundedZoom);
+      scheduleMapTileSync();
       requestDrawRef.current();
     };
     const atmosphere = new THREE.Mesh(
@@ -551,6 +763,7 @@ function GlobeRenderer({
     const gestures = createGlobePointerGestureHandlers({
       onRotate: (deltaX, deltaY) => {
         rotateGlobeFromDrag(root, deltaX, deltaY, getGlobeRotationScale(camera.zoom));
+        scheduleMapTileSync();
         requestDrawRef.current();
       },
       onZoom: (scale) => callbacksRef.current.onZoom(scale),
@@ -577,6 +790,7 @@ function GlobeRenderer({
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
+      syncMapTiles();
       requestDraw();
     };
     const observer = new ResizeObserver(resize);
@@ -612,6 +826,11 @@ function GlobeRenderer({
       if (baseTextureFailed || contextLost || rendererDisposed) return;
       const shouldAnimate = !pausedRef.current && !reducedMotion && !gestures.isInteracting();
       if (shouldAnimate) root.rotation.y += 0.0014 * getGlobeRotationScale(camera.zoom);
+      const now = performance.now();
+      if (shouldAnimate && now - lastMapTileSync >= 750) {
+        lastMapTileSync = now;
+        syncMapTiles();
+      }
       if (renderRequested || shouldAnimate) {
         try {
           renderer.render(scene, camera);
@@ -651,6 +870,7 @@ function GlobeRenderer({
       rendererDisposed = true;
       disposed = true;
       cancelAnimationFrame(animation);
+      if (mapTileSyncTimer !== null) clearTimeout(mapTileSyncTimer);
       observer.disconnect();
       syncZoomRef.current = () => undefined;
       requestDrawRef.current = () => undefined;
@@ -672,6 +892,11 @@ function GlobeRenderer({
       baseTexture.dispose();
       detailTexture?.dispose();
       cartographyTexture?.dispose();
+      for (const tile of loadedMapTiles.values()) tile.texture.dispose();
+      loadedMapTiles.clear();
+      pendingMapTileKeys.clear();
+      failedMapTileKeys.clear();
+      mapTileQueue.length = 0;
       renderer.dispose();
       renderer.domElement.remove();
     };
@@ -968,7 +1193,7 @@ export function FtcSeasonGlobe() {
         <div className="flex flex-col gap-1 border-t border-white/10 px-5 py-3 text-[10px] leading-5 text-[#a8c4bb] sm:px-6">
           <p>Locations are approximate city, region, or country estimates, not team addresses. Records without usable FIRST locations are grouped at an unknown-location placeholder; overlapping markers are slightly spread apart for selection.</p>
           <p>
-            Coordinate source: <a className="underline underline-offset-2 hover:text-white" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0). World map, 1:10m close-up boundaries, major rivers, lakes, and cities: <a className="underline underline-offset-2 hover:text-white" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a> (public domain).
+            High-zoom map tiles from <a className="underline underline-offset-2 hover:text-white" href="https://www.openstreetmap.de/" target="_blank" rel="noreferrer">OpenStreetMap Deutschland</a>. Map data © <a className="underline underline-offset-2 hover:text-white" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a> (ODbL). Coordinate source: <a className="underline underline-offset-2 hover:text-white" href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 4.0). World map, 1:10m close-up boundaries, major rivers, lakes, and cities: <a className="underline underline-offset-2 hover:text-white" href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a> (public domain).
           </p>
         </div>
       </div>

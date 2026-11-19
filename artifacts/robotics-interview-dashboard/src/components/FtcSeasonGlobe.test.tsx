@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import * as THREE from "three";
@@ -77,7 +77,10 @@ import {
   GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD,
   MAX_GLOBE_ZOOM,
   getGlobeMarkerZoomScale,
+  getGlobeMapTiles,
   getGlobeRotationScale,
+  globeMapTileUrl,
+  globeMapTileZoom,
   pointPosition,
   rotateGlobeFromDrag,
   shouldUseGlobeCartography,
@@ -283,6 +286,27 @@ describe("FTC season globe", () => {
     expect(details).toHaveTextContent("Nov 20, 2026");
   });
 
+  it("credits the map and coordinate data sources", () => {
+    render(<FtcSeasonGlobe />);
+
+    expect(screen.getByRole("link", { name: "OpenStreetMap contributors" })).toHaveAttribute(
+      "href",
+      "https://www.openstreetmap.org/copyright",
+    );
+    expect(screen.getByRole("link", { name: "OpenStreetMap Deutschland" })).toHaveAttribute(
+      "href",
+      "https://www.openstreetmap.de/",
+    );
+    expect(screen.getByRole("link", { name: "GeoNames" })).toHaveAttribute(
+      "href",
+      "https://www.geonames.org/",
+    );
+    expect(screen.getByRole("link", { name: "Natural Earth" })).toHaveAttribute(
+      "href",
+      "https://www.naturalearthdata.com/",
+    );
+  });
+
   it("provides accessible zoom controls and reset behavior", () => {
     render(<FtcSeasonGlobe />);
 
@@ -419,6 +443,51 @@ describe("FTC season globe", () => {
     )).toHaveLength(2);
   });
 
+  it("loads high-zoom map tiles progressively and keeps the overview usable on tile failure", async () => {
+    globeRendererMock.failRenderer = false;
+    render(<FtcSeasonGlobe />);
+    const zoomIn = screen.getByRole("button", { name: "Zoom in on globe" });
+    expect(globeRendererMock.textureRequests.some((request) =>
+      request.url.includes("tile.openstreetmap.de"),
+    )).toBe(false);
+
+    while (Number(screen.getByTestId("status-globe-zoom").textContent?.match(/\d+/)?.[0]) < 420) {
+      fireEvent.click(zoomIn);
+    }
+    await waitFor(() => expect(globeRendererMock.textureRequests.some((request) =>
+      request.url.includes("tile.openstreetmap.de"),
+    )).toBe(true));
+    const lightTile = globeRendererMock.textureRequests.find((request) =>
+      request.url.includes("tile.openstreetmap.de"),
+    );
+    expect(lightTile).toBeDefined();
+    const failedTileUrl = lightTile!.url;
+    expect(screen.queryByTestId("image-globe-fallback")).not.toBeInTheDocument();
+
+    act(() => lightTile!.fail());
+    expect(screen.getByTestId("status-globe-renderer")).toHaveTextContent(
+      "Some close-up map tiles could not load",
+    );
+    expect(screen.queryByTestId("image-globe-fallback")).not.toBeInTheDocument();
+    expect(screen.getByTestId("button-globe-point-team-team-2026-23442")).toBeEnabled();
+
+    let requestIndex = 0;
+    act(() => {
+      while (requestIndex < globeRendererMock.textureRequests.length) {
+        const request = globeRendererMock.textureRequests[requestIndex++];
+        if (request.url.includes("tile.openstreetmap.de") && request !== lightTile) request.succeed();
+      }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset globe zoom" }));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    while (Number(screen.getByTestId("status-globe-zoom").textContent?.match(/\d+/)?.[0]) < 420) {
+      fireEvent.click(zoomIn);
+    }
+    await waitFor(() => expect(
+      globeRendererMock.textureRequests.filter((request) => request.url === failedTileUrl),
+    ).toHaveLength(2));
+  });
+
   it("stops rendering every frame when rotation is paused", () => {
     globeRendererMock.failRenderer = false;
     render(<FtcSeasonGlobe />);
@@ -483,6 +552,18 @@ describe("FTC season globe", () => {
     expect(shouldUseGlobeCartography(GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD - 0.01)).toBe(false);
     expect(shouldUseGlobeCartography(GLOBE_CARTOGRAPHY_ZOOM_THRESHOLD)).toBe(true);
     expect(shouldUseGlobeCartography(200)).toBe(true);
+  });
+
+  it("selects progressively sharper globe tiles and wraps across the date line", () => {
+    expect(globeMapTileZoom(1.2)).toBe(4);
+    expect(globeMapTileZoom(4)).toBe(5);
+    expect(globeMapTileZoom(200)).toBe(11);
+    const tiles = getGlobeMapTiles(179.9, 0, 200, 1.4);
+    expect(tiles.length).toBeGreaterThan(1);
+    expect(tiles.length).toBeLessThanOrEqual(81);
+    expect(tiles.some((tile) => tile.x === 0)).toBe(true);
+    expect(tiles.some((tile) => tile.x === 2 ** tile.z - 1)).toBe(true);
+    expect(globeMapTileUrl(tiles[0])).toContain("tile.openstreetmap.de/11/");
   });
 
   it("wraps globe angles without changing their orientation", () => {

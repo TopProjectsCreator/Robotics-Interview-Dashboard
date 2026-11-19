@@ -87,12 +87,24 @@ try {
 
   const page = await browser.newPage({ viewport: { width: 1280, height: 1000 } });
   const pageErrors = [];
+  const mapTileUrls = [];
   page.on("pageerror", error => pageErrors.push(error.message));
   await page.route("**/api/public/ftc-globe**", route => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify(globeResponse),
   }));
+  await page.route("https://tile.openstreetmap.de/**", async route => {
+    mapTileUrls.push(route.request().url());
+    await route.fulfill({
+      status: 200,
+      contentType: "image/png",
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
+        "base64",
+      ),
+    });
+  });
 
   await page.goto(serverUrl);
   await page.getByTestId("section-ftc-globe").waitFor({ state: "visible" });
@@ -103,17 +115,29 @@ try {
     document.querySelector('[data-testid="image-globe-fallback"]')
     || document.querySelector('[data-testid="stage-ftc-season-globe"] canvas'),
   );
+  assert.equal(mapTileUrls.length, 0, "the initial globe should not fetch close-up tiles");
 
   const zoomIn = page.getByRole("button", { name: "Zoom in on globe" });
   const reset = page.getByRole("button", { name: "Reset globe zoom" });
   const rotation = page.getByTestId("button-globe-rotation");
+  const lightTileRequest = page.waitForRequest(
+    request => request.url().includes("tile.openstreetmap.de"),
+  );
   await rotation.click();
   assert.equal(await rotation.getAttribute("aria-pressed"), "true", "rotation should pause on request");
   while (await zoomIn.isEnabled()) await zoomIn.click();
   assert.match(await zoomStatus.textContent(), /20000 percent/);
   assert.match(await zoomStatus.textContent(), /Limits 75 to 20000 percent/);
   assert.equal(await zoomIn.isDisabled(), true, "the zoom-in limit should disable the button");
+  await lightTileRequest;
+  assert.ok(mapTileUrls.some(url => url.includes("tile.openstreetmap.de")), "maximum zoom should load detailed map tiles");
+  assert.ok(mapTileUrls.some(url => /\/11\/\d+\/\d+\.png$/.test(url)), "maximum zoom should reach the highest globe tile detail");
   await page.getByTestId("button-globe-point-team-team-2026-1").click();
+  await page.getByTestId("globe-selected-details").getByText("FTC Team 1001").waitFor({ state: "visible" });
+
+  await page.evaluate(() => document.documentElement.classList.add("dark"));
+  await page.waitForFunction(() => document.documentElement.classList.contains("dark"));
+  await page.getByTestId("stage-ftc-season-globe").locator("canvas").waitFor({ state: "visible" });
   await page.getByTestId("globe-selected-details").getByText("FTC Team 1001").waitFor({ state: "visible" });
 
   await reset.click();
