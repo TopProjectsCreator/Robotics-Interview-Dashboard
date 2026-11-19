@@ -126,6 +126,7 @@
     "lib0": "^0.2.117",
     "libarchive.js": "2.0.2",
     "mammoth": "^1.12.3",
+    "marked": "^18.2.1",
     "occt-import-js": "^0.0.23",
     "three": "^0.183.2",
     "xlsx": "^0.18.5",
