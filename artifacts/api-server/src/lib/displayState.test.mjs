@@ -159,7 +159,7 @@ test("public display state scopes by event code and exposes only approved fields
 
   const dataNames = [
     "applicantResponse", "assignSeat", "csvToApplicant", "displaySettingsResponse",
-    "ensureDemoData", "getApplicants", "getInterviewSettings", "getQueueState",
+    "ensureDemoData", "getApplicants", "getInterviewSettings", "getQueueState", "getDashboardSummary",
     "getSeatingSettings", "seatingSettingsResponse", "normalizeAiScore", "importDiff",
     "parseSemicolonCsv", "queueApplicantResponse", "transferInterviewers",
   ];

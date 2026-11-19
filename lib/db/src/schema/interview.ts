@@ -1,6 +1,12 @@
 import { createInsertSchema } from "drizzle-zod";
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { z } from "zod/v4";
+
+export const chatRevisionsTable = pgTable("chat_revisions", {
+  teamId: text("team_id").notNull(),
+  revisionKey: text("revision_key").notNull(),
+  revision: bigint("revision", { mode: "bigint" }).notNull().default(0n),
+}, table => [primaryKey({ columns: [table.teamId, table.revisionKey] })]);
 
 export const interviewQueueTable = pgTable("interview_queue", {
   id: integer("id").primaryKey().default(1),

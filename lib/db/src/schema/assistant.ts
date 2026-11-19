@@ -28,7 +28,9 @@ export const assistantMessagesTable = pgTable("assistant_messages", {
   applicantIds: text("applicant_ids").notNull().default("[]"),
   activities: text("activities").notNull().default("[]"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  index("assistant_messages_team_conversation_idx").on(table.teamId, table.conversationId),
+]);
 
 export const assistantPromptRunsTable = pgTable("assistant_prompt_runs", {
   id: text("id").primaryKey(),

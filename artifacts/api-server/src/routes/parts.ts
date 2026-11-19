@@ -575,7 +575,13 @@ async function queryCatalogRows(
     `and ${teamSqlCondition('i."team_id"', scopedTeamPlaceholder)}`;
   const limitPlaceholder = teamValue.length + 1;
   const result = await pool.query(
-    `select c."id", c."vendor_key" as "vendorKey", c."name", c."sku",
+    `with catalog_page as materialized (
+       select c."id" from "parts_catalog_items" c
+       ${whereSql}
+       order by c."updated_at" desc, lower(c."name"), c."id"
+       limit $${limitPlaceholder} offset $${limitPlaceholder + 1}
+     )
+     select c."id", c."vendor_key" as "vendorKey", c."name", c."sku",
             c."category", c."description", c."product_url" as "productUrl",
               c."image_url" as "imageUrl",
               c."supplier_price" as "supplierPrice",
@@ -596,14 +602,13 @@ async function queryCatalogRows(
               '[]'::json
             ) as "allocations"
      from "parts_catalog_items" c
+     join catalog_page page on page."id" = c."id"
      left join "parts_inventory" i on i."part_id" = c."id" ${inventoryTeamCondition}
      left join "parts_robot_allocations" a on a."part_id" = c."id" ${robotAssignmentTeamCondition}
      left join "parts_robots" r on r."id" = a."robot_id"
-     ${whereSql}
       group by c."id", i."quantity_owned", i."storage_location", i."inventory_notes",
                i."unit_cost", i."cost_currency"
-     order by c."updated_at" desc, lower(c."name"), c."id"
-      limit $${limitPlaceholder} offset $${limitPlaceholder + 1}`,
+     order by c."updated_at" desc, lower(c."name"), c."id"`,
     [...teamValue, limit, offset],
   );
   return result.rows;

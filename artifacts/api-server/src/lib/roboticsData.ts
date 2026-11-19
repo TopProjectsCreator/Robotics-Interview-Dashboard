@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, getTableColumns, isNull, or } from "drizzle-orm";
-import { db, applicantsTable, displaySettingsTable, interviewQueueTable, seatingSettingsTable, DEFAULT_TEAM_ID, type Applicant } from "@workspace/db";
+import { and, asc, eq, getTableColumns, isNull, ne, or, sql } from "drizzle-orm";
+import { db, pool, applicantsTable, displaySettingsTable, interviewQueueTable, seatingSettingsTable, DEFAULT_TEAM_ID, type Applicant } from "@workspace/db";
 import { matchesApplicantSearch, normalizeApplicantGender, normalizeApplicantGrade, parseApplicantSearchQuery, searchNeedsTranscript, type ApplicantLike } from "./applicantSearch";
 
 function tid(teamId?: string | null): string {
@@ -82,9 +82,24 @@ export async function getApplicants(filters?: {
   // explicit caller like import preview); every other list skips the column,
   // which cuts most of the bytes out of every polled list response.
   const includeTranscript = withTranscript === true || searchNeedsTranscript(searchQuery);
+  const predicates = [applicantTeamFilter(team)];
+  for (const [value, column] of [
+    [filters?.recommendation, applicantsTable.aiRecommendation],
+    [filters?.interviewStatus, applicantsTable.interviewStatus],
+    [filters?.category, applicantsTable.category],
+  ] as const) {
+    if (value && value !== "all") predicates.push(eq(column, value));
+  }
+  if (filters?.invalidOnly) predicates.push(eq(applicantsTable.aiScore, -1));
+  if (filters?.grade && filters.grade !== "all") {
+    // Match normalizeApplicantGrade, including legacy "Grade 6th" values.
+    const normalized = sql`regexp_replace(lower(trim(${applicantsTable.grade})), '\\s+', ' ', 'g')`;
+    predicates.push(sql`regexp_replace(${normalized}, '^(?:grade\\s*)?([0-9]+)(?:st|nd|rd|th)?$', '\\1')
+      = ${normalizeApplicantGrade(filters.grade)}`);
+  }
   const all = includeTranscript
-    ? await db.select().from(applicantsTable).where(applicantTeamFilter(team)).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank))
-    : await db.select((() => { const { transcript: _omitted, ...rest } = getTableColumns(applicantsTable); return rest; })()).from(applicantsTable).where(applicantTeamFilter(team)).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
+    ? await db.select().from(applicantsTable).where(and(...predicates)).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank))
+    : await db.select((() => { const { transcript: _omitted, ...rest } = getTableColumns(applicantsTable); return rest; })()).from(applicantsTable).where(and(...predicates)).orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank));
   const filtered = all.filter((applicant) => {
     if (!matchesApplicantSearch(applicant, searchQuery)) return false;
     if (filters?.grade && filters.grade !== "all" && normalizeApplicantGrade(applicant.grade) !== normalizeApplicantGrade(filters.grade)) return false;
@@ -147,7 +162,18 @@ export function applicantResponse(applicant: Omit<Applicant, "transcript"> & { t
   };
 }
 
-export function queueApplicantResponse(applicant: Applicant) {
+const queueApplicantColumns = {
+  id: applicantsTable.id, name: applicantsTable.name, grade: applicantsTable.grade,
+  aiScore: applicantsTable.aiScore, category: applicantsTable.category,
+  queuePosition: applicantsTable.queuePosition, interviewer: applicantsTable.interviewer,
+  notes: applicantsTable.notes, interviewDecision: applicantsTable.interviewDecision,
+  callbackRequested: applicantsTable.callbackRequested, flagged: applicantsTable.flagged,
+  attendance: applicantsTable.attendance, lateArrivalTime: applicantsTable.lateArrivalTime,
+  makeupDate: applicantsTable.makeupDate, attendanceExcused: applicantsTable.attendanceExcused,
+};
+type QueueApplicant = Pick<Applicant, keyof typeof queueApplicantColumns>;
+
+export function queueApplicantResponse(applicant: QueueApplicant) {
   return {
     id: applicant.id,
     name: applicant.name,
@@ -167,7 +193,7 @@ export function queueApplicantResponse(applicant: Applicant) {
   };
 }
 
-function balancedCurrentApplicants(applicants: ApplicantLike[], labels: string[]): ApplicantLike[] {
+function balancedCurrentApplicants<T extends { interviewer: string }>(applicants: T[], labels: string[]): T[] {
   if (!labels.length) return applicants;
   const counts = new Map(labels.map((label) => [label, 0]));
   return applicants.map((applicant) => {
@@ -558,12 +584,21 @@ export async function getInterviewSettings(teamId?: string | null): Promise<stri
 
 export async function getQueueState(teamId?: string | null) {
   const team = tid(teamId);
-  const applicants = await getApplicants({ sort: "queue" }, team);
-  const remaining = applicants.filter((applicant) => applicant.interviewStatus !== "completed");
-  const completedCount = applicants.filter((applicant) => applicant.interviewStatus === "completed").length;
+  await ensureDemoData(team);
   const interviewerLabels = await getInterviewSettings(team);
   // One active interview slot per interviewer label, plus an equal-sized bench.
   const slotCount = Math.max(1, interviewerLabels.length);
+  const [remaining, [stats]] = await Promise.all([
+    db.select(queueApplicantColumns).from(applicantsTable)
+      .where(and(applicantTeamFilter(team), ne(applicantsTable.interviewStatus, "completed")))
+      .orderBy(asc(applicantsTable.queuePosition), asc(applicantsTable.rank))
+      .limit(slotCount * 2),
+    db.select({
+      completedCount: sql<number>`count(*) filter (where ${applicantsTable.interviewStatus} = 'completed')::int`,
+      remainingCount: sql<number>`count(*) filter (where ${applicantsTable.interviewStatus} <> 'completed')::int`,
+      latestUpdatedAt: sql<Date | string | null>`max(${applicantsTable.updatedAt})`,
+    }).from(applicantsTable).where(applicantTeamFilter(team)),
+  ]);
   const nextApplicants = remaining.slice(slotCount, slotCount * 2);
   const currentApplicants = balancedCurrentApplicants(remaining.slice(0, slotCount), interviewerLabels);
   // Sticky interviewers: the first label an applicant receives is persisted,
@@ -578,18 +613,44 @@ export async function getQueueState(teamId?: string | null) {
       }).where(eq(applicantsTable.id, applicant.id));
     }
   }
-  const latestUpdatedAt = applicants.reduce(
-    (latest, applicant) => Math.max(latest, applicant.updatedAt.getTime()),
-    0,
-  );
+  const latestUpdatedAt = stats?.latestUpdatedAt ? new Date(stats.latestUpdatedAt).getTime() : 0;
   return {
     currentApplicants: currentApplicants.map(queueApplicantResponse),
     nextApplicants: nextApplicants.map(queueApplicantResponse),
     interviewerLabels,
-    completedCount,
-    remainingCount: remaining.length,
+    completedCount: stats?.completedCount ?? 0,
+    remainingCount: stats?.remainingCount ?? 0,
     updatedAt: new Date(latestUpdatedAt || Date.now()).toISOString(),
   };
+}
+
+export async function getDashboardSummary(teamId: string) {
+  await ensureDemoData(teamId);
+  const { rows } = await pool.query(`
+    with roster as materialized (
+      select ai_score, ai_recommendation, grade, commit_10_hours, interview_status
+      from applicants where team_id = $1 or ($1 = 'default' and team_id is null)
+    )
+    select count(*)::int as total,
+      count(*) filter (where interview_status <> 'queued')::int as reviewed,
+      count(*) filter (where ai_score = -1)::int as invalid,
+      coalesce(round(avg(ai_score) filter (where ai_score >= 0), 1), 0)::float as "averageScore",
+      (select json_agg(json_build_object('label', label, 'value', value) order by bucket)
+        from (select bucket, case bucket when 0 then '0–20' when 1 then '21–40'
+          when 2 then '41–60' when 3 then '61–80' else '81–100' end as label,
+          (select count(*)::int from roster where ai_score between
+            (case when bucket = 0 then 0 else bucket * 20 + 1 end) and (bucket + 1) * 20) as value
+          from generate_series(0, 4) bucket) buckets) as "scoreBuckets",
+      coalesce((select json_agg(json_build_object('label', label, 'value', value))
+        from (select ai_recommendation as label, count(*)::int as value from roster group by ai_recommendation) g), '[]') as recommendations,
+      coalesce((select json_agg(json_build_object('label', label, 'value', value))
+        from (select grade as label, count(*)::int as value from roster group by grade) g), '[]') as grades,
+      coalesce((select json_agg(json_build_object('label', label, 'value', value))
+        from (select commit_10_hours as label, count(*)::int as value from roster group by commit_10_hours) g), '[]') as commitments,
+      json_build_object('completed', count(*) filter (where interview_status = 'completed')::int,
+        'remaining', count(*) filter (where interview_status <> 'completed')::int) as "interviewProgress"
+    from roster`, [teamId]);
+  return rows[0];
 }
 
 function splitLogicalRecords(input: string): { records: string[]; unclosedQuote: boolean } {

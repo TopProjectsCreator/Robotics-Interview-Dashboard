@@ -3,6 +3,9 @@ import { Router, type IRouter, type Request, type Response as ExpressResponse } 
 import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, chatProductivitySettingsTable, chatProductivitySnapshotsTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import { assistantToolPoliciesTable, teamRolesTable } from "@workspace/db/schema";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
+import { chatRevision } from "../lib/chatRevisions";
+import { assistantMessageCounts } from "../lib/assistantMessageCounts";
+import { getDashboardSummary } from "../lib/roboticsData";
 import { dispatchChatProductivityReviewForTeam, reviewChatProductivityRange } from "../lib/chatProductivity";
 import { buildProductivityHistory } from "../lib/chatProductivityHistory";
 import { hasPermission } from "@workspace/api-zod";
@@ -3905,36 +3908,7 @@ router.delete("/dashboard/charts/:chartId", requireCoordinator, async (req, res)
 router.get("/dashboard/summary", requireAdmin, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
   await sendVersioned(req, res, () => queueVersion(teamId), async () => {
-  const applicants = await getApplicants(undefined, teamId);
-  const valid = applicants.filter((applicant) => applicant.aiScore >= 0);
-  const group = (values: string[]) =>
-    Object.entries(values.reduce<Record<string, number>>((counts, value) => {
-      counts[value] = (counts[value] ?? 0) + 1;
-      return counts;
-    }, {})).map(([label, value]) => ({ label, value }));
-  const scoreBuckets = ["0–20", "21–40", "41–60", "61–80", "81–100"].map((label, index) => {
-    const lower = index * 20 + (index === 0 ? 0 : 1);
-    const upper = index === 0 ? 20 : index * 20 + 20;
-    return {
-      label,
-      value: valid.filter((applicant) => applicant.aiScore >= lower && applicant.aiScore <= upper).length,
-    };
-  });
-  const queue = await getQueueState(teamId);
-  return GetDashboardSummaryResponse.parse({
-      total: applicants.length,
-      reviewed: applicants.filter((applicant) => applicant.interviewStatus !== "queued").length,
-      invalid: applicants.filter((applicant) => applicant.aiScore === -1).length,
-      averageScore: valid.length ? Math.round((valid.reduce((sum, applicant) => sum + applicant.aiScore, 0) / valid.length) * 10) / 10 : 0,
-      scoreBuckets,
-      recommendations: group(applicants.map((applicant) => applicant.aiRecommendation)),
-      grades: group(applicants.map((applicant) => applicant.grade)),
-      commitments: group(applicants.map((applicant) => applicant.commit10Hours)),
-      interviewProgress: {
-        completed: queue.completedCount,
-        remaining: queue.remainingCount,
-      },
-    });
+    return GetDashboardSummaryResponse.parse(await getDashboardSummary(teamId));
   });
 });
 
@@ -5699,65 +5673,8 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
     const teamId = await requestTeamId(req);
     const accessibleIds = (await accessibleChatChannelIds(teamId, channelViewerFor(account))) ?? [];
     try {
-      const { rows: versionRows } = await pool.query(
-        `select count(*)::int as n, max(created_at) as m, max(edited_at) as e, max(deleted_at) as d,
-                (select count(*)::int from chat_message_reads cr
-                 join interview_chat_messages mr on mr.id = cr.message_id
-                 where mr.conversation_scope = 'direct' and position($1 in mr.conversation_peer) > 0
-                   and mr.ghosted_at is null
-                   and cr.reader_id = $3
-                   and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as rc,
-                (select max(cr.read_at) from chat_message_reads cr
-                 join interview_chat_messages mr on mr.id = cr.message_id
-                 where mr.conversation_scope = 'direct' and position($1 in mr.conversation_peer) > 0
-                   and mr.ghosted_at is null
-                   and cr.reader_id = $3
-                   and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as r
-           from interview_chat_messages
-          where conversation_scope = 'direct' and position($1 in conversation_peer) > 0
-            and ghosted_at is null
-            and (team_id = $2 or ($2 = 'default' and team_id is null))`,
-        [account.displayName, teamId, account.id],
-      );
-      const versionRow = versionRows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null; rc: number; r: Date | null };
-      let channelVersion: { n: number; m: Date | null; rc: number; r: Date | null } = { n: 0, m: null, rc: 0, r: null };
-      let sharedReadVersion: { rc: number; r: Date | null } = { rc: 0, r: null };
-      if (accessibleIds.length) {
-        const { rows: channelVersionRows } = await pool.query(
-          `select count(*)::int as n, max(created_at) as m,
-                  (select count(*)::int from chat_message_reads cr
-                   join interview_chat_messages mr on mr.id = cr.message_id
-                   where mr.conversation_scope = 'channel' and mr.conversation_peer = any($1::text[])
-                     and mr.ghosted_at is null
-                     and cr.reader_id = $3
-                     and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as rc,
-                  (select max(cr.read_at) from chat_message_reads cr
-                   join interview_chat_messages mr on mr.id = cr.message_id
-                   where mr.conversation_scope = 'channel' and mr.conversation_peer = any($1::text[])
-                     and mr.ghosted_at is null
-                     and cr.reader_id = $3
-                     and (cr.team_id = $2 or ($2 = 'default' and cr.team_id is null))) as r
-             from interview_chat_messages
-            where conversation_scope = 'channel' and conversation_peer = any($1::text[])
-              and ghosted_at is null
-              and (team_id = $2 or ($2 = 'default' and team_id is null))`,
-          [accessibleIds, teamId, account.id],
-        );
-        channelVersion = channelVersionRows[0] as { n: number; m: Date | null; rc: number; r: Date | null };
-      }
-      const { rows: sharedReadRows } = await pool.query(
-        `select count(*)::int as rc, max(cr.read_at) as r
-           from chat_message_reads cr
-           join interview_chat_messages m on m.id = cr.message_id
-         where m.conversation_scope = 'shared' and m.ghosted_at is null and cr.reader_id = $2
-            and (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))`,
-        [teamId, account.id],
-      );
-      sharedReadVersion = sharedReadRows[0] as { rc: number; r: Date | null };
-      const t = (value: Date | null) => (value ? new Date(value).getTime() : 0);
-      const tag = `dm${versionRow.n}|${t(versionRow.m)}|${t(versionRow.e)}|${t(versionRow.d)}|${versionRow.rc}|${t(versionRow.r)}`
-        + `|chan${channelVersion.n}|${t(channelVersion.m)}|${channelVersion.rc}|${t(channelVersion.r)}`
-        + `|shared${sharedReadVersion.rc}|${t(sharedReadVersion.r)}`;
+      const tag = JSON.stringify([await chatRevision(teamId, account.id, pool),
+        account.displayName, accessibleIds.slice().sort()]);
       if (await notModified(req, res, tag)) return;
     } catch {
       // Version check is best-effort; fall through to the full load.
@@ -6312,49 +6229,11 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
   const { limit, before } = pageWindow(req.query);
-  const peerCondition = conversation.key === null
-    ? "m.conversation_peer is null"
-    : "m.conversation_peer = $3";
-  const peerParams = conversation.key === null ? [] : [conversation.key];
-  // Idle polls 304 on counts/max timestamps (messages, reactions, polls,
-  // votes) instead of re-transferring the thread. History scrollback
+  // Idle validation reads two revision rows, never retained history.
+  // History scrollback
   // (`before`) always loads fully — it runs on demand, not on an interval.
   const chatVersion = before ? null : (async () => {
-    const { rows } = await pool.query(
-       `select (select count(*)::int from interview_chat_messages m
-         where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
-           and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null) as n,
-        (select max(m.created_at) from interview_chat_messages m
-         where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
-           and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null) as m,
-         (select max(m.edited_at) from interview_chat_messages m
-          where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
-            and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null) as e,
-         (select max(m.deleted_at) from interview_chat_messages m
-          where (m.team_id = $1 or ($1 = 'default' and m.team_id is null))
-            and m.conversation_scope = $2 and ${peerCondition} and m.ghosted_at is null) as d,
-        (select max(r.created_at) from chat_message_reactions r
-         where (r.team_id = $1 or ($1 = 'default' and r.team_id is null))) as r,
-        (select max(p.created_at) from chat_polls p
-         where (p.team_id = $1 or ($1 = 'default' and p.team_id is null))) as p,
-        (select max(v.created_at) from chat_poll_votes v where v.message_id in (
-           select m2.id from interview_chat_messages m2
-           where (m2.team_id = $1 or ($1 = 'default' and m2.team_id is null))
-             and m2.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "m2.")} and m2.ghosted_at is null
-            order by m2.created_at desc limit 100)) as v,
-         (select count(*)::int from chat_message_reads cr
-          join interview_chat_messages mr on mr.id = cr.message_id
-          where (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))
-            and mr.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "mr.")} and mr.ghosted_at is null) as rc,
-         (select max(cr.read_at) from chat_message_reads cr
-          join interview_chat_messages mr on mr.id = cr.message_id
-          where (cr.team_id = $1 or ($1 = 'default' and cr.team_id is null))
-            and mr.conversation_scope = $2 and ${peerCondition.replaceAll("m.", "mr.")} and mr.ghosted_at is null) as rr`,
-      [teamId, conversation.scope, ...peerParams],
-    );
-      const row = rows[0] as { n: number; m: Date | null; e: Date | null; d: Date | null; r: Date | null; p: Date | null; v: Date | null; rc: number; rr: Date | null };
-    const t = (d: Date | null) => (d ? new Date(d).getTime() : 0);
-      return `c${row.n}|${t(row.m)}|${t(row.e)}|${t(row.d)}|${t(row.r)}|${t(row.p)}|${t(row.v)}|${row.rc}|${t(row.rr)}`;
+    return JSON.stringify([await chatRevision(teamId, undefined, pool), conversation.scope, conversation.key, limit]);
   });
   await sendVersioned(req, res, async () => chatVersion ? chatVersion() : null, async () => {
     const conversationFilters = [
@@ -11945,11 +11824,7 @@ router.get("/assistant/conversations", requireAdmin, async (req, res): Promise<v
     teamFilter(assistantConversationsTable.teamId, teamId),
     ownership,
   )).orderBy(desc(assistantConversationsTable.updatedAt));
-  const messages = await db.select({ conversationId: assistantMessagesTable.conversationId }).from(assistantMessagesTable).where(teamFilter(assistantMessagesTable.teamId, teamId));
-  const counts = new Map<string, number>();
-  for (const message of messages) {
-    if (message.conversationId) counts.set(message.conversationId, (counts.get(message.conversationId) ?? 0) + 1);
-  }
+  const counts = await assistantMessageCounts(teamId, conversations.map(conversation => conversation.id));
   res.json(ListAssistantConversationsResponse.parse({
     items: conversations.map(conversation => assistantConversationResponse(conversation, counts.get(conversation.id) ?? 0)),
   }));
@@ -12000,8 +11875,8 @@ router.patch("/assistant/conversations/:conversationId", requireAdmin, async (re
     res.status(404).json({ error: "Assistant conversation not found" });
     return;
   }
-  const messages = await db.select({ id: assistantMessagesTable.id }).from(assistantMessagesTable).where(and(eq(assistantMessagesTable.conversationId, conversation.id), teamFilter(assistantMessagesTable.teamId, teamId)));
-  res.json(RenameAssistantConversationResponse.parse(assistantConversationResponse(conversation, messages.length)));
+  const counts = await assistantMessageCounts(teamId, [conversation.id]);
+  res.json(RenameAssistantConversationResponse.parse(assistantConversationResponse(conversation, counts.get(conversation.id) ?? 0)));
 });
 
 router.delete("/assistant/conversations/:conversationId", requireAdmin, async (req, res): Promise<void> => {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, notExists, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import {
   CreateTeamAssessmentBody,
@@ -98,16 +98,28 @@ async function assessmentForTeam(id: string, teamId: string) {
 }
 
 async function assignAssessmentToTeam(assessmentId: string, teamId: string): Promise<void> {
-  const members = await db.select({ id: interviewerAccountsTable.id })
-    .from(interviewerAccountsTable)
-    .where(teamFilter(interviewerAccountsTable.teamId, teamId));
-  if (!members.length) return;
-  await db.insert(teamAssessmentAssignmentsTable).values(members.map((member) => ({
-    id: randomUUID(),
-    teamId,
-    assessmentId,
-    interviewerId: member.id,
-  }))).onConflictDoNothing();
+  await reconcileAssessmentAssignments(teamId, { assessmentId });
+}
+
+// One anti-joined insert also covers members who joined after publication.
+async function reconcileAssessmentAssignments(
+  teamId: string,
+  options: { assessmentId?: string; interviewerId?: string } = {},
+): Promise<void> {
+  await db.execute(sql`
+    insert into team_assessment_assignments (id, team_id, assessment_id, interviewer_id)
+    select gen_random_uuid()::text, ${teamId}, a.id, m.id
+    from team_assessments a
+    join interviewer_accounts m on (m.team_id = ${teamId} or (${teamId} = 'default' and m.team_id is null))
+    where a.team_id = ${teamId} and a.status = 'published'
+      ${options.assessmentId ? sql`and a.id = ${options.assessmentId}` : sql``}
+      ${options.interviewerId ? sql`and m.id = ${options.interviewerId} and a.required = true
+        and not exists (select 1 from team_assessment_submissions s
+          where s.team_id = ${teamId} and s.assessment_id = a.id and s.interviewer_id = m.id)` : sql``}
+      and not exists (select 1 from team_assessment_assignments x
+        where x.assessment_id = a.id and x.interviewer_id = m.id)
+    on conflict do nothing
+  `);
 }
 
 function summarizeAnswer(question: TeamAssessmentQuestion, rawValue: unknown): string[] {
@@ -133,50 +145,40 @@ router.get("/team-assessments/required", requireAdmin, async (req, res): Promise
     return;
   }
   const teamId = await requestTeamId(req);
+  await reconcileAssessmentAssignments(teamId, { interviewerId });
   const assessments = await db.select().from(teamAssessmentsTable)
     .where(and(
       eq(teamAssessmentsTable.teamId, teamId),
       eq(teamAssessmentsTable.status, "published"),
       eq(teamAssessmentsTable.required, true),
+      notExists(db.select({ id: teamAssessmentSubmissionsTable.id })
+        .from(teamAssessmentSubmissionsTable).where(and(
+          eq(teamAssessmentSubmissionsTable.teamId, teamId),
+          eq(teamAssessmentSubmissionsTable.assessmentId, teamAssessmentsTable.id),
+          eq(teamAssessmentSubmissionsTable.interviewerId, interviewerId),
+        ))),
     )).orderBy(asc(teamAssessmentsTable.createdAt));
-  for (const assessment of assessments) {
-    await db.insert(teamAssessmentAssignmentsTable).values({
-      id: randomUUID(),
-      teamId,
-      assessmentId: assessment.id,
-      interviewerId,
-    }).onConflictDoNothing();
-  }
-  const submissions = await db.select({ assessmentId: teamAssessmentSubmissionsTable.assessmentId })
-    .from(teamAssessmentSubmissionsTable)
-    .where(and(
-      eq(teamAssessmentSubmissionsTable.teamId, teamId),
-      eq(teamAssessmentSubmissionsTable.interviewerId, interviewerId),
-    ));
-  const submittedIds = new Set(submissions.map((submission) => submission.assessmentId));
   res.json(GetRequiredTeamAssessmentsResponse.parse({
-    items: assessments.filter((assessment) => !submittedIds.has(assessment.id)).map(memberAssessment),
+    items: assessments.map(memberAssessment),
   }));
 });
 
 router.get("/team-assessments", requireCoordinator, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
+  await reconcileAssessmentAssignments(teamId);
   const assessments = await db.select().from(teamAssessmentsTable)
     .where(eq(teamAssessmentsTable.teamId, teamId))
     .orderBy(asc(teamAssessmentsTable.createdAt));
-  for (const assessment of assessments) {
-    if (assessment.status === "published") await assignAssessmentToTeam(assessment.id, teamId);
-  }
   const [assignments, submissions] = await Promise.all([
-    db.select({ assessmentId: teamAssessmentAssignmentsTable.assessmentId }).from(teamAssessmentAssignmentsTable)
-      .where(eq(teamAssessmentAssignmentsTable.teamId, teamId)),
-    db.select({ assessmentId: teamAssessmentSubmissionsTable.assessmentId }).from(teamAssessmentSubmissionsTable)
-      .where(eq(teamAssessmentSubmissionsTable.teamId, teamId)),
+    db.select({ assessmentId: teamAssessmentAssignmentsTable.assessmentId, count: count() }).from(teamAssessmentAssignmentsTable)
+      .where(eq(teamAssessmentAssignmentsTable.teamId, teamId)).groupBy(teamAssessmentAssignmentsTable.assessmentId),
+    db.select({ assessmentId: teamAssessmentSubmissionsTable.assessmentId, count: count() }).from(teamAssessmentSubmissionsTable)
+      .where(eq(teamAssessmentSubmissionsTable.teamId, teamId)).groupBy(teamAssessmentSubmissionsTable.assessmentId),
   ]);
   const assignedCounts = new Map<string, number>();
   const responseCounts = new Map<string, number>();
-  for (const assignment of assignments) assignedCounts.set(assignment.assessmentId, (assignedCounts.get(assignment.assessmentId) ?? 0) + 1);
-  for (const submission of submissions) responseCounts.set(submission.assessmentId, (responseCounts.get(submission.assessmentId) ?? 0) + 1);
+  for (const assignment of assignments) assignedCounts.set(assignment.assessmentId, assignment.count);
+  for (const submission of submissions) responseCounts.set(submission.assessmentId, submission.count);
   res.json(ListTeamAssessmentsResponse.parse({
     items: assessments.map((assessment) => ({
       ...rowToAssessment(assessment),

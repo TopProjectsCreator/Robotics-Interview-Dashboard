@@ -16,6 +16,7 @@ import { startMailboxPoller } from "./lib/maildrop";
 import { resumeStalePreviewJobs } from "./routes/storage";
 import { isDatabaseConnectionError } from "./lib/databaseErrors";
 import { warmFtcMentionSearchCache } from "./lib/ftcEvents";
+import { chatRevisionMigration } from "./lib/chatRevisionMigration";
 
 initRealtime();
 
@@ -124,6 +125,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "chat_custom_emojis",
     "chat_message_reactions",
     "chat_message_reads",
+    "chat_revisions",
     "chat_productivity_settings",
     "chat_productivity_snapshots",
     "chat_productivity_usage_events",
@@ -985,6 +987,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
        "created_at" timestamptz not null default now()
      )`,
     `create table if not exists "assistant_messages" ("id" text primary key, "team_id" text, "conversation_id" text, "question" text not null, "answer" text not null, "applicant_ids" text not null default '[]', "activities" text not null default '[]', "created_at" timestamptz not null default now())`,
+    `create index if not exists assistant_messages_team_conversation_idx on assistant_messages (team_id, conversation_id)`,
     `create table if not exists "assistant_prompt_runs" (
        "id" text primary key,
        "team_id" text not null,
@@ -1179,6 +1182,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `create table if not exists "parts_supplier_sync_states" ("vendor_key" text primary key, "status" text not null, "checked_at" timestamptz not null, "item_count" integer not null, "source" text not null, "message" text not null, constraint "parts_supplier_sync_states_valid_result" check ("status" in ('synced', 'search_only', 'unavailable', 'incomplete') and "item_count" >= 0))`,
     `alter table "parts_supplier_sync_states" add column if not exists "remaining_pages" integer`,
     `alter table "parts_supplier_sync_states" add column if not exists "estimated_seconds_remaining" integer`,
+    ...chatRevisionMigration,
     ...privateTableRlsStatements,
   ];
   let primaryReady = false;
