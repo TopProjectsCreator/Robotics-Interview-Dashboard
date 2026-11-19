@@ -87,6 +87,14 @@ async function mockApi(route, origin) {
   const apiPath = url.pathname.replace(/^\/api(?=\/)/, "");
   const method = request.method();
 
+  if (apiPath === "/events" && method === "GET") {
+    await route.fulfill({ status: 204, body: "" });
+    return;
+  }
+  if (apiPath === "/presence" && method === "GET") {
+    await fulfill(route, jsonResponse({ onlineCount: 0, entries: [], offline: [] }));
+    return;
+  }
   if (apiPath === "/auth/session" && method === "GET") {
     await fulfill(route, jsonResponse(authenticated
       ? { authenticated: true, label: account.displayName, interviewerId: account.id, role: account.role }
@@ -159,7 +167,9 @@ async function mockApi(route, origin) {
     assert.equal(verification.verified, true, "The browser's attestation must verify");
     assert.ok(verification.registrationInfo, "Registration verification should return credential data");
     const stored = verification.registrationInfo.credential;
-    const registrationOrigin = JSON.parse(Buffer.from(body.response.clientDataJSON, "base64url").toString("utf8")).origin;
+    const registrationOrigin = JSON.parse(
+      Buffer.from(body.response.response.clientDataJSON, "base64url").toString("utf8"),
+    ).origin;
     const credential = {
       id: stored.id,
       publicKey: stored.publicKey,

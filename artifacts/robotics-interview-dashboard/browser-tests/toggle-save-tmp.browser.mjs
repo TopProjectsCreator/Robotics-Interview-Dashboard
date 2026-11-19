@@ -70,6 +70,18 @@ try {
     const { pathname } = new URL(route.request().url());
     const method = route.request().method();
     console.log("API:", method, pathname);
+    if (pathname === "/api/events") {
+      await route.fulfill({ status: 204, body: "" });
+      return;
+    }
+    if (pathname === "/api/presence") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ onlineCount: 0, entries: [], offline: [] }),
+      });
+      return;
+    }
     if (pathname === "/api/auth/session") {
       await route.fulfill({
         status: 200,
@@ -128,6 +140,7 @@ try {
   await page.getByTestId("button-account-menu").click();
   await page.getByTestId("button-open-settings").click();
   await page.getByTestId("settings-modal").waitFor({ state: "visible" });
+  await page.getByTestId("settings-tab-team").click();
   await accountsLoaded;
 
   const allIds = await page.locator("[data-testid]").evaluateAll(nodes => nodes.map(n => n.getAttribute("data-testid")).filter(id => id && (id.includes("visibility") || id.includes("save-visibility"))));

@@ -32,7 +32,7 @@
 - [Node TypeScript test loading](node-typescript-test-loading.md) — Node's strip-only TS mode accepts only erasable syntax; route tests need TS-free parameter declarations and directory-import resolution.
 - [Wouter query routing](wouter-query-routing.md) — use Wouter's search hook for query-driven state; `useLocation` exposes only the pathname.
 - [Fragment navigation focus](fragment-navigation-focus.md) — make hash targets focusable so compact-menu link activation leaves focus on destination content across engines.
-- [Playwright WebKit on Nix](playwright-webkit-nix.md) — the bundled WPE launcher can hide Nix shared libraries; use a direct wrapper for local Safari-engine tests.
+- [Playwright WebKit on Nix](playwright-webkit-nix.md) — if WPE cannot initialize EGL, use a GTK MiniBrowser wrapper with compatible Nix libraries.
 - [Video preview autoplay](video-preview-autoplay.md) — iframe autoplay permissions vary; show a recoverable mute state and keep export audio independent.
 - [Public display freshness](public-display-freshness.md) — SSE connection health does not prove the database relay is healthy; keep short polling as a display fallback.
 - [CAD library storage cleanup](cad-library-storage-cleanup.md) — chunked CAD deletes must drop parts and manifest; check every table that can reference an object path.

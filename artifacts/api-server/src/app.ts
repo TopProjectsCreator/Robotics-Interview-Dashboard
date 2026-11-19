@@ -21,8 +21,6 @@ import { normalizePermissions, permissionsForBuiltInRole } from "@workspace/api-
 import { UCP_AGENT_PROFILE_PATH, publicOriginFromHeaders } from "./lib/publicOrigin";
 import { rememberPublicOriginFromHeaders } from "./lib/agentProfile";
 import { tinyUrlRedirectHandler } from "./routes/tinyUrls";
-import { teamFilter } from "./lib/teams";
-import { hasOutstandingTeamAssessments } from "./lib/teamAssessmentRules";
 import { requestAccount } from "./lib/requestAccount";
 
 const app: Express = express();

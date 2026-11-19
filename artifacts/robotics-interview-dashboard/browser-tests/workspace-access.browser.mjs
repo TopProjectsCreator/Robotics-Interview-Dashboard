@@ -42,6 +42,7 @@ async function verifyWorkspaceAccessOrdering(page) {
   await page.getByTestId("button-account-menu").click();
   await page.getByTestId("button-open-settings").click();
   await page.getByTestId("settings-modal").waitFor({ state: "visible" });
+  await page.getByTestId("settings-tab-team").click();
   const accountResponse = await accountsLoaded;
   assert.equal(accountResponse.status(), 200, "settings should load the mock interviewer account list");
   const accessMatrix = page.locator('[data-testid^="visibility-row-"]').first().locator("xpath=ancestor::table");
@@ -126,6 +127,18 @@ try {
     context.on("page", page => page.on("pageerror", error => pageErrors.push(error.message)));
     await context.route("**/api/**", async route => {
       const { pathname } = new URL(route.request().url());
+      if (pathname === "/api/events") {
+        await route.fulfill({ status: 204, body: "" });
+        return;
+      }
+      if (pathname === "/api/presence") {
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ onlineCount: 0, entries: [], offline: [] }),
+        });
+        return;
+      }
       if (pathname === "/api/auth/session") {
         await route.fulfill({
           status: 200,

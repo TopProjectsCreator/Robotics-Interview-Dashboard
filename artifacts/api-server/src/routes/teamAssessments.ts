@@ -37,7 +37,6 @@ import { ObjectStorageService } from "../lib/objectStorage";
 import {
   TEAM_ASSESSMENT_MAX_FILE_BYTES,
   TEAM_ASSESSMENT_MAX_TOTAL_FILE_BYTES,
-  TeamAssessmentValidationError,
   validateTeamAssessmentAnswers,
   validateTeamAssessmentQuestions,
 } from "../lib/teamAssessmentRules";
