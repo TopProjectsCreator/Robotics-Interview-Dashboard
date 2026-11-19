@@ -49,6 +49,11 @@ RUN pnpm --filter @workspace/robotics-interview-dashboard run build
 # API build (esbuild bundle + Rust native converter).
 RUN pnpm --filter @workspace/api-server run build
 
+# Lean, production-only dependency tree. The API bundle loads the pg driver
+# from here (so the OpenTelemetry pg instrumentation can patch it) and the
+# OpenTelemetry SDK is started by the register module from here.
+RUN pnpm --filter @workspace/api-server deploy --prod --legacy /app/deploy
+
 # ---------- runtime stage ----------
 FROM node:24-bookworm-slim AS runtime
 RUN apt-get update \
@@ -61,6 +66,11 @@ WORKDIR /app
 # (../../robotics-interview-dashboard/dist/public) finds the frontend.
 COPY --from=build /app/artifacts/api-server/dist ./artifacts/api-server/dist
 COPY --from=build /app/artifacts/robotics-interview-dashboard/dist ./artifacts/robotics-interview-dashboard/dist
+COPY --from=build /app/deploy/node_modules ./node_modules
 
+# The ESM loader hook lets the SDK patch `import`ed drivers, and the register
+# module starts it before the app is loaded. The SDK reads Railway's OTEL_*
+# variables (endpoint, protocol, headers, service name) from the environment;
+# nothing about the exporter is hardcoded here.
 # Railway injects PORT; the server refuses to boot without it.
-CMD ["node", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]
+CMD ["node", "--experimental-loader=@opentelemetry/instrumentation/hook.mjs", "--import=@opentelemetry/auto-instrumentations-node/register", "--enable-source-maps", "artifacts/api-server/dist/index.mjs"]

@@ -53,6 +53,12 @@ async function buildAll() {
       "isolated-vm",
       "lightningcss",
       "pg-native",
+      // Load node-postgres from node_modules at runtime so the OpenTelemetry
+      // pg instrumentation can patch it. Bundling it inlines the driver and
+      // leaves database queries without CLIENT spans.
+      "pg",
+      "pg-pool",
+      "express",
       "oracledb",
       "mongodb-client-encryption",
       "nodemailer",
