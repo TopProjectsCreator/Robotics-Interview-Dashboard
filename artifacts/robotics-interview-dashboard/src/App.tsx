@@ -110,7 +110,6 @@ import PublicDashboard from "@/pages/public-dashboard";
 import Pricing from "@/pages/pricing";
 import ComparePage from "@/pages/compare";
 import AboutPage from "@/pages/about";
-import UnslopAboutPage from "@/pages/unslop-about";
 import AgentsMdPage from "@/pages/agents-md";
 import {
   DEMO_CUSTOM_WORKSPACES,
@@ -12104,7 +12103,6 @@ function Router() {
         <Route path="/pricing" component={Pricing} />
         <Route path="/compare" component={ComparePage} />
         <Route path="/about" component={AboutPage} />
-        <Route path="/unslop-about" component={UnslopAboutPage} />
         <Route path="/agents" component={AgentsMdPage} />
         <Route path="/interview-landing" component={Landing} />
         <Route path="/chat-landing" component={ChatLanding} />
