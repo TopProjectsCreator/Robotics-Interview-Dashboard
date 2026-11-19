@@ -73,9 +73,13 @@ function newId(): string {
 }
 
 function makeQuestion(type: TeamAssessmentQuestionType = "single_choice"): TeamAssessmentQuestion {
-  const base: TeamAssessmentQuestion = { id: newId(), type, prompt: "", required: true };
+  const base: TeamAssessmentQuestion = { id: newId(), type, prompt: "New question", required: true };
   if (CHOICE_TYPES.has(type)) {
-    base.options = type === "style_picker" ? ["robotics", "ocean"] : ["Option 1", "Option 2"];
+    const options = type === "style_picker" ? ["robotics", "ocean"] : ["Option 1", "Option 2"];
+    base.options = options;
+    if (type === "single_choice" || type === "multiple_choice") {
+      base.correctAnswers = [options[0] ?? "Option 1"];
+    }
   }
   if (type === "slider") {
     base.min = 0;
@@ -479,10 +483,8 @@ export function RequiredAssessmentFlow({ items }: { items: RequiredTeamAssessmen
       if (saved) setReturnPath(saved);
       else {
         const current = window.location.pathname + window.location.search;
-        if (!current.startsWith("/team-assessments")) {
-          window.sessionStorage.setItem("team-assessment-return-path", current);
-          setReturnPath(current);
-        }
+        window.sessionStorage.setItem("team-assessment-return-path", current);
+        setReturnPath(current);
       }
     } catch {
       // A dashboard fallback is still safe when session storage is unavailable.
@@ -533,11 +535,12 @@ export function RequiredAssessmentFlow({ items }: { items: RequiredTeamAssessmen
   </main>;
 }
 
-export function TeamAssessmentsPage() {
+export function TeamAssessmentsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const session = useGetSession();
   const isAdmin = session.data?.role === "coordinator" || session.data?.role === "admin";
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
+  const [embeddedView, setEmbeddedView] = useState<{ mode: "edit" | "results"; assessmentId: string } | null>(null);
   const assessments = useListTeamAssessments({
     query: { queryKey: getListTeamAssessmentsQueryKey(), enabled: isAdmin },
   });
@@ -564,7 +567,8 @@ export function TeamAssessmentsPage() {
     }, {
       onSuccess: (assessment) => {
         void queryClient.invalidateQueries({ queryKey: getListTeamAssessmentsQueryKey() });
-        setLocation(`/team-assessments/${assessment.id}/edit`);
+        if (embedded) setEmbeddedView({ mode: "edit", assessmentId: assessment.id });
+        else setLocation(`/team-assessments/${assessment.id}/edit`);
       },
       onError: (mutationError) => setError(getServerError(mutationError)),
     });
@@ -590,9 +594,31 @@ export function TeamAssessmentsPage() {
   };
 
   if (!isAdmin) return <RequiredAssessmentFlow items={required.data?.items ?? []} />;
+  if (embeddedView?.mode === "edit") {
+    return <TeamAssessmentEditorPage
+      assessmentId={embeddedView.assessmentId}
+      embedded
+      onBack={() => setEmbeddedView(null)}
+    />;
+  }
+  if (embeddedView?.mode === "results") {
+    return <TeamAssessmentResultsPage
+      assessmentId={embeddedView.assessmentId}
+      embedded
+      onBack={() => setEmbeddedView(null)}
+    />;
+  }
   const list = assessments.data?.items ?? [];
-  return <div className={`${pageSurface} fade-up`}>
-    <div className="mx-auto max-w-6xl pb-10">
+  const openEdit = (assessmentId: string) => {
+    if (embedded) setEmbeddedView({ mode: "edit", assessmentId });
+    else setLocation(`/team-assessments/${assessmentId}/edit`);
+  };
+  const openResults = (assessmentId: string) => {
+    if (embedded) setEmbeddedView({ mode: "results", assessmentId });
+    else setLocation(`/team-assessments/${assessmentId}/results`);
+  };
+  return <div className={`${embedded ? "" : pageSurface} fade-up`} data-testid={embedded ? "team-assessments-settings-content" : undefined}>
+    <div className={`mx-auto max-w-6xl ${embedded ? "" : "pb-10"}`}>
     <SectionHeading
       eyebrow="Interview workspace / team readiness"
       title="Team assessments"
@@ -626,11 +652,11 @@ export function TeamAssessmentsPage() {
                 </p>}
               </div>
               <div className="flex flex-wrap gap-2 sm:shrink-0">
-                {(assessment.status === "draft" || (assessment.status === "paused" && assessment.responseCount === 0)) && <button type="button" onClick={() => setLocation(`/team-assessments/${assessment.id}/edit`)} className={secondaryButton} data-testid={`button-edit-assessment-${assessment.id}`}>Edit draft</button>}
+                {(assessment.status === "draft" || (assessment.status === "paused" && assessment.responseCount === 0)) && <button type="button" onClick={() => openEdit(assessment.id)} className={secondaryButton} data-testid={`button-edit-assessment-${assessment.id}`}>Edit draft</button>}
                 {assessment.status === "published"
                   ? <button type="button" onClick={() => runLifecycle(assessment.id, "pause")} disabled={busyId === assessment.id || pause.isPending} className={secondaryButton} data-testid={`button-pause-assessment-${assessment.id}`}><Pause size={15} />Pause</button>
                   : <button type="button" onClick={() => runLifecycle(assessment.id, "publish")} disabled={busyId === assessment.id || publish.isPending} className={primaryButton} data-testid={`button-publish-assessment-${assessment.id}`}><Rocket size={15} />Publish</button>}
-                <button type="button" onClick={() => setLocation(`/team-assessments/${assessment.id}/results`)} className={secondaryButton} data-testid={`button-results-assessment-${assessment.id}`}>Results <ArrowRight size={15} /></button>
+                <button type="button" onClick={() => openResults(assessment.id)} className={secondaryButton} data-testid={`button-results-assessment-${assessment.id}`}>Results <ArrowRight size={15} /></button>
               </div>
             </article>;
           })}
@@ -639,7 +665,15 @@ export function TeamAssessmentsPage() {
   </div>;
 }
 
-export function TeamAssessmentEditorPage({ assessmentId }: { assessmentId: string }) {
+export function TeamAssessmentEditorPage({
+  assessmentId,
+  embedded = false,
+  onBack,
+}: {
+  assessmentId: string;
+  embedded?: boolean;
+  onBack?: () => void;
+}) {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const detail = useGetTeamAssessment(assessmentId, {
@@ -743,16 +777,17 @@ export function TeamAssessmentEditorPage({ assessmentId }: { assessmentId: strin
     questions.splice(target, 0, moved);
     updateAssessment({ questions });
   };
+  const surfaceClass = embedded ? "" : pageSurface;
 
-  if (detail.isLoading) return <div className={`${pageSurface}`}><div className={`${card} p-6`} role="status">Loading assessment editor…</div></div>;
-  if (detail.isError || !draft) return <div className={`${pageSurface}`}><div className={`${card} p-6`}>
+  if (detail.isLoading) return <div className={surfaceClass}><div className={`${card} p-6`} role="status">Loading assessment editor…</div></div>;
+  if (detail.isError || !draft) return <div className={surfaceClass}><div className={`${card} p-6`}>
     <p className="font-semibold">This assessment could not be loaded.</p>
     <button type="button" onClick={() => void detail.refetch()} className={`${secondaryButton} mt-4`}>Try again</button>
   </div></div>;
   const savedCount = draft.questions.length;
-  return <div className={`${pageSurface} fade-up`}>
-    <div className="mx-auto max-w-6xl pb-10">
-    <button type="button" onClick={() => setLocation("/team-assessments")} className="mb-4 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" data-testid="button-back-assessments"><ArrowLeft size={16} /> All assessments</button>
+  return <div className={`${surfaceClass} fade-up`}>
+    <div className={`mx-auto max-w-6xl ${embedded ? "" : "pb-10"}`}>
+    <button type="button" onClick={() => onBack ? onBack() : setLocation("/team-assessments")} className="mb-4 inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]" data-testid="button-back-assessments"><ArrowLeft size={16} /> All assessments</button>
     <SectionHeading
       eyebrow="Team readiness / editor"
       title={draft.status === "draft" ? "Assessment draft" : "Published assessment"}
@@ -904,7 +939,15 @@ function downloadResults(results: TeamAssessmentResults) {
   URL.revokeObjectURL(url);
 }
 
-export function TeamAssessmentResultsPage({ assessmentId }: { assessmentId: string }) {
+export function TeamAssessmentResultsPage({
+  assessmentId,
+  embedded = false,
+  onBack,
+}: {
+  assessmentId: string;
+  embedded?: boolean;
+  onBack?: () => void;
+}) {
   const [, setLocation] = useLocation();
   const resultsQuery = useGetTeamAssessmentResults(assessmentId, {
     query: { queryKey: getGetTeamAssessmentResultsQueryKey(assessmentId) },
@@ -915,14 +958,15 @@ export function TeamAssessmentResultsPage({ assessmentId }: { assessmentId: stri
     () => results?.completions.find((completion) => completion.interviewerId === selectedMember),
     [results, selectedMember],
   );
-  if (resultsQuery.isLoading) return <div className={pageSurface}><div className={`${card} p-6`} role="status">Loading assessment results…</div></div>;
-  if (resultsQuery.isError || !results) return <div className={pageSurface}><div className={`${card} p-6`}>
+  const surfaceClass = embedded ? "" : pageSurface;
+  if (resultsQuery.isLoading) return <div className={surfaceClass}><div className={`${card} p-6`} role="status">Loading assessment results…</div></div>;
+  if (resultsQuery.isError || !results) return <div className={surfaceClass}><div className={`${card} p-6`}>
     <p className="font-semibold">Results could not be loaded.</p>
     <button type="button" onClick={() => void resultsQuery.refetch()} className={`${secondaryButton} mt-4`}>Try again</button>
   </div></div>;
   const percent = results.assignedCount ? Math.round(results.responseCount / results.assignedCount * 100) : 0;
-  return <div className={`${pageSurface} fade-up`}>
-    <div className="mx-auto max-w-6xl pb-10">
+  return <div className={`${surfaceClass} fade-up`}>
+    <div className={`mx-auto max-w-6xl ${embedded ? "" : "pb-10"}`}>
     <SectionHeading
       eyebrow="Team readiness / results"
       title={results.assessment.title}
@@ -930,7 +974,7 @@ export function TeamAssessmentResultsPage({ assessmentId }: { assessmentId: stri
       action={<button type="button" onClick={() => downloadResults(results)} className={secondaryButton} data-testid="button-export-assessment-results"><Download size={16} />Export CSV</button>}
     />
     <div className="mb-5 flex flex-wrap items-center gap-2"><StatusLabel status={results.assessment.status} />
-      <button type="button" onClick={() => setLocation("/team-assessments")} className={`${secondaryButton} ml-auto`} data-testid="button-results-back"><ArrowLeft size={15} />Back</button>
+      <button type="button" onClick={() => onBack ? onBack() : setLocation("/team-assessments")} className={`${secondaryButton} ml-auto`} data-testid="button-results-back"><ArrowLeft size={15} />Back</button>
     </div>
     <section className={`${card} mb-5 grid gap-3 p-4 sm:grid-cols-3 sm:p-5`} aria-label="Completion summary">
       <div><p className="mono text-[10px] uppercase tracking-[.14em] text-[hsl(var(--muted-foreground))]">Completed</p><p className="mt-1 text-2xl font-semibold">{results.responseCount}<span className="ml-1 text-sm font-normal text-[hsl(var(--muted-foreground))]">/ {results.assignedCount}</span></p></div>

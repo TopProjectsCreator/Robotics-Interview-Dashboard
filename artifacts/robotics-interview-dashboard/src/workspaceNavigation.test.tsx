@@ -28,7 +28,6 @@ describe("workspace navigation", () => {
       "Parts",
       "CAD",
       "Code",
-      "Team assessments",
       "Applicants",
       "Interview queue",
       "Attendance",
@@ -135,9 +134,16 @@ describe("workspace navigation", () => {
     const rosterOnly = new Set<WorkspaceKey>(["chat"]);
     expect(
       getWorkspaceNavigation("interview", rosterOnly, true).map(({ label }) => label),
-    ).toEqual(["Chat", "Team assessments", "Applicants"]);
+    ).toEqual(["Chat", "Applicants"]);
     expect(
       getWorkspaceNavigation("interview", rosterOnly, false).map(({ label }) => label),
-    ).toEqual(["Chat", "Team assessments"]);
+    ).toEqual(["Chat"]);
+  });
+
+  it("never adds Team assessments to workspace or mobile navigation", () => {
+    for (const area of ["overview", "interview", "chat", "parts", "cad", "code"] as const) {
+      expect(getWorkspaceNavigation(area).map(({ href, label }) => [href, label]))
+        .not.toContainEqual(["/team-assessments", "Team assessments"]);
+    }
   });
 });

@@ -1351,12 +1351,71 @@ function SettingsModal({
           role="tabpanel"
           aria-labelledby={`settings-tab-${activeSettingsItem.id}`}
           data-testid="settings-section-panel"
-          className="flex min-h-0 flex-col overflow-y-auto overscroll-contain p-4 sm:p-6"
+          className={`flex min-h-0 flex-col overflow-y-auto overscroll-contain p-4 sm:p-6 ${activeSettingsSection === "operations" ? "settings-operations-panel" : ""}`}
         >
           <div className="mb-4 border-b border-border pb-3">
             <h3 className="text-base font-semibold text-foreground">{activeSettingsItem.label}</h3>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">{activeSettingsItem.description}</p>
           </div>
+      {activeSettingsSection === "operations" && <div className="operations-tab-content" data-testid="operations-tab-content">
+        <header className="operations-intro">
+          <div className="operations-intro-mark" aria-hidden="true"><SquareTerminal size={20} /></div>
+          <div className="min-w-0">
+            <p className="operations-kicker">Event desk / operating settings</p>
+            <h4>Keep the team moving.</h4>
+            <p>Applicant flow, team readiness, and the live controls your crew relies on during an event.</p>
+          </div>
+        </header>
+        {isAdmin && <section className="operations-card operations-assessments" data-testid="settings-team-assessments">
+          <div className="operations-card-heading">
+            <div><p className="operations-kicker">01 / Readiness</p><h4>Team assessments</h4><p>Build a quiz or survey, assign it to the team, and review responses without leaving Settings.</p></div>
+            <ClipboardCheck size={20} aria-hidden="true" />
+          </div>
+          <TeamAssessmentsPage embedded />
+        </section>}
+        <div className="operations-grid">
+          <section className="operations-card" data-testid="operations-applicant-preferences">
+            <div className="operations-card-heading"><div><p className="operations-kicker">02 / Intake</p><h4>Applicant flow</h4><p>Choose how the roster opens and how event data stays current.</p></div><UsersRound size={19} aria-hidden="true" /></div>
+            <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
+          </section>
+          <section className="operations-card" data-testid="operations-live-updates">
+            <div className="operations-card-heading"><div><p className="operations-kicker">03 / Sync</p><h4>Live updates</h4><p>Keep queue and attendance views aligned across the team.</p></div><RefreshCw size={19} aria-hidden="true" /></div>
+            <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
+            <SettingRow title="Instant updates" detail="Pushes changes to the team in about a second. Periodic refresh stays on as a backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
+            <SettingRow title="Refresh interval" detail="How often live boards poll"><Segmented options={REFRESH_OPTIONS} value={REFRESH_OPTIONS.some(o => o.value === settings.refreshMs) ? settings.refreshMs : 3000} onChange={(v) => update({ refreshMs: v })} testId="segment-settings-interval" /></SettingRow>
+          </section>
+          <section className="operations-card" data-testid="operations-notifications">
+            <div className="operations-card-heading"><div><p className="operations-kicker">04 / Alerts</p><h4>Browser notifications</h4><p>Catch broadcasts and chat mentions when another tab is open.</p></div><Bell size={19} aria-hidden="true" /></div>
+            <SettingRow title="Notification permission" detail={notifyState === "granted" ? "On — broadcasts and chat mentions pop up in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — enable to catch broadcasts and chat mentions"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f] dark:text-[#6fce8f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#102c3c] dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Enable</button>}</SettingRow>
+          </section>
+          {isAdmin && <section className="operations-card operations-wide" data-testid="settings-live-now">
+            <div className="operations-card-heading"><div><p className="operations-kicker">05 / Team pulse</p><h4>Presence &amp; sessions</h4><p>See who is active in the admin workspace and manage sessions you don’t recognise.</p></div><MonitorCheck size={19} aria-hidden="true" /></div>
+            <p className="operations-copy">Online status uses a 2-minute window. Select a person to review their IP addresses and usage. Kick a sign-in session to require that person to log in again. Teammates who are offline remain available below with their last active time.</p>
+            <div className="mt-4"><PresencePanel /></div>
+          </section>}
+          {canSendBroadcast && <section className="operations-card" data-testid="settings-broadcast">
+            <div className="operations-card-heading"><div><p className="operations-kicker">06 / Team communication</p><h4>Broadcast</h4><p>Send a popup to everyone online or one teammate by name.</p></div><Megaphone size={19} aria-hidden="true" /></div>
+            <div className="mt-3"><BroadcastCard /></div>
+          </section>}
+          {isAdmin && session.data?.teamId && <section className="operations-card" data-testid="operations-parts-order-limit">
+            <div className="operations-card-heading"><div><p className="operations-kicker">07 / Parts desk</p><h4>Order limits</h4><p>Set a guardrail for draft parts orders.</p></div><Boxes size={19} aria-hidden="true" /></div>
+            <PartsOrderLimitSetting key={session.data.teamId} teamId={session.data.teamId} />
+          </section>}
+          {isAdmin && <section className="operations-card operations-wide" data-testid="settings-blocked-ips">
+            <div className="operations-card-heading"><div><p className="operations-kicker">08 / Access safety</p><h4>Sign-in blocklist</h4><p>Restrict an exact network address from signing in to this team.</p></div><ShieldCheck size={19} aria-hidden="true" /></div>
+            <div className="mt-3"><BlockedIpsSettings /></div>
+          </section>}
+          {isAdmin && <section className="operations-card operations-wide" data-testid="settings-tiny-urls">
+            <div className="operations-card-heading"><div><p className="operations-kicker">09 / Event links</p><h4>TinyURL</h4><p>Manage short links for flyers, QR codes, and event slides. Links use this site’s domain.</p></div><Globe size={19} aria-hidden="true" /></div>
+            <div className="mt-3"><TinyUrlsSettings /></div>
+          </section>}
+          <section className="operations-card operations-wide" data-testid="operations-data-controls">
+            <div className="operations-card-heading"><div><p className="operations-kicker">10 / Recovery</p><h4>Data controls</h4><p>Refresh workspace data or restore settings to their defaults.</p></div><RotateCcw size={19} aria-hidden="true" /></div>
+            <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className="flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]"><RefreshCw size={14} /> Reload</button></SettingRow>
+            <SettingRow title="Reset all settings" detail={resetNotice || "Device defaults, plus the team-wide defaults you can manage"}><button disabled={resetBusy} onClick={() => void resetAllSettings()} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50 dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> {resetBusy ? "Resetting…" : "Reset"}</button></SettingRow>
+          </section>
+        </div>
+      </div>}
       {activeSettingsSection === "profile" && <div className="border-t border-[#e5ecec] pt-2 dark:border-[#273c48]"><p className={sectionLabel}>Profile</p>
         <SettingRow title="Display name" detail="Shown in the account menu"><input value={settings.displayName} onChange={e => update({ displayName: e.target.value })} data-testid="input-settings-name" placeholder="Your name" className={`${field} w-44`} /></SettingRow>
         <SettingRow title="Avatar initials" detail="Defaults to your name initials"><input value={settings.initials} onChange={e => update({ initials: e.target.value.toUpperCase().slice(0, 2) })} data-testid="input-settings-initials" placeholder={avatarInitials({ ...settings, initials: "" })} maxLength={2} className={`mono ${field} w-20 text-center font-bold uppercase`} /></SettingRow>
@@ -1385,26 +1444,6 @@ function SettingsModal({
         />
       </div>
       </section>
-      {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-live-now">
-        <p className={sectionLabel}>Live now</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Who is online in the admin workspace right now (2-minute window). Click a person to see their IP addresses and usage. Kick sign-in sessions you don’t recognise — they must log in again to return. Teammates who are not online are listed below — click them to see when they were last active.</p>
-        <div className="mt-2"><PresencePanel /></div>
-      </div>}
-      {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-blocked-ips">
-        <p className={sectionLabel}>Sign-in blocklist</p>
-        <div className="mt-2"><BlockedIpsSettings /></div>
-      </div>}
-      {isAdmin && session.data?.teamId && <div hidden={activeSettingsSection !== "operations"}><PartsOrderLimitSetting key={session.data.teamId} teamId={session.data.teamId} /></div>}
-      {canSendBroadcast && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-broadcast">
-        <p className={sectionLabel}>Broadcast</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Send a popup to everyone online, or to one person by name. It pops up in seconds — and with browser notifications on, even in another tab.</p>
-        <div className="mt-2"><BroadcastCard /></div>
-      </div>}
-      {isAdmin && <div hidden={activeSettingsSection !== "operations"} className={divider} data-testid="settings-tiny-urls">
-        <p className={sectionLabel}>TinyURL</p>
-        <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Short links with the alias you choose, served from this site&rsquo;s own domain. The domain is auto-detected — no setup, and it works everywhere the team app does.</p>
-        <div className="mt-2"><TinyUrlsSettings /></div>
-      </div>}
       {activeSettingsSection === "team" && canManageMailbox && <div className={divider} data-testid="settings-team-inbox">
         <p className={sectionLabel}>Team inbox</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Forwarding sends incoming email into this team’s shared chat. Messages are posted only when the sender is on this team’s approved list.</p>
@@ -1669,17 +1708,6 @@ function SettingsModal({
       </div>}
       {session.data?.teamId && <div hidden={activeSettingsSection !== "team"}><TeamAccessCodeSettings key={session.data.teamId} canManage={isAdmin} /></div>}
       {canManageNameRules && session.data?.teamId && <div hidden={activeSettingsSection !== "team"}><TeamNameRulesSettings key={session.data.teamId} teamId={session.data.teamId} /></div>}
-      {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Applicants list</p>
-        <SettingRow title="Default sort" detail="Used when the Applicants page loads"><select value={SORT_OPTIONS.some(o => o.value === settings.defaultSort) ? settings.defaultSort : "rank"} onChange={e => update({ defaultSort: e.target.value })} data-testid="select-settings-sort" className={field}>{SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></SettingRow>
-      </div>}
-      {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Live updates</p>
-        <SettingRow title="Auto-refresh" detail="Keep queue and attendance boards live"><Toggle on={settings.autoRefresh} onChange={(v) => update({ autoRefresh: v })} testId="toggle-settings-refresh" label="Auto-refresh" /></SettingRow>
-        <SettingRow title="Instant updates" detail="Pushes changes to the team in about a second. Periodic refresh stays on as a backup."><Toggle on={settings.realtime} onChange={(v) => update({ realtime: v })} testId="toggle-settings-realtime" label="Instant updates" /></SettingRow>
-        <SettingRow title="Refresh interval" detail="How often live boards poll"><Segmented options={REFRESH_OPTIONS} value={REFRESH_OPTIONS.some(o => o.value === settings.refreshMs) ? settings.refreshMs : 3000} onChange={(v) => update({ refreshMs: v })} testId="segment-settings-interval" /></SettingRow>
-      </div>}
-      {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Notifications</p>
-       <SettingRow title="Browser notifications" detail={notifyState === "granted" ? "On — broadcasts and chat mentions pop up in another tab" : notifyState === "denied" ? "Blocked — allow them in browser site settings" : "Off — enable to catch broadcasts and chat mentions"}>{notifyState === "granted" ? <span className="flex items-center gap-2 text-xs font-semibold text-[#28a47f] dark:text-[#6fce8f]"><Bell size={14} /> On</span> : <button onClick={enableNotifications} data-testid="button-settings-notify" className="rounded-lg bg-[#183a4b] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#102c3c] dark:bg-[#1c4f5e] dark:hover:bg-[#23657a]">Enable</button>}</SettingRow>
-      </div>}
       <div hidden={activeSettingsSection !== "team"} className={divider} data-testid="settings-team-members"><p className={sectionLabel}>Team members</p>
         <p className="mt-2 text-xs leading-5 text-[#7c8c91] dark:text-[#93a8b2]">Passwords, names, and roles for the team. Type the new password next to a person and press <strong className="text-[#385762] dark:text-[#c8d8e0]">Enter</strong>. Add the team access code once per visit. Team member, Treasurer, and Admin are built in — the Role menu lists them alongside any custom roles.</p>
         <label className="mt-3 block"><span className="mb-2 block text-xs font-semibold uppercase tracking-[.12em] text-[#63747c] dark:text-[#a9bcc6]">Team access code</span><input ref={eventPasscodeRef} type="password" autoComplete="current-password" value={passwordAdminCode} onChange={e => setPasswordAdminCode(e.target.value)} onKeyDown={e => { if (e.key !== "Enter") return; e.preventDefault(); const first = document.querySelector("[data-testid^='input-settings-password-']"); if (first instanceof HTMLElement) first.focus(); }} placeholder="Used once per visit" data-testid="input-settings-event-passcode" className={field} /></label>
@@ -1827,10 +1855,6 @@ function SettingsModal({
       </div>}
       {(canSessionUsePermission(session.data, "featureRequests.view") ||
         canSessionUsePermission(session.data, "featureRequests.create")) && <div hidden={activeSettingsSection !== "chat"}><FeatureRequestSection /></div>}
-      {activeSettingsSection === "operations" && <div className={divider}><p className={sectionLabel}>Data</p>
-        <SettingRow title="Refresh all data" detail={refreshed ? "Done — everything reloaded" : "Reload every board from the server"}><button onClick={refreshAll} data-testid="button-settings-refresh-data" className={`flex items-center gap-2 rounded-lg border border-[#cbd9da] bg-white px-4 py-2 text-xs font-semibold text-[#385762] transition hover:border-[#16869a] dark:border-[#3a5567] dark:bg-[#182935] dark:text-[#c3d3db] dark:hover:border-[#3f8492]`}><RefreshCw size={14} /> Reload</button></SettingRow>
-        <SettingRow title="Reset all settings" detail={resetNotice || "Device defaults, plus the team-wide defaults you can manage"}><button disabled={resetBusy} onClick={() => void resetAllSettings()} data-testid="button-settings-reset" className="flex items-center gap-2 rounded-lg border border-[#e0b8b4] bg-white px-4 py-2 text-xs font-semibold text-[#a34d46] transition hover:bg-[#fff1ef] disabled:opacity-50 dark:border-[#7d4038] dark:bg-[#22191b] dark:text-[#e89087] dark:hover:bg-[#3a211d]"><RotateCcw size={14} /> {resetBusy ? "Resetting…" : "Reset"}</button></SettingRow>
-      </div>}
         </main>
       </div>
       <div className="mt-3 flex shrink-0 justify-end border-t border-border pt-3">
@@ -4436,7 +4460,6 @@ function Shell({
   const canViewApplicants = !demoMode && canSessionUsePermission(sessionWithViews, "applicants.view");
   const areaCanSee = (key: WorkspaceKey) => visibleWorkspaces.has(key);
   const isDashboardPath = demoMode ? demoView === "overview" : shellPath === "/dashboard";
-  const isTeamAssessmentsPath = !demoMode && (shellPath === "/team-assessments" || shellPath.startsWith("/team-assessments/"));
   const assessmentGateLoading = isSignedIn &&
     session.data?.role !== "coordinator" && session.data?.role !== "admin" &&
     assessmentGateQuery.isLoading;
@@ -4483,7 +4506,6 @@ function Shell({
       ? canSessionUsePermission(session.data, "customWorkspaces.view")
       : false;
   const restrictedAllowed = demoMode ||
-    isTeamAssessmentsPath ||
     canOpenCustomWorkspaceRoute ||
     // /dashboard is the per-user home: every signed-in account can open it and
     // sees only their own workspaces there.
@@ -4506,12 +4528,12 @@ function Shell({
   const blockedFromCurrent =
     restrictedBlocked && !(homeWorkspace !== undefined && shellPath === `/${homeWorkspace}`);
   useEffect(() => {
-    if (blockedFromCurrent) setLocation(homeWorkspace ? `/${homeWorkspace}` : "/dashboard");
-  }, [blockedFromCurrent, setLocation, homeWorkspace]);
+    if (blockedFromCurrent && !assessmentGateActive) setLocation(homeWorkspace ? `/${homeWorkspace}` : "/dashboard");
+  }, [blockedFromCurrent, assessmentGateActive, setLocation, homeWorkspace]);
   if (!demoMode && session.isLoading) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (!demoMode && !session.data?.authenticated) return <Redirect to={getAuthRedirectPath(getCurrentPathWithQuery())} />;
   if (assessmentGateLoading) return <div className="min-h-[100dvh] bg-[hsl(var(--background))] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
-  if (assessmentGateActive && shellPath !== "/team-assessments") return <RequiredAssessmentFlow items={requiredAssessments} />;
+  if (assessmentGateActive) return <RequiredAssessmentFlow items={requiredAssessments} />;
   if (workspaceVisibilityLoading && !isDashboardPath) return <div className="min-h-[100dvh] bg-[#f3f6f5] p-8"><Skeleton className="h-10 w-44" /><Skeleton className="mt-10 h-40 w-full" /></div>;
   if (blockedFromCurrent) return null;
   const workspaceArea = demoMode
@@ -4525,7 +4547,6 @@ function Shell({
     applicants: UsersRound,
     queue: ClipboardList,
     attendance: ClipboardCheck,
-    assessments: ClipboardCheck,
     bigScreen: MonitorCheck,
     assistant: Bot,
     parts: Box,
@@ -4543,20 +4564,6 @@ function Shell({
     return true;
     })
     .map((item) => ({ ...item, icon: navIcons[item.iconKey] }));
-  if (
-    !demoMode &&
-    (session.data?.role === "coordinator" || session.data?.role === "admin") &&
-    !regularNav.some((item) => item.href === "/team-assessments")
-  ) {
-    regularNav.push({
-      href: "/team-assessments",
-      label: "Team assessments",
-      iconKey: "assessments",
-      icon: ClipboardCheck,
-      kind: "section",
-      workspace: "interview",
-    });
-  }
   const demoNav = [
     { href: "/demo?view=overview", label: "Overview", icon: LayoutDashboard, kind: "section" as const, workspace: "chat" as WorkspaceKey, demoView: "overview" as DemoView },
     { href: "/demo?view=chat", label: "Chat", icon: MessageSquare, kind: "workspace" as const, workspace: "chat" as WorkspaceKey, demoView: "chat" as DemoView },

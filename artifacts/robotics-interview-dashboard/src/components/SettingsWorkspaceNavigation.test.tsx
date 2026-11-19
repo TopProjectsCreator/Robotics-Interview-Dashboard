@@ -49,6 +49,16 @@ describe("SettingsWorkspaceNavigation", () => {
     expect(allowed.map((item) => item.id)).toContain("cad");
   });
 
+  it("groups assessment management under Operations without a separate tab", () => {
+    const items = getSettingsNavigationItems({ canManageAssistant: true, canManageBranding: true });
+    const operations = items.find((item) => item.id === "operations");
+
+    expect(operations?.label).toBe("Operations");
+    expect(operations?.description).toContain("Team assessments");
+    expect(operations?.keywords).toContain("assessment");
+    expect(items.some((item) => item.label === "Team assessments")).toBe(false);
+  });
+
   it("switches panels using tabs and supports arrow, Home, and End keys", () => {
     render(<NavigationHarness />);
     const profile = screen.getByRole("tab", { name: "Profile" });

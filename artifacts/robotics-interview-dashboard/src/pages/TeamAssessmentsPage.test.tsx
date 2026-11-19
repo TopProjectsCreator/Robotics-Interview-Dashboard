@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { Router } from "wouter";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CreateTeamAssessmentBody } from "@workspace/api-zod";
 
 const mocks = vi.hoisted(() => ({
   useGetSession: vi.fn(),
@@ -74,7 +76,8 @@ const assessment: TeamAssessment = {
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
 
-function renderWithRouter(ui: ReactNode) {
+function renderWithRouter(ui: ReactNode, initialLocation = "/") {
+  window.history.replaceState({}, "", initialLocation);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
@@ -114,18 +117,118 @@ afterEach(() => {
 
 describe("team assessment experiences", () => {
   it("lets coordinators start a team assessment draft", () => {
-    renderWithRouter(<TeamAssessmentsPage />);
+    mocks.createMutate.mockImplementation((_variables, callbacks) => {
+      callbacks.onSuccess({ ...assessment, id: "created-assessment" });
+    });
+    renderWithRouter(<TeamAssessmentsPage embedded />);
 
     expect(screen.getByRole("heading", { name: "Team assessments" })).toBeInTheDocument();
+    expect(screen.getByTestId("team-assessments-settings-content")).toBeInTheDocument();
     expect(screen.getByTestId("assessment-list-empty")).toHaveTextContent("No assessments yet");
     fireEvent.click(screen.getByTestId("button-create-assessment"));
 
     expect(mocks.createMutate).toHaveBeenCalledTimes(1);
-    expect(mocks.createMutate.mock.calls[0][0].data).toMatchObject({
+    const payload = mocks.createMutate.mock.calls[0][0].data;
+    expect(payload).toMatchObject({
       kind: "quiz",
       required: true,
-      questions: [{ type: "single_choice" }],
+      questions: [{
+        type: "single_choice",
+        prompt: "New question",
+        options: ["Option 1", "Option 2"],
+        correctAnswers: ["Option 1"],
+      }],
     });
+    expect(CreateTeamAssessmentBody.safeParse(payload).success).toBe(true);
+    expect(screen.getByTestId("input-assessment-title")).toHaveValue("Robot readiness");
+  });
+
+  it("keeps edit and results flows inside Settings and returns to the assessment list", () => {
+    const results: TeamAssessmentResults = {
+      assessment: { ...assessment, status: "published" },
+      assignedCount: 1,
+      responseCount: 0,
+      completions: [],
+      summaries: [],
+    };
+    mocks.useListTeamAssessments.mockReturnValue({
+      data: { items: [{ ...assessment, status: "draft" }] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    mocks.useGetTeamAssessmentResults.mockReturnValue({ data: results, isLoading: false, isError: false, refetch: vi.fn() });
+    renderWithRouter(<TeamAssessmentsPage embedded />);
+
+    fireEvent.click(screen.getByTestId("button-edit-assessment-assessment-1"));
+    expect(screen.getByTestId("input-assessment-title")).toHaveValue("Robot readiness");
+    fireEvent.click(screen.getByTestId("button-back-assessments"));
+    expect(screen.getByTestId("card-team-assessment-assessment-1")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("button-results-assessment-assessment-1"));
+    expect(screen.getByLabelText("Completion summary")).toHaveTextContent("0%");
+    fireEvent.click(screen.getByTestId("button-results-back"));
+    expect(screen.getByTestId("card-team-assessment-assessment-1")).toBeInTheDocument();
+  });
+
+  it("shows the required assessment flow without a workspace shell and returns to the interrupted route", async () => {
+    const requiredAssessment: TeamAssessment = {
+      ...assessment,
+      status: "published",
+      questions: [{ id: "response", type: "long_answer", prompt: "What is your plan?", required: true }],
+    };
+    let outstanding = [requiredAssessment];
+    let refreshFlow: () => void = () => {};
+    function CompletionHarness() {
+      const [, setRevision] = useState(0);
+      refreshFlow = () => setRevision((revision) => revision + 1);
+      return <RequiredAssessmentFlow items={[requiredAssessment]} />;
+    }
+    mocks.useGetRequiredTeamAssessments.mockImplementation(() => ({
+      data: { items: outstanding },
+      isLoading: false,
+    }));
+    mocks.submitMutate.mockImplementation((_variables, callbacks) => {
+      outstanding = [];
+      callbacks.onSuccess();
+      refreshFlow();
+    });
+    renderWithRouter(<CompletionHarness />, "/chat?tab=team");
+
+    expect(screen.getByRole("main").className).toContain("min-h-[100dvh]");
+    expect(screen.queryByTestId("workspace-header")).not.toBeInTheDocument();
+    expect(document.querySelector("#workspace-sidebar")).not.toBeInTheDocument();
+    expect(screen.getByTestId("assessment-response-form-assessment-1")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("team-assessment-return-path")).toBe("/chat?tab=team");
+
+    fireEvent.change(screen.getByTestId("input-assessment-answer-response"), {
+      target: { value: "Check the robot before the match." },
+    });
+    fireEvent.click(screen.getByTestId("button-submit-assessment-assessment-1"));
+    expect(mocks.submitMutate).toHaveBeenCalledTimes(1);
+
+    expect(await screen.findByTestId("assessment-gate-complete")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("button-return-to-workspace"));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/chat");
+      expect(window.location.search).toBe("?tab=team");
+    });
+    expect(window.sessionStorage.getItem("team-assessment-return-path")).toBeNull();
+  });
+
+  it.each([
+    "/team-assessments",
+    "/team-assessments/assessment-1/edit",
+    "/team-assessments/assessment-1/results",
+  ])("remembers a directly visited assessment URL for the completion gate: %s", (path) => {
+    mocks.useGetRequiredTeamAssessments.mockReturnValue({
+      data: { items: [assessment] },
+      isLoading: false,
+    });
+    renderWithRouter(<RequiredAssessmentFlow items={[assessment]} />, path);
+
+    expect(screen.getByTestId("assessment-response-form-assessment-1")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("team-assessment-return-path")).toBe(path);
   });
 
   it("renders all eight response formats with a safe theme picker", () => {
