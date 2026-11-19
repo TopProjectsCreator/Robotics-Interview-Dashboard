@@ -1,4 +1,4 @@
-# Robotics Interview Dashboard
+# Robotics Dashboard
 
 Private, multi-team robotics operations software for coordinating team work. It combines team chat, collaborative workspaces for CAD, code, and parts, AI assistance, scouting.
 <img width="1918" height="880" alt="image" src="https://github.com/user-attachments/assets/d0000347-0cb1-4a4e-80c9-d550dd0d229e" />
