@@ -1,6 +1,8 @@
 # Robotics Interview Dashboard
 
-Private, multi-team robotics operations software for coordinating tryouts and team work. It combines applicant review and interviews with team chat, collaborative workspaces for CAD, code, and parts, AI assistance, and a sanitized waiting-room display.
+Private, multi-team robotics operations software for coordinating team work. It combines team chat, collaborative workspaces for CAD, code, and parts, AI assistance, scouting.
+<img width="1918" height="880" alt="image" src="https://github.com/user-attachments/assets/d0000347-0cb1-4a4e-80c9-d550dd0d229e" />
+<img width="1845" height="792" alt="image" src="https://github.com/user-attachments/assets/a8067548-ceab-4f69-b1b5-5fcb40cbc8ec" />
 
 ## Run & Operate
 
@@ -65,7 +67,7 @@ Rust/Cargo 1.85 or newer is required for the API build; it compiles the bundled 
 
 ## Architecture decisions
 
-- Team access uses server-verified interviewer accounts and signed sessions, with password and passkey sign-in. Do not add a second authentication provider without an explicit product decision.
+- Team access uses server-verified team accounts and signed sessions, with password and passkey sign-in. Do not add a second authentication provider without an explicit product decision.
 - Teams are routed to primary or secondary Supabase instances from their signed session. Keep team data isolation and server-side workspace authorization intact.
 - Workspace access is configured in Settings and enforced by the server. Filter navigation from those settings; do not hardcode role-based workspace visibility in the UI.
 - The big-screen endpoint returns only names, grades, lanes, and announcement copy. It never exposes emails, transcripts, notes, or AI concerns.
@@ -95,6 +97,7 @@ Rust/Cargo 1.85 or newer is required for the API build; it compiles the bundled 
 
 - Keep private applicant data out of the display and other public-facing surfaces.
 - Prefer a cohesive feature-complete build over separate phased demos.
+- This app no longer is for interviews, it is a full on app for your full robotics team.
 
 ## Gotchas
 
