@@ -14,6 +14,13 @@ const DATABASE_CONNECTION_CODES = new Set([
 const DATABASE_CONNECTION_MESSAGE =
   /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|connection terminated unexpectedly|connection timeout)\b/i;
 
+// Supavisor (Supabase's pooler) reports its own backend failures in Elixir
+// wording without a driver code: a paused or stopped project surfaces as
+// "Failed to connect to database: {:error, :timeout}" or a stalled auth, both
+// of which are connection failures, not schema failures.
+const SUPABASE_POOLER_CONNECTION_MESSAGE =
+  /Failed to connect to database|authentication did not complete within/i;
+
 /**
  * Drizzle wraps driver failures in a query error, so inspect nested causes as
  * well as the outer error. Do not classify schema or application errors as
@@ -25,7 +32,7 @@ export function isDatabaseConnectionError(error: unknown): boolean {
 
   while (current !== null && current !== undefined) {
     if (typeof current === "string") {
-      if (DATABASE_CONNECTION_MESSAGE.test(current)) return true;
+      if (DATABASE_CONNECTION_MESSAGE.test(current) || SUPABASE_POOLER_CONNECTION_MESSAGE.test(current)) return true;
       break;
     }
     if (typeof current !== "object" || seen.has(current)) break;
@@ -42,7 +49,8 @@ export function isDatabaseConnectionError(error: unknown): boolean {
     if (
       DATABASE_CONNECTION_CODES.has(code) ||
       code.startsWith("08") ||
-      DATABASE_CONNECTION_MESSAGE.test(message)
+      DATABASE_CONNECTION_MESSAGE.test(message) ||
+      SUPABASE_POOLER_CONNECTION_MESSAGE.test(message)
     ) {
       return true;
     }

@@ -4,6 +4,13 @@
 - [Cross-process builder cancellation](cross-process-builder-cancellation.md) — keep runs non-resumable until worker prompts settle across API replicas; timeout must preserve workspace data.
 - [Official display media](official-display-assets.md) — use approved public team-site imagery for the big screen while keeping applicant data sanitized.
 - [External database ownership](external-database-ownership.md) — verify database hosts and preserve the configured secondary Supabase routing.
+- [Supabase pooler host discovery](supabase-pooler-host-discovery.md) — aws-1 vs aws-0 clusters; tenant-not-found means wrong host, and db.<ref> may be IPv6-only.
+- [Fresh-primary schema multi-pass](fresh-primary-schema-multi-pass.md) — single-pass primary aborts on forward FK refs; deferred tables also miss RLS.
+- [Paused Supabase project signature](paused-supabase-project-signature.md) — pooler accepts TCP but auth/REST hang; restore the project, and bound schema statements.
+- [Node env-file precedence](node-env-file-precedence.md) — env-file loses to inherited env; verify via /proc/&lt;pid&gt;/environ and source .env with set -a.
+- [Object path instance pinning on migration](object-path-instance-pinning.md) — /objects/secondary/ prefixes pin reads; rewrite them when moving files to primary.
+- [Supabase data-only dump pitfalls](supabase-data-only-dump-pitfalls.md) — public-only filter, search_path fix, derived-cache blocks, seeded-row collisions.
+- [Supabase disk I/O saturation diagnosis](supabase-disk-io-saturation.md) — one user + 100% I/O: check pollers, realtime WAL decoding, temp spills, and PG17 stats views.
 - [Supabase connection budget](supabase-connection-budget.md) — keep one relay socket per database per API process and disconnect it before scheduled retries.
 - [Supabase server-only table policies](supabase-server-only-table-policies.md) — private API tables need restrictive client-deny policies; verify the server role bypasses RLS.
 - [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.
@@ -75,4 +82,5 @@
 - [FIRST FTC match result semantics](ftc-match-result-semantics.md) — a zero final score can be real; use FIRST's result-posted timestamp to distinguish results from schedule placeholders.
 - [Authorization performance tradeoffs](authorization-performance-tradeoffs.md) — improve repeated checks without delaying permission changes or changing existing display links.
 - [OpenCode-only agent instructions](opencode-agent-instructions.md) — use opencode.jsonc instructions under .opencode/, never a root AGENTS.md that other tools also read.
+- [OpenCode DB compaction history](opencode-db-compaction-history.md) — count `session_message` rows of type 'compaction' and check the JSON `status`; don't count the `event` table.
 - [Settings modal browser fixtures](settings-modal-browser-fixtures.md) — hidden settings sections still mount in browser tests, so authenticated fixtures need valid response shapes beyond the active tab.

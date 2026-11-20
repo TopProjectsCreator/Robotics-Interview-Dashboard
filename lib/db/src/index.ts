@@ -89,10 +89,21 @@ export function hasSecondary(): boolean {
 // Keep database sessions bounded: API instances should not reserve the
 // node-postgres default of 10 connections for each Supabase project.
 const DATABASE_POOL_MAX = 4;
+
+function positiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 const DATABASE_POOL_OPTIONS = {
   max: DATABASE_POOL_MAX,
   idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 10_000,
+  // Acquiring a connection, not running a query. A backend at 100% disk I/O
+  // answers TCP immediately and then takes far longer than 10s to finish
+  // authentication, so the old 10s cap reported a slow database as an
+  // unreachable one. Override with DB_CONNECTION_TIMEOUT_MS.
+  connectionTimeoutMillis: positiveIntFromEnv("DB_CONNECTION_TIMEOUT_MS", 120_000),
 };
 
 export const primaryPool = new Pool({

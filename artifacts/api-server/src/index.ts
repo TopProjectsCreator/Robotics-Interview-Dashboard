@@ -101,6 +101,50 @@ async function removeTestAccounts(): Promise<void> {
 
 // Self-healing schema: additive columns the code depends on are created at
 // boot when missing, so a deploy never needs a separate migration step.
+
+// A backend under sustained load (the secondary has been at 100% disk I/O)
+// accepts TCP quickly and then answers very slowly, so a tight bound turns a
+// slow database into an unreachable one. Statements are given far longer than
+// a healthy database ever needs; widen with SCHEMA_STATEMENT_TIMEOUT_MS when
+// the storage layer is saturated for days at a time.
+const SCHEMA_STATEMENT_TIMEOUT_MS = positiveIntFromEnv("SCHEMA_STATEMENT_TIMEOUT_MS", 600_000);
+
+// Supavisor refuses a connection outright when its own backend gate trips (a
+// 15s auth cap the client cannot widen), so a run of those means the instance
+// is unavailable right now and the retry timer should take over. A few isolated
+// ones on a saturated disk do not — 25 in a row costs minutes, not hours, and
+// keeps partial progress alive.
+const CONSECUTIVE_CONNECTION_FAILURE_LIMIT = 25;
+
+function positiveIntFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * Bounded await for one schema statement.
+ *
+ * A stall rejects with code SCHEMA_STATEMENT_STALLED — deliberately not a
+ * connection-classified error, so the caller treats it as "slow" and retries
+ * the statement on the next pass instead of abandoning the whole instance.
+ */
+function withSchemaTimeout<T>(query: Promise<T>, where: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const error = new Error(
+        `schema statement stalled after ${SCHEMA_STATEMENT_TIMEOUT_MS}ms in ${where}`,
+      ) as Error & { code?: string };
+      error.code = "SCHEMA_STATEMENT_STALLED";
+      reject(error);
+    }, SCHEMA_STATEMENT_TIMEOUT_MS);
+    query.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
 async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: boolean }> {
   const privateTableRlsStatements = [
     "applicants",
@@ -120,6 +164,10 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "assistant_model_policy_history",
     "team_assistant_providers",
     "audit_logs",
+    // Holds migrated attachment URLs; created by the secondary's schema but
+    // never listed here, so it would otherwise be readable with the
+    // publishable key once its rows move to the primary.
+    "external_objects",
     "broadcast_acks",
     "broadcasts",
     "chat_custom_emojis",
@@ -531,6 +579,10 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `create table if not exists "chat_channels" ("id" text primary key, "team_id" text not null, "name" text not null, "normalized_name" text not null, "created_by" text not null, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_channels_team_name_unique" on "chat_channels" ("team_id", "normalized_name")`,
     `create index if not exists "chat_channels_team_updated_idx" on "chat_channels" ("team_id", "updated_at" desc)`,
+    // Drizzle's chatChannelsTable declares emoji, and the secondary already
+    // has it; without this alter a fresh primary fails every
+    // select().from(chatChannelsTable) with "column emoji does not exist".
+    `alter table "chat_channels" add column if not exists "emoji" text`,
     `create table if not exists "chat_channel_members" ("id" text primary key, "team_id" text not null, "channel_id" text not null references "chat_channels"("id") on delete cascade, "member_id" text not null, "member_name" text not null, "added_by" text not null, "created_at" timestamptz not null default now())`,
     `create unique index if not exists "chat_channel_members_channel_member_unique" on "chat_channel_members" ("channel_id", "member_id")`,
     `create index if not exists "chat_channel_members_member_idx" on "chat_channel_members" ("member_id")`,
@@ -558,6 +610,10 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
        "created_at" timestamptz not null default now(),
        "last_used_at" timestamptz
      )`,
+    // webauthnCredentialsTable.origin is selected during passkey sign-in
+    // (authenticationOriginFor); it was declared in Drizzle but never created
+    // by any schema pass, so that query failed on a column that does not exist.
+    `alter table "webauthn_credentials" add column if not exists "origin" text`,
     `alter table "dashboard_charts" add column if not exists "owner_id" text`,
     `create table if not exists "parts_catalog_items" ("id" text primary key, "vendor_key" text not null, "external_key" text not null, "name" text not null, "sku" text, "category" text, "description" text, "product_url" text, "image_url" text, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `alter table "parts_catalog_items" add column if not exists "supplier_price" numeric(10,2)`,
@@ -1105,6 +1161,13 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
      )`,
     `create unique index if not exists "assistant_scheduled_task_runs_idempotency_unique" on "assistant_scheduled_task_runs" ("idempotency_key")`,
     `create index if not exists "assistant_scheduled_task_runs_task_created_idx" on "assistant_scheduled_task_runs" ("team_id", "task_id", "created_at")`,
+    // Schedulers reclaim stale runs by (status, started_at) every 15s and the
+    // job dispatcher scans queued runs by (status, updated_at) every 1.5s.
+    // Without these indexes every poll is a full table scan — with one user
+    // online that alone drove millions of scans and 100% disk I/O.
+    `create index if not exists "assistant_scheduled_task_runs_status_started_idx" on "assistant_scheduled_task_runs" ("status", "started_at")`,
+    `create index if not exists "assistant_prompt_runs_status_updated_idx" on "assistant_prompt_runs" ("status", "updated_at")`,
+    `create index if not exists "assistant_builder_runs_status_updated_idx" on "assistant_builder_runs" ("status", "updated_at")`,
     `alter table "assistant_skills" add column if not exists "github_repository_url" text`,
     `create unique index if not exists "assistant_skills_team_name_unique" on "assistant_skills" ("team_id", lower("name"))`,
     `create index if not exists "assistant_skills_team_enabled_idx" on "assistant_skills" ("team_id", "enabled")`,
@@ -1188,10 +1251,73 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
   let primaryReady = false;
   let primaryError: unknown;
   try {
-    for (const sql of statements) {
-      await pool.query(sql);
+    // Multi-pass, exactly like the secondary below: a fresh database hits
+    // forward references (chat_message_reactions at line 409 references
+    // interview_chat_messages, created much later), and a single pass aborts
+    // the whole primary schema on the first one — leaving a brand-new primary
+    // stuck at half a dozen tables with no error surfaced until both instances
+    // fail. Retry until a pass makes no progress.
+    let pendingPrimary = [...statements];
+    let primaryConnectionError: unknown;
+    let firstFailure: unknown;
+    let consecutiveConnectionFailures = 0;
+    let primaryApplied = 0;
+    for (let pass = 0; pass < 6 && pendingPrimary.length > 0 && !primaryConnectionError; pass += 1) {
+      const failed: string[] = [];
+      for (const sql of pendingPrimary) {
+        try {
+          await withSchemaTimeout(pool.query(sql), "primary schema");
+          consecutiveConnectionFailures = 0;
+          primaryApplied += 1;
+          if (primaryApplied % 100 === 0) {
+            logger.info({ instance: "primary", applied: primaryApplied, left: pendingPrimary.length }, "Schema statements applied");
+          }
+        } catch (err) {
+          firstFailure ??= err;
+          if (isDatabaseConnectionError(err)) {
+            consecutiveConnectionFailures += 1;
+            if (consecutiveConnectionFailures >= CONSECUTIVE_CONNECTION_FAILURE_LIMIT) {
+              primaryConnectionError = err;
+              break;
+            }
+          } else if (pass === 5) {
+            logger.warn({ err, sql: sql.slice(0, 160) }, "Primary schema statement still failing");
+          }
+          failed.push(sql);
+        }
+      }
+      if (primaryConnectionError) break;
+      if (failed.length === pendingPrimary.length) break;
+      pendingPrimary = failed;
     }
-    primaryReady = true;
+    if (primaryConnectionError) {
+      primaryError = primaryConnectionError;
+    } else if (pendingPrimary.length > 0) {
+      // No progress at all means the database never answered a single
+      // statement; keep that error so isDatabaseConnectionError() can classify it.
+      primaryError = pendingPrimary.length === statements.length
+        ? firstFailure
+        : new Error(`${pendingPrimary.length} primary schema statements are still failing`);
+      if (!(primaryError instanceof Error) || !primaryError.message) {
+        primaryError = new Error(`${pendingPrimary.length} primary schema statements are still failing`);
+      }
+    } else {
+      primaryReady = true;
+      // Tables deferred to a later pass (forward FK references) never see the
+      // RLS statements that sit above them in the list, because every pass runs
+      // only what previously failed. Re-run the whole RLS phase once every table
+      // exists, or chat_message_reactions/chat_polls/reads/votes stay readable
+      // with the publishable key. All of it is idempotent DO blocks.
+      try {
+        for (const sql of privateTableRlsStatements) {
+          await withSchemaTimeout(pool.query(sql), "primary rls");
+        }
+      } catch (err) {
+        primaryReady = false;
+        primaryError = err;
+        logger.error({ err }, "Primary RLS enforcement failed; treating primary as not ready");
+      }
+    }
   } catch (err) {
     primaryError = err;
   }
@@ -1206,24 +1332,56 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     const secondary = secondaryPool();
     if (secondary) {
       let pending = [...statements];
-      for (let pass = 0; pass < 4 && pending.length > 0; pass += 1) {
+      let secondaryConnectionError: unknown;
+      let consecutiveSecondaryFailures = 0;
+      let secondaryApplied = 0;
+      for (let pass = 0; pass < 4 && pending.length > 0 && !secondaryConnectionError; pass += 1) {
         const failed: string[] = [];
         for (const sql of pending) {
           try {
-            await secondary.query(sql);
-          } catch {
+            await withSchemaTimeout(secondary.query(sql), "secondary schema");
+            consecutiveSecondaryFailures = 0;
+            secondaryApplied += 1;
+            if (secondaryApplied % 100 === 0) {
+              logger.info({ instance: "secondary", applied: secondaryApplied, left: pending.length }, "Schema statements applied");
+            }
+          } catch (err) {
+            // A saturated or unreachable secondary answers every statement the
+            // same way, so keep pushing through isolated refusals (the disk is
+            // slow, not gone) and only hand back to the retry timer once
+            // nothing at all gets through.
+            if (isDatabaseConnectionError(err)) {
+              consecutiveSecondaryFailures += 1;
+              if (consecutiveSecondaryFailures >= CONSECUTIVE_CONNECTION_FAILURE_LIMIT) {
+                secondaryConnectionError = err;
+                break;
+              }
+            }
             failed.push(sql);
           }
         }
+        if (secondaryConnectionError) break;
         if (failed.length === pending.length) break;
         pending = failed;
       }
-      if (pending.length > 0) {
+      if (secondaryConnectionError) {
+        secondaryError = secondaryConnectionError;
+        logger.warn({ err: secondaryConnectionError }, "Secondary database unreachable; schema pass aborted for retry");
+      } else if (pending.length > 0) {
         secondaryError = new Error(`${pending.length} secondary schema statements are still failing`);
         logger.warn({ count: pending.length }, "Secondary schema statements still failing (non-fatal)");
       } else {
-        secondaryReady = true;
-        logger.info("Secondary schema check passed");
+        // Same deferred-table gap as primary: re-run RLS after every table exists.
+        try {
+          for (const sql of privateTableRlsStatements) {
+            await withSchemaTimeout(secondary.query(sql), "secondary rls");
+          }
+          secondaryReady = true;
+          logger.info("Secondary schema check passed");
+        } catch (err) {
+          secondaryError = err;
+          logger.warn({ err }, "Secondary RLS enforcement failed; treating secondary as not ready");
+        }
       }
     }
   }

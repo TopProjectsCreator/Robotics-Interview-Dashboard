@@ -93,11 +93,21 @@ export function isValidAdminSession(value: unknown): boolean {
   );
 }
 
-/** Unmarked legacy tokens use the active team database after migration. */
+/**
+ * Where this session's account lives.
+ *
+ * The trailing "s" marks a token minted while the secondary owned team data.
+ * That marker only means anything while the secondary is still the active
+ * database: once the active instance moves to primary, every team's rows have
+ * moved with it, so honouring the stale marker would keep half the signed-in
+ * users reading and writing the backup instead of the primary.
+ */
 export function instanceFromSession(value: unknown): DbInstance {
+  const active = activeTeamDatabaseInstance();
+  if (active !== "secondary") return active;
   const parts = sessionParts(value);
   if (parts?.length === 5 && parts[3] === "s" && isValidAdminSession(value)) return "secondary";
-  return activeTeamDatabaseInstance();
+  return active;
 }
 
 export function interviewerIdFromSession(value: unknown): string | undefined {
