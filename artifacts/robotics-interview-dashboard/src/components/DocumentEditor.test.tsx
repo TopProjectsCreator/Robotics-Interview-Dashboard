@@ -62,6 +62,66 @@ describe("DocumentEditor collaboration lifecycle", () => {
     doc.destroy();
   });
 
+  it("keeps one collaboration session when saved document data changes", () => {
+    const doc = new Y.Doc();
+    const session: DocumentCollaborationSession = {
+      doc,
+      provider: { awareness: new Awareness(doc), setTitle: vi.fn() },
+      subscribeStatus: (callback) => {
+        callback("connected");
+        return () => {};
+      },
+      subscribeSaveStatus: (callback) => {
+        callback("saved");
+        return () => {};
+      },
+      subscribeTitle: () => () => {},
+      destroy: vi.fn(),
+    };
+    createDocumentCollaborationMock.mockClear().mockReturnValue(session);
+
+    const props = {
+      activeInterviewer: "Interviewer",
+      saving: false,
+      error: "",
+      onClose: () => {},
+      onTitleSave: () => {},
+    };
+    const editor = render(
+      <DocumentEditor
+        {...props}
+        document={{
+          id: "document-1",
+          title: "Interview plan",
+          data: JSON.stringify({ kind: "document", yState: "AAA=" }),
+          createdBy: "interviewer",
+          updatedAt: "",
+        }}
+      />,
+    );
+
+    editor.rerender(
+      <DocumentEditor
+        {...props}
+        document={{
+          id: "document-1",
+          title: "Interview plan",
+          data: JSON.stringify({ kind: "document", yState: "AQPuvInuDwA=" }),
+          createdBy: "interviewer",
+          updatedAt: "",
+        }}
+      />,
+    );
+
+    expect(createDocumentCollaborationMock).toHaveBeenCalledOnce();
+    expect(session.destroy).not.toHaveBeenCalled();
+
+    editor.unmount();
+    expect(session.destroy).toHaveBeenCalledOnce();
+    session.provider.awareness.destroy();
+    doc.destroy();
+  });
+
   it("shows a visible save error instead of reporting a failed collaboration write as saved", () => {
     const doc = new Y.Doc();
     let reportSaveStatus: ((status: "saving" | "saved" | "error") => void) | undefined;
