@@ -1,3 +1,5 @@
+README.md
+
 # Robotics Dashboard
 
 Private, multi-team software for robotics teams. It brings team chat, CAD design and file storage, parts catalogs and inventory, code development, and configurable custom workspaces into one application, with shared documents and AI assistance.
