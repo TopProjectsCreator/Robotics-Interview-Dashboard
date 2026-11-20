@@ -114,14 +114,18 @@ export function DocumentEditor({
   onClose,
   onTitleSave,
 }: DocumentEditorProps) {
-  const collaboration = useMemo(
-    () =>
-      createDocumentCollaboration(documentRecord.id, documentRecord.data, {
+  const collaborationKey = `${documentRecord.id}\u0000${activeInterviewer}`;
+  const collaborationRef = useRef<{ key: string; session: ReturnType<typeof createDocumentCollaboration> } | null>(null);
+  if (collaborationRef.current?.key !== collaborationKey) {
+    collaborationRef.current = {
+      key: collaborationKey,
+      session: createDocumentCollaboration(documentRecord.id, documentRecord.data, {
         name: activeInterviewer,
         color: colorForInterviewer(activeInterviewer),
       }),
-    [activeInterviewer, documentRecord.data, documentRecord.id],
-  );
+    };
+  }
+  const collaboration = collaborationRef.current.session;
   const [collaborationStatus, setCollaborationStatus] = useState<CollaborationStatus>("connecting");
   const [documentSaveStatus, setDocumentSaveStatus] = useState<"saving" | "saved" | "error">("saved");
   const [awarenessVersion, setAwarenessVersion] = useState(0);

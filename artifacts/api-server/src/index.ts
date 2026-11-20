@@ -1187,13 +1187,31 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
   ];
   let primaryReady = false;
   let primaryError: unknown;
-  try {
-    for (const sql of statements) {
-      await pool.query(sql);
+  {
+    let pending = [...statements];
+    let failures: unknown[] = [];
+    for (let pass = 0; pass < 8 && pending.length > 0; pass += 1) {
+      const failed: string[] = [];
+      failures = [];
+      for (const sql of pending) {
+        try {
+          await pool.query(sql);
+        } catch (err) {
+          failed.push(sql);
+          failures.push(err);
+        }
+      }
+      if (failed.length === pending.length) break;
+      pending = failed;
     }
-    primaryReady = true;
-  } catch (err) {
-    primaryError = err;
+    if (pending.length > 0) {
+      primaryError = new AggregateError(
+        failures,
+        `${pending.length} primary schema statements are still failing`,
+      );
+    } else {
+      primaryReady = true;
+    }
   }
 
   // Second instance (new teams): same schema, so fresh teams boot with every
