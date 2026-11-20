@@ -17,7 +17,8 @@ Required runtime services and secrets:
 
 CAD generation setup (the assistant's `generate_cad_model` tool, see `artifacts/api-server/src/lib/cadPython.ts`): two backends exist — the API picks based on environment. Local development spawns Docker (`docker build -t robotics-dashboard/cad-sandbox:latest -f scripts/cad-sandbox.Dockerfile .`; `python:3.12-slim` + OCCT). Render has no Docker-in-Docker, so there you deploy a separate **private service** built from `scripts/cad-worker/Dockerfile`. That worker holds no secrets — no Supabase or admin credentials exist inside its environment — and it runs model code as a locked-down subprocess (resource limits, a hard timeout, non-root; network is removed when the kernel permits user namespaces, otherwise it keeps network access). `render.yaml` declares only the worker; the existing API service is untouched. Render setup: create the `cad-worker` private service from that Dockerfile (health check `/healthz`), set `CAD_WORKER_SECRET` on it, then set `CAD_WORKER_URL=http://cad-worker:10000` and the same `CAD_WORKER_SECRET` on the API service. Alternatively apply `render.yaml` as a Blueprint to create only the worker, then set the two variables on the API service.
 
-- `DATABASE_URL` — PostgreSQL connection
+- `PRIMARY_DATABASE_URL` — optional primary PostgreSQL connection override; use this for a separate primary Supabase project without replacing Replit's runtime-managed `DATABASE_URL`
+- `DATABASE_URL` — PostgreSQL connection fallback when `PRIMARY_DATABASE_URL` is not set
 - `ADMIN_PASSWORD` — server-side admin passcode
 - `SESSION_SECRET` — session signing secret (required in production)
 - `AI_INTEGRATIONS_OPENAI_BASE_URL` and `AI_INTEGRATIONS_OPENAI_API_KEY` — optional OpenAI-compatible provider overrides; the checked-in default is Kilo's keyless OpenRouter route with the `anonymous` key

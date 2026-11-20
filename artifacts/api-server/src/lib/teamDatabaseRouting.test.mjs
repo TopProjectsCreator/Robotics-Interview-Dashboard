@@ -20,11 +20,17 @@ registerHooks({
 });
 
 process.env.DATABASE_URL = "postgres://test:test@127.0.0.1:5432/primary";
+process.env.PRIMARY_DATABASE_URL = "postgres://test:test@127.0.0.1:5432/replacement-primary";
 process.env.SECONDARY_DATABASE_URL = "postgres://test:test@127.0.0.1:5432/secondary";
 process.env.SESSION_SECRET = "team-database-routing-test-secret";
 
+const { primaryPool } = await import("@workspace/db");
 const { createInterviewerSession, instanceFromSession } = await import("../middlewares/adminAuth.ts");
 const { activeTeamDatabaseInstance } = await import("./activeTeamDatabase.ts");
+
+test("the configured primary URL overrides the runtime database URL", () => {
+  assert.equal(primaryPool.options.connectionString, process.env.PRIMARY_DATABASE_URL);
+});
 
 test("the configured secondary is the active team database", () => {
   assert.equal(activeTeamDatabaseInstance(), "secondary");

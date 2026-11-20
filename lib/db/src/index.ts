@@ -4,10 +4,12 @@ import pg from "pg";
 import * as schema from "./schema";
 
 const { Pool } = pg;
+const primaryDatabaseUrl =
+  process.env.PRIMARY_DATABASE_URL?.trim() || process.env.DATABASE_URL?.trim();
 
-if (!process.env.DATABASE_URL) {
+if (!primaryDatabaseUrl) {
   throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
+    "PRIMARY_DATABASE_URL or DATABASE_URL must be set.",
   );
 }
 
@@ -94,7 +96,7 @@ const DATABASE_POOL_OPTIONS = {
 };
 
 export const primaryPool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: primaryDatabaseUrl,
   ...DATABASE_POOL_OPTIONS,
 });
 export const primaryDb = drizzle(primaryPool, { schema });
