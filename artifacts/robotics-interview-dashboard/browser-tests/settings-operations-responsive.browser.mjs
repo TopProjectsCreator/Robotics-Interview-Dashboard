@@ -78,10 +78,11 @@ try {
         contentType: "application/json",
         body: JSON.stringify({
           authenticated: true,
-          interviewerId: "responsive-member",
-          role: "interviewer",
+          interviewerId: "responsive-admin",
+          role: "coordinator",
           label: "Responsive Test",
-          permissions: ["team.branding.manage", "broadcasts.send"],
+          teamId: "responsive-team",
+          permissions: [],
         }),
       });
       return;
@@ -91,6 +92,31 @@ try {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({ onlineCount: 0, entries: [], offline: [] }),
+      });
+      return;
+    }
+    if (pathname === "/api/system/mailbox") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          teamId: "responsive-team",
+          mailbox: null,
+          forwardingAddress: null,
+          enabled: false,
+          configured: false,
+          apiKeyConfigured: false,
+          allowedSenders: [],
+          legacy: false,
+        }),
+      });
+      return;
+    }
+    if (pathname === "/api/auth/name-rules") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ rules: [] }),
       });
       return;
     }
@@ -197,10 +223,15 @@ try {
   await page.getByTestId("operations-tab-content").waitFor({ state: "visible" });
 
   for (const testId of [
+    "settings-team-assessments",
     "operations-applicant-preferences",
     "operations-live-updates",
     "operations-notifications",
+    "settings-live-now",
     "settings-broadcast",
+    "operations-parts-order-limit",
+    "settings-blocked-ips",
+    "settings-tiny-urls",
     "operations-data-controls",
   ]) {
     await page.getByTestId(testId).waitFor({ state: "visible" });
