@@ -1,4 +1,3 @@
-
 name: opencode
 
 on:
@@ -16,9 +15,9 @@ jobs:
       startsWith(github.event.comment.body, '/opencode') ||
       contains(github.event.comment.body, ' /code-canvas-bot') ||
       startsWith(github.event.comment.body, '/code-canvas-bot') ||
-      contains(github.event.comment.body, ' /opencodebot') ||
+        contains(github.event.comment.body, ' /opencodebot') ||
       startsWith(github.event.comment.body, '/opencodebot') ||
-      contains(github.event.comment.body, ' @opencode') ||
+          contains(github.event.comment.body, ' @opencode') ||
       startsWith(github.event.comment.body, '@opencode') ||
       contains(github.event.comment.body, ' /codecanvasbot') ||
       startsWith(github.event.comment.body, '/codecanvasbot')
@@ -37,6 +36,8 @@ jobs:
       - name: Run opencode
         uses: anomalyco/opencode/github@latest
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENCODE_API_KEY: ""
+          OPENCODE_YOLO: "true"
+          OPENCODE_DANGEROUSLY_SKIP_PERMISSIONS: "true"
         with:
-          model: thinkingmachines/inkling-small:free
+          model: opencode/big-pickle
