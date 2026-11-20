@@ -80,6 +80,10 @@ function builderRunFixture(
   };
 }
 
+function nativeFileDrop(files: File[]) {
+  return { dataTransfer: { files, types: ["Files"], dropEffect: "none" } };
+}
+
 let originalClipboardDescriptor: PropertyDescriptor | undefined;
 
 beforeEach(() => {
@@ -1375,12 +1379,22 @@ describe("custom workspace visual publish review", () => {
       });
       expect(await screen.findAllByText(/reference\.bin is not a supported attachment/)).toHaveLength(2);
       expect(screen.getByRole("button", { name: "Submit answers" })).toBeDisabled();
-      fireEvent.change(screen.getByTestId("input-question-file-reference"), {
-        target: { files: [
-          new File(["updated reference"], "replacement.txt", { type: "text/plain" }),
-          new File(["%PDF-1.4 document"], "specification.pdf", { type: "application/pdf" }),
-        ] },
-      });
+      const referenceDropZone = screen.getByTestId("drop-question-file-reference");
+      fireEvent.dragEnter(referenceDropZone, nativeFileDrop([]));
+      expect(referenceDropZone).toHaveAttribute("data-drop-active", "true");
+      fireEvent.drop(referenceDropZone, nativeFileDrop([
+        new File(["one"], "one.txt", { type: "text/plain" }),
+        new File(["two"], "two.txt", { type: "text/plain" }),
+        new File(["three"], "three.txt", { type: "text/plain" }),
+      ]));
+      expect(await screen.findAllByText(/Choose no more than 2 files for “Upload a reference”/)).toHaveLength(2);
+      expect(referenceDropZone).not.toHaveAttribute("data-drop-active");
+      fireEvent.drop(referenceDropZone, nativeFileDrop([
+        new File(["updated reference"], "replacement.txt", { type: "text/plain" }),
+        new File(["%PDF-1.4 document"], "specification.pdf", { type: "application/pdf" }),
+      ]));
+      expect(await screen.findByText(/replacement\.txt/)).toBeInTheDocument();
+      expect(await screen.findByText(/specification\.pdf/)).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Submit answers" }));
 
       await waitFor(() => expect(submittedAnswers).toBeDefined());

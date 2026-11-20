@@ -37,6 +37,7 @@ import { ChatStlViewer } from "@/components/ChatStlViewer";
 import { ChatStepViewer } from "@/components/ChatStepViewer";
 import { CadMeshViewer } from "@/components/CadMeshViewer";
 import { CadThreeMfViewer } from "@/components/CadThreeMfViewer";
+import { useNativeFileDrop } from "@/lib/useNativeFileDrop";
 
 type PartsRobotDetailsDialogProps = {
   robot: PartsRobot | null;
@@ -471,6 +472,14 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced, dem
   const deletePreviewMutation = useDeletePartsRobotPreview();
   const updateCostMutation = useUpdatePartsCatalogCost();
   const snapshotMutation = useCreatePartsPriceSnapshot();
+  const previewFileDrop = useNativeFileDrop(files => {
+    if (!files[0]) return;
+    previewForm.setValue("file", files[0]);
+    setPreviewError("");
+    setPreviewStatus("");
+  }, {
+    disabled: demoMode,
+  });
 
   useEffect(() => {
     if (!robot) return;
@@ -650,7 +659,7 @@ export function PartsRobotDetailsDialog({ robot, onClose, onPreviewReplaced, dem
                 </div>
                 <PreviewPanel robot={currentRobot} />
                 <Form {...previewForm}>
-                  <form onSubmit={previewForm.handleSubmit(replacePreview)} className="mt-4 space-y-2 border-t border-border pt-4" data-testid="form-upload-robot-preview">
+                  <form {...previewFileDrop.fileDropProps} onSubmit={previewForm.handleSubmit(replacePreview)} className={`mt-4 space-y-2 border-t border-border pt-4 ${previewFileDrop.isDraggingFiles ? "rounded-lg bg-primary/10 ring-2 ring-primary" : ""}`} data-testid="form-upload-robot-preview" data-drop-active={previewFileDrop.isDraggingFiles || undefined}>
                     <label className="block text-xs font-semibold text-foreground" htmlFor="robot-preview-file">Replace preview</label>
                     <input
                       id="robot-preview-file"

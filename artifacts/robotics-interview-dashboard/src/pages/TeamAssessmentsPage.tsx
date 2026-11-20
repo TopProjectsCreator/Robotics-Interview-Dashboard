@@ -27,6 +27,7 @@ import {
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Check, ClipboardCheck, Download, Eye, FileUp, LoaderCircle, Pause, Plus, Rocket, Save, Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getStoredAuthToken } from "../authSession";
+import { useNativeFileDrop } from "../lib/useNativeFileDrop";
 
 const card = "rounded-2xl border border-[hsl(var(--border))] bg-[hsl(var(--card))] text-[hsl(var(--card-foreground))] shadow-sm";
 const pageSurface = "min-h-[calc(100dvh-7rem)] -m-3 bg-[hsl(var(--background))] p-3 text-[hsl(var(--foreground))] sm:-m-5 sm:p-5 lg:-m-9 lg:p-9";
@@ -178,7 +179,7 @@ function AssessmentQuestionInput({
   );
   const setValue = (next: unknown) => onChange?.(next);
 
-  const addFiles = async (files: FileList | null) => {
+  const addFiles = async (files: FileList | File[] | null) => {
     if (!files?.length || !assessmentId) return;
     setUploading(true);
     onError?.("");
@@ -224,6 +225,9 @@ function AssessmentQuestionInput({
       setUploading(false);
     }
   };
+  const assessmentFileDrop = useNativeFileDrop(files => { void addFiles(files); }, {
+    disabled: disabled || preview || uploading,
+  });
 
   const removeFile = async (target: UploadedAssessmentFile) => {
     const token = getStoredAuthToken();
@@ -311,7 +315,7 @@ function AssessmentQuestionInput({
       {!disabled && <button type="button" className={secondaryButton} onClick={() => setValue(Array.isArray(value) ? value : [...(question.options ?? [])])}>Confirm this order</button>}
     </div>}
     {question.type === "file_upload" && <div className="space-y-3">
-      <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--background))] px-4 py-3 text-sm font-medium text-[hsl(var(--foreground))] focus-within:ring-2 focus-within:ring-[hsl(var(--ring))]">
+      <label {...assessmentFileDrop.fileDropProps} data-drop-active={assessmentFileDrop.isDraggingFiles || undefined} className={`flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-[hsl(var(--border))] bg-[hsl(var(--background))] px-4 py-3 text-sm font-medium text-[hsl(var(--foreground))] focus-within:ring-2 focus-within:ring-[hsl(var(--ring))] ${assessmentFileDrop.isDraggingFiles ? "ring-2 ring-[hsl(var(--ring))] bg-[hsl(var(--accent))]" : ""}`}>
         {uploading ? <LoaderCircle size={16} className="animate-spin" /> : <FileUp size={16} />}
         {uploading ? "Uploading privately…" : `Choose up to ${question.fileLimit ?? 1} file(s)`}
         <input

@@ -29,6 +29,7 @@ import {
   type SpreadsheetDataWorkbookItem,
 } from "@workspace/api-client-react";
 import { normalizeSavedSheetSelection } from "../lib/spreadsheet-selection";
+import { useNativeFileDrop } from "../lib/useNativeFileDrop";
 
 import { useRealtimeHealthy } from "../realtimeHealth";
 type SpreadsheetEditorProps = { spreadsheetId: string };
@@ -786,6 +787,9 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) { c
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+  const spreadsheetImportDrop = useNativeFileDrop(files => {
+    if (files[0]) void importWorkbook(files[0]);
+  }, { disabled: fileBusy });
 
   const startRecording = () => {
     if (!dataRef.current) return;
@@ -999,7 +1003,7 @@ export function SpreadsheetEditor({ spreadsheetId }: SpreadsheetEditorProps) { c
               onChange={(event) => void importWorkbook(event.target.files?.[0])}
               aria-label="Choose XLSX or CSV file"
             />
-            <button type="button" onClick={() => fileInputRef.current?.click()} disabled={fileBusy} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"><Upload size={14} />Import</button>
+            <button {...spreadsheetImportDrop.fileDropProps} type="button" onClick={() => fileInputRef.current?.click()} disabled={fileBusy} data-drop-active={spreadsheetImportDrop.isDraggingFiles || undefined} className={`inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition hover:border-primary hover:text-primary disabled:opacity-50 ${spreadsheetImportDrop.isDraggingFiles ? "ring-2 ring-primary bg-primary/10" : ""}`}><Upload size={14} />Import</button>
             <button type="button" onClick={() => void exportWorkbook("xlsx")} disabled={fileBusy} data-testid="button-export-spreadsheet" className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"><Download size={14} />{fileBusy ? "Working…" : "XLSX"}</button>
             <button type="button" onClick={() => void exportWorkbook("csv")} disabled={fileBusy} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition hover:border-primary hover:text-primary disabled:opacity-50"><Download size={14} />CSV</button>
           </div>

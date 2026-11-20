@@ -192,6 +192,23 @@ describe("PartsRobotDetailsDialog", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
+  it("selects a dropped robot preview without changing the existing submit timing", async () => {
+    renderDialog();
+    const file = new File(["image"], "dropped-scout.png", { type: "image/png" });
+    const form = screen.getByTestId("form-upload-robot-preview");
+    const transfer = { files: [file], types: ["Files"], dropEffect: "none" };
+
+    fireEvent.drop(form, { dataTransfer: transfer });
+    expect(await screen.findByTestId("text-selected-preview-file")).toHaveTextContent("dropped-scout.png");
+    expect(mocks.uploadPreview).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("button-upload-robot-preview"));
+    await waitFor(() => expect(mocks.uploadPreview).toHaveBeenCalledWith({
+      data: file,
+      params: { fileName: "dropped-scout.png", contentType: "image/png" },
+    }));
+  });
+
   it("asks before removing a preview and refreshes robot details after success", async () => {
     const { onPreviewReplaced } = renderDialog();
 

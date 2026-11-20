@@ -126,6 +126,25 @@ describe("assistant prompt queue controls", () => {
       if (url.pathname === "/api/assistant/models") {
         return jsonResponse({ items: [{ id: "test-model", name: "Test model" }] });
       }
+      if (url.pathname === "/api/storage/uploads/request-url" && init?.method === "POST") {
+        return jsonResponse({
+          uploadURL: `${window.location.origin}/private-assistant-upload`,
+          objectPath: "/objects/assistant-roster",
+          metadata: { name: "team.csv", size: 34, contentType: "text/csv" },
+        });
+      }
+      if (url.pathname === "/private-assistant-upload" && init?.method === "PUT") {
+        return jsonResponse({ ok: true });
+      }
+      if (url.pathname === "/api/imports/preview" && init?.method === "POST") {
+        return jsonResponse({
+          delimiter: ",",
+          headers: ["name", "email"],
+          rowCount: 1,
+          warnings: [],
+          diff: { added: 1, updated: 0, unchanged: 0, missingFromUpload: 0 },
+        });
+      }
       if (url.pathname === "/api/onshape-mcp/status") return jsonResponse({ connected: false });
       if (url.pathname === "/api/assistant/custom-mcp/connection") return jsonResponse({ connected: false, endpointUrl: "" });
       return jsonResponse({ items: [] });
@@ -171,5 +190,41 @@ describe("assistant prompt queue controls", () => {
       )).toBe(true);
     });
     expect(screen.getByTestId("assistant-prompt-run-run-active")).toHaveTextContent("Stopped");
+  });
+
+  it("routes a dropped roster file through the assistant attachment upload and preview flow", async () => {
+    stubApi();
+    mountAssistant();
+
+    const input = await screen.findByTestId("input-assistant-attachment");
+    fireEvent.drop(input.closest("label")!, {
+      dataTransfer: {
+        files: [new File(["not a roster"], "notes.txt", { type: "text/plain" })],
+        types: ["Files"],
+        dropEffect: "none",
+      },
+    });
+    expect(await screen.findByTestId("assistant-attach-error")).toHaveTextContent("Attach a roster file: CSV, TSV, or Excel.");
+    expect(fetchMock.mock.calls.some(([request, init]) =>
+      new URL(request instanceof Request ? request.url : String(request), window.location.origin).pathname === "/api/storage/uploads/request-url" &&
+      init?.method === "POST",
+    )).toBe(false);
+
+    const file = new File(["name,email\nAda,ada@example.com"], "team.csv", { type: "text/csv" });
+    const activeInput = screen.getByTestId("input-assistant-attachment");
+    fireEvent.drop(activeInput.closest("label")!, {
+      dataTransfer: { files: [file], types: ["Files"], dropEffect: "none" },
+    });
+
+    expect(await screen.findByTestId("assistant-attachment-/objects/assistant-roster")).toHaveTextContent("team.csv");
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      new URL(input instanceof Request ? input.url : String(input), window.location.origin).pathname === "/private-assistant-upload" &&
+      init?.method === "PUT" && init.body === file,
+    )).toBe(true);
+    expect(fetchMock.mock.calls.some(([input, init]) =>
+      new URL(input instanceof Request ? input.url : String(input), window.location.origin).pathname === "/api/imports/preview" &&
+      init?.method === "POST",
+    )).toBe(true);
+
   });
 });

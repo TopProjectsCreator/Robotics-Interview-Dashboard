@@ -35,6 +35,7 @@ import {
 } from "@workspace/api-client-react";
 import { buildCsvExport, buildIcalExport, downloadIcalFile, downloadTextFile, parseIcalText } from "../lib/calendarIcal";
 import { useRealtimeHealthy } from "../realtimeHealth";
+import { useNativeFileDrop } from "../lib/useNativeFileDrop";
 
 type CalendarEditorProps = { calendarId: string; assignees: string[]; onClose: () => void };
 type ViewMode = "month" | "week" | "agenda";
@@ -654,6 +655,7 @@ export function CalendarEditor({ calendarId, assignees, onClose }: CalendarEdito
     const text = await importFile.text();
     await importIcsText(text);
   };
+  const calendarImportDrop = useNativeFileDrop(files => setImportFile(files[0] ?? null));
 
   if (!calendar && query.isLoading) {
     return (
@@ -1121,7 +1123,7 @@ export function CalendarEditor({ calendarId, assignees, onClose }: CalendarEdito
             <p className="text-xs font-bold uppercase tracking-[.12em] text-muted-foreground">Or import once from a file</p>
             <label className="block">
               <FieldLabel>.ics file</FieldLabel>
-              <input type="file" accept=".ics,text/calendar" onChange={(e) => setImportFile(e.target.files?.[0] ?? null)} data-testid="input-import-file" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-base md:text-xs" />
+              <input {...calendarImportDrop.fileDropProps} type="file" accept=".ics,text/calendar" onChange={(e) => { setImportFile(e.target.files?.[0] ?? null); e.currentTarget.value = ""; }} data-testid="input-import-file" data-drop-active={calendarImportDrop.isDraggingFiles || undefined} className={`w-full rounded-lg border border-input bg-background px-3 py-2 text-base md:text-xs ${calendarImportDrop.isDraggingFiles ? "ring-2 ring-primary bg-primary/10" : ""}`} />
             </label>
             {importFile && <p className="text-[11px] text-muted-foreground" data-testid="text-import-file-name">{importFile.name}</p>}
             <label className="block">

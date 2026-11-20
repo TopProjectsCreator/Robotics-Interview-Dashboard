@@ -178,6 +178,7 @@ import { BlockedIpsSettings } from "./components/BlockedIpsSettings";
 import { TinyUrlsSettings } from "./components/TinyUrlsSettings";
 import { CadIconSettings } from "./components/CadIconSettings";
 import { updateSettingsCapability } from "./settingsCapabilityRegistry";
+import { useNativeFileDrop } from "./lib/useNativeFileDrop";
 const sessionQueryKey = getGetSessionQueryKey();
 const isSessionQuery = (queryKey: readonly unknown[]) => JSON.stringify(queryKey) === JSON.stringify(sessionQueryKey);
 const authenticatedSessionQueries = new WeakSet<object>();
@@ -847,6 +848,44 @@ function SettingsModal({
   const logoInputRef = useRef<HTMLInputElement>(null);
   const backgroundInputRef = useRef<HTMLInputElement>(null);
   const backgroundCount = branding.data?.backgrounds.length ?? 0;
+  const handleLogoSelection = (files: File[]) => {
+    const file = files[0];
+    if (!file) return;
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type) && !/\.(png|jpe?g|webp)$/i.test(file.name)) {
+      notify({ title: "Unsupported logo image", description: "Choose a PNG, JPEG, or WebP image." });
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      notify({ title: "Logo is too large", description: "Choose an image smaller than 2 MB." });
+      return;
+    }
+    branding.uploadLogo.mutate(file, {
+      onSuccess: () => notify({ title: "Team logo saved" }),
+      onError: error => notify({ title: "Could not save team logo", description: error.message }),
+    });
+  };
+  const handleBackgroundSelection = (selected: File[]) => {
+    if (selected.length === 0) return;
+    const remaining = Math.max(0, TEAM_BACKGROUNDS_LIMIT - backgroundCount);
+    if (remaining === 0) {
+      notify({ title: "Background limit reached", description: "Keep at most ten backgrounds; remove one before adding more." });
+      return;
+    }
+    const files = selected.slice(0, remaining);
+    if (selected.length > files.length) notify({ title: "Background limit reached", description: `Only the first ${files.length} image${files.length === 1 ? " was" : "s were"} added (ten backgrounds max).` });
+    const supported = files.filter(file => ["image/png", "image/jpeg", "image/webp"].includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name));
+    if (supported.length < files.length) notify({ title: "Unsupported background image", description: "Choose PNG, JPEG, or WebP images." });
+    const oversized = supported.filter(file => file.size > 8 * 1024 * 1024);
+    if (oversized.length > 0) notify({ title: "Background is too large", description: "Choose images smaller than 8 MB each." });
+    const usable = supported.filter(file => file.size <= 8 * 1024 * 1024);
+    if (usable.length === 0) return;
+    branding.uploadBackgrounds.mutate(usable, {
+      onSuccess: () => notify({ title: usable.length > 1 ? `${usable.length} team backgrounds saved` : "Team background saved" }),
+      onError: error => notify({ title: "Could not save team backgrounds", description: error.message }),
+    });
+  };
+  const logoDrop = useNativeFileDrop(handleLogoSelection);
+  const backgroundsDrop = useNativeFileDrop(handleBackgroundSelection);
   useEffect(() => {
     setBrandColorDraft(branding.data?.primaryColor ?? "#16869a");
   }, [branding.data?.primaryColor]);
@@ -1512,19 +1551,13 @@ function SettingsModal({
         <SettingRow title="Team logo" detail="PNG, JPEG, or WebP · up to 2 MB">
           <div className="flex flex-wrap items-center gap-2">
             {branding.data?.logoPath && <AuthenticatedChatImage key={branding.data.logoPath} src={teamBrandingObjectUrl(branding.data.logoPath)} alt="Current team logo" className="h-10 w-10 rounded-lg border border-[#dce5e5] object-contain dark:border-[#31495a]" />}
+            <div {...logoDrop.fileDropProps} data-testid="drop-team-logo" data-drop-active={logoDrop.isDraggingFiles || undefined} className={`rounded-lg ${logoDrop.isDraggingFiles ? "ring-2 ring-[#16869a] bg-[#eaf7f5] dark:bg-[#183941]" : ""}`}>
             <input ref={logoInputRef} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose team logo" data-testid="input-team-logo" className="max-w-[220px] text-xs text-[#52666e] file:mr-2 file:rounded-lg file:border-0 file:bg-[#eaf2f1] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#385762] dark:text-[#c3d3db] dark:file:bg-[#243743] dark:file:text-[#c3d3db]" onChange={event => {
               const file = event.currentTarget.files?.[0];
               event.currentTarget.value = "";
-              if (!file) return;
-              if (file.size > 2 * 1024 * 1024) {
-                notify({ title: "Logo is too large", description: "Choose an image smaller than 2 MB." });
-                return;
-              }
-              branding.uploadLogo.mutate(file, {
-                onSuccess: () => notify({ title: "Team logo saved" }),
-                onError: error => notify({ title: "Could not save team logo", description: error.message }),
-              });
+              if (file) handleLogoSelection([file]);
             }} />
+            </div>
             {branding.data?.logoPath && <button type="button" disabled={branding.resetLogo.isPending} onClick={() => branding.resetLogo.mutate(undefined, {
               onSuccess: () => notify({ title: "Team logo reset" }),
               onError: error => notify({ title: "Could not reset team logo", description: error.message }),
@@ -1534,26 +1567,13 @@ function SettingsModal({
         </SettingRow>
         <SettingRow title="App background" detail={`Shown behind every page for ${backgroundAudienceDraft === "selected" ? "selected team members" : "everyone in the team"} · PNG, JPEG, or WebP · up to 8 MB each · up to ten backgrounds`}>
           <div className="flex flex-wrap items-center gap-2">
+            <div {...backgroundsDrop.fileDropProps} data-testid="drop-team-backgrounds" data-drop-active={backgroundsDrop.isDraggingFiles || undefined} className={`rounded-lg ${backgroundsDrop.isDraggingFiles ? "ring-2 ring-[#16869a] bg-[#eaf7f5] dark:bg-[#183941]" : ""}`}>
             <input ref={backgroundInputRef} type="file" multiple accept="image/png,image/jpeg,image/webp" aria-label="Choose team backgrounds" data-testid="input-team-background" className="max-w-[260px] text-xs text-[#52666e] file:mr-2 file:rounded-lg file:border-0 file:bg-[#eaf2f1] file:px-3 file:py-2 file:text-xs file:font-semibold file:text-[#385762] dark:text-[#c3d3db] dark:file:bg-[#243743] dark:file:text-[#c3d3db]" onChange={event => {
               const selected = Array.from(event.currentTarget.files ?? []);
               event.currentTarget.value = "";
-              if (selected.length === 0) return;
-              const remaining = Math.max(0, TEAM_BACKGROUNDS_LIMIT - backgroundCount);
-              if (remaining === 0) {
-                notify({ title: "Background limit reached", description: `Keep at most ten backgrounds; remove one before adding more.` });
-                return;
-              }
-              const files = selected.slice(0, remaining);
-              if (selected.length > files.length) notify({ title: "Background limit reached", description: `Only the first ${files.length} image${files.length === 1 ? " was" : "s were"} added (ten backgrounds max).` });
-              const oversized = files.filter(file => file.size > 8 * 1024 * 1024);
-              if (oversized.length > 0) notify({ title: "Background is too large", description: "Choose images smaller than 8 MB each." });
-              const usable = files.filter(file => file.size <= 8 * 1024 * 1024);
-              if (usable.length === 0) return;
-              branding.uploadBackgrounds.mutate(usable, {
-                onSuccess: () => notify({ title: usable.length > 1 ? `${usable.length} team backgrounds saved` : "Team background saved" }),
-                onError: error => notify({ title: "Could not save team backgrounds", description: error.message }),
-              });
+              handleBackgroundSelection(selected);
             }} />
+            </div>
             {backgroundCount > 0 && <button type="button" disabled={branding.resetBackground.isPending} onClick={() => branding.resetBackground.mutate(undefined, {
               onSuccess: () => notify({ title: "Team backgrounds reset" }),
               onError: error => notify({ title: "Could not reset team backgrounds", description: error.message }),
@@ -5691,6 +5711,12 @@ function ImportPanel({ onClose }: { onClose: () => void }) {
   const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState("");
   const [previews, setPreviews] = useState<{ file: File; objectPath: string; preview: ImportPreview }[]>([]);
+  const selectFiles = (selected: File[]) => {
+    setFiles(selected);
+    setPreviews([]);
+    setError("");
+  };
+  const importDrop = useNativeFileDrop(selectFiles);
   const submit = async () => {
     if (!files.length) return;
     setError("");
@@ -5738,7 +5764,7 @@ function ImportPanel({ onClose }: { onClose: () => void }) {
   }), { added: 0, updated: 0, unchanged: 0, missing: 0 });
   return <div className="mb-5 rounded-2xl border border-[#b9d9d7] bg-[#eaf7f5] p-5">
     <div className="flex items-start justify-between"><div><p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a]">Roster ingestion</p><h2 className="mt-1 font-semibold">Import one or more roster files</h2><p className="mt-1 text-xs text-[#587278]">CSV, TSV, Excel (.xlsx/.xls), comma, semicolon, quoted, and mixed-delimiter rows are recovered before commit. First Excel sheet is used; headers like “AI Score” map automatically.</p></div><IconButton label="Close import" testId="button-close-import" onClick={onClose}><X size={16} /></IconButton></div>
-    <div className="mt-4 flex flex-wrap items-center gap-3"><input type="file" multiple accept=".csv,.tsv,.xlsx,.xls,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={e => { setFiles(Array.from(e.target.files ?? [])); setPreviews([]); setError(""); }} data-testid="input-import-file" className="max-w-full rounded-lg border border-[#c4dcda] bg-white px-3 py-2 text-sm" /><button disabled={!files.length || pending} onClick={submit} data-testid="button-preview-import" className="rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{pending ? "Reading files..." : `Preview ${files.length || ""} file${files.length === 1 ? "" : "s"}`}</button></div>
+    <div {...importDrop.fileDropProps} data-testid="drop-roster-import" data-drop-active={importDrop.isDraggingFiles || undefined} className={`mt-4 flex flex-wrap items-center gap-3 rounded-lg ${importDrop.isDraggingFiles ? "ring-2 ring-[#16869a] bg-[#dff4f2]" : ""}`}><input type="file" multiple accept=".csv,.tsv,.xlsx,.xls,text/csv,text/tab-separated-values,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel" onChange={e => { selectFiles(Array.from(e.target.files ?? [])); e.currentTarget.value = ""; }} data-testid="input-import-file" className="max-w-full rounded-lg border border-[#c4dcda] bg-white px-3 py-2 text-sm" /><button disabled={!files.length || pending} onClick={submit} data-testid="button-preview-import" className="rounded-lg bg-[#16869a] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{pending ? "Reading files..." : `Preview ${files.length || ""} file${files.length === 1 ? "" : "s"}`}</button></div>
     {files.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{files.map(file => <span key={`${file.name}-${file.lastModified}`} className="rounded-full bg-white px-3 py-1 text-xs text-[#587278]">{file.name} · {Math.ceil(file.size / 1024)} KB</span>)}</div>}
     {previews.length > 0 && <div className="mt-4 rounded-xl border border-[#b9d9d7] bg-white p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">{previews.length} preview{previews.length === 1 ? "" : "s"} ready</p><p className="mt-1 text-xs text-[#718189]">Review each file’s detected format and diff, then commit them together.</p></div><button disabled={commit.isPending || previews.length !== files.length} onClick={confirmImport} data-testid="button-commit-import" className="rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{commit.isPending ? "Committing..." : `Commit ${previews.length} file${previews.length === 1 ? "" : "s"}`}</button></div><div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{[["Added", totals.added, "text-[#168069]"], ["Updated", totals.updated, "text-[#466896]"], ["Unchanged", totals.unchanged, "text-[#718189]"], ["Missing from files", totals.missing, "text-[#bd5047]"]].map(([label, value, tone]) => <div key={String(label)} className="rounded-lg bg-[#f4f8f7] p-3"><p className="text-[10px] uppercase tracking-[.1em] text-[#7c8c91]">{label}</p><p className={`mono mt-1 text-xl ${tone}`}>{value}</p></div>)}</div><div className="mt-4 space-y-2">{previews.map(item => <div key={item.objectPath} className="rounded-lg border border-[#e3ebeb] p-3"><div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs font-semibold">{item.file.name}</span><span className="text-[11px] text-[#7c8c91]">{item.preview.rowCount} valid rows · delimiter: {item.preview.delimiter === "tab" ? "TAB" : item.preview.delimiter}</span></div>{item.preview.warnings.length > 0 && <p className="mt-2 text-xs text-[#805c08]">{item.preview.warnings.join(" ")}</p>}</div>)}</div></div>}
     {commit.isSuccess && <p className="mt-3 flex items-center gap-2 text-xs font-semibold text-[#168069]"><Check size={14} /> Import committed successfully and saved to history.</p>}
@@ -5805,7 +5831,58 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
   // teammate saving, the window regaining focus, our own save round-trip)
   // must never overwrite typing in progress, so incoming data only fills
   // the fields nobody has touched.
+  const photoUploadHandlerRef = useRef<(file: File) => void>(() => undefined);
+  const photoDrop = useNativeFileDrop(files => {
+    if (files[0]) photoUploadHandlerRef.current(files[0]);
+  }, {
+    disabled: roleSession.data?.authenticated === true &&
+      !canSessionUsePermission(roleSession.data, "applicants.edit"),
+  });
+  useEffect(() => {
+    if (roleSession.data?.customRoleId) return;
+    const input = document.querySelector< HTMLInputElement >(
+      '[data-testid="applicant-detail"] input[data-testid="input-photo-upload"]',
+    );
+    const target = input?.closest("label");
+    if (!target) return;
+    const handlers = photoDrop.fileDropProps;
+    const onDragEnter = (event: Event) => handlers.onDragEnter(event as unknown as ReactDragEvent<HTMLElement>);
+    const onDragOver = (event: Event) => handlers.onDragOver(event as unknown as ReactDragEvent<HTMLElement>);
+    const onDragLeave = (event: Event) => handlers.onDragLeave(event as unknown as ReactDragEvent<HTMLElement>);
+    const onDrop = (event: Event) => handlers.onDrop(event as unknown as ReactDragEvent<HTMLElement>);
+    target.addEventListener("dragenter", onDragEnter);
+    target.addEventListener("dragover", onDragOver);
+    target.addEventListener("dragleave", onDragLeave);
+    target.addEventListener("drop", onDrop);
+    target.classList.toggle("ring-2", photoDrop.isDraggingFiles);
+    target.classList.toggle("ring-[#16869a]", photoDrop.isDraggingFiles);
+    target.classList.toggle("bg-[#eaf7f5]", photoDrop.isDraggingFiles);
+    target.classList.toggle("dark:bg-[#183941]", photoDrop.isDraggingFiles);
+    if (photoDrop.isDraggingFiles) target.dataset.dropActive = "true";
+    else delete target.dataset.dropActive;
+    return () => {
+      target.removeEventListener("dragenter", onDragEnter);
+      target.removeEventListener("dragover", onDragOver);
+      target.removeEventListener("dragleave", onDragLeave);
+      target.removeEventListener("drop", onDrop);
+      target.classList.remove("ring-2", "ring-[#16869a]", "bg-[#eaf7f5]", "dark:bg-[#183941]");
+      delete target.dataset.dropActive;
+    };
+  }, [
+    detail.data,
+    detail.isLoading,
+    roleSession.data?.customRoleId,
+    photoDrop.fileDropProps.onDragEnter,
+    photoDrop.fileDropProps.onDragOver,
+    photoDrop.fileDropProps.onDragLeave,
+    photoDrop.fileDropProps.onDrop,
+    photoDrop.isDraggingFiles,
+  ]);
   const dirtyFields = useRef<Set<string>>(new Set()); const seededId = useRef<string | null>(null); useEffect(() => { const incoming = detail.data; if (!incoming) return; if (seededId.current !== incoming.id) { seededId.current = incoming.id; dirtyFields.current = new Set(); setNotes(incoming.notes); setEditName(incoming.name); setEditGrade(incoming.grade); setEditEmail(incoming.email ?? ""); setEditScore(String(incoming.aiScore)); setEditRec(incoming.aiRecommendation); return; } if (!dirtyFields.current.has("notes")) setNotes(incoming.notes); if (!dirtyFields.current.has("name")) setEditName(incoming.name); if (!dirtyFields.current.has("grade")) setEditGrade(incoming.grade); if (!dirtyFields.current.has("email")) setEditEmail(incoming.email ?? ""); if (!dirtyFields.current.has("score")) setEditScore(String(incoming.aiScore)); if (!dirtyFields.current.has("recommendation")) setEditRec(incoming.aiRecommendation); }, [detail.data]); if (detail.isLoading) return <div className="fixed inset-y-0 right-0 z-40 w-full max-w-[500px] bg-white p-6 shadow-2xl"><Skeleton className="h-8 w-40" /><Skeleton className="mt-8 h-28 w-full" /></div>; if (!detail.data) return null; const a = detail.data; const save = (data: ApplicantUpdate, savedFields: string[] = []) => update.mutate({ id: a.id, data }, { onSuccess: () => { for (const field of savedFields) dirtyFields.current.delete(field); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDisplayStateQueryKey() }); } }); const saveInfo = () => { const parsedScore = Number(editScore); return save({ name: editName.trim() || a.name, grade: editGrade.trim() || a.grade, email: editEmail.trim(), aiScore: Number.isFinite(parsedScore) ? Math.round(parsedScore) : a.aiScore, aiRecommendation: editRec.trim() || a.aiRecommendation }, ["name", "grade", "email", "score", "recommendation"]); }; const regenerate = () => { if (regen.isPending) return; regen.mutate({ id: a.id }, { onSuccess: fresh => { dirtyFields.current.delete("score"); dirtyFields.current.delete("recommendation"); setEditScore(String(fresh.aiScore)); setEditRec(fresh.aiRecommendation); queryClient.invalidateQueries({ queryKey: getGetApplicantQueryKey(a.id) }); queryClient.invalidateQueries({ queryKey: getListApplicantsQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetQueueQueryKey() }); queryClient.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() }); } }); }; const uploadPhoto = async (file: File) => {
+    if (!file.type.startsWith("image/") && !/\.(avif|bmp|gif|heic|heif|jpe?g|png|svg|tif?f|webp)$/i.test(file.name)) {
+      setPhotoError("Choose an image file.");
+      return;
+    }
     if (file.size > 5 * 1024 * 1024) { setPhotoError("Images must be under 5 MB."); return; }
     // Shrink a list-view thumbnail in this tab (no new dependencies): rows
     // load the ~15 KB thumb instead of the multi-MB original, which stays
@@ -5852,6 +5929,7 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
       setPhotoError(serverErrorMessage(photoFailure, "Photo upload failed. Try again."));
     }
   };
+  photoUploadHandlerRef.current = uploadPhoto;
   const destroy = async () => {
     if (!canSessionUsePermission(roleSession.data, "applicants.manage") || remove.isPending ||
       !(await confirmAction({ title: `Delete ${a.name} permanently?`, detail: "This cannot be undone.", danger: true, confirmLabel: "Delete" }))) return;
@@ -5891,7 +5969,7 @@ function ApplicantDetail({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
           <button onClick={saveInfo} data-testid="button-save-info" className="mt-3 rounded-lg bg-[#183a4b] px-4 py-2.5 text-sm font-semibold text-white dark:bg-[#1c4f5e]">Save details</button>
           <button onClick={() => save({ notes }, ["notes"])} data-testid="button-save-notes" className="ml-2 mt-3 rounded-lg border border-[#cbd9da] px-4 py-2.5 text-sm font-semibold text-[#385762] dark:border-[#3a5567] dark:text-[#c3d3db]">Save notes</button>
-          <div className="mt-4 flex flex-wrap gap-2"><label className="cursor-pointer rounded-lg border border-[#cbd9da] px-4 py-2 text-xs font-semibold dark:border-[#3a5567]"><FileUp size={14} className="mr-1 inline"/>Upload photo<input type="file" accept="image/*" className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }}/></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null, photoThumbUrl: null })} data-testid="button-remove-photo" className="rounded-lg border border-[#e0b8b4] px-4 py-2 text-xs font-semibold text-[#a34a42] dark:border-[#7d4038] dark:text-[#e89087]">Remove photo</button>}</div>
+          <div className="mt-4 flex flex-wrap gap-2"><label {...photoDrop.fileDropProps} data-drop-active={photoDrop.isDraggingFiles || undefined} className={`cursor-pointer rounded-lg border border-[#cbd9da] px-4 py-2 text-xs font-semibold dark:border-[#3a5567] ${photoDrop.isDraggingFiles ? "ring-2 ring-[#16869a] bg-[#eaf7f5] dark:bg-[#183941]" : ""}`}><FileUp size={14} className="mr-1 inline"/>Upload photo<input type="file" accept="image/*" disabled={readOnly || photoUpload.isPending} className="sr-only" data-testid="input-photo-upload" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadPhoto(file); }}/></label>{a.photoUrl && <button onClick={() => save({ photoUrl: null, photoThumbUrl: null })} data-testid="button-remove-photo" className="rounded-lg border border-[#e0b8b4] px-4 py-2 text-xs font-semibold text-[#a34a42] dark:border-[#7d4038] dark:text-[#e89087]">Remove photo</button>}</div>
           {photoError && <p className="mt-2 text-xs text-[#ad4b43]" role="alert">{photoError}</p>}
         </div>}
         {canManageQueue && <div className="mt-5 rounded-2xl border border-[#dce5e5] bg-white p-5 dark:border-[#344953] dark:bg-[#1a2b34]">
@@ -11473,6 +11551,9 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
   const assistantIsWorking = isStreaming || promptRuns.some(item =>
     item.status === "queued" || item.status === "running",
   );
+  const assistantAttachmentDrop = useNativeFileDrop(files => {
+    if (files[0]) void attachFile(files[0]);
+  }, { disabled: !canManageAssistantTools });
   const stopAssistant = () => {
     if (!activeConversationId || stopPrompt.isPending) return;
     stopPrompt.mutate({ conversationId: activeConversationId }, {
@@ -11706,7 +11787,7 @@ function ConversationAssistant({ partsMode = false }: { partsMode?: boolean }) {
         {assistantScopeReady && canManageAssistantTools && attachments.length > 0 && <div className="flex flex-wrap gap-2 border-t border-[#edf1f1] pt-4">{attachments.map(a => <span key={a.objectPath} className="inline-flex items-center gap-2 rounded-full bg-[#eaf7f5] px-3 py-1.5 text-xs font-semibold text-[#38555e]" data-testid={`assistant-attachment-${a.objectPath}`}><FileUp size={13} className="text-[#16869a]" />{a.fileName} · +{a.added} new{a.updated > 0 ? `, ~{a.updated} update` : ""}<button onClick={() => setAttachments(current => current.filter(x => x.objectPath !== a.objectPath))} aria-label={`Remove ${a.fileName}`} className="rounded-full p-0.5 text-[#718189] hover:text-[#b34a42]"><X size={13} /></button></span>)}</div>}
         {attachError && <p className="pt-2 text-xs text-[#ad4b43]" data-testid="assistant-attach-error">{attachError}</p>}
         <form onSubmit={submit} className="flex w-full min-w-0 gap-2 border-t border-[#edf1f1] pt-4">
-          {!partsMode && canManageAssistantTools && <label className="flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a]" title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}
+          {!partsMode && canManageAssistantTools && <label {...assistantAttachmentDrop.fileDropProps} data-drop-active={assistantAttachmentDrop.isDraggingFiles || undefined} className={`flex h-12 w-12 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-[#d5e0e0] text-[#63747c] transition hover:border-[#16869a] hover:text-[#16869a] ${assistantAttachmentDrop.isDraggingFiles ? "ring-2 ring-[#16869a] bg-[#eaf7f5]" : ""}`} title="Attach roster file (CSV, TSV, Excel)"><FileUp size={17} /><input type="file" accept=".csv,.tsv,.xlsx,.xls" className="sr-only" data-testid="input-assistant-attachment" onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void attachFile(file); }} /></label>}
           <input value={assistantScopeReady ? question : ""} onChange={event => { questionDraftRef.current = event.target.value; setQuestion(event.target.value); }} data-testid="input-assistant-question" placeholder={!canManageAssistantTools ? "Ask about your connected MCP services…" : partsMode ? "Ask about suppliers, parts, robots, or stock…" : "Ask about the applicants..."} className="h-12 w-0 min-w-0 flex-1 rounded-xl border border-[#d5e0e0] px-4 text-base md:text-sm outline-none focus:border-[#16869a]" />
           {assistantIsWorking ? question.trim() ? (
             <button type="submit" disabled={!assistantScopeReady || queuePrompt.isPending || !activeConversationId} data-testid="button-queue-assistant" className="flex h-12 shrink-0 items-center gap-2 rounded-xl bg-[#183a4b] px-3 text-sm font-semibold text-white disabled:opacity-45 sm:px-5">

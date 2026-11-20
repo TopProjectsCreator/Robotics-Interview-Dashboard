@@ -84,6 +84,10 @@ function renderWithRouter(ui: ReactNode, initialLocation = "/") {
   return render(<QueryClientProvider client={queryClient}><Router>{ui}</Router></QueryClientProvider>);
 }
 
+function nativeFileDrop(files: File[]) {
+  return { dataTransfer: { files, types: ["Files"], dropEffect: "none" } };
+}
+
 function resetHooks() {
   mocks.useGetSession.mockReturnValue({ data: { authenticated: true, role: "coordinator" } });
   mocks.useListTeamAssessments.mockReturnValue({ data: { items: [] }, isLoading: false, isError: false, refetch: vi.fn() });
@@ -331,6 +335,32 @@ describe("team assessment experiences", () => {
       expect.stringContaining("/api/storage/objects/team-assessments/"),
       expect.objectContaining({ method: "DELETE" }),
     ));
+  });
+
+  it("routes dropped assessment attachments through the existing count and upload validation", async () => {
+    mocks.useGetRequiredTeamAssessments.mockReturnValue({
+      data: { items: [assessment] },
+      isLoading: false,
+    });
+    renderWithRouter(<RequiredAssessmentFlow items={[assessment]} />);
+    const input = screen.getByTestId("input-assessment-file-upload");
+    const dropTarget = input.parentElement!;
+
+    fireEvent.drop(dropTarget, nativeFileDrop([
+      new File(["one"], "one.pdf", { type: "application/pdf" }),
+      new File(["two"], "two.pdf", { type: "application/pdf" }),
+      new File(["three"], "three.pdf", { type: "application/pdf" }),
+    ]));
+    expect(await screen.findByTestId("assessment-upload-error")).toHaveTextContent("Choose no more than 2 file(s)");
+    expect(mocks.uploadMutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.drop(dropTarget, nativeFileDrop([
+      new File(["one"], "one.pdf", { type: "application/pdf" }),
+      new File(["two"], "two.pdf", { type: "application/pdf" }),
+    ]));
+    await waitFor(() => expect(mocks.uploadMutateAsync).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/one\.pdf/)).toBeInTheDocument();
+    expect(screen.getByText(/two\.pdf/)).toBeInTheDocument();
   });
 
   it("saves a readable draft and provides a respondent preview", () => {

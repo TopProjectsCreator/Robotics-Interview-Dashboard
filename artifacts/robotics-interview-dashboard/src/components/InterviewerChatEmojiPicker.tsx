@@ -8,6 +8,7 @@ import {
   getListChatCustomEmojisQueryKey,
   useUploadChatCustomEmoji,
 } from "@workspace/api-client-react";
+import { useNativeFileDrop } from "@/lib/useNativeFileDrop";
 
 type SharedEmoji = {
   id: string;
@@ -52,6 +53,7 @@ export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoad
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const emojiFileDrop = useNativeFileDrop(files => setFile(files[0] ?? null));
 
   const pickerCustomEmojis = useMemo(
     () => customEmojis.map(emoji => ({
@@ -212,10 +214,12 @@ export function InterviewerChatEmojiPicker({ dark, customEmojis, customEmojiLoad
             className="sr-only"
           />
           <button
+            {...emojiFileDrop.fileDropProps}
             type="button"
             onClick={() => fileInputRef.current?.click()}
             data-testid="button-select-team-emoji-image"
-            className="flex h-9 w-full items-center justify-between rounded-lg border border-dashed border-[#b9cdd0] bg-white px-2.5 text-left text-xs text-[#52666e] transition hover:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#b9c9d1]"
+            className={`flex h-9 w-full items-center justify-between rounded-lg border border-dashed border-[#b9cdd0] bg-white px-2.5 text-left text-xs text-[#52666e] transition hover:border-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#b9c9d1] ${emojiFileDrop.isDraggingFiles ? "ring-2 ring-[#16869a]" : ""}`}
+            data-drop-active={emojiFileDrop.isDraggingFiles || undefined}
           >
             <span className="flex min-w-0 items-center gap-2"><Upload size={14} className="shrink-0 text-[#16869a] dark:text-[#6fc3cf]" /><span className="truncate">{file?.name ?? "Choose PNG, JPEG, GIF, or WebP"}</span></span>
             {file && <span className="ml-2 shrink-0 text-[10px] text-[#71878d]">{Math.max(1, Math.ceil(file.size / 1024))} KB</span>}

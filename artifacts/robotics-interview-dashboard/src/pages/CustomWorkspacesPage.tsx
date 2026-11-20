@@ -19,6 +19,7 @@ import { resolveAssistantModelSelection } from "../lib/assistantModelSelection";
 import { loadToolExposure } from "../components/assistantTools";
 import { compileWorkspaceSourceFiles, sandboxDocument, type WorkspaceSourceFile } from "../lib/customWorkspaceRuntime";
 import { notify } from "../lib/dialogs";
+import { useNativeFileDrop } from "../lib/useNativeFileDrop";
 
 type Capability = CustomWorkspace["capabilities"][number];
 type Workspace = CustomWorkspace & {
@@ -104,6 +105,49 @@ function readFileDataUrl(file: File): Promise<string> {
   });
 }
 
+function QuestionFileUploadField({
+  item,
+  files,
+  selectionIssue,
+  onSelect,
+  onRemove,
+}: {
+  item: AgentQuestion["questions"][number];
+  files: QuestionFile[];
+  selectionIssue?: string;
+  onSelect: (files: File[]) => void;
+  onRemove: (previewUrl: string) => void;
+}) {
+  const fileDrop = useNativeFileDrop(onSelect);
+  return <div
+    {...fileDrop.fileDropProps}
+    data-testid={`drop-question-file-${item.id}`}
+    data-drop-active={fileDrop.isDraggingFiles || undefined}
+    className={`rounded-lg ${fileDrop.isDraggingFiles ? "bg-[#eaf7f5] ring-2 ring-[#16869a] dark:bg-[#183941]" : ""}`}
+  >
+    <input
+      type="file"
+      accept={item.accept ?? ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.html,.htm,.css,.js,.ts,image/*"}
+      multiple={(item.maxFiles ?? 1) > 1}
+      required={item.required && !files.length}
+      onChange={(event) => {
+        onSelect(Array.from(event.currentTarget.files ?? []));
+        event.currentTarget.value = "";
+      }}
+      className="block w-full text-sm"
+      data-testid={`input-question-file-${item.id}`}
+    />
+    {!!files.length && <ul className="mt-2 grid gap-2 sm:grid-cols-2">{files.map(({ file, previewUrl }, index) => <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-xs">
+      {file.type.startsWith("image/") && <img src={previewUrl} alt={`Preview of ${file.name}`} className="h-12 w-12 rounded object-cover" />}
+      <span className="min-w-0 flex-1 truncate">{file.name} · {Math.ceil(file.size / 1024)} KB</span>
+      <a href={previewUrl} target="_blank" rel="noreferrer" className="underline">View</a>
+      {questionFileIssue(file) && <span className="basis-full text-red-700 dark:text-red-300">{questionFileIssue(file)}</span>}
+      <button type="button" onClick={() => onRemove(previewUrl)} aria-label={`Remove ${file.name}`}>Remove</button>
+    </li>)}</ul>}
+    {selectionIssue && <p role="alert" className="mt-2 text-sm text-red-700 dark:text-red-300">{selectionIssue}</p>}
+  </div>;
+}
+
 function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; onSubmit: (answers: Record<string, unknown>) => Promise<void> }) {
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [comments, setComments] = useState<Record<string, string>>({});
@@ -124,6 +168,29 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
       ? ["Attachments together must be 4 MB or smaller."]
       : []),
   ];
+  const selectQuestionFiles = (item: AgentQuestion["questions"][number], selection: File[]) => {
+    const picked = selection.slice(0, item.maxFiles ?? 1);
+    setFileSelectionIssues((old) => ({
+      ...old,
+      [item.id]: selection.length > (item.maxFiles ?? 1)
+        ? `Choose no more than ${item.maxFiles ?? 1} file${(item.maxFiles ?? 1) === 1 ? "" : "s"} for “${item.title}”.`
+        : "",
+    }));
+    const next = picked.map((file) => {
+      const previewUrl = URL.createObjectURL(file);
+      previewUrls.current.add(previewUrl);
+      return { file, previewUrl };
+    });
+    setFiles((old) => {
+      Object.values(old[item.id] ?? []).forEach(({ previewUrl }) => URL.revokeObjectURL(previewUrl));
+      return { ...old, [item.id]: next };
+    });
+  };
+  const removeQuestionFile = (itemId: string, previewUrl: string) => {
+    URL.revokeObjectURL(previewUrl);
+    previewUrls.current.delete(previewUrl);
+    setFiles((old) => ({ ...old, [itemId]: (old[itemId] ?? []).filter((entry) => entry.previewUrl !== previewUrl) }));
+  };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (attachmentIssues.length) {
@@ -301,35 +368,13 @@ function AgentQuestionCard({ question, onSubmit }: { question: AgentQuestion; on
         })}
       </div>}
       {(item.type === "singleSelect" || item.type === "multiSelect") && <textarea value={comments[item.id] ?? ""} onChange={(event) => setComments((old) => ({ ...old, [item.id]: event.target.value }))} rows={2} placeholder="Additional details (optional)" className="w-full rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--card))] p-2 text-base md:text-sm" />}
-      {item.type === "fileUpload" && <>
-        <input type="file" accept={item.accept ?? ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.csv,.json,.xml,.html,.htm,.css,.js,.ts,image/*"} multiple={(item.maxFiles ?? 1) > 1} required={item.required && !(files[item.id]?.length)} onChange={(event) => {
-          const selection = Array.from(event.target.files ?? []);
-          const picked = selection.slice(0, item.maxFiles ?? 1);
-          setFileSelectionIssues((old) => ({
-            ...old,
-            [item.id]: selection.length > (item.maxFiles ?? 1)
-              ? `Choose no more than ${item.maxFiles ?? 1} file${(item.maxFiles ?? 1) === 1 ? "" : "s"} for “${item.title}”.`
-              : "",
-          }));
-          const next = picked.map((file) => {
-            const previewUrl = URL.createObjectURL(file);
-            previewUrls.current.add(previewUrl);
-            return { file, previewUrl };
-          });
-          setFiles((old) => {
-            Object.values(old[item.id] ?? []).forEach(({ previewUrl }) => URL.revokeObjectURL(previewUrl));
-            return { ...old, [item.id]: next };
-          });
-        }} className="block w-full text-sm" data-testid={`input-question-file-${item.id}`} />
-        {!!files[item.id]?.length && <ul className="grid gap-2 sm:grid-cols-2">{files[item.id].map(({ file, previewUrl }, index) => <li key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-lg border border-[hsl(var(--border))] p-2 text-xs">
-          {file.type.startsWith("image/") && <img src={previewUrl} alt={`Preview of ${file.name}`} className="h-12 w-12 rounded object-cover" />}
-          <span className="min-w-0 flex-1 truncate">{file.name} · {Math.ceil(file.size / 1024)} KB</span>
-          <a href={previewUrl} target="_blank" rel="noreferrer" className="underline">View</a>
-          {questionFileIssue(file) && <span className="basis-full text-red-700 dark:text-red-300">{questionFileIssue(file)}</span>}
-          <button type="button" onClick={() => setFiles((old) => { URL.revokeObjectURL(previewUrl); return { ...old, [item.id]: old[item.id].filter((entry) => entry.previewUrl !== previewUrl) }; })} aria-label={`Remove ${file.name}`}>Remove</button>
-        </li>)}</ul>}
-        {fileSelectionIssues[item.id] && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{fileSelectionIssues[item.id]}</p>}
-      </>}
+      {item.type === "fileUpload" && <QuestionFileUploadField
+        item={item}
+        files={files[item.id] ?? []}
+        selectionIssue={fileSelectionIssues[item.id]}
+        onSelect={(selection) => selectQuestionFiles(item, selection)}
+        onRemove={(previewUrl) => removeQuestionFile(item.id, previewUrl)}
+      />}
     </fieldset>)}
     {selectedFiles.length > 0 && <p className="text-xs text-[#60757c] dark:text-[#b3c3cb]">PDF and Office files are read for this builder request only. Attachments are limited to 2 MB each and 4 MB total.</p>}
     {attachmentIssues[0] && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{attachmentIssues[0]}</p>}
