@@ -250,6 +250,166 @@ button { cursor: pointer; }
   .operations-card .flex.items-center.justify-between { align-items: flex-start; flex-wrap: wrap; gap: .4rem; }
   .operations-card .flex.items-center.justify-between > :last-child { margin-left: auto; }
 }
+
+/*
+ * Workspace settings live in a resizable modal, not in the viewport. These
+ * named containers make the shell and Operations deck respond to their actual
+ * available width (including a narrow modal on a large monitor).
+ */
+.settings-modal-shell {
+  container: settings-shell / inline-size;
+  min-width: 0;
+}
+.settings-modal-shell [data-testid="settings-workspace-layout"] { min-width: 0; }
+.settings-operations-panel {
+  container: ops-panel / inline-size;
+  min-width: 0;
+  padding: clamp(.75rem, 2.2cqi, 1.4rem);
+  overscroll-behavior: contain;
+}
+.operations-tab-content,
+.operations-grid,
+.operations-card,
+.operations-card-heading,
+.operations-intro > div { min-width: 0; }
+.operations-tab-content { gap: clamp(.75rem, 1.8cqi, 1rem); }
+.operations-intro {
+  gap: clamp(.7rem, 2cqi, 1rem);
+  border-radius: 1.1rem;
+  background:
+    linear-gradient(115deg, hsl(var(--primary) / .11), transparent 72%),
+    hsl(var(--card));
+  box-shadow: inset 3px 0 hsl(var(--primary) / .65), 0 3px 12px hsl(var(--foreground) / .035);
+}
+.operations-intro h4 { font-size: clamp(1rem, 2.4cqi, 1.25rem); }
+.operations-intro-mark { border-radius: .75rem; }
+.operations-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  align-items: stretch;
+  gap: clamp(.65rem, 1.7cqi, 1rem);
+}
+.operations-card {
+  border-radius: .9rem;
+  padding: clamp(.8rem, 1.8cqi, 1.05rem);
+  box-shadow: 0 2px 8px hsl(var(--foreground) / .035);
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+.operations-card:hover {
+  border-color: hsl(var(--primary) / .38);
+  box-shadow: 0 5px 16px hsl(var(--foreground) / .06);
+}
+.operations-card-heading { gap: .65rem; }
+.operations-card-heading h4 { font-size: 1rem; line-height: 1.3; }
+.operations-card-heading p:not(.operations-kicker),
+.operations-copy { font-size: .75rem; line-height: 1.58; overflow-wrap: anywhere; }
+.operations-card-heading > svg { width: 1.15rem; height: 1.15rem; }
+.operations-wide { grid-column: 1 / -1; }
+.operations-assessments {
+  border-color: hsl(var(--primary) / .24);
+  background:
+    linear-gradient(135deg, hsl(var(--primary) / .075), transparent 58%),
+    hsl(var(--card));
+}
+.operations-card > .flex.items-center.justify-between {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .65rem 1rem;
+}
+.operations-card > .flex.items-center.justify-between > :first-child { min-width: 0; }
+.operations-card > .flex.items-center.justify-between > .shrink-0 {
+  min-width: 0;
+  max-width: 100%;
+}
+.operations-card > .flex.items-center.justify-between p:not(:first-child) { overflow-wrap: anywhere; }
+.operations-card select,
+.operations-card input:not([type="checkbox"]):not([type="radio"]),
+.operations-card textarea { max-width: 100%; }
+.operations-card select { min-height: 2.75rem; }
+.operations-card :is(button, input, select, textarea) { max-width: 100%; }
+.operations-card button { min-height: 2.75rem; white-space: normal; }
+.operations-card [data-testid^="segment-settings"] {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.operations-card [data-testid^="segment-settings"] button {
+  min-width: 0;
+  min-height: 2.75rem;
+  flex: 1 1 auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.operations-card [data-testid="segment-settings-interval"] button { min-height: 2.75rem; }
+.operations-card [data-testid^="settings-"] { min-width: 0; max-width: 100%; }
+.operations-card :is(p, span, label, code) { overflow-wrap: anywhere; }
+.operations-card [data-testid="settings-parts-order-limit"] *,
+.operations-card [data-testid="settings-blocked-ips"] *,
+.operations-card [data-testid="settings-tiny-urls"] * { min-width: 0; }
+.operations-card [data-testid="settings-blocked-ips"] :is(input, button),
+.operations-card [data-testid="settings-tiny-urls"] :is(input, button) { max-width: 100%; }
+.operations-card :is(table, pre) { display: block; max-width: 100%; overflow-x: auto; }
+.operations-card :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+@container settings-shell (max-width: 760px) {
+  .settings-modal-shell [data-testid="settings-workspace-layout"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+  }
+  .settings-modal-shell [data-testid="settings-navigation"] {
+    width: 100%;
+    border-right: 0;
+    border-bottom: 1px solid hsl(var(--border));
+    padding: .55rem .65rem;
+  }
+  .settings-modal-shell [data-testid="settings-section-tabs"] {
+    flex-direction: row;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+  }
+  .settings-modal-shell [data-testid="settings-section-tabs"] > button {
+    width: auto;
+    min-height: 2.75rem;
+    padding-inline: .8rem;
+  }
+  .settings-modal-shell [data-testid="settings-section-panel"] { padding: .8rem; }
+}
+@container ops-panel (max-width: 620px) {
+  .operations-grid { grid-template-columns: minmax(0, 1fr); }
+  .operations-wide { grid-column: auto; }
+  .operations-intro { align-items: flex-start; padding: .9rem; }
+  .operations-card > .flex.items-center.justify-between {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: .55rem .75rem;
+  }
+  .operations-card-heading > svg { margin-left: auto; }
+}
+@container ops-panel (max-width: 390px) {
+  .operations-intro-mark { width: 2.35rem; height: 2.35rem; }
+  .operations-card { padding: .78rem; }
+  .operations-card-heading { gap: .45rem; }
+  .operations-card > .flex.items-center.justify-between {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: .35rem;
+  }
+  .operations-card > .flex.items-center.justify-between > .shrink-0 {
+    width: 100%;
+    margin-left: 0;
+  }
+  .operations-card > .flex.items-center.justify-between > .shrink-0 > select,
+  .operations-card > .flex.items-center.justify-between > .shrink-0 > [data-testid^="segment-settings"] {
+    width: 100%;
+  }
+  .operations-card > .flex.items-center.justify-between > .shrink-0 > button {
+    min-width: 5.5rem;
+  }
+}
 .chat-markdown-table { color: #52666e; border-color: #dce9e8; background: #fff; }
 .chat-markdown-table-header { background: #edf4f3; }
 .chat-markdown-table-heading { border-color: #dce9e8; color: #183a4b; }

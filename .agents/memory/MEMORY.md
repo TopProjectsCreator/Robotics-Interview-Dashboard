@@ -75,3 +75,4 @@
 - [FIRST FTC match result semantics](ftc-match-result-semantics.md) — a zero final score can be real; use FIRST's result-posted timestamp to distinguish results from schedule placeholders.
 - [Authorization performance tradeoffs](authorization-performance-tradeoffs.md) — improve repeated checks without delaying permission changes or changing existing display links.
 - [OpenCode-only agent instructions](opencode-agent-instructions.md) — use opencode.jsonc instructions under .opencode/, never a root AGENTS.md that other tools also read.
+- [Settings modal browser fixtures](settings-modal-browser-fixtures.md) — hidden settings sections still mount in browser tests, so authenticated fixtures need valid response shapes beyond the active tab.

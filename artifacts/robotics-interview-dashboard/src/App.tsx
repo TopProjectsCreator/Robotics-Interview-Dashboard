@@ -1330,7 +1330,7 @@ function SettingsModal({
     ?? settingsNavigationItems[0];
   if (typeof document === "undefined") return null;
   return createPortal(<div {...overlayProps} className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[#112433]/70 p-2 dark:bg-[#050d13]/80 sm:p-4" onClick={onClose} data-testid="settings-modal">
-    <div {...panelProps} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="flex max-h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#dce5e5] bg-white p-3 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2] sm:p-5">
+    <div {...panelProps} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Workspace settings" className="settings-modal-shell flex max-h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#dce5e5] bg-white p-3 shadow-2xl dark:border-[#2a3f4c] dark:bg-[#13222c] dark:text-[#e8eef2] sm:p-5">
       <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border pb-3">
         <div className="min-w-0">
           <p className="mono text-[10px] uppercase tracking-[.16em] text-[#16869a] dark:text-[#6fc3cf]">Workspace settings</p>
