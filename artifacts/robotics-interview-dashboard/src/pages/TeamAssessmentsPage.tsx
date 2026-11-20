@@ -627,11 +627,12 @@ export function TeamAssessmentsPage({ embedded = false }: { embedded?: boolean }
         {create.isPending ? <LoaderCircle size={16} className="animate-spin" /> : <Plus size={16} />} Create assessment
       </button>}
     />
-    {error && <p role="alert" className="mb-4 rounded-lg border border-[hsl(var(--destructive))]/30 bg-[hsl(var(--destructive))]/10 p-3 text-sm text-[hsl(var(--destructive))]" data-testid="assessment-list-error">{error}</p>}
+    {error && <p role="alert" className="mb-4 rounded-lg border border-[hsl(var(--destructive))]/30 bg-[hsl(var(--destructive))]/10 p-3 text-sm text-[hsl(var(--destructive))]" data-testid="assessment-action-error">{error}</p>}
     {assessments.isLoading ? <div className={`${card} p-6`} role="status">Loading team assessments…</div>
-      : assessments.isError ? <div className={`${card} p-6`}>
+      : assessments.isError ? <div className={`${card} p-6`} role="alert">
         <p className="font-semibold">Assessments could not be loaded.</p>
-        <button type="button" onClick={() => void assessments.refetch()} className={`${secondaryButton} mt-4`}>Try again</button>
+        <p className="mt-2 text-sm text-[hsl(var(--muted-foreground))]">{getServerError(assessments.error)}</p>
+        <button type="button" onClick={() => void assessments.refetch()} className={`${secondaryButton} mt-4`} data-testid="button-retry-assessments">Try again</button>
       </div>
         : list.length === 0 ? <div className={`${card} p-8 text-center`} data-testid="assessment-list-empty">
           <ClipboardCheck size={25} className="mx-auto text-[hsl(var(--primary))]" />

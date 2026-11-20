@@ -143,6 +143,54 @@ describe("team assessment experiences", () => {
     expect(screen.getByTestId("input-assessment-title")).toHaveValue("Robot readiness");
   });
 
+  it("shows a recoverable list error and retries the team assessment request", async () => {
+    let recovered = false;
+    const refetch = vi.fn(() => {
+      recovered = true;
+    });
+    mocks.useListTeamAssessments.mockImplementation(() => recovered
+      ? { data: { items: [{ ...assessment, assignedCount: 0, responseCount: 0 }] }, isLoading: false, isError: false, refetch }
+      : { data: undefined, error: new Error("The database is temporarily unavailable."), isLoading: false, isError: true, refetch });
+    function RetryHarness() {
+      const [, setRevision] = useState(0);
+      return <div>
+        <TeamAssessmentsPage embedded />
+        <button type="button" onClick={() => setRevision((value) => value + 1)}>Refresh test view</button>
+      </div>;
+    }
+    renderWithRouter(<RetryHarness />);
+
+    expect(screen.getByText("The database is temporarily unavailable.")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("button-retry-assessments"));
+    expect(refetch).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh test view" }));
+    expect(screen.getByTestId("card-team-assessment-assessment-1")).toBeInTheDocument();
+    expect(screen.queryByTestId("button-retry-assessments")).not.toBeInTheDocument();
+  });
+
+  it("shows draft creation failures and clears the pending button state", async () => {
+    mocks.useCreateTeamAssessment.mockImplementation(() => {
+      const [isPending, setIsPending] = useState(false);
+      return {
+        isPending,
+        mutate: (_variables: unknown, callbacks: { onError: (error: Error) => void }) => {
+          setIsPending(true);
+          setTimeout(() => {
+            callbacks.onError(new Error("The database is temporarily unavailable."));
+            setIsPending(false);
+          }, 0);
+        },
+      };
+    });
+    renderWithRouter(<TeamAssessmentsPage embedded />);
+
+    fireEvent.click(screen.getByTestId("button-create-assessment"));
+
+    await waitFor(() => expect(screen.getByTestId("assessment-action-error")).toHaveTextContent("The database is temporarily unavailable."));
+    expect(screen.getByTestId("button-create-assessment")).toBeEnabled();
+    expect(screen.queryByText("Creating assessment…")).not.toBeInTheDocument();
+  });
+
   it("keeps edit and results flows inside Settings and returns to the assessment list", () => {
     const results: TeamAssessmentResults = {
       assessment: { ...assessment, status: "published" },

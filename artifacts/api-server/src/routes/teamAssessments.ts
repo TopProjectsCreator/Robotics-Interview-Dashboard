@@ -165,7 +165,6 @@ router.get("/team-assessments/required", requireAdmin, async (req, res): Promise
 
 router.get("/team-assessments", requireCoordinator, async (req, res): Promise<void> => {
   const teamId = await requestTeamId(req);
-  await reconcileAssessmentAssignments(teamId);
   const assessments = await db.select().from(teamAssessmentsTable)
     .where(eq(teamAssessmentsTable.teamId, teamId))
     .orderBy(asc(teamAssessmentsTable.createdAt));
