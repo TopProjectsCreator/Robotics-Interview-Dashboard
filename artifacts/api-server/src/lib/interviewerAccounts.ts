@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { requestAccount } from "./requestAccount";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db, interviewerAccountsTable, interviewQueueTable, DEFAULT_TEAM_ID, type InterviewerAccount } from "@workspace/db";
 
 export function normalizeInterviewerName(value: string): string {
@@ -24,8 +24,21 @@ function teamAccountFilter(teamId: string) {
 export async function syncInterviewerAccounts(labels: string[], teamId: string = DEFAULT_TEAM_ID): Promise<InterviewerAccount[]> {
   const tid = teamIdOrDefault(teamId);
   const clean = [...new Set(labels.map((label) => label.trim().replace(/\s+/g, " ")).filter(Boolean))];
-  const existing = await db.select().from(interviewerAccountsTable).where(teamAccountFilter(tid));
-  const byName = new Map(existing.map((account) => [account.normalizedName, account]));
+  const normalized = clean.map(normalizeInterviewerName);
+  // The unique index on normalized_name is GLOBAL (see the CREATE TABLE in
+  // ensureSchema), not per-team. Querying only this team's rows misses a
+  // default label ("Interviewer 1") that already exists for another team, so
+  // the insert raises 23505 and the entire login roster request 500s — which
+  // is why every collaboration editor then reconnects forever: it cannot
+  // authenticate a roster that never loads.
+  const globalExisting = normalized.length
+    ? await db.select().from(interviewerAccountsTable).where(inArray(interviewerAccountsTable.normalizedName, normalized))
+    : [];
+  const byName = new Map(globalExisting.map((account) => [account.normalizedName, account]));
+  const teamExisting = await db.select().from(interviewerAccountsTable).where(teamAccountFilter(tid));
+  for (const account of teamExisting) {
+    if (!byName.has(account.normalizedName)) byName.set(account.normalizedName, account);
+  }
   for (const displayName of clean) {
     const normalizedName = normalizeInterviewerName(displayName);
     if (!byName.has(normalizedName)) {
@@ -36,11 +49,27 @@ export async function syncInterviewerAccounts(labels: string[], teamId: string =
         normalizedName,
         passwordHash: null,
         role: "interviewer",
-      }).returning();
+      }).returning().catch(() => [undefined]);
       if (created) byName.set(normalizedName, created);
+      else {
+        // A concurrent request created it between our read and insert; read
+        // it back rather than failing the whole roster request.
+        const [raced] = await db.select().from(interviewerAccountsTable)
+          .where(eq(interviewerAccountsTable.normalizedName, normalizedName)).limit(1);
+        if (raced) byName.set(normalizedName, raced);
+      }
     }
   }
-  return clean.map((label) => byName.get(normalizeInterviewerName(label))).filter((account): account is InterviewerAccount => Boolean(account));
+  // Only surface accounts usable by THIS team. A globally-colliding name that
+  // belongs to another team cannot act as this team's interviewer, so omit it
+  // instead of exposing a foreign team's account (or crashing).
+  return clean
+    .map((label) => byName.get(normalizeInterviewerName(label)))
+    .filter((account): account is InterviewerAccount => Boolean(account && (
+      tid === DEFAULT_TEAM_ID
+        ? account.teamId === DEFAULT_TEAM_ID || account.teamId === null || account.teamId === undefined
+        : account.teamId === tid
+    )));
 }
 
 async function getOrCreateQueueRow(teamId: string) {

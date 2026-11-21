@@ -1031,6 +1031,19 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     // alone — so every table needs a CREATE here. All idempotent.
     `create table if not exists "applicants" ("id" text primary key, "team_id" text, "name" text not null, "grade" text not null default 'Unknown', "age" integer, "gender" text, "email" text, "photo_url" text, "photo_thumb_url" text, "transcript" text, "attachments" text, "ai_score" integer not null default -1, "ai_recommendation" text not null default 'Review', "ai_summary" text not null default '', "ai_strengths" text not null default '', "ai_concerns" text not null default '', "robotics_experience" text not null default '', "commit_10_hours" text not null default 'Unclear', "parent_volunteer" text not null default 'Unclear', "interview_status" text not null default 'queued', "interviewer" text not null default '', "interview_decision" text not null default 'Undecided', "callback_requested" boolean not null default false, "flagged" boolean not null default false, "attendance" text not null default 'unmarked', "late_arrival_time" text, "makeup_date" text, "attendance_excused" boolean, "seat_row" integer, "seat_col" integer, "category" text not null default 'Unsorted', "rank" integer not null default 0, "notes" text not null default '', "queue_position" integer not null default 0, "created_at" timestamptz not null default now(), "updated_at" timestamptz not null default now())`,
     `create table if not exists "interview_queue" ("id" integer primary key default 1, "team_id" text, "interviewer_labels" text not null default '["Interviewer 1","Interviewer 2"]', "updated_at" timestamptz not null default now())`,
+    // The id used to default to the constant 1, so every new team's queue row
+    // collided with the default team's id=1 and onConflictDoNothing silently
+    // dropped it — leaving new teams without settings and their login roster
+    // empty (collaboration editors then reconnect forever). Give id a real
+    // sequence so each team gets its own row. Idempotent and data-preserving.
+    `do $q$
+     begin
+       if not exists (select 1 from pg_class where relname = 'interview_queue_id_seq' and relkind = 'S') then
+         execute 'create sequence interview_queue_id_seq';
+         perform setval('interview_queue_id_seq', coalesce((select max(id) from "interview_queue"), 1));
+       end if;
+       execute 'alter table "interview_queue" alter column "id" set default nextval(''interview_queue_id_seq'')';
+     end $q$`,
     `create table if not exists "interview_chat_messages" ("id" text primary key, "team_id" text, "author" text not null, "message" text not null, "conversation_scope" text not null default 'shared', "conversation_peer" text, "activities" text not null default '[]', "parent_message_id" text, "pinned_at" timestamptz, "edited_at" timestamptz, "deleted_at" timestamptz, "ghosted_at" timestamptz, "ghosted_by" text, "created_at" timestamptz not null default now())`,
     `create table if not exists "personal_notepad" ("account_id" text primary key references "interviewer_accounts"("id") on delete cascade, "team_id" text not null, "content" text not null default '<p></p>', "updated_at" timestamptz not null default now())`,
     `create table if not exists "application_imports" ("id" text primary key, "team_id" text, "object_path" text not null, "file_name" text not null, "row_count" integer not null, "imported_count" integer not null default 0, "skipped_count" integer not null default 0, "delimiter" text not null default ',', "warnings" text not null default '[]', "diff_summary" text not null default '{}', "created_at" timestamptz not null default now())`,

@@ -5690,7 +5690,7 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
               )) as "isUnread"
          from interview_chat_messages m
         where m.conversation_scope = 'direct'
-          and position($1 in m.conversation_peer) > 0
+          and position(lower($1) in lower(m.conversation_peer)) > 0
           and m.ghosted_at is null
           and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
         order by m.conversation_peer, m.created_at desc`,
