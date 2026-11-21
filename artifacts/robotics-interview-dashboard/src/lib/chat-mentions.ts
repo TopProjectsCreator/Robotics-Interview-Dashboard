@@ -9,6 +9,21 @@ export type ChatMentionPerson = ChatMentionToken & {
   kind: "interviewer" | "group" | "assistant" | "applicant";
 };
 
+export function buildTeamMentionPeople(labels: readonly string[]): ChatMentionPerson[] {
+  return [
+    { token: "all", label: "All team members", detail: "Everyone in this space", initials: "∗", kind: "group" as const },
+    ...labels.map(label => ({
+      token: label,
+      label,
+      detail: "Interviewer · tryout team",
+      initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?",
+      kind: "interviewer" as const,
+    })),
+  ].filter((person, index, list) =>
+    list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index,
+  );
+}
+
 export type ChatObjectKind = "document" | "whiteboard" | "board" | "spreadsheet" | "calendar";
 
 /**

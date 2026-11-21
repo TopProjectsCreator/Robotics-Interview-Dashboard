@@ -1827,3 +1827,129 @@ to action falls below the fold on a phone. */
 .die-token-sides { font-size: 9px; font-weight: 800; fill: #5b707e; letter-spacing: .1em; }
 
 .die-3d .die-pip { width: 24%; height: 24%; }
+
+/* Coordination-card briefs use the app's shared theme tokens in the editor
+   and every compact card preview. */
+.board-brief-editor {
+  overflow: visible;
+  border: 1px solid hsl(var(--input));
+  border-radius: .75rem;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.board-brief-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .2rem;
+  border-bottom: 1px solid hsl(var(--border));
+  padding: .35rem;
+  background: hsl(var(--muted) / .5);
+}
+.board-brief-toolbar-button {
+  display: inline-flex;
+  width: 2.35rem;
+  height: 2.35rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: .5rem;
+  color: hsl(var(--muted-foreground));
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.board-brief-toolbar-button:hover { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.board-brief-toolbar-button.is-active {
+  border-color: hsl(var(--primary) / .22);
+  background: hsl(var(--primary) / .12);
+  color: hsl(var(--primary));
+}
+.board-brief-toolbar-button:focus-visible,
+.board-brief-mention-option:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+.board-brief-toolbar-separator { width: 1px; height: 1.35rem; margin: 0 .25rem; background: hsl(var(--border)); }
+.board-brief-writing-area { position: relative; }
+.board-brief-prose {
+  min-height: 7rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  padding: .65rem .8rem;
+  color: hsl(var(--foreground));
+  font-size: .875rem;
+  line-height: 1.55;
+  outline: none;
+}
+.board-brief-prose > :first-child { margin-top: 0; }
+.board-brief-prose > :last-child { margin-bottom: 0; }
+.board-brief-prose p { margin: .2rem 0 .55rem; }
+.board-brief-prose h2 { margin: .45rem 0; font-size: 1rem; font-weight: 700; }
+.board-brief-prose ul,
+.board-brief-prose ol { margin: .35rem 0; padding-left: 1.35rem; }
+.board-brief-prose ul { list-style: disc; }
+.board-brief-prose ol { list-style: decimal; }
+.board-brief-prose blockquote { margin: .4rem 0; border-left: 2px solid hsl(var(--primary) / .55); padding-left: .65rem; color: hsl(var(--muted-foreground)); }
+.board-brief-prose :focus { outline: none; }
+.board-brief-editor-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: .75rem;
+  border-top: 1px solid hsl(var(--border) / .75);
+  padding: .35rem .65rem;
+  color: hsl(var(--muted-foreground));
+  font-size: .625rem;
+}
+.board-brief-mention-picker {
+  position: absolute;
+  z-index: 20;
+  bottom: .4rem;
+  left: .45rem;
+  width: min(19rem, calc(100% - .9rem));
+  max-height: 15rem;
+  overflow-y: auto;
+  border: 1px solid hsl(var(--border));
+  border-radius: .8rem;
+  background: hsl(var(--popover));
+  padding: .3rem;
+  color: hsl(var(--popover-foreground));
+  box-shadow: 0 12px 30px hsl(var(--foreground) / .16);
+}
+.board-brief-mention-option {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: .55rem;
+  border-radius: .55rem;
+  padding: .35rem .45rem;
+  text-align: left;
+}
+.board-brief-mention-option:hover,
+.board-brief-mention-option[aria-selected="true"] { background: hsl(var(--accent)); color: hsl(var(--accent-foreground)); }
+.board-brief-mention-avatar {
+  display: grid;
+  width: 1.8rem;
+  height: 1.8rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9999px;
+  background: hsl(var(--primary) / .12);
+  color: hsl(var(--primary));
+  font-size: .625rem;
+  font-weight: 700;
+}
+.board-brief-preview {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+.board-brief-preview :where(p, ul, ol, blockquote, pre) { margin: 0; }
+.board-brief-preview :where(p + p, ul + p, ol + p, p + ul, p + ol, blockquote + p) { margin-top: .2rem; }
+.board-brief-preview :where(ul, ol) { padding-left: 1rem; }
+.board-brief-preview ul { list-style: disc; }
+.board-brief-preview ol { list-style: decimal; }
+.board-brief-preview h1,
+.board-brief-preview h2,
+.board-brief-preview h3 { margin: 0; font-size: inherit; font-weight: 700; }
+.board-brief-preview blockquote { border-left: 2px solid hsl(var(--primary) / .5); padding-left: .45rem; }
+.board-brief-preview pre { overflow: hidden; white-space: pre-wrap; }

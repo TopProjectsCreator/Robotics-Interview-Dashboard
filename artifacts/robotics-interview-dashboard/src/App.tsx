@@ -147,7 +147,7 @@ const ChatGlbViewer = lazy(() => import("./components/ChatGlbViewer").then((m) =
 const CadThreeMfViewer = lazy(() => import("./components/CadThreeMfViewer").then((m) => ({ default: m.CadThreeMfViewer })));
 const CadMeshViewer = lazy(() => import("./components/CadMeshViewer").then((m) => ({ default: m.CadMeshViewer })));
 const ChatStepViewer = lazy(() => import("./components/ChatStepViewer").then((m) => ({ default: m.ChatStepViewer })));
-import { buildApplicantMentionPeople, buildChannelMentions, buildObjectMentions, findChatChannelMentions, findChatFtcMentions, findChatMentions, findChatObjectMentions, messageMentionsInterviewer, type ChatChannelMention, type ChatFtcMention, type ChatMentionMatch, type ChatMentionPerson, type ChatObjectMention } from "./lib/chat-mentions";
+import { buildApplicantMentionPeople, buildChannelMentions, buildObjectMentions, buildTeamMentionPeople, findChatChannelMentions, findChatFtcMentions, findChatMentions, findChatObjectMentions, messageMentionsInterviewer, type ChatChannelMention, type ChatFtcMention, type ChatMentionMatch, type ChatMentionPerson, type ChatObjectMention } from "./lib/chat-mentions";
 import { filterSlashCommands, findSlashCommandTrigger, type ChatSlashCommand } from "./lib/chatSlashCommands";
 import { isDocumentData } from "./components/documentCollaboration";
 import {
@@ -7535,14 +7535,7 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     [applicantMentionsQuery.data?.items, mentionLabels],
   );
   const mentionPeople = useMemo<ChatMentionPerson[]>(() => [
-    { token: "all", label: "All team members", detail: "Everyone in this space", initials: "∗", kind: "group" as const },
-    ...mentionLabels.map(label => ({
-      token: label,
-      label,
-      detail: "Interviewer · tryout team",
-      initials: label.split(/\s+/).map(part => part[0]).join("").slice(0, 2).toUpperCase() || "?",
-      kind: "interviewer" as const,
-    })),
+    ...buildTeamMentionPeople(mentionLabels),
     { token: "ai", label: "AI assistant", detail: "Ask about active applicants", initials: "AI", kind: "assistant" as const },
     ...applicantMentionPeople,
   ].filter((person, index, list) => list.findIndex(candidate => candidate.token.toLowerCase() === person.token.toLowerCase()) === index), [applicantMentionPeople, mentionLabels]);
