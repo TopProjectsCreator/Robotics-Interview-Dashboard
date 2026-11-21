@@ -11,6 +11,7 @@
 - [Object path instance pinning on migration](object-path-instance-pinning.md) — /objects/secondary/ prefixes pin reads; rewrite them when moving files to primary.
 - [Supabase data-only dump pitfalls](supabase-data-only-dump-pitfalls.md) — public-only filter, search_path fix, derived-cache blocks, seeded-row collisions.
 - [Supabase disk I/O saturation diagnosis](supabase-disk-io-saturation.md) — one user + 100% I/O: check pollers, realtime WAL decoding, temp spills, and PG17 stats views.
+- [Railway deploy and git push workflow](railway-deploy-git-push-workflow.md) — push via gh token header; re-auth + re-link Railway after every sandbox restart.
 - [Supabase connection budget](supabase-connection-budget.md) — keep one relay socket per database per API process and disconnect it before scheduled retries.
 - [Supabase server-only table policies](supabase-server-only-table-policies.md) — private API tables need restrictive client-deny policies; verify the server role bypasses RLS.
 - [Applicant search semantics](applicant-search-semantics.md) — derived skill qualifiers must match the visible strongest-signal chip; IF...THEN is implication.
