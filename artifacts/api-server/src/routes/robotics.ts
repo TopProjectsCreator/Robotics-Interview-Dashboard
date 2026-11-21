@@ -6738,10 +6738,13 @@ router.post("/queue/chat/read", requireAdmin, async (req, res): Promise<void> =>
       : eq(interviewChatMessagesTable.conversationPeer, conversation.key),
     inArray(interviewChatMessagesTable.id, messageIds),
   ];
-  const messages = await db.select({
+  // The chat view reads from BOTH instances, so a displayed message may live
+  // on either one. Query both here too, or receipts for secondary-only
+  // messages would never be recorded while the message still renders as read.
+  const messages = await readAcrossInstances(() => db.select({
     id: interviewChatMessagesTable.id,
     author: interviewChatMessagesTable.author,
-  }).from(interviewChatMessagesTable).where(and(...conversationConditions));
+  }).from(interviewChatMessagesTable).where(and(...conversationConditions)));
   const unreadMessages = messages.filter((message) => message.author.toLowerCase() !== account.displayName.toLowerCase());
   const created = unreadMessages.length
     ? await db.insert(chatMessageReadsTable).values(unreadMessages.map((message) => ({
