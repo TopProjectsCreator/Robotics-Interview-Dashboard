@@ -1,4 +1,5 @@
 import * as database from "@workspace/db";
+import { preferredInstance } from "./instanceHealth";
 
 /**
  * The instance that owns team data.
@@ -18,9 +19,14 @@ import * as database from "@workspace/db";
  */
 export function activeTeamDatabaseInstance(): "primary" | "secondary" {
   const configured = process.env.ACTIVE_TEAM_DATABASE?.trim().toLowerCase();
-  if (configured === "primary" || configured === "secondary") return configured;
-  if (typeof database.hasSecondary === "function") {
-    return database.hasSecondary() ? "secondary" : "primary";
+  let preferred: "primary" | "secondary";
+  if (configured === "primary" || configured === "secondary") {
+    preferred = configured;
+  } else if (typeof database.hasSecondary === "function") {
+    preferred = database.hasSecondary() ? "secondary" : "primary";
+  } else {
+    preferred = process.env.SECONDARY_DATABASE_URL?.trim() ? "secondary" : "primary";
   }
-  return process.env.SECONDARY_DATABASE_URL?.trim() ? "secondary" : "primary";
+  // If the preferred instance is down, route to the other configured one.
+  return preferredInstance(preferred);
 }

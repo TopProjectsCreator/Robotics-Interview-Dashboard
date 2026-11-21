@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
-import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, chatProductivitySettingsTable, chatProductivitySnapshotsTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
+import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, chatProductivitySettingsTable, chatProductivitySnapshotsTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, readAcrossInstances, type DbInstance } from "@workspace/db";
 import { assistantToolPoliciesTable, teamRolesTable } from "@workspace/db/schema";
 import { activeTeamDatabaseInstance } from "../lib/activeTeamDatabase";
 import { chatRevision } from "../lib/chatRevisions";
@@ -6244,9 +6244,15 @@ router.get("/queue/chat", requireAdmin, async (req, res): Promise<void> => {
         ? isNull(interviewChatMessagesTable.conversationPeer)
         : eq(interviewChatMessagesTable.conversationPeer, conversation.key),
     ];
-    const messages = await db.select().from(interviewChatMessagesTable)
+    // Read both configured instances so whichever database holds a message
+    // contributes it (the active-instance flag alone hides rows written to the
+    // other one). Each read is bounded by readAcrossInstances.
+    const messagesRaw = await readAcrossInstances(() => db.select().from(interviewChatMessagesTable)
       .where(and(...conversationFilters, ...(before ? [lt(interviewChatMessagesTable.createdAt, before)] : [])))
-      .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit);
+      .orderBy(desc(interviewChatMessagesTable.createdAt)).limit(limit));
+    const messages = messagesRaw
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, limit);
     const reactions = await reactionsForMessages(messages.map((message) => message.id), teamId);
     const polls = await pollsForMessages(messages.map((message) => message.id), account.displayName, teamId);
     const readReceipts = await readReceiptsForMessages(messages.map((message) => message.id), teamId);

@@ -7,6 +7,7 @@ import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { setupCodeCollaboration } from "./lib/codeCollaboration";
 import { pool, db, secondaryPool, hasSecondary, interviewQueueTable, runWithInstance } from "@workspace/db";
 import { activeTeamDatabaseInstance } from "./lib/activeTeamDatabase";
+import { startInstanceHealthProbes, markInstanceFailure, markInstanceSuccess } from "./lib/instanceHealth";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
 import { startAssistantPromptDispatcher, startAssistantScheduledTaskDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
@@ -1280,6 +1281,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
       for (const sql of pendingPrimary) {
         try {
           await withSchemaTimeout(pool.query(sql), "primary schema");
+          markInstanceSuccess("primary");
           consecutiveConnectionFailures = 0;
           primaryApplied += 1;
           if (primaryApplied % 100 === 0) {
@@ -1288,6 +1290,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
         } catch (err) {
           firstFailure ??= err;
           if (isDatabaseConnectionError(err)) {
+            markInstanceFailure("primary", err);
             consecutiveConnectionFailures += 1;
             if (consecutiveConnectionFailures >= CONSECUTIVE_CONNECTION_FAILURE_LIMIT) {
               primaryConnectionError = err;
@@ -1353,6 +1356,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
         for (const sql of pending) {
           try {
             await withSchemaTimeout(secondary.query(sql), "secondary schema");
+            markInstanceSuccess("secondary");
             consecutiveSecondaryFailures = 0;
             secondaryApplied += 1;
             if (secondaryApplied % 100 === 0) {
@@ -1364,6 +1368,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
             // slow, not gone) and only hand back to the retry timer once
             // nothing at all gets through.
             if (isDatabaseConnectionError(err)) {
+              markInstanceFailure("secondary", err);
               consecutiveSecondaryFailures += 1;
               if (consecutiveSecondaryFailures >= CONSECUTIVE_CONNECTION_FAILURE_LIMIT) {
                 secondaryConnectionError = err;
@@ -1531,6 +1536,9 @@ setupWhiteboardCollaboration(server);
 setupCodeCollaboration(server);
 
 function startBackgroundWork(): void {
+  // Keep live health for both instances so a dead primary automatically hands
+  // team traffic to the secondary (and back again when it recovers).
+  startInstanceHealthProbes();
   void syncPartsCatalogsIfDue().catch((err) => {
     logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
   });

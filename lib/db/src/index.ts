@@ -169,4 +169,34 @@ export const pool = forwardingProxy<InstanceType<typeof Pool>>(resolvePool);
 /** Instance-aware drizzle handle. Resolves per request; primary outside one. */
 export const db = forwardingProxy<typeof primaryDb>(resolveDb);
 
+/**
+ * Run a read against every configured instance and merge the rows by id.
+ *
+ * Team data lives on the primary, but older rows can still exist on the
+ * secondary (and vice versa during a failover). A single "active instance"
+ * flag silently hides messages written to the other one. This checks both in
+ * parallel so whichever instance holds a row contributes it. Each instance is
+ * bounded so a saturated backend can never stall the whole response.
+ */
+export async function readAcrossInstances<T extends { id: string }>(
+  query: () => Promise<T[]>,
+  timeoutMs = 2_000,
+): Promise<T[]> {
+  const merged = new Map<string, T>();
+  const bounded = (instance: DbInstance) =>
+    new Promise<T[]>((resolve) => {
+      const timer = setTimeout(() => resolve([]), timeoutMs);
+      runWithInstance(instance, query).then(
+        (rows) => { clearTimeout(timer); resolve(Array.isArray(rows) ? rows : []); },
+        () => { clearTimeout(timer); resolve([]); },
+      );
+    });
+
+  const reads = [bounded("primary")];
+  if (hasSecondary()) reads.push(bounded("secondary"));
+  const batches = await Promise.all(reads);
+  for (const rows of batches) for (const row of rows) if (!merged.has(row.id)) merged.set(row.id, row);
+  return [...merged.values()];
+}
+
 export * from "./schema";
