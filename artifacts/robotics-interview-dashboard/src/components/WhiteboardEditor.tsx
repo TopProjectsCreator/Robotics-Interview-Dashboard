@@ -52,7 +52,9 @@ type Viewport = {
   offsetLeft: number;
   offsetTop: number;
 };
-type CollaborationStatus = "offline" | "connecting" | "connected" | "reconnecting";
+type CollaborationStatus = "offline" | "connecting" | "connected" | "reconnecting" | "unavailable";
+
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 const defaultScene: StoredScene = {
   elements: [],
@@ -212,6 +214,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, readOnly = false, 
 
     let stopped = false;
     let retryDelay = 500;
+    let reconnectAttempts = 0;
 
     const applyRemoteScene = (remoteData: string) => {
       const mergedData = mergeSceneData(dataRef.current, remoteData);
@@ -243,7 +246,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, readOnly = false, 
 
     const connect = () => {
       if (stopped) return;
-      setCollaborationStatus(retryDelay === 500 ? "connecting" : "reconnecting");
+      setCollaborationStatus(reconnectAttempts === 0 ? "connecting" : "reconnecting");
       const base = String(import.meta.env.BASE_URL || "/").replace(/\/+$/, "");
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
       const token = getStoredAuthToken();
@@ -254,6 +257,7 @@ export function WhiteboardEditor({ whiteboard, saving, error, readOnly = false, 
       socket.onopen = () => {
         if (stopped || socketRef.current !== socket) return;
         retryDelay = 500;
+        reconnectAttempts = 0;
         setCollaborationStatus("connected");
         sendPendingScene();
         sendPendingCursor();
@@ -312,13 +316,19 @@ export function WhiteboardEditor({ whiteboard, saving, error, readOnly = false, 
         }
       };
       socket.onerror = () => socket.close();
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         if (socketRef.current !== socket) return;
         socketRef.current = null;
         if (stopped) return;
-        setCollaborationStatus("reconnecting");
         setParticipants(0);
         setRemoteCursors([]);
+        const permanentFailure = event.code === 1008 || event.code === 4401 || event.code === 4403 || event.code === 4404;
+        if (permanentFailure || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS - 1) {
+          setCollaborationStatus("unavailable");
+          return;
+        }
+        reconnectAttempts += 1;
+        setCollaborationStatus("reconnecting");
         reconnectTimerRef.current = setTimeout(connect, retryDelay);
         retryDelay = Math.min(5000, retryDelay * 2);
       };
@@ -390,8 +400,10 @@ export function WhiteboardEditor({ whiteboard, saving, error, readOnly = false, 
     ? `Live${participants > 1 ? ` · ${participants} editing` : ""}`
     : collaborationStatus === "reconnecting"
       ? "Reconnecting…"
-      : collaborationStatus === "connecting"
-        ? "Connecting…"
+    : collaborationStatus === "connecting"
+      ? "Connecting…"
+      : collaborationStatus === "unavailable"
+        ? "Live editing unavailable"
         : "Live editing starts after saving";
 
   return (

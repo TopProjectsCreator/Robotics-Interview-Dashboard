@@ -688,6 +688,7 @@ button { cursor: pointer; }
 .document-editor .document-style-select option { background: var(--document-paper); color: var(--document-foreground); }
 .document-editor .document-collaboration-dot[data-status="connected"] { background: var(--document-save-success); }
 .document-editor .document-collaboration-dot[data-status="reconnecting"] { background: var(--document-save-warning); }
+.document-editor .document-collaboration-dot[data-status="unavailable"] { background: var(--document-save-error); }
 .document-editor .document-collaboration-dot[data-status="connecting"] { background: var(--document-muted); }
 .document-editor .document-collaborator-avatar { border-color: var(--document-header); }
 .document-editor .document-save-error { border-color: var(--document-error-border); background: var(--document-error-bg); color: var(--document-save-error); }

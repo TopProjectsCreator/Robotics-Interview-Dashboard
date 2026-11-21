@@ -530,6 +530,14 @@ test("coordinator board and assistant skill operations remain persisted and team
     const otherCoordinatorSession = createInterviewerSession(otherCoordinator.id);
     assert.equal((await request(interviewerSession, "GET", "/assistant/skills")).status, 403);
 
+    const boardPatchAsInterviewer = await request(interviewerSession, "PATCH", path, {
+      operation: "create_card",
+      card: { title: "Interviewer can edit boards", columnId: "backlog" },
+    });
+    assert.equal(boardPatchAsInterviewer.status, 200, "interviewers with collaboration.edit must be able to edit boards");
+    const patchedByInterviewer = await boardPatchAsInterviewer.json();
+    assert.ok(patchedByInterviewer.data.cards.some((card) => card.title === "Interviewer can edit boards"));
+
     const listA = await request(coordinatorSession, "GET", "/assistant/skills");
     const listAData = await listA.json();
     assert.deepEqual(listAData.items.map((skill) => skill.id), ["skill-a"]);

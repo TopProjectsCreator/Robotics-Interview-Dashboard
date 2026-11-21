@@ -234,18 +234,21 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
       IF to_regclass('public.${tableName}') IS NOT NULL THEN
         EXECUTE 'ALTER TABLE public.${tableName} ENABLE ROW LEVEL SECURITY';
 
-        IF NOT EXISTS (
-          SELECT 1
-          FROM pg_policies
-          WHERE schemaname = 'public'
-            AND tablename = '${tableName}'
-            AND policyname = 'deny_supabase_client_access'
-        ) THEN
-          BEGIN
-            EXECUTE 'CREATE POLICY deny_supabase_client_access ON public.${tableName} AS RESTRICTIVE FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)';
-          EXCEPTION
-            WHEN duplicate_object THEN NULL;
-          END;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+           AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+          IF NOT EXISTS (
+            SELECT 1
+            FROM pg_policies
+            WHERE schemaname = 'public'
+              AND tablename = '${tableName}'
+              AND policyname = 'deny_supabase_client_access'
+          ) THEN
+            BEGIN
+              EXECUTE 'CREATE POLICY deny_supabase_client_access ON public.${tableName} AS RESTRICTIVE FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)';
+            EXCEPTION
+              WHEN duplicate_object THEN NULL;
+            END;
+          END IF;
         END IF;
       END IF;
     END
@@ -267,25 +270,28 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
         EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', target);
       END LOOP;
 
-      FOR target IN
-        SELECT c.relname
-          FROM pg_class c
-          JOIN pg_namespace n ON n.oid = c.relnamespace
-         WHERE n.nspname = 'public' AND c.relkind = 'r'
-      LOOP
-        IF NOT EXISTS (
-          SELECT 1 FROM pg_policies
-           WHERE schemaname = 'public'
-             AND tablename = target
-             AND policyname = 'deny_supabase_client_access'
-        ) THEN
-          BEGIN
-            EXECUTE format('CREATE POLICY deny_supabase_client_access ON public.%I AS RESTRICTIVE FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)', target);
-          EXCEPTION
-            WHEN duplicate_object THEN NULL;
-          END;
-        END IF;
-      END LOOP;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon')
+         AND EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+        FOR target IN
+          SELECT c.relname
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE n.nspname = 'public' AND c.relkind = 'r'
+        LOOP
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_policies
+             WHERE schemaname = 'public'
+               AND tablename = target
+               AND policyname = 'deny_supabase_client_access'
+          ) THEN
+            BEGIN
+              EXECUTE format('CREATE POLICY deny_supabase_client_access ON public.%I AS RESTRICTIVE FOR ALL TO anon, authenticated USING (false) WITH CHECK (false)', target);
+            EXCEPTION
+              WHEN duplicate_object THEN NULL;
+            END;
+          END IF;
+        END LOOP;
+      END IF;
     END
     $rls_all$`
     );

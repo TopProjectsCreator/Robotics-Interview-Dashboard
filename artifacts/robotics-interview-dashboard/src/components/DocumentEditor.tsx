@@ -46,7 +46,7 @@ export type DocumentEditorProps = {
   onTitleSave: (title: string) => void;
 };
 
-type CollaborationStatus = "connecting" | "connected" | "reconnecting";
+type CollaborationStatus = "connecting" | "connected" | "reconnecting" | "unavailable";
 type Alignment = "left" | "center" | "right" | "justify";
 
 const CURSOR_COLORS = ["#16869a", "#d27a3a", "#7d67b6", "#3f8c68", "#b14d61"];
@@ -267,7 +267,9 @@ export function DocumentEditor({
     ? "Live collaboration"
     : collaborationStatus === "reconnecting"
       ? "Reconnecting"
-      : "Connecting";
+      : collaborationStatus === "unavailable"
+        ? "Live collaboration unavailable"
+        : "Connecting";
   const isSaving = saving || documentSaveStatus === "saving";
   const saveError = error || (documentSaveStatus === "error"
     ? "A document change could not be saved. Your latest edits are not saved."
