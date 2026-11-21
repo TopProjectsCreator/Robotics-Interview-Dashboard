@@ -6,7 +6,7 @@ import {
 } from "y-protocols/awareness";
 import { getStoredAuthToken } from "../authSession";
 
-export type DocumentCollaborationStatus = "connecting" | "connected" | "reconnecting";
+export type DocumentCollaborationStatus = "connecting" | "connected" | "reconnecting" | "unavailable";
 
 export type DocumentCollaborationSession = {
   doc: Y.Doc;
@@ -21,6 +21,7 @@ type Collaborator = { name: string; color: string };
 
 const Y_UPDATE = 1;
 const AWARENESS_UPDATE = 2;
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 export function isDocumentData(data: string | undefined): boolean {
   if (!data) return false;
@@ -80,6 +81,7 @@ export function createDocumentCollaboration(
   let socket: WebSocket | null = null;
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let retryDelay = 500;
+  let reconnectAttempts = 0;
   let stopped = false;
   let pendingTitle: string | null = null;
 
@@ -98,7 +100,7 @@ export function createDocumentCollaboration(
 
   const connect = () => {
     if (stopped) return;
-    setStatus(retryDelay === 500 ? "connecting" : "reconnecting");
+    setStatus(reconnectAttempts === 0 ? "connecting" : "reconnecting");
     const base = String(import.meta.env.BASE_URL || "/").replace(/\/+$/, "");
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const token = getStoredAuthToken();
@@ -112,6 +114,7 @@ export function createDocumentCollaboration(
     nextSocket.onopen = () => {
       if (stopped || socket !== nextSocket) return;
       retryDelay = 500;
+      reconnectAttempts = 0;
       setStatus("connected");
       sendBinary(updatePacket(Y_UPDATE, Y.encodeStateAsUpdate(doc)));
       sendBinary(awarenessPacket(awareness));
@@ -154,10 +157,16 @@ export function createDocumentCollaboration(
       }
     };
     nextSocket.onerror = () => nextSocket.close();
-    nextSocket.onclose = () => {
+    nextSocket.onclose = (event) => {
       if (socket !== nextSocket) return;
       socket = null;
       if (stopped) return;
+      const permanentFailure = event.code === 1008 || event.code === 4401 || event.code === 4403 || event.code === 4404;
+      if (permanentFailure || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS - 1) {
+        setStatus("unavailable");
+        return;
+      }
+      reconnectAttempts += 1;
       setStatus("reconnecting");
       reconnectTimer = setTimeout(connect, retryDelay);
       retryDelay = Math.min(5000, retryDelay * 2);

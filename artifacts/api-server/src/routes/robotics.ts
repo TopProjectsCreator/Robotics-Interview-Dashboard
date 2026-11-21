@@ -4978,10 +4978,14 @@ router.get("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
   }));
 });
 
-router.post("/whiteboards", requireCoordinator, async (req, res): Promise<void> => {
+router.post("/whiteboards", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!hasPermission(await permissionsForAccount(account), "collaboration.edit")) {
+    res.status(403).json({ error: "You do not have permission to edit shared workspaces." });
+    return;
+  }
   const parsed = CreateInterviewWhiteboardBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A whiteboard title and valid Excalidraw data are required." }); return; }
   const title = parsed.data.title.trim();
@@ -5051,10 +5055,14 @@ router.get("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise
   res.json(GetInterviewWhiteboardByIdResponse.parse(whiteboardResponse(whiteboard, conversation)));
 });
 
-router.patch("/whiteboards/:whiteboardId", requireCoordinator, async (req, res): Promise<void> => {
+router.patch("/whiteboards/:whiteboardId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!hasPermission(await permissionsForAccount(account), "collaboration.edit")) {
+    res.status(403).json({ error: "You do not have permission to edit shared workspaces." });
+    return;
+  }
   const params = UpdateInterviewWhiteboardParams.safeParse(req.params);
   const parsed = UpdateInterviewWhiteboardBody.safeParse(req.body);
   if (!params.success || !parsed.success) { res.status(400).json({ error: "A whiteboard title and valid Excalidraw data are required." }); return; }
@@ -5108,10 +5116,14 @@ function boardResponse(
   };
 }
 
-router.post("/boards", requireCoordinator, async (req, res): Promise<void> => {
+router.post("/boards", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!hasPermission(await permissionsForAccount(account), "collaboration.edit")) {
+    res.status(403).json({ error: "You do not have permission to edit shared workspaces." });
+    return;
+  }
   const parsed = CreateBoardBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A board name and valid conversation are required." }); return; }
 
@@ -5167,10 +5179,14 @@ router.get("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => 
   res.json(GetBoardResponse.parse(boardResponse(board, conversation)));
 });
 
-router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<void> => {
+router.patch("/boards/:boardId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!hasPermission(await permissionsForAccount(account), "collaboration.edit")) {
+    res.status(403).json({ error: "You do not have permission to edit shared workspaces." });
+    return;
+  }
   const params = UpdateBoardParams.safeParse(req.params);
   const parsed = UpdateBoardBody.safeParse(req.body);
   if (!params.success || !parsed.success) {
@@ -5217,10 +5233,14 @@ router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<v
   res.json(UpdateBoardResponse.parse(boardResponse(result.board, result.conversation)));
 });
 
-router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void> => {
+router.post("/spreadsheets", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!hasPermission(await permissionsForAccount(account), "collaboration.edit")) {
+    res.status(403).json({ error: "You do not have permission to edit shared workspaces." });
+    return;
+  }
   const parsed = CreateSpreadsheetBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: "A spreadsheet title and valid conversation are required." }); return; }
 
@@ -5289,10 +5309,14 @@ router.get("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promi
   res.json({ ...GetSpreadsheetResponse.parse(spreadsheetResponse(spreadsheet, conversation)), data: storedData });
 });
 
-router.patch("/spreadsheets/:spreadsheetId", requireCoordinator, async (req, res): Promise<void> => {
+router.patch("/spreadsheets/:spreadsheetId", requireAdmin, async (req, res): Promise<void> => {
   const accountId = authenticatedInterviewerId(req);
   const account = accountId ? await accountById(accountId, req) : undefined;
   if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!hasPermission(await permissionsForAccount(account), "collaboration.edit")) {
+    res.status(403).json({ error: "You do not have permission to edit shared workspaces." });
+    return;
+  }
   const params = UpdateSpreadsheetParams.safeParse(req.params);
   const parsed = UpdateSpreadsheetBody.safeParse(req.body);
   if (!params.success || !parsed.success || (parsed.data.title === undefined && parsed.data.data === undefined)) {

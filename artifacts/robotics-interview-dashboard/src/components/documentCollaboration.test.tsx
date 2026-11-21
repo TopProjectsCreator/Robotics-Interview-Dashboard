@@ -45,6 +45,7 @@ function encodedDocumentUpdate(doc: Y.Doc): ArrayBuffer {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   localStorage.clear();
   MockWebSocket.instances = [];
@@ -89,5 +90,43 @@ describe("document collaboration session lifecycle", () => {
     freshSession.destroy();
     remoteDoc.destroy();
     freshRemoteDoc.destroy();
+  });
+
+  it("stops reconnecting after repeated connection failures", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "session-token");
+    vi.useFakeTimers();
+    const session = createDocumentCollaboration("document-1", JSON.stringify({ kind: "document" }), {
+      name: "Interviewer",
+      color: "#16869a",
+    });
+    const statuses: string[] = [];
+    session.subscribeStatus((status) => statuses.push(status));
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      MockWebSocket.instances[attempt].onclose?.({ code: 1006 } as CloseEvent);
+      vi.advanceTimersByTime(10_000);
+    }
+
+    expect(MockWebSocket.instances).toHaveLength(5);
+    expect(statuses.at(-1)).toBe("unavailable");
+    session.destroy();
+  });
+
+  it("does not reconnect after a permanent collaboration rejection", () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, "session-token");
+    const session = createDocumentCollaboration("document-1", JSON.stringify({ kind: "document" }), {
+      name: "Interviewer",
+      color: "#16869a",
+    });
+    const statuses: string[] = [];
+    session.subscribeStatus((status) => statuses.push(status));
+
+    MockWebSocket.instances[0].onclose?.({ code: 1008 } as CloseEvent);
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(statuses.at(-1)).toBe("unavailable");
+    session.destroy();
   });
 });
