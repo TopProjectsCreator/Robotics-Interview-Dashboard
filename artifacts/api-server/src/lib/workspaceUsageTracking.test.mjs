@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 
 const ledger = { visits: [], activity: [] };
+const capturedHeartbeatUpdates = [];
 let nextId = 0;
 
 const pool = {
@@ -64,8 +65,9 @@ const pool = {
           if (!visit) return { rows: [] };
           visit.activeSeconds += values[1];
           if (statement.includes('"last_heartbeat_at" = $3')) {
+            capturedHeartbeatUpdates.push({ sql: statement, values: [...values] });
             assert.ok(statement.includes('"last_heartbeat_at" = $3::timestamptz'));
-            assert.ok(statement.includes('"exited_at" = case when $5 then null else $6 end'));
+            assert.ok(statement.includes('"exited_at" = case when $5 then null else $6::timestamptz end'));
             assert.ok(values[2] instanceof Date && values[5] instanceof Date);
             visit.lastHeartbeatAt = values[2];
             visit.isForeground = values[3];
@@ -133,4 +135,37 @@ test("visible heartbeats accrue time, hidden tabs pause, navigation switches wor
   assert.equal(ledger.visits.length, 4);
   assert.equal(ledger.visits[3].enteredAt.getTime(), at(500).getTime());
   assert.equal(ledger.visits[3].activeSeconds, 0);
+});
+
+test("heartbeat UPDATE casts the CASE else parameter to timestamptz and binds Dates", async () => {
+  const focusedSession = "regression-session";
+  const firstAt = new Date("2026-11-10T12:00:00.000Z");
+  const secondAt = new Date(firstAt.getTime() + 5_000);
+
+  // First heartbeat only inserts an open visit; the second one takes the
+  // "openVisit" branch and issues the UPDATE under test.
+  await recordWorkspaceActivity({
+    sessionHash: focusedSession,
+    teamId: team,
+    identity: chat,
+    visible: true,
+    now: firstAt,
+  });
+  await recordWorkspaceActivity({
+    sessionHash: focusedSession,
+    teamId: team,
+    identity: chat,
+    visible: true,
+    now: secondAt,
+  });
+
+  const captured = capturedHeartbeatUpdates.at(-1);
+  assert.ok(captured, "expected a heartbeat UPDATE to have been issued");
+  assert.ok(
+    captured.sql.includes('"exited_at" = case when $5 then null else $6::timestamptz end'),
+    "the CASE else parameter must be cast to timestamptz so pg can match the exited_at column",
+  );
+  assert.ok(captured.values[2] instanceof Date, "$3 (last_heartbeat_at) must be a Date");
+  assert.ok(captured.values[5] instanceof Date, "$6 (exited_at else) must be a Date");
+  assert.equal(captured.values[5].getTime(), secondAt.getTime());
 });

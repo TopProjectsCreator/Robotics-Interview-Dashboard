@@ -9,6 +9,7 @@ const MATCH_STALE_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_TEAM_PAGES = 100;
 const PAGE_CONCURRENCY = 12;
 const REQUEST_TIMEOUT_MS = 12_000;
+const PAGE_RETRY_DELAY_MS = 100;
 
 export type FtcTeam = {
   teamNumber: number;
@@ -58,7 +59,13 @@ const cache = new Map<string, CacheEntry<unknown>>();
 const pending = new Map<string, Promise<unknown>>();
 const loadErrors = new Map<string, { error: unknown; retryAt: number }>();
 const partialTeamLists = new Map<number, FtcTeam[]>();
-const CACHE_ERROR_RETRY_MS = 5_000;
+// Keys whose data loaded but is incomplete (e.g. a few team pages failed). The
+// data is still usable/searchable, but the status is reported as "error" so the
+// mention UI can show a subtle warning instead of hiding the available results.
+const partialSources = new Set<string>();
+// A transient upstream failure must not trigger a fresh (and failing) request on
+// every keystroke while the user types an @mention.
+const CACHE_ERROR_RETRY_MS = 30_000;
 
 type CacheOptions = { ttlMs?: number; staleTtlMs?: number };
 
@@ -273,32 +280,58 @@ async function getTeamPage(season: number, page: number): Promise<{ teams: FtcTe
   return { teams, pageTotal };
 }
 
+async function getTeamPageWithRetry(season: number, page: number): Promise<{ teams: FtcTeam[]; pageTotal: number }> {
+  try {
+    return await getTeamPage(season, page);
+  } catch {
+    // One slow/flaky page must not discard the whole season. Give it a single
+    // quick retry, then let the caller keep the rest of the pages it did load.
+    await new Promise(resolve => setTimeout(resolve, PAGE_RETRY_DELAY_MS));
+    return await getTeamPage(season, page);
+  }
+}
+
 async function getSeasonTeams(season: number): Promise<FtcTeam[]> {
-  return cached(`teams:${season}`, async () => {
-    const cachedTeams = cache.get(`teams:${season}`);
+  const key = `teams:${season}`;
+  return cached(key, async () => {
+    partialSources.delete(key);
+    const cachedTeams = cache.get(key);
     if (!cachedTeams || cachedTeams.staleUntil <= Date.now()) partialTeamLists.delete(season);
+
+    // The first page tells us how many pages exist and gives us a usable seed
+    // list. Only a failure here is a hard error: without it we cannot search.
     const firstPage = await getTeamPage(season, 1);
     if (firstPage.pageTotal > MAX_TEAM_PAGES) {
       throw new Error("The FTC team list is too large to search safely. Search by team number instead.");
     }
     const allTeams = [...firstPage.teams];
-    partialTeamLists.set(season, allTeams);
+    partialTeamLists.set(season, [...allTeams]);
+    let failedPages = 0;
+
     for (let start = 2; start <= firstPage.pageTotal; start += PAGE_CONCURRENCY) {
       const pages = Array.from(
         { length: Math.min(PAGE_CONCURRENCY, firstPage.pageTotal - start + 1) },
         (_, index) => start + index,
       );
       const partialTeams = new Map(allTeams.map(team => [team.teamNumber, team]));
-      const results = await Promise.all(pages.map(async page => {
-        const result = await getTeamPage(season, page);
+      const settled = await Promise.allSettled(pages.map(async page => {
+        const result = await getTeamPageWithRetry(season, page);
         for (const team of result.teams) partialTeams.set(team.teamNumber, team);
         partialTeamLists.set(season, [...partialTeams.values()]);
         return { page, result };
       }));
-      allTeams.push(...results.sort((left, right) => left.page - right.page).flatMap(result => result.result.teams));
+      for (const item of settled) {
+        if (item.status === "fulfilled") {
+          allTeams.push(...item.value.result.teams);
+        } else {
+          failedPages += 1;
+        }
+      }
     }
+
     const uniqueTeams = [...new Map(allTeams.map(team => [team.teamNumber, team])).values()];
     partialTeamLists.set(season, uniqueTeams);
+    if (failedPages > 0) partialSources.add(key);
     return uniqueTeams;
   });
 }
@@ -424,6 +457,8 @@ function availableCacheValue<T>(key: string): T | undefined {
 function sourceStatus(key: string): FtcSearchSourceStatus {
   if (pending.has(key)) return "loading";
   if (loadErrors.has(key)) return "error";
+  // Incomplete data is still searchable, but flagged so the UI can warn.
+  if (partialSources.has(key)) return "error";
   if (availableCacheValue(key) !== undefined) return "ready";
   return "loading";
 }
@@ -478,14 +513,20 @@ export async function searchFtcEntities(season: number, query: string): Promise<
 
   const teamsStatus = sourceStatus(teamsKey);
   const eventsStatus = sourceStatus(eventsKey);
-  if (teamsStatus === "error" && eventsStatus === "error") {
-    throw new Error("FTC team and event data could not be loaded.");
-  }
+
   const fullSeasonTeams = exactTeamKey ? availableCacheValue<FtcTeam[]>(`teams:${season}`) : undefined;
   const teams = exactTeamKey
     ? availableCacheValue<FtcTeam[]>(exactTeamKey) ?? (fullSeasonTeams?.filter(team => String(team.teamNumber) === normalized) ?? [])
     : availableCacheValue<FtcTeam[]>(teamsKey) ?? partialTeamLists.get(season) ?? [];
   const events = availableCacheValue<FtcEvent[]>(eventsKey) ?? [];
+
+  // A 502 is only appropriate for a total outage: no usable data from either
+  // source AND both sources genuinely failed. Partial/degraded data is returned
+  // with an "error" status so the UI can show results and a subtle warning.
+  if (teams.length === 0 && events.length === 0 && teamsStatus === "error" && eventsStatus === "error") {
+    throw new Error("FTC team and event data could not be loaded.");
+  }
+
   return {
     season,
     teams: filterTeams(normalized, teams),
@@ -550,4 +591,5 @@ export function clearFtcEventCacheForTests(): void {
   pending.clear();
   loadErrors.clear();
   partialTeamLists.clear();
+  partialSources.clear();
 }

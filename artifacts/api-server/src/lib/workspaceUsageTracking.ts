@@ -219,7 +219,7 @@ export async function recordWorkspaceActivity(input: {
             set "active_seconds" = "active_seconds" + $2,
                 "last_heartbeat_at" = $3::timestamptz,
                 "is_foreground" = $4,
-                "exited_at" = case when $5 then null else $6 end
+                "exited_at" = case when $5 then null else $6::timestamptz end
           where "id" = $1 and "exited_at" is null`,
         [
           openVisit.id,

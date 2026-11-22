@@ -88,3 +88,6 @@
 - [Settings modal browser fixtures](settings-modal-browser-fixtures.md) — hidden settings sections still mount in browser tests, so authenticated fixtures need valid response shapes beyond the active tab.
 - [Dual-instance read/write parity](dual-instance-read-write-parity.md) — if reads span both DBs, the write path must query both too or receipts are lost.
 - [Chat conversation custom dropdown](chat-conversation-custom-dropdown.md) — hand-built chat picker; unread conversations are red, never "New —" text.
+- [Supabase CLI multi-account profiles](supabase-cli-multi-account-profiles.md) — v3 uses per-profile keyring tokens; file fallback shares one token, and built-in profile names are environments not accounts.
+- [Supabase CLI browser login protocol](supabase-cli-browser-login-protocol.md) — drive login via P-256 ECDH + AES-GCM directly; no keyring means separate SUPABASE_HOME stores per account.
+- [Railway prod log triage](railway-prod-log-triage.md) — pull logs, scan both error messages and non-2xx; "failed" logs can be 200s.
