@@ -124,10 +124,12 @@ export const securityHeaders: RequestHandler = (req, res, next) => {
       // API calls and realtime websockets.
       "connect-src 'self' https: wss:",
       "worker-src 'self' blob:",
-      // Chat messages can embed a live page (pasted <iframe> HTML). frame-src
-      // otherwise falls back to default-src 'self', which would block embed
-      // hosts; chat rendering itself only accepts cross-origin https srcs.
-      "frame-src 'self' https:",
+      // Chat messages can embed a live page (pasted <iframe> HTML), and PDF /
+      // document / office previews load a fetched Blob through a blob: iframe.
+      // Without blob: the browser blocks the preview with a CSP violation even
+      // though the iframe fires onload, so the viewer silently shows an error.
+      // Chat's own sanitizer still restricts pasted iframes to https srcs.
+      "frame-src 'self' https: blob:",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",

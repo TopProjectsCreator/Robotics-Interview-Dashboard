@@ -50,6 +50,7 @@ export const dbRuntimeExports = {
   normalizeTeamName: (name) => String(name).toLowerCase(),
   secondaryDb: () => null,
   secondaryPool: () => null,
+  readAcrossInstances: async (query) => query(),
   db: {},
   primaryDb: {},
   pool: {},

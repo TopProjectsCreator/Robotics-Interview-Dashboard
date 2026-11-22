@@ -86,3 +86,4 @@
 - [OpenCode DB compaction history](opencode-db-compaction-history.md) — count `session_message` rows of type 'compaction' and check the JSON `status`; don't count the `event` table.
 - [Settings modal browser fixtures](settings-modal-browser-fixtures.md) — hidden settings sections still mount in browser tests, so authenticated fixtures need valid response shapes beyond the active tab.
 - [Dual-instance read/write parity](dual-instance-read-write-parity.md) — if reads span both DBs, the write path must query both too or receipts are lost.
+- [Chat conversation custom dropdown](chat-conversation-custom-dropdown.md) — hand-built chat picker; unread conversations are red, never "New —" text.

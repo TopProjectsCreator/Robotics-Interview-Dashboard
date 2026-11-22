@@ -742,10 +742,10 @@ describe("public chat discovery", () => {
     expect(await screen.findByRole("heading", { name: "Team channel" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Team chat" })).not.toBeInTheDocument();
     expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Signed in as Test Interviewer");
-    const conversationPicker = screen.getByRole("combobox", { name: "Conversation" });
-    expect(conversationPicker).toHaveValue("team");
-    expect(await screen.findByRole("option", { name: "To Jordan" })).toBeInTheDocument();
-    fireEvent.change(conversationPicker, { target: { value: "direct:Jordan" } });
+    const conversationPicker = screen.getByTestId("select-chat-conversation");
+    expect(conversationPicker).toHaveAttribute("data-value", "team");
+    fireEvent.click(conversationPicker);
+    fireEvent.click(await screen.findByTestId("chat-conversation-option-direct:Jordan"));
     expect(await screen.findByRole("heading", { name: "Direct message · Jordan" })).toBeInTheDocument();
     expect(window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)).toBe("return-interviewer-token");
   });

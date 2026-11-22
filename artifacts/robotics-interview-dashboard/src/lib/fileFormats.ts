@@ -26,6 +26,7 @@
 export type FileFormat =
   | "archive"
   | "audio"
+  | "calendar"
   | "brep"
   | "document"
   | "glb"
@@ -155,6 +156,10 @@ const EXTENSION_FORMATS: Record<string, FileFormat> = {
   aac: "audio",
   opus: "audio",
   wma: "audio",
+
+  // Calendar files.
+  ics: "calendar",
+  ifb: "calendar",
 
   // Documents.
   pdf: "pdf",
@@ -305,6 +310,8 @@ const CONTENT_TYPE_FORMATS: Record<string, FileFormat> = {
 
   // Documents.
   "application/pdf": "pdf",
+  "text/calendar": "calendar",
+  "application/ics": "calendar",
   "application/msword": "document",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "document",
   "application/vnd.oasis.opendocument.text": "document",
@@ -434,6 +441,8 @@ export function fileFormatLabel(format: FileFormat): string {
       return "Archive";
     case "audio":
       return "Audio";
+    case "calendar":
+      return "Calendar";
     case "brep":
       return "BREP";
     case "document":
@@ -476,6 +485,8 @@ export function fileFormatHint(format: FileFormat): string {
       return "Opens in the browser · click a file to preview it";
     case "audio":
       return "Audio preview · plays inline";
+    case "calendar":
+      return "Calendar preview · events listed inline";
     case "brep":
     case "iges":
     case "step":

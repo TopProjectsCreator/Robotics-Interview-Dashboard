@@ -1,4 +1,5 @@
-import { primaryPool, secondaryPool, hasSecondary, type DbInstance } from "@workspace/db";
+import * as database from "@workspace/db";
+import type { DbInstance } from "@workspace/db";
 import { isDatabaseConnectionError } from "./databaseErrors";
 
 /**
@@ -41,7 +42,10 @@ export function markInstanceSuccess(instance: DbInstance): void {
 }
 
 function poolFor(instance: DbInstance) {
-  return instance === "secondary" ? secondaryPool() : primaryPool;
+  if (instance === "secondary") {
+    return typeof database.secondaryPool === "function" ? database.secondaryPool() : null;
+  }
+  return database.primaryPool ?? database.pool ?? null;
 }
 
 /** One bounded `select 1`. Never lets a stalled pooler hang the probe. */
@@ -58,7 +62,7 @@ export async function probeInstance(instance: DbInstance): Promise<boolean> {
     ]);
     markInstanceSuccess(instance);
     return true;
-  } catch (error) {
+  } catch {
     const state = health[instance];
     state.failures += 1;
     if (state.failures >= FAILURES_TO_MARK_DOWN) state.healthy = false;
@@ -75,7 +79,12 @@ export async function probeInstance(instance: DbInstance): Promise<boolean> {
  */
 export function preferredInstance(configured: DbInstance): DbInstance {
   if (isInstanceHealthy(configured)) return configured;
-  if (configured === "primary" && hasSecondary() && isInstanceHealthy("secondary")) return "secondary";
+  if (
+    configured === "primary" &&
+    typeof database.hasSecondary === "function" &&
+    database.hasSecondary() &&
+    isInstanceHealthy("secondary")
+  ) return "secondary";
   if (configured === "secondary" && isInstanceHealthy("primary")) return "primary";
   return configured;
 }
@@ -84,10 +93,10 @@ export function preferredInstance(configured: DbInstance): DbInstance {
 export function startInstanceHealthProbes(): void {
   if (probeTimer) return;
   void probeInstance("primary");
-  if (hasSecondary()) void probeInstance("secondary");
+  if (typeof database.hasSecondary === "function" && database.hasSecondary()) void probeInstance("secondary");
   probeTimer = setInterval(() => {
     void probeInstance("primary");
-    if (hasSecondary()) void probeInstance("secondary");
+    if (typeof database.hasSecondary === "function" && database.hasSecondary()) void probeInstance("secondary");
   }, PROBE_INTERVAL_MS);
   probeTimer.unref();
 }

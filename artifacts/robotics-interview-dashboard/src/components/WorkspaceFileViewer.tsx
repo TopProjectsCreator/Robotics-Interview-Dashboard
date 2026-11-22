@@ -5,6 +5,8 @@ import { getStoredAuthToken } from "../authSession";
 import { classifyFile } from "../lib/fileFormats";
 import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "../lib/officePreview";
 import { ChatGlbViewer } from "./ChatGlbViewer";
+import { ChatArchiveViewer } from "./ChatArchiveViewer";
+import { IcalViewer } from "./IcalViewer";
 import { ChatParasolidViewer } from "./ChatParasolidViewer";
 import { ChatStlViewer } from "./ChatStlViewer";
 import { ChatStepViewer } from "./ChatStepViewer";
@@ -57,7 +59,9 @@ const ChatAttachmentTableFallback = ({ rows, label }: { rows: string[][]; label:
 type WorkspaceAttachmentSheet = { name: string; rows: string[][] };
 type WorkspaceAttachmentKind =
   | "3mf"
+  | "archive"
   | "audio"
+  | "calendar"
   | "document"
   | "image"
   | "model"
@@ -89,7 +93,7 @@ export function workspaceAttachmentKind(name: string, contentType: string): Work
     case "step":
     case "iges":
     case "brep": return "step";
-    case "archive": return "document";
+    case "archive": return "archive";
     default: return format;
   }
 }
@@ -140,24 +144,43 @@ function WorkspaceAttachmentDocument({
   name,
   html,
   objectUrl,
+  downloadUrl,
 }: {
   name: string;
   html: string | null;
   objectUrl: string | null;
+  downloadUrl: string;
 }) {
+  // Unknown formats always keep a usable way to get the original file. A
+  // download-only card replaces the iframe when no object URL could be made,
+  // so a failed/unsupported preview never leaves a blank error frame.
+  if (!html && !objectUrl)
+    return (
+      <div className="my-2 rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]" role="status">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · file ready to download</p>
+          <a href={downloadUrl} download={name} className="shrink-0 text-[11px] font-semibold text-[#16869a] underline underline-offset-2">Download</a>
+        </div>
+      </div>
+    );
   if (html) {
     return (
-      <div className="rounded-xl border border-[#dce9e8] bg-white p-4">
-        <p className="mb-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
-        <div className="prose prose-sm max-w-none text-[#52666e]" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
+          <a href={downloadUrl} download={name} className="shrink-0 text-[11px] font-semibold text-[#16869a] underline underline-offset-2">Download</a>
+        </div>
+        <div className="prose prose-sm max-w-none text-[#52666e] dark:text-[#a8bac8]" dangerouslySetInnerHTML={{ __html: html }} />
       </div>
     );
   }
-  if (!objectUrl) return null;
   return (
-    <div className="rounded-xl border border-[#dce9e8] bg-white p-3">
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
-      <iframe title={name} src={objectUrl} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9]" />
+    <div className="rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
+        <a href={downloadUrl} download={name} className="shrink-0 text-[11px] font-semibold text-[#16869a] underline underline-offset-2">Download</a>
+      </div>
+      <iframe title={name} src={objectUrl ?? undefined} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" />
     </div>
   );
 }
@@ -183,6 +206,8 @@ type WorkspaceFileViewerProps = {
  */
 export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [attachmentBlob, setAttachmentBlob] = useState<Blob | null>(null);
+  const [calendarText, setCalendarText] = useState<string | null>(null);
   const [contentType, setContentType] = useState("");
   const [text, setText] = useState<string | null>(null);
   const [sheets, setSheets] = useState<WorkspaceAttachmentSheet[]>([]);
@@ -208,9 +233,11 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     setText(null);
     setSheets([]);
     setDocumentHtml(null);
+    setCalendarText(null);
     setFailed(false);
     setMediaPlaybackFailed(false);
     setImageFallback(null);
+    setAttachmentBlob(null);
     attachmentBlobRef.current = null;
     attemptedHeicConversionRef.current = false;
     void fetch(appRelativeWorkspaceUrl(src), {
@@ -231,6 +258,7 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
           const url = URL.createObjectURL(blob);
           createdUrls.add(url);
           attachmentBlobRef.current = blob;
+          setAttachmentBlob(blob);
           setObjectUrl(url);
         };
         if (isOfficePreviewAttachment(name, resolvedType)) {
@@ -243,6 +271,12 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
           ensureDownloadUrl();
           const preview = formatJsonPreview(await blob.text());
           if (active) setText(preview);
+          return;
+        }
+        if (resolvedKind === "calendar") {
+          const raw = await blob.text();
+          setAttachmentBlob(blob);
+          if (active) setCalendarText(raw.slice(0, 250000));
           return;
         }
         if (resolvedKind === "text") {
@@ -263,6 +297,7 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
           return;
         }
         if (resolvedKind === "document" && /\.(docx)$/i.test(name)) {
+          ensureDownloadUrl();
           const mammoth = await import("mammoth");
           const documentBytes = await blob.arrayBuffer();
           const converted = await mammoth.convertToHtml({
@@ -276,7 +311,7 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         const createdUrl = URL.createObjectURL(blob);
         createdUrls.add(createdUrl);
         attachmentBlobRef.current = blob;
-        if (active) setObjectUrl(createdUrl);
+        if (active) { setAttachmentBlob(blob); setObjectUrl(createdUrl); }
       })
       .catch(() => {
         if (active) setFailed(true);
@@ -352,8 +387,9 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
       </div>
     );
   }
-  if (!objectUrl && text === null && !sheets.length && documentHtml === null)
+  if (!objectUrl && text === null && !sheets.length && documentHtml === null && calendarText === null)
     return <div className="my-2 h-24 animate-pulse rounded-xl bg-[#edf4f3]" aria-label={`Loading ${name}`} />;
+  if (calendarText !== null) return <IcalViewer name={name} text={calendarText} />;
   if (text !== null) {
     const extension = workspaceAttachmentExtension(name);
     const delimiter = extension === "tsv" ? "\t" : text.split("\n")[0]?.includes("\t") ? "\t" : ",";
@@ -404,6 +440,8 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     return <audio src={objectUrl} controls onError={() => setMediaPlaybackFailed(true)} className="my-2 w-full max-w-[440px]" />;
   if (kind === "pdf" && objectUrl)
     return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
+  if (kind === "archive" && attachmentBlob)
+    return <ChatArchiveViewer name={name} blob={attachmentBlob} />;
   if (kind === "parasolid" && objectUrl)
     return (
       <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
@@ -440,6 +478,13 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         <ChatStepViewer name={name} src={objectUrl} />
       </Suspense>
     );
-  return <WorkspaceAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />;
+  return (
+    <WorkspaceAttachmentDocument
+      name={name}
+      html={documentHtml}
+      objectUrl={objectUrl}
+      downloadUrl={objectUrl ?? appRelativeWorkspaceUrl(src)}
+    />
+  );
 }
 

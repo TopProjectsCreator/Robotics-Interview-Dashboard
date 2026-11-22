@@ -75,6 +75,12 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+async function chooseConversation(value: string): Promise<void> {
+  const trigger = await screen.findByTestId("select-chat-conversation");
+  if (trigger.getAttribute("aria-expanded") !== "true") fireEvent.click(trigger);
+  fireEvent.click(await screen.findByTestId(`chat-conversation-option-${value}`));
+}
+
 describe("AI replies in interviewer chat", () => {
   let queryClient: QueryClient;
   let observerQueryClients: QueryClient[];
@@ -237,9 +243,7 @@ describe("AI replies in interviewer chat", () => {
       });
     }
     if (scope === "direct") {
-      fireEvent.change(await screen.findByRole("combobox", { name: "Conversation" }), {
-        target: { value: "direct:Jordan" },
-      });
+      await chooseConversation("direct:Jordan");
       await screen.findByText("Direct message · Jordan");
     }
 
@@ -452,9 +456,7 @@ describe("AI replies in interviewer chat", () => {
     );
 
     expect(await screen.findByTestId("chat-signed-in")).toHaveTextContent("Signed in as Interviewer");
-    fireEvent.change(await screen.findByRole("combobox", { name: "Conversation" }), {
-      target: { value: "direct:Jordan" },
-    });
+    await chooseConversation("direct:Jordan");
     fireEvent.change(screen.getByTestId("input-interviewer-chat"), {
       target: { value: "@ai Give me a quick read." },
     });
@@ -465,9 +467,7 @@ describe("AI replies in interviewer chat", () => {
     expect(assistantPosts).toHaveLength(1);
     expect(userPosts).toHaveLength(1);
 
-    fireEvent.change(screen.getByRole("combobox", { name: "Conversation" }), {
-      target: { value: "team" },
-    });
+    await chooseConversation("team");
     fireEvent.click(screen.getByTestId("button-retry-ai-reply"));
     expect(await screen.findByTestId("ai-reply-retry-error")).toHaveTextContent("Retry failed");
     fireEvent.click(screen.getByTestId("button-retry-ai-reply"));

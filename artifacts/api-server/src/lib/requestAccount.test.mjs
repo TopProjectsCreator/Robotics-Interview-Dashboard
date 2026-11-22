@@ -93,6 +93,7 @@ mock.module("drizzle-orm", {
     and: (...conditions) => ({ conditions }),
     or: (...conditions) => ({ conditions }),
     isNull: (field) => ({ field }),
+    inArray: (field, values) => ({ field, values }),
   },
 });
 mock.module("./logger", { namedExports: { logger: pino({ level: "silent" }) } });
@@ -176,9 +177,16 @@ test("account reads coalesce across real capability, assessment, auth and route 
     assert.equal(accountReads, 0, "unsigned identities must not cause account lookups");
   });
   await t.test("signed secondary sessions and request caches stay instance-scoped", async () => {
-    assert.deepEqual(await get(createInterviewerSession("member", "secondary")), {
-      status: 200, body: { displayName: "Updated", team: "team-secondary" },
-    });
+    const previousDatabase = process.env.ACTIVE_TEAM_DATABASE;
+    process.env.ACTIVE_TEAM_DATABASE = "secondary";
+    try {
+      assert.deepEqual(await get(createInterviewerSession("member", "secondary")), {
+        status: 200, body: { displayName: "Updated", team: "team-secondary" },
+      });
+    } finally {
+      if (previousDatabase === undefined) delete process.env.ACTIVE_TEAM_DATABASE;
+      else process.env.ACTIVE_TEAM_DATABASE = previousDatabase;
+    }
     assert.equal(accountReads, 1);
     const req = {};
     accountReads = 0;

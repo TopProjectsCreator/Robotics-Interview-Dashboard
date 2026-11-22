@@ -177,7 +177,7 @@ try {
   await input.press("Enter");
   await page.getByTestId("chat-channel-mention-studio").waitFor({ state: "visible", timeout: 10000 });
   await page.getByTestId("chat-channel-mention-studio").click();
-  assert.equal(await page.getByTestId("select-chat-conversation").inputValue(), "channel:chan-studio");
+  assert.equal(await page.getByTestId("select-chat-conversation").getAttribute("data-value"), "channel:chan-studio");
   console.log("ok 6: clicking a rendered #channel token jumps to that channel");
 
   assert.deepEqual(pageErrors, [], `page errors: ${pageErrors.join("; ")}`);

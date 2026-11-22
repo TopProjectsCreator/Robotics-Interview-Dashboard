@@ -341,11 +341,16 @@ describe("chat attachment round trip", () => {
     expect(dropzone).not.toHaveClass("is-dragging-files");
     expect(screen.queryByText("test.png")).not.toBeInTheDocument();
 
-    const unsupported = new File(["archive"], "archive.zip", { type: "application/zip" });
-    expect(fireEvent.drop(dropzone, { dataTransfer: fileDragDataTransfer([unsupported]) })).toBe(false);
-    expect(await screen.findByTestId("chat-image-error")).toHaveTextContent("archive.zip");
-    expect(screen.getByTestId("chat-image-error")).toHaveTextContent("not a supported attachment");
+    const archive = new File(["archive"], "archive.zip", { type: "application/zip" });
+    expect(fireEvent.drop(dropzone, { dataTransfer: fileDragDataTransfer([archive]) })).toBe(false);
+    expect(await screen.findByText("archive.zip")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove archive.zip" }));
     expect(screen.queryByText("archive.zip")).not.toBeInTheDocument();
+
+    const unsupported = new File(["unknown"], "malware.exe", { type: "application/x-msdownload" });
+    expect(fireEvent.drop(dropzone, { dataTransfer: fileDragDataTransfer([unsupported]) })).toBe(false);
+    expect(await screen.findByTestId("chat-image-error")).toHaveTextContent("malware.exe");
+    expect(screen.getByTestId("chat-image-error")).toHaveTextContent("not a supported attachment");
 
     const oversized = new File(["fixture"], "too-large.png", { type: "image/png" });
     Object.defineProperty(oversized, "size", { value: 100 * 1024 * 1024 + 1 });

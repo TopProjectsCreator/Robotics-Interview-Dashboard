@@ -314,6 +314,19 @@ export const CHAT_UPLOAD_CONTENT_TYPES = [
   'model/step',
   'application/step',
   'application/x-step',
+  // Archives and iCalendar files render through their dedicated viewers or
+  // fall back to a download card. Keep unknown application/* types rejected.
+  'application/zip',
+  'application/x-tar',
+  'application/gzip',
+  'application/x-gzip',
+  'application/x-7z-compressed',
+  'application/vnd.rar',
+  'application/x-bzip2',
+  'application/x-xz',
+  'application/zstd',
+  'text/calendar',
+  'application/ics',
 ];
 export function isAllowedChatUploadType(contentType: string): boolean {
   return CHAT_UPLOAD_CONTENT_TYPES.some((allowed) =>

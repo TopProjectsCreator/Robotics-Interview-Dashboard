@@ -83,7 +83,7 @@ const db = {
     queryCounts.reconciliation += 1;
     throw new Error("List reads must not reconcile assignments");
   },
-  select(selection) {
+    select(_selection) {
     return {
       from(table) {
         let rows = rowsFor(table);

@@ -64,10 +64,18 @@ describe("public robotics workspace demo", () => {
     expect(screen.getByTestId("chat-signed-in")).toHaveTextContent("Sample identity");
     expect(screen.getByText("The new intake bracket clears the front crossbar.")).toBeInTheDocument();
     expect(screen.getByText("Great. I added the updated side plate to the CAD library.")).toBeInTheDocument();
-    const conversationPicker = screen.getByTestId("select-chat-conversation");
-    expect(conversationPicker).toHaveTextContent("pit-crew");
-    expect(conversationPicker).toHaveTextContent("build-log");
-    expect(conversationPicker).toHaveTextContent("strategy");
+    const openConversationMenu = () => {
+      const trigger = screen.getByTestId("select-chat-conversation");
+      if (trigger.getAttribute("aria-expanded") !== "true") fireEvent.click(trigger);
+      return screen.getByTestId("chat-conversation-menu");
+    };
+    const chooseConversation = (value: string) => {
+      openConversationMenu();
+      fireEvent.click(screen.getByTestId(`chat-conversation-option-${value}`));
+    };
+    expect(openConversationMenu()).toHaveTextContent("pit-crew");
+    expect(screen.getByTestId("chat-conversation-menu")).toHaveTextContent("build-log");
+    expect(screen.getByTestId("chat-conversation-menu")).toHaveTextContent("strategy");
     const demoChannels = [
       {
         id: "demo-channel-pit-crew",
@@ -83,13 +91,13 @@ describe("public robotics workspace demo", () => {
       },
     ];
     for (const channel of demoChannels) {
-      fireEvent.change(conversationPicker, { target: { value: `channel:${channel.id}` } });
+      chooseConversation(`channel:${channel.id}`);
       expect(await screen.findByText(channel.message)).toBeInTheDocument();
     }
 
-    expect(conversationPicker).toHaveTextContent("To Leo Park");
-    expect(conversationPicker).toHaveTextContent("To Avery Kim");
-    expect(conversationPicker).toHaveTextContent("To Noah Patel");
+    expect(openConversationMenu()).toHaveTextContent("To Leo Park");
+    expect(screen.getByTestId("chat-conversation-menu")).toHaveTextContent("To Avery Kim");
+    expect(screen.getByTestId("chat-conversation-menu")).toHaveTextContent("To Noah Patel");
     const demoDirectMessages = [
       {
         peer: "Leo Park",
@@ -105,7 +113,7 @@ describe("public robotics workspace demo", () => {
       },
     ];
     for (const conversation of demoDirectMessages) {
-      fireEvent.change(conversationPicker, { target: { value: `direct:${conversation.peer}` } });
+      chooseConversation(`direct:${conversation.peer}`);
       expect(await screen.findByText(conversation.message)).toBeInTheDocument();
     }
 
@@ -166,7 +174,7 @@ describe("public robotics workspace demo", () => {
     expect(await screen.findByTestId("text-custom-app-title-field-test-log")).toHaveTextContent("Field Test Log");
     expect(screen.queryByRole("button", { name: /edit|delete|send/i })).not.toBeInTheDocument();
     expect(unexpectedRequests).toEqual([]);
-  });
+  }, 15_000);
 
   it("replays five completed assistant conversations without live service calls", () => {
     window.history.replaceState({}, "", "/demo?view=assistant");

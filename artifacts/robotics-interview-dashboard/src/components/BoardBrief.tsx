@@ -139,7 +139,7 @@ export function BoardBriefEditor({
       return;
     }
     const beforeCursor = selection.$from.parent.textContent.slice(0, selection.$from.parentOffset);
-    const match = /(?:^|[^\p{L}\p{N}_.+\-])@([^\n]*)$/u.exec(beforeCursor);
+    const match = /(?:^|[^\p{L}\p{N}_.+-])@([^\n]*)$/u.exec(beforeCursor);
     if (!match) {
       setRange(null);
       return;
