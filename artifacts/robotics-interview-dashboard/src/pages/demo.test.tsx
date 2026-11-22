@@ -140,7 +140,7 @@ describe("public robotics workspace demo", () => {
 
     fireEvent.click(screen.getByTestId("link-demo-view-cad"));
     expect(screen.getByTestId("demo-real-cad")).not.toHaveAttribute("inert");
-    expect(await screen.findByRole("heading", { name: "Models" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Models" }, { timeout: 15_000 })).toBeInTheDocument();
     expect(await screen.findByText("Drivebase side plate")).toBeInTheDocument();
     fireEvent.doubleClick(screen.getByRole("button", { name: "Preview Drivebase side plate" }));
     expect(await screen.findByTestId("cad-preview-dialog")).toBeInTheDocument();

@@ -6159,7 +6159,6 @@ function reportDiag(message: string, context: string) {
   } catch { /* diagnostics must never break the app */ }
 }
 const CHAT_MAX_FILE_BYTES = 100 * 1024 * 1024;
-const CHAT_MAX_PARASOLID_FILE_BYTES = 200 * 1024 * 1024;
 const CHAT_FILE_ACCEPT = [
   "image/*",
   "video/*",
@@ -6316,9 +6315,7 @@ function chatFileType(file: File): string {
   ].includes(declared)) return declared;
   const extension = file.name.split(".").pop()?.toLowerCase();
   if (CHAT_EXTENSION_TYPES[extension ?? ""]) return CHAT_EXTENSION_TYPES[extension ?? ""];
-  // Any other file type is still accepted: it uploads as application/octet-stream
-  // and renders as a Download card in the shared viewer. No file type is refused.
-  return declared && declared !== "" ? declared : "application/octet-stream";
+  return "";
 }
 function nameClipboardChatFile(file: File, index: number): File {
   if (file.name.trim()) return file;

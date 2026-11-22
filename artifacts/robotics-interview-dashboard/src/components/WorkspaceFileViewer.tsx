@@ -1,17 +1,66 @@
-import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import DOMPurify from "dompurify";
+import "@extend-ai/react-pptx/styles.css";
 
 import { getStoredAuthToken } from "../authSession";
 import { classifyFile } from "../lib/fileFormats";
-import { formatJsonPreview, isJsonAttachment, isOfficePreviewAttachment, parseOfficePreview } from "../lib/officePreview";
+import {
+  formatJsonPreview,
+  fullFidelityOfficeKind,
+  isJsonAttachment,
+  isOfficePreviewAttachment,
+  parseOfficePreview,
+} from "../lib/officePreview";
 import { ChatGlbViewer } from "./ChatGlbViewer";
 import { ChatArchiveViewer } from "./ChatArchiveViewer";
+import { FullSpreadsheetViewer } from "./FullSpreadsheetViewer";
 import { IcalViewer } from "./IcalViewer";
 import { ChatParasolidViewer } from "./ChatParasolidViewer";
 import { ChatStlViewer } from "./ChatStlViewer";
 import { ChatStepViewer } from "./ChatStepViewer";
 import { CadMeshViewer } from "./CadMeshViewer";
 import { CadThreeMfViewer } from "./CadThreeMfViewer";
+
+/**
+ * Legacy PPT and ODP slides are rendered by a Rust/WASM viewer. The module
+ * (including its ~2.5 MB wasm asset) is loaded only when such a file is
+ * actually opened, so ordinary chat/workspace browsing pays nothing for it.
+ */
+const ExtendPresentationViewer = lazy(async () => {
+  const module = await import("@extend-ai/react-pptx");
+  return { default: module.ReactPptxViewer };
+});
+
+/** Watchdog wrapper: a viewer that never reports ready falls back to text. */
+function FullFidelityPresentation({
+  source,
+  onReady,
+  onFailure,
+}: {
+  source: ArrayBuffer;
+  onReady: () => void;
+  onFailure: () => void;
+}) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (ready) return;
+    const timer = window.setTimeout(onFailure, 12_000);
+    return () => window.clearTimeout(timer);
+  }, [ready, onFailure]);
+  return (
+    <Suspense fallback={<p className="p-4 text-xs text-[#7c8c91]">Loading slide preview…</p>}>
+      <ExtendPresentationViewer
+        source={source}
+        defaultZoom="fit-width"
+        onReady={() => {
+          setReady(true);
+          onReady();
+        }}
+        onError={onFailure}
+      />
+    </Suspense>
+  );
+}
 
 const ChatAttachmentTableFallback = ({ rows, label }: { rows: string[][]; label: string }) => {
   if (!rows.length) return <p className="rounded-lg bg-[#f7faf9] p-3 text-xs text-[#7c8c91]">This file is empty.</p>;
@@ -263,6 +312,27 @@ async function mammothDocxFallback(buffer: ArrayBuffer): Promise<string> {
   return DOMPurify.sanitize(converted.value, { USE_PROFILES: { html: true } });
 }
 
+/**
+ * Last-resort text preview for a full-fidelity Office viewer that could not
+ * render the file. The extracted content is always rendered as plain text,
+ * never as HTML. If extraction also fails the caller shows the download card.
+ */
+async function fallBackToOfficeText(
+  buffer: ArrayBuffer,
+  name: string,
+  isActive: () => boolean,
+  setText: (value: string) => void,
+  setFailed: (value: boolean) => void,
+): Promise<void> {
+  try {
+    const preview = await parseOfficePreview(new Blob([buffer]), name);
+    if (!preview.trim()) throw new Error("No readable office content");
+    if (isActive()) setText(preview);
+  } catch {
+    if (isActive()) setFailed(true);
+  }
+}
+
 type WorkspaceFileViewerProps = {
   /** Original file name, which selects the renderer exactly like chat. */
   name: string;
@@ -289,11 +359,24 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
   // images, styles) into its own container instead of a sanitized HTML string.
   const [docxBuffer, setDocxBuffer] = useState<ArrayBuffer | null>(null);
   const [docxRenderFailed, setDocxRenderFailed] = useState(false);
+  // Full-fidelity PPTX uses pptx-preview; legacy PPT/ODP and DOC/ODT use
+  // lazily loaded WASM viewers. Raw bytes are kept so the renderers can build
+  // real DOM into their own containers, with the text preview as a fallback.
+  const [pptxBuffer, setPptxBuffer] = useState<ArrayBuffer | null>(null);
+  const [pptxRenderFailed, setPptxRenderFailed] = useState(false);
+  const [presentationBuffer, setPresentationBuffer] = useState<ArrayBuffer | null>(null);
+  const [presentationRenderFailed, setPresentationRenderFailed] = useState(false);
+  const [wordBuffer, setWordBuffer] = useState<ArrayBuffer | null>(null);
+  const [wordRenderFailed, setWordRenderFailed] = useState(false);
+  const [pdfPreviewAllowed, setPdfPreviewAllowed] = useState(false);
   const [failed, setFailed] = useState(false);
   const [mediaPlaybackFailed, setMediaPlaybackFailed] = useState(false);
   const [imageFallback, setImageFallback] = useState<"converting" | "unavailable" | null>(null);
   const attachmentBlobRef = useRef<Blob | null>(null);
   const docxContainerRef = useRef<HTMLDivElement | null>(null);
+  const pptxContainerRef = useRef<HTMLDivElement | null>(null);
+  const wordContainerRef = useRef<HTMLDivElement | null>(null);
+  const presentationFailureRef = useRef(false);
   const objectUrlsRef = useRef<Set<string>>(new Set());
   const attemptedHeicConversionRef = useRef(false);
   const imageOperationRef = useRef(0);
@@ -314,6 +397,14 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     setDocumentHtml(null);
     setDocxBuffer(null);
     setDocxRenderFailed(false);
+    setPptxBuffer(null);
+    setPptxRenderFailed(false);
+    setPresentationBuffer(null);
+    setPresentationRenderFailed(false);
+    presentationFailureRef.current = false;
+    setWordBuffer(null);
+    setWordRenderFailed(false);
+    setPdfPreviewAllowed(false);
     setCalendarText(null);
     setFailed(false);
     setMediaPlaybackFailed(false);
@@ -345,9 +436,29 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         setAttachmentBlob(blob);
         setContentType(resolvedType);
         const resolvedKind = workspaceAttachmentKind(name, resolvedType);
+        if (resolvedKind === "pdf") {
+          // Content-Type metadata can be wrong or stale. Only navigate an
+          // iframe to bytes that actually contain a PDF header; otherwise a
+          // Word attachment mislabeled as PDF can download on every mount.
+          const hasPdfSignature = (await blob.slice(0, 1024).text()).includes("%PDF-");
+          if (active) setPdfPreviewAllowed(hasPdfSignature);
+        }
         const ensureDownloadUrl = () => {
           setObjectUrl(sourceUrl);
         };
+        // Full-fidelity renderers own these bytes. ODS is deliberately not
+        // included here: it falls through to the SheetJS spreadsheet renderer,
+        // which shows every sheet and cell as a table.
+        const fidelityKind = fullFidelityOfficeKind(name);
+        if (fidelityKind === "pptx" || fidelityKind === "presentation" || fidelityKind === "word") {
+          ensureDownloadUrl();
+          const officeBytes = await blob.arrayBuffer();
+          if (!active) return;
+          if (fidelityKind === "pptx") setPptxBuffer(officeBytes);
+          else if (fidelityKind === "presentation") setPresentationBuffer(officeBytes);
+          else setWordBuffer(officeBytes);
+          return;
+        }
         if (isOfficePreviewAttachment(name, resolvedType)) {
           ensureDownloadUrl();
           const preview = await parseOfficePreview(blob, name);
@@ -371,15 +482,10 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
           return;
         }
         if (resolvedKind === "spreadsheet") {
-          const XLSX = await import("xlsx");
-          const workbook = XLSX.read(await blob.arrayBuffer(), { type: "array", cellDates: true });
-          const parsedSheets = workbook.SheetNames.slice(0, 8).map((sheetName) => ({
-            name: sheetName,
-            rows: (XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: "" }) as unknown[][])
-              .slice(0, 100)
-              .map((row) => row.slice(0, 18).map((cell) => String(cell ?? ""))),
-          }));
-          if (active) setSheets(parsedSheets);
+          // The full-fidelity viewer parses the original bytes itself with
+          // styles, merges, formulas and every sheet. Just ensure the loading
+          // guard clears (it needs an object URL or text/sheets).
+          ensureDownloadUrl();
           return;
         }
         if (resolvedKind === "document" && /\.(docx)$/i.test(name)) {
@@ -464,6 +570,107 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     };
   }, [docxBuffer]);
 
+  /**
+   * PPTX slides render into a container owned by pptx-preview, including the
+   * slide geometry, text runs, tables, charts and embedded images. Any render
+   * failure (or a silent bail-out that leaves no slide DOM) falls back to the
+   * existing Office text preview, then to the download card.
+   */
+  useEffect(() => {
+    if (!pptxBuffer || !pptxContainerRef.current) return;
+    let active = true;
+    const container = pptxContainerRef.current;
+    container.replaceChildren();
+
+    const fallBack = async () => {
+      await fallBackToOfficeText(pptxBuffer, name, () => active, setText, setFailed);
+      if (active) setPptxRenderFailed(true);
+    };
+
+    void (async () => {
+      try {
+        const { init } = await import("pptx-preview");
+        if (!active) return;
+        const previewer = init(container, { width: 960, height: 540 });
+        await previewer.preview(pptxBuffer);
+        if (!active) return;
+        // The library can return normally while producing no slide DOM (for
+        // example on a truncated file); treat that as a render failure.
+        if (!container.querySelector(".pptx-preview-slide-wrapper")) await fallBack();
+      } catch {
+        if (active) await fallBack();
+      }
+    })();
+
+    return () => {
+      active = false;
+      container.replaceChildren();
+    };
+  }, [pptxBuffer, name]);
+
+  /**
+   * Legacy DOC and ODT are rendered by a lazily imported Rust/WASM viewer into
+   * its own DOM container. The viewer reports `hasDocument` once parsing and
+   * layout are done; a watchdog keeps a silent failure from leaving a blank
+   * box. Neither its DOM nor its errors are ever injected as HTML.
+   */
+  useEffect(() => {
+    if (!wordBuffer || !wordContainerRef.current) return;
+    let active = true;
+    let settled = false;
+    const container = wordContainerRef.current;
+    container.replaceChildren();
+    let viewer: { destroy(): void; subscribe(listener: (controller: { error?: Error; hasDocument: boolean }) => void): () => void } | null = null;
+    let unsubscribe: (() => void) | null = null;
+
+    const fallBack = async () => {
+      if (settled) return;
+      settled = true;
+      await fallBackToOfficeText(wordBuffer, name, () => active, setText, setFailed);
+      if (active) setWordRenderFailed(true);
+    };
+    const timer = window.setTimeout(() => void fallBack(), 12_000);
+
+    void (async () => {
+      try {
+        const { createDocxViewer } = await import("@extend-ai/react-docx/vanilla");
+        if (!active) return;
+        viewer = createDocxViewer(container, {
+          file: new File([wordBuffer], name),
+          fileName: name,
+          mode: "read-only",
+          height: "560px",
+        });
+        unsubscribe = viewer.subscribe((controller) => {
+          if (!active || settled) return;
+          if (controller.error) void fallBack();
+          else if (controller.hasDocument) {
+            settled = true;
+            window.clearTimeout(timer);
+          }
+        });
+      } catch {
+        if (active) await fallBack();
+      }
+    })();
+
+    return () => {
+      active = false;
+      settled = true;
+      window.clearTimeout(timer);
+      unsubscribe?.();
+      viewer?.destroy();
+      container.replaceChildren();
+    };
+  }, [wordBuffer, name]);
+
+  const handlePresentationFailure = useCallback(() => {
+    if (!presentationBuffer || presentationFailureRef.current) return;
+    presentationFailureRef.current = true;
+    setPresentationRenderFailed(true);
+    void fallBackToOfficeText(presentationBuffer, name, () => true, setText, setFailed);
+  }, [presentationBuffer, name]);
+
   const handleImageError = async () => {
     if (!isHeicWorkspaceAttachment(name, contentType) || attemptedHeicConversionRef.current) {
       setImageFallback("unavailable");
@@ -542,6 +749,67 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         )
       : <div className="my-2 h-24 animate-pulse rounded-xl bg-[#edf4f3]" aria-label={`Loading ${name}`} />;
 
+  // PPTX slides are rendered by pptx-preview into a dedicated container. The
+  // generated DOM is owned by the library and is never passed through
+  // dangerouslySetInnerHTML or a sanitizer string.
+  if (pptxBuffer && !pptxRenderFailed && text === null)
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · slide preview</p>
+          </div>
+          <div
+            ref={pptxContainerRef}
+            data-testid="pptx-preview"
+            aria-label={`Preview of ${name}`}
+            className="pptx-preview-host max-h-[560px] overflow-auto rounded-lg border border-[#eef3f2] bg-white dark:border-[#2a3f52]"
+          />
+        </div>
+      </WorkspaceAttachmentPreview>
+    );
+
+  // Legacy PPT and ODP slides are rendered by the lazy Rust/WASM viewer.
+  if (presentationBuffer && !presentationRenderFailed && text === null)
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · slide preview</p>
+          </div>
+          <div
+            data-testid="presentation-preview"
+            aria-label={`Preview of ${name}`}
+            className="max-h-[560px] overflow-auto rounded-lg border border-[#eef3f2] bg-white dark:border-[#2a3f52]"
+          >
+            <FullFidelityPresentation
+              source={presentationBuffer}
+              onReady={() => undefined}
+              onFailure={handlePresentationFailure}
+            />
+          </div>
+        </div>
+      </WorkspaceAttachmentPreview>
+    );
+
+  // Legacy DOC and ODT are rendered as real pages by the lazy Rust/WASM viewer.
+  if (wordBuffer && !wordRenderFailed && text === null)
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
+          </div>
+          <div
+            ref={wordContainerRef}
+            data-testid="office-word-preview"
+            aria-label={`Preview of ${name}`}
+            className="max-h-[560px] overflow-auto rounded-lg border border-[#eef3f2] bg-white dark:border-[#2a3f52]"
+          />
+        </div>
+      </WorkspaceAttachmentPreview>
+    );
+
   // Word documents render as real pages (tables, images, styles) into this
   // container. The container is intentionally owned by docx-preview, not by
   // React children, so its generated DOM is never sanitized or replaced by a
@@ -589,6 +857,8 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
       </WorkspaceAttachmentPreview>
     );
   }
+  if (kind === "spreadsheet" && attachmentBlob)
+    return <FullSpreadsheetViewer name={name} blob={attachmentBlob} downloadUrl={downloadUrl} />;
   if (sheets.length)
     return (
       <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
@@ -629,7 +899,7 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         <audio src={objectUrl} controls onError={() => setMediaPlaybackFailed(true)} className="w-full max-w-[440px]" />
       </WorkspaceAttachmentPreview>
     );
-  if (kind === "pdf" && objectUrl)
+  if (kind === "pdf" && objectUrl && pdfPreviewAllowed)
     return (
       <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
         <iframe title={name} src={objectUrl} className="h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />

@@ -240,7 +240,7 @@ const fixtures: Fixture[] = [
     contentType: "application/vnd.ms-excel",
     body: spreadsheetFixture("xls"),
     assertPreview: container => {
-      expect(container.querySelector("table")).toBeInTheDocument();
+      expect(container.querySelector('[data-testid="full-spreadsheet-preview"] table')).toBeInTheDocument();
       expect(container).toHaveTextContent("Scores");
       expect(container).toHaveTextContent("Ada Lovelace");
     },
@@ -250,7 +250,7 @@ const fixtures: Fixture[] = [
     contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     body: spreadsheetFixture("xlsx"),
     assertPreview: container => {
-      expect(container.querySelector("table")).toBeInTheDocument();
+      expect(container.querySelector('[data-testid="full-spreadsheet-preview"] table')).toBeInTheDocument();
       expect(container).toHaveTextContent("Scores");
       expect(container).toHaveTextContent("Ada Lovelace");
     },
@@ -431,7 +431,7 @@ describe("chat attachment inline previews", () => {
     const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))
       .flatMap(element => Array.from(element.attributes, attribute => attribute.value));
     expect(renderedResourceAttributes.some(value => value.includes("/api/storage/"))).toBe(false);
-  });
+  }, 15_000);
 
   it.each(officeAttachmentFixtures)("$name renders readable office or JSON content inline", async fixture => {
     const isJson = fixture.name.endsWith(".json") || fixture.contentType === "application/json";

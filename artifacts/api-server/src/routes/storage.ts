@@ -315,9 +315,8 @@ export const CHAT_UPLOAD_CONTENT_TYPES = [
   'application/step',
   'application/x-step',
   // Archives and iCalendar files render through their dedicated viewers.
-  // application/octet-stream is the generic fallback for any other extension:
-  // it renders as a download card, so no file type is refused.
-  'application/octet-stream',
+  // Keep unknown application/* types rejected; the client assigns a precise
+  // MIME type to each supported extension before upload.
   'application/zip',
   'application/x-tar',
   'application/gzip',

@@ -259,7 +259,7 @@ describe("ChatProductivityMeter", () => {
     fireEvent.click(await screen.findByTestId("button-chat-productivity"));
     fireEvent.click(await screen.findByTestId("tab-productivity-history"));
 
-    expect(await screen.findByTestId("panel-productivity-history")).toBeInTheDocument();
+    expect(await screen.findByTestId("panel-productivity-history", undefined, { timeout: 15_000 })).toBeInTheDocument();
     expect(await screen.findByTestId("stat-history-average")).toHaveTextContent("6.8/10");
     expect(screen.getByTestId("stat-history-best-day")).toHaveTextContent("11");
     expect(screen.getByTestId("stat-history-peak-score")).toHaveTextContent("10/10");

@@ -83,8 +83,38 @@ const OFFICE_PREVIEW_MIME_TYPES = new Set([
   "application/vnd.oasis.opendocument.text",
 ]);
 
+export type FullFidelityOfficeKind = "pptx" | "presentation" | "word" | "spreadsheet";
+
+/**
+ * The single source of truth for which Office formats bypass the lossy text
+ * parser in favour of a browser-side full-fidelity renderer.
+ *
+ * PPTX uses pptx-preview. The legacy/ODF formats use lazily loaded WASM
+ * viewers, which need a real browser (workers + WebAssembly); in jsdom/SSR
+ * they deliberately stay on the established text fallback so every caller
+ * still gets a usable preview. ODS falls through to the existing SheetJS
+ * spreadsheet renderer, which shows all sheets and cells as tables.
+ */
+export function fullFidelityOfficeKind(fileName: string): FullFidelityOfficeKind | null {
+  // Every full-fidelity renderer needs a real browser (workers + WASM + full
+  // DOM APIs). In jsdom/SSR they would only produce empty containers, so those
+  // environments keep the established text preview.
+  if (typeof Worker === "undefined" || typeof WebAssembly === "undefined") return null;
+  if (/\.pptx$/i.test(fileName)) return "pptx";
+  if (/\.(?:ppt|ppsx|odp)$/i.test(fileName)) return "presentation";
+  if (/\.(?:doc|odt)$/i.test(fileName)) return "word";
+  if (/\.ods$/i.test(fileName)) return "spreadsheet";
+  return null;
+}
+
+/** True when the caller should render this file with a full-fidelity viewer. */
+export function usesFullFidelityPreview(fileName: string): boolean {
+  return fullFidelityOfficeKind(fileName) !== null;
+}
+
 export function isOfficePreviewAttachment(fileName: string, contentType = ""): boolean {
-  if (/\.docx$/i.test(fileName)) return false; // Keep the established Mammoth preview for DOCX.
+  if (/\.docx$/i.test(fileName)) return false; // Keep the established docx-preview renderer for DOCX.
+  if (usesFullFidelityPreview(fileName)) return false; // Full-fidelity renderers win over text extraction.
   if (/\.(?:doc|ppt|pptx|odt|ods|odp)$/i.test(fileName)) return true;
   const mime = contentType.split(";")[0]?.trim().toLowerCase() ?? "";
   const format = resolveFileFormat(fileName, contentType);

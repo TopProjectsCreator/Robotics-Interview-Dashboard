@@ -99,6 +99,8 @@
   },
   "dependencies": {
     "@corbe30/fortune-excel": "2.3.4",
+    "@extend-ai/react-docx": "0.15.1",
+    "@extend-ai/react-pptx": "0.6.1",
     "@excalidraw/excalidraw": "^0.18.1",
     "@fortune-sheet/react": "1.0.4",
     "@google/model-viewer": "^4.3.1",
@@ -129,6 +131,7 @@
     "mammoth": "^1.12.3",
     "marked": "^18.2.1",
     "occt-import-js": "^0.0.23",
+    "pptx-preview": "1.0.7",
     "three": "^0.183.2",
     "xlsx": "^0.18.5",
     "y-protocols": "^1.0.7",

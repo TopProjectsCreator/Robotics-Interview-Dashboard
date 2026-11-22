@@ -231,7 +231,7 @@ describe("chat attachment round trip", () => {
     expect(document.querySelector(".chat-message-card video[controls]")).toBeInTheDocument();
   });
 
-  it("keeps normal text paste intact and reports unsupported, oversized, or excess pasted files", async () => {
+  it("keeps normal text paste intact, rejects unsupported files, and allows large chunked attachments", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const rawUrl = input instanceof Request ? input.url : String(input);
       const url = new URL(rawUrl, window.location.origin);
@@ -271,8 +271,9 @@ describe("chat attachment round trip", () => {
     const oversized = new File(["small fixture"], "too-large.png", { type: "image/png" });
     Object.defineProperty(oversized, "size", { value: 100 * 1024 * 1024 + 1 });
     fireEvent.paste(input, { clipboardData: clipboardWithFiles([oversized]) });
-    expect(await screen.findByTestId("chat-image-error")).toHaveTextContent("too-large.png");
-    expect(screen.getByTestId("chat-image-error")).toHaveTextContent("max 100 MB");
+    expect(await screen.findByText("too-large.png")).toBeInTheDocument();
+    expect(screen.queryByTestId("chat-image-error")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove too-large.png" }));
 
     fireEvent.paste(input, {
       clipboardData: clipboardWithFiles([
@@ -286,7 +287,7 @@ describe("chat attachment round trip", () => {
     expect(screen.queryByText("one.png")).not.toBeInTheDocument();
   });
 
-  it("validates dropped files, ignores internal drags, and keeps normal chat usable afterward", async () => {
+  it("validates dropped files, allows large chunked attachments, and keeps normal chat usable afterward", async () => {
     const savedMessages: StoredMessage[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const rawUrl = input instanceof Request ? input.url : String(input);
@@ -355,8 +356,9 @@ describe("chat attachment round trip", () => {
     const oversized = new File(["fixture"], "too-large.png", { type: "image/png" });
     Object.defineProperty(oversized, "size", { value: 100 * 1024 * 1024 + 1 });
     fireEvent.drop(dropzone, { dataTransfer: fileDragDataTransfer([oversized]) });
-    expect(await screen.findByTestId("chat-image-error")).toHaveTextContent("too-large.png");
-    expect(screen.getByTestId("chat-image-error")).toHaveTextContent("max 100 MB");
+    expect(await screen.findByText("too-large.png")).toBeInTheDocument();
+    expect(screen.queryByTestId("chat-image-error")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove too-large.png" }));
 
     const excessFiles = ["one.png", "two.png", "three.png", "four.png"].map(name =>
       new File(["png"], name, { type: "image/png" }),

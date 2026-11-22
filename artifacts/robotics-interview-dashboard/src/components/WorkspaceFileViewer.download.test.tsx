@@ -44,7 +44,12 @@ describe("workspace attachment downloads", () => {
   it.each(previewCases)("$name stays downloadable alongside its preview", async ({ name, contentType, preview }) => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => new Response(name, { status: 200, headers: { "content-type": contentType } })),
+      vi.fn(async () =>
+        new Response(contentType === "application/pdf" ? "%PDF-1.4\nfixture" : name, {
+          status: 200,
+          headers: { "content-type": contentType },
+        }),
+      ),
     );
     const { container } = render(<WorkspaceFileViewer name={name} src={`/api/storage/objects/${name}`} />);
 
@@ -98,6 +103,23 @@ describe("workspace attachment downloads", () => {
     expect(await screen.findByRole("button", { name: "Download next-office-object-id" })).toBeInTheDocument();
     expect(screen.getByTestId("unsupported-document-preview")).toHaveTextContent("next-office-object-id");
     expect(container.querySelector("iframe")).not.toBeInTheDocument();
+    expect(clickSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not iframe Word bytes when the storage response incorrectly claims PDF", async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const legacyWordHeader = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(legacyWordHeader, { status: 200, headers: { "content-type": "application/pdf" } })),
+    );
+    const { container } = render(
+      <WorkspaceFileViewer name="8cf4a1a2-1e3d-4bc4-a0d9-3ed97570e61c" src="/api/storage/objects/8cf4a1a2-1e3d-4bc4-a0d9-3ed97570e61c" />,
+    );
+
+    expect(await screen.findByTestId("unsupported-document-preview")).toHaveTextContent("preview unavailable");
+    expect(container.querySelector("iframe")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download 8cf4a1a2-1e3d-4bc4-a0d9-3ed97570e61c" })).toBeInTheDocument();
     expect(clickSpy).not.toHaveBeenCalled();
   });
 

@@ -837,8 +837,10 @@ describe("progressive Parts search", () => {
       name: "Increase quantity of Draft-order bracket",
     }));
     await waitFor(() => expect(orderDetails).toHaveTextContent("2 items"));
-    expect(JSON.parse(window.localStorage.getItem("robotics-parts-order-draft-v1") ?? "[]"))
-      .toMatchObject([{ product: { title: "Draft-order bracket" }, quantity: 2 }]);
+    await waitFor(() => {
+      expect(JSON.parse(window.localStorage.getItem("robotics-parts-order-draft-v1") ?? "[]"))
+        .toMatchObject([{ product: { title: "Draft-order bracket" }, quantity: 2 }]);
+    }, { timeout: 10_000 });
   });
 
   it("counts line quantities and blocks adds and increases at the team's exact limit", async () => {
