@@ -6,6 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { BoardCardInputPriority } from './boardCardInputPriority';
+import type { BoardChecklistItem } from './boardChecklistItem';
+import type { BoardLabel } from './boardLabel';
 
 export interface BoardCardInput {
   /**
@@ -23,9 +25,8 @@ export interface BoardCardInput {
   startDate?: Date | null;
   /** @nullable */
   dueDate?: Date | null;
-  /**
-     * @maxItems 12
-     * @items.maxLength 40
-     */
-  labels?: string[];
+  /** @maxItems 12 */
+  labels?: BoardLabel[];
+  /** @maxItems 100 */
+  checklist?: BoardChecklistItem[];
 }

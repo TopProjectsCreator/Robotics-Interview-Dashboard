@@ -3030,6 +3030,108 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Board"
+  /boards/{boardId}/cards/{cardId}/comments:
+    post:
+      operationId: createBoardCardComment
+      tags: [queue]
+      summary: Add a comment to a board card
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cardId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BoardCardCommentInput"
+      responses:
+        "201":
+          description: Added card comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardCardComment"
+  /boards/{boardId}/assets:
+    post:
+      operationId: uploadBoardCardAsset
+      tags: [queue]
+      summary: Upload a private board card attachment
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileName
+          in: query
+          required: true
+          schema:
+            type: string
+            maxLength: 255
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Uploaded private board attachment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardCardFileAttachment"
+  /boards/{boardId}/assets/{assetId}:
+    get:
+      operationId: getBoardCardAsset
+      tags: [queue]
+      summary: Download a private board card attachment
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Private attachment bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+    delete:
+      operationId: deleteUnattachedBoardCardAsset
+      tags: [queue]
+      summary: Delete an unreferenced private board upload
+      parameters:
+        - name: boardId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed unused upload
   /spreadsheets:
     post:
       operationId: createSpreadsheet
@@ -10295,7 +10397,7 @@ components:
           minimum: 0
     BoardCard:
       type: object
-      required: [id, title, description, columnId, position, priority, assignee, startDate, dueDate, labels, createdAt, updatedAt, updatedBy]
+      required: [id, title, description, columnId, position, priority, assignee, startDate, dueDate, labels, checklist, attachments, cover, comments, activity, createdAt, updatedAt, updatedBy]
       properties:
         id:
           type: string
@@ -10326,8 +10428,31 @@ components:
           type: array
           maxItems: 12
           items:
-            type: string
-            maxLength: 40
+            $ref: "#/components/schemas/BoardLabel"
+        checklist:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/BoardChecklistItem"
+        attachments:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/BoardCardAttachment"
+        cover:
+          oneOf:
+            - $ref: "#/components/schemas/BoardCardCover"
+            - type: "null"
+        comments:
+          type: array
+          maxItems: 500
+          items:
+            $ref: "#/components/schemas/BoardCardComment"
+        activity:
+          type: array
+          maxItems: 80
+          items:
+            $ref: "#/components/schemas/BoardCardActivity"
         createdAt:
           type: string
           format: date-time
@@ -10428,8 +10553,12 @@ components:
           type: array
           maxItems: 12
           items:
-            type: string
-            maxLength: 40
+            $ref: "#/components/schemas/BoardLabel"
+        checklist:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/BoardChecklistItem"
     BoardCardPatch:
       type: object
       properties:
@@ -10455,8 +10584,21 @@ components:
           type: array
           maxItems: 12
           items:
-            type: string
-            maxLength: 40
+            $ref: "#/components/schemas/BoardLabel"
+        checklist:
+          type: array
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/BoardChecklistItem"
+        attachments:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/BoardCardAttachment"
+        cover:
+          oneOf:
+            - $ref: "#/components/schemas/BoardCardCover"
+            - type: "null"
     BoardOperationInput:
       type: object
       required: [operation]
@@ -10499,6 +10641,134 @@ components:
         color:
           type: string
           maxLength: 32
+    BoardLabel:
+      oneOf:
+        - type: string
+          maxLength: 40
+        - type: object
+          required: [name, color]
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 40
+            color:
+              type: string
+              pattern: "^#[0-9a-fA-F]{6}$"
+    BoardChecklistItem:
+      type: object
+      required: [id, title, completed]
+      properties:
+        id:
+          type: string
+          minLength: 1
+          maxLength: 80
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        completed:
+          type: boolean
+    BoardCardFileAttachment:
+      type: object
+      required: [type, id, name, contentType, size, objectPath]
+      properties:
+        type:
+          type: string
+          enum: [file]
+        id:
+          type: string
+        name:
+          type: string
+          maxLength: 255
+        contentType:
+          type: string
+          maxLength: 100
+        size:
+          type: integer
+          minimum: 1
+        objectPath:
+          type: string
+    BoardCardLinkAttachment:
+      type: object
+      required: [type, id, label, url]
+      properties:
+        type:
+          type: string
+          enum: [link]
+        id:
+          type: string
+        label:
+          type: string
+          minLength: 1
+          maxLength: 120
+        url:
+          type: string
+          format: uri
+          maxLength: 2048
+    BoardCardAttachment:
+      oneOf:
+        - $ref: "#/components/schemas/BoardCardFileAttachment"
+        - $ref: "#/components/schemas/BoardCardLinkAttachment"
+    BoardCardCover:
+      oneOf:
+        - type: object
+          required: [type, color]
+          properties:
+            type:
+              type: string
+              enum: [color]
+            color:
+              type: string
+              pattern: "^#[0-9a-fA-F]{6}$"
+        - type: object
+          required: [type, assetId]
+          properties:
+            type:
+              type: string
+              enum: [image]
+            assetId:
+              type: string
+    BoardCardComment:
+      type: object
+      required: [id, author, text, createdAt]
+      properties:
+        id:
+          type: string
+        author:
+          type: string
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
+        createdAt:
+          type: string
+          format: date-time
+    BoardCardActivity:
+      type: object
+      required: [id, actor, action, detail, createdAt]
+      properties:
+        id:
+          type: string
+        actor:
+          type: string
+        action:
+          type: string
+          enum: [created, edited, moved, commented]
+        detail:
+          type: string
+          maxLength: 240
+        createdAt:
+          type: string
+          format: date-time
+    BoardCardCommentInput:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 4000
     SpreadsheetRow:
       type: array
       minItems: 1

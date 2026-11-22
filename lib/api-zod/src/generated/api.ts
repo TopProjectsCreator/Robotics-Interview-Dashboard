@@ -3813,9 +3813,38 @@ export const createBoardResponseDataCardsItemDescriptionMax = 12000;
 
 export const createBoardResponseDataCardsItemPositionMin = 0;
 
-export const createBoardResponseDataCardsItemLabelsItemMax = 40;
+export const createBoardResponseDataCardsItemLabelsItemOneMax = 40;
 
+export const createBoardResponseDataCardsItemLabelsItemTwoNameMax = 40;
+
+export const createBoardResponseDataCardsItemLabelsItemTwoColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 export const createBoardResponseDataCardsItemLabelsMax = 12;
+
+export const createBoardResponseDataCardsItemChecklistItemIdMax = 80;
+
+export const createBoardResponseDataCardsItemChecklistItemTitleMax = 200;
+
+export const createBoardResponseDataCardsItemChecklistMax = 100;
+
+export const createBoardResponseDataCardsItemAttachmentsItemOneNameMax = 255;
+
+export const createBoardResponseDataCardsItemAttachmentsItemOneContentTypeMax = 100;
+
+
+export const createBoardResponseDataCardsItemAttachmentsItemTwoLabelMax = 120;
+
+export const createBoardResponseDataCardsItemAttachmentsItemTwoUrlMax = 2048;
+
+export const createBoardResponseDataCardsItemAttachmentsMax = 20;
+
+export const createBoardResponseDataCardsItemCoverOneOneColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
+export const createBoardResponseDataCardsItemCommentsItemTextMax = 4000;
+
+export const createBoardResponseDataCardsItemCommentsMax = 500;
+
+export const createBoardResponseDataCardsItemActivityItemDetailMax = 240;
+
+export const createBoardResponseDataCardsItemActivityMax = 80;
 
 export const createBoardResponseDataCardsMax = 2000;
 
@@ -3844,7 +3873,48 @@ export const CreateBoardResponse = zod.object({
   "assignee": zod.string().nullable(),
   "startDate": zod.coerce.date().nullable(),
   "dueDate": zod.coerce.date().nullable(),
-  "labels": zod.array(zod.string().max(createBoardResponseDataCardsItemLabelsItemMax)).max(createBoardResponseDataCardsItemLabelsMax),
+  "labels": zod.array(zod.union([zod.string().max(createBoardResponseDataCardsItemLabelsItemOneMax),zod.object({
+  "name": zod.string().min(1).max(createBoardResponseDataCardsItemLabelsItemTwoNameMax),
+  "color": zod.string().regex(createBoardResponseDataCardsItemLabelsItemTwoColorRegExp)
+})])).max(createBoardResponseDataCardsItemLabelsMax),
+  "checklist": zod.array(zod.object({
+  "id": zod.string().min(1).max(createBoardResponseDataCardsItemChecklistItemIdMax),
+  "title": zod.string().min(1).max(createBoardResponseDataCardsItemChecklistItemTitleMax),
+  "completed": zod.boolean()
+})).max(createBoardResponseDataCardsItemChecklistMax),
+  "attachments": zod.array(zod.union([zod.object({
+  "type": zod.enum(['file']),
+  "id": zod.string(),
+  "name": zod.string().max(createBoardResponseDataCardsItemAttachmentsItemOneNameMax),
+  "contentType": zod.string().max(createBoardResponseDataCardsItemAttachmentsItemOneContentTypeMax),
+  "size": zod.number().int().min(1),
+  "objectPath": zod.string()
+}),zod.object({
+  "type": zod.enum(['link']),
+  "id": zod.string(),
+  "label": zod.string().min(1).max(createBoardResponseDataCardsItemAttachmentsItemTwoLabelMax),
+  "url": zod.string().url().max(createBoardResponseDataCardsItemAttachmentsItemTwoUrlMax)
+})])).max(createBoardResponseDataCardsItemAttachmentsMax),
+  "cover": zod.union([zod.union([zod.object({
+  "type": zod.enum(['color']),
+  "color": zod.string().regex(createBoardResponseDataCardsItemCoverOneOneColorRegExp)
+}),zod.object({
+  "type": zod.enum(['image']),
+  "assetId": zod.string()
+})]),zod.null()]),
+  "comments": zod.array(zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "text": zod.string().min(1).max(createBoardResponseDataCardsItemCommentsItemTextMax),
+  "createdAt": zod.coerce.date()
+})).max(createBoardResponseDataCardsItemCommentsMax),
+  "activity": zod.array(zod.object({
+  "id": zod.string(),
+  "actor": zod.string(),
+  "action": zod.enum(['created', 'edited', 'moved', 'commented']),
+  "detail": zod.string().max(createBoardResponseDataCardsItemActivityItemDetailMax),
+  "createdAt": zod.coerce.date()
+})).max(createBoardResponseDataCardsItemActivityMax),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "updatedBy": zod.string()
@@ -3881,9 +3951,38 @@ export const getBoardResponseDataCardsItemDescriptionMax = 12000;
 
 export const getBoardResponseDataCardsItemPositionMin = 0;
 
-export const getBoardResponseDataCardsItemLabelsItemMax = 40;
+export const getBoardResponseDataCardsItemLabelsItemOneMax = 40;
 
+export const getBoardResponseDataCardsItemLabelsItemTwoNameMax = 40;
+
+export const getBoardResponseDataCardsItemLabelsItemTwoColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 export const getBoardResponseDataCardsItemLabelsMax = 12;
+
+export const getBoardResponseDataCardsItemChecklistItemIdMax = 80;
+
+export const getBoardResponseDataCardsItemChecklistItemTitleMax = 200;
+
+export const getBoardResponseDataCardsItemChecklistMax = 100;
+
+export const getBoardResponseDataCardsItemAttachmentsItemOneNameMax = 255;
+
+export const getBoardResponseDataCardsItemAttachmentsItemOneContentTypeMax = 100;
+
+
+export const getBoardResponseDataCardsItemAttachmentsItemTwoLabelMax = 120;
+
+export const getBoardResponseDataCardsItemAttachmentsItemTwoUrlMax = 2048;
+
+export const getBoardResponseDataCardsItemAttachmentsMax = 20;
+
+export const getBoardResponseDataCardsItemCoverOneOneColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
+export const getBoardResponseDataCardsItemCommentsItemTextMax = 4000;
+
+export const getBoardResponseDataCardsItemCommentsMax = 500;
+
+export const getBoardResponseDataCardsItemActivityItemDetailMax = 240;
+
+export const getBoardResponseDataCardsItemActivityMax = 80;
 
 export const getBoardResponseDataCardsMax = 2000;
 
@@ -3912,7 +4011,48 @@ export const GetBoardResponse = zod.object({
   "assignee": zod.string().nullable(),
   "startDate": zod.coerce.date().nullable(),
   "dueDate": zod.coerce.date().nullable(),
-  "labels": zod.array(zod.string().max(getBoardResponseDataCardsItemLabelsItemMax)).max(getBoardResponseDataCardsItemLabelsMax),
+  "labels": zod.array(zod.union([zod.string().max(getBoardResponseDataCardsItemLabelsItemOneMax),zod.object({
+  "name": zod.string().min(1).max(getBoardResponseDataCardsItemLabelsItemTwoNameMax),
+  "color": zod.string().regex(getBoardResponseDataCardsItemLabelsItemTwoColorRegExp)
+})])).max(getBoardResponseDataCardsItemLabelsMax),
+  "checklist": zod.array(zod.object({
+  "id": zod.string().min(1).max(getBoardResponseDataCardsItemChecklistItemIdMax),
+  "title": zod.string().min(1).max(getBoardResponseDataCardsItemChecklistItemTitleMax),
+  "completed": zod.boolean()
+})).max(getBoardResponseDataCardsItemChecklistMax),
+  "attachments": zod.array(zod.union([zod.object({
+  "type": zod.enum(['file']),
+  "id": zod.string(),
+  "name": zod.string().max(getBoardResponseDataCardsItemAttachmentsItemOneNameMax),
+  "contentType": zod.string().max(getBoardResponseDataCardsItemAttachmentsItemOneContentTypeMax),
+  "size": zod.number().int().min(1),
+  "objectPath": zod.string()
+}),zod.object({
+  "type": zod.enum(['link']),
+  "id": zod.string(),
+  "label": zod.string().min(1).max(getBoardResponseDataCardsItemAttachmentsItemTwoLabelMax),
+  "url": zod.string().url().max(getBoardResponseDataCardsItemAttachmentsItemTwoUrlMax)
+})])).max(getBoardResponseDataCardsItemAttachmentsMax),
+  "cover": zod.union([zod.union([zod.object({
+  "type": zod.enum(['color']),
+  "color": zod.string().regex(getBoardResponseDataCardsItemCoverOneOneColorRegExp)
+}),zod.object({
+  "type": zod.enum(['image']),
+  "assetId": zod.string()
+})]),zod.null()]),
+  "comments": zod.array(zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "text": zod.string().min(1).max(getBoardResponseDataCardsItemCommentsItemTextMax),
+  "createdAt": zod.coerce.date()
+})).max(getBoardResponseDataCardsItemCommentsMax),
+  "activity": zod.array(zod.object({
+  "id": zod.string(),
+  "actor": zod.string(),
+  "action": zod.enum(['created', 'edited', 'moved', 'commented']),
+  "detail": zod.string().max(getBoardResponseDataCardsItemActivityItemDetailMax),
+  "createdAt": zod.coerce.date()
+})).max(getBoardResponseDataCardsItemActivityMax),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "updatedBy": zod.string()
@@ -3938,18 +4078,48 @@ export const updateBoardBodyCardTitleMax = 200;
 export const updateBoardBodyCardDescriptionMax = 12000;
 
 export const updateBoardBodyCardPriorityDefault = `normal`;
-export const updateBoardBodyCardLabelsItemMax = 40;
+export const updateBoardBodyCardLabelsItemOneMax = 40;
 
+export const updateBoardBodyCardLabelsItemTwoNameMax = 40;
+
+export const updateBoardBodyCardLabelsItemTwoColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 export const updateBoardBodyCardLabelsMax = 12;
+
+export const updateBoardBodyCardChecklistItemIdMax = 80;
+
+export const updateBoardBodyCardChecklistItemTitleMax = 200;
+
+export const updateBoardBodyCardChecklistMax = 100;
 
 export const updateBoardBodyCardPatchTitleMax = 200;
 
 export const updateBoardBodyCardPatchDescriptionMax = 12000;
 
-export const updateBoardBodyCardPatchLabelsItemMax = 40;
+export const updateBoardBodyCardPatchLabelsItemOneMax = 40;
 
+export const updateBoardBodyCardPatchLabelsItemTwoNameMax = 40;
+
+export const updateBoardBodyCardPatchLabelsItemTwoColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 export const updateBoardBodyCardPatchLabelsMax = 12;
 
+export const updateBoardBodyCardPatchChecklistItemIdMax = 80;
+
+export const updateBoardBodyCardPatchChecklistItemTitleMax = 200;
+
+export const updateBoardBodyCardPatchChecklistMax = 100;
+
+export const updateBoardBodyCardPatchAttachmentsItemOneNameMax = 255;
+
+export const updateBoardBodyCardPatchAttachmentsItemOneContentTypeMax = 100;
+
+
+export const updateBoardBodyCardPatchAttachmentsItemTwoLabelMax = 120;
+
+export const updateBoardBodyCardPatchAttachmentsItemTwoUrlMax = 2048;
+
+export const updateBoardBodyCardPatchAttachmentsMax = 20;
+
+export const updateBoardBodyCardPatchCoverOneOneColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 export const updateBoardBodyCardIdsMax = 500;
 
 export const updateBoardBodyTitlesItemMax = 200;
@@ -3974,7 +4144,15 @@ export const UpdateBoardBody = zod.object({
   "assignee": zod.string().nullish(),
   "startDate": zod.coerce.date().nullish(),
   "dueDate": zod.coerce.date().nullish(),
-  "labels": zod.array(zod.string().max(updateBoardBodyCardLabelsItemMax)).max(updateBoardBodyCardLabelsMax).optional()
+  "labels": zod.array(zod.union([zod.string().max(updateBoardBodyCardLabelsItemOneMax),zod.object({
+  "name": zod.string().min(1).max(updateBoardBodyCardLabelsItemTwoNameMax),
+  "color": zod.string().regex(updateBoardBodyCardLabelsItemTwoColorRegExp)
+})])).max(updateBoardBodyCardLabelsMax).optional(),
+  "checklist": zod.array(zod.object({
+  "id": zod.string().min(1).max(updateBoardBodyCardChecklistItemIdMax),
+  "title": zod.string().min(1).max(updateBoardBodyCardChecklistItemTitleMax),
+  "completed": zod.boolean()
+})).max(updateBoardBodyCardChecklistMax).optional()
 }).optional(),
   "cardId": zod.string().optional(),
   "cardPatch": zod.object({
@@ -3984,7 +4162,35 @@ export const UpdateBoardBody = zod.object({
   "assignee": zod.string().nullish(),
   "startDate": zod.coerce.date().nullish(),
   "dueDate": zod.coerce.date().nullish(),
-  "labels": zod.array(zod.string().max(updateBoardBodyCardPatchLabelsItemMax)).max(updateBoardBodyCardPatchLabelsMax).optional()
+  "labels": zod.array(zod.union([zod.string().max(updateBoardBodyCardPatchLabelsItemOneMax),zod.object({
+  "name": zod.string().min(1).max(updateBoardBodyCardPatchLabelsItemTwoNameMax),
+  "color": zod.string().regex(updateBoardBodyCardPatchLabelsItemTwoColorRegExp)
+})])).max(updateBoardBodyCardPatchLabelsMax).optional(),
+  "checklist": zod.array(zod.object({
+  "id": zod.string().min(1).max(updateBoardBodyCardPatchChecklistItemIdMax),
+  "title": zod.string().min(1).max(updateBoardBodyCardPatchChecklistItemTitleMax),
+  "completed": zod.boolean()
+})).max(updateBoardBodyCardPatchChecklistMax).optional(),
+  "attachments": zod.array(zod.union([zod.object({
+  "type": zod.enum(['file']),
+  "id": zod.string(),
+  "name": zod.string().max(updateBoardBodyCardPatchAttachmentsItemOneNameMax),
+  "contentType": zod.string().max(updateBoardBodyCardPatchAttachmentsItemOneContentTypeMax),
+  "size": zod.number().int().min(1),
+  "objectPath": zod.string()
+}),zod.object({
+  "type": zod.enum(['link']),
+  "id": zod.string(),
+  "label": zod.string().min(1).max(updateBoardBodyCardPatchAttachmentsItemTwoLabelMax),
+  "url": zod.string().url().max(updateBoardBodyCardPatchAttachmentsItemTwoUrlMax)
+})])).max(updateBoardBodyCardPatchAttachmentsMax).optional(),
+  "cover": zod.union([zod.union([zod.object({
+  "type": zod.enum(['color']),
+  "color": zod.string().regex(updateBoardBodyCardPatchCoverOneOneColorRegExp)
+}),zod.object({
+  "type": zod.enum(['image']),
+  "assetId": zod.string()
+})]),zod.null()]).optional()
 }).optional(),
   "cardIds": zod.array(zod.string()).max(updateBoardBodyCardIdsMax).optional(),
   "titles": zod.array(zod.string().min(1).max(updateBoardBodyTitlesItemMax)).min(1).max(updateBoardBodyTitlesMax).optional(),
@@ -4012,9 +4218,38 @@ export const updateBoardResponseDataCardsItemDescriptionMax = 12000;
 
 export const updateBoardResponseDataCardsItemPositionMin = 0;
 
-export const updateBoardResponseDataCardsItemLabelsItemMax = 40;
+export const updateBoardResponseDataCardsItemLabelsItemOneMax = 40;
 
+export const updateBoardResponseDataCardsItemLabelsItemTwoNameMax = 40;
+
+export const updateBoardResponseDataCardsItemLabelsItemTwoColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
 export const updateBoardResponseDataCardsItemLabelsMax = 12;
+
+export const updateBoardResponseDataCardsItemChecklistItemIdMax = 80;
+
+export const updateBoardResponseDataCardsItemChecklistItemTitleMax = 200;
+
+export const updateBoardResponseDataCardsItemChecklistMax = 100;
+
+export const updateBoardResponseDataCardsItemAttachmentsItemOneNameMax = 255;
+
+export const updateBoardResponseDataCardsItemAttachmentsItemOneContentTypeMax = 100;
+
+
+export const updateBoardResponseDataCardsItemAttachmentsItemTwoLabelMax = 120;
+
+export const updateBoardResponseDataCardsItemAttachmentsItemTwoUrlMax = 2048;
+
+export const updateBoardResponseDataCardsItemAttachmentsMax = 20;
+
+export const updateBoardResponseDataCardsItemCoverOneOneColorRegExp = new RegExp('^#[0-9a-fA-F]{6}$');
+export const updateBoardResponseDataCardsItemCommentsItemTextMax = 4000;
+
+export const updateBoardResponseDataCardsItemCommentsMax = 500;
+
+export const updateBoardResponseDataCardsItemActivityItemDetailMax = 240;
+
+export const updateBoardResponseDataCardsItemActivityMax = 80;
 
 export const updateBoardResponseDataCardsMax = 2000;
 
@@ -4043,7 +4278,48 @@ export const UpdateBoardResponse = zod.object({
   "assignee": zod.string().nullable(),
   "startDate": zod.coerce.date().nullable(),
   "dueDate": zod.coerce.date().nullable(),
-  "labels": zod.array(zod.string().max(updateBoardResponseDataCardsItemLabelsItemMax)).max(updateBoardResponseDataCardsItemLabelsMax),
+  "labels": zod.array(zod.union([zod.string().max(updateBoardResponseDataCardsItemLabelsItemOneMax),zod.object({
+  "name": zod.string().min(1).max(updateBoardResponseDataCardsItemLabelsItemTwoNameMax),
+  "color": zod.string().regex(updateBoardResponseDataCardsItemLabelsItemTwoColorRegExp)
+})])).max(updateBoardResponseDataCardsItemLabelsMax),
+  "checklist": zod.array(zod.object({
+  "id": zod.string().min(1).max(updateBoardResponseDataCardsItemChecklistItemIdMax),
+  "title": zod.string().min(1).max(updateBoardResponseDataCardsItemChecklistItemTitleMax),
+  "completed": zod.boolean()
+})).max(updateBoardResponseDataCardsItemChecklistMax),
+  "attachments": zod.array(zod.union([zod.object({
+  "type": zod.enum(['file']),
+  "id": zod.string(),
+  "name": zod.string().max(updateBoardResponseDataCardsItemAttachmentsItemOneNameMax),
+  "contentType": zod.string().max(updateBoardResponseDataCardsItemAttachmentsItemOneContentTypeMax),
+  "size": zod.number().int().min(1),
+  "objectPath": zod.string()
+}),zod.object({
+  "type": zod.enum(['link']),
+  "id": zod.string(),
+  "label": zod.string().min(1).max(updateBoardResponseDataCardsItemAttachmentsItemTwoLabelMax),
+  "url": zod.string().url().max(updateBoardResponseDataCardsItemAttachmentsItemTwoUrlMax)
+})])).max(updateBoardResponseDataCardsItemAttachmentsMax),
+  "cover": zod.union([zod.union([zod.object({
+  "type": zod.enum(['color']),
+  "color": zod.string().regex(updateBoardResponseDataCardsItemCoverOneOneColorRegExp)
+}),zod.object({
+  "type": zod.enum(['image']),
+  "assetId": zod.string()
+})]),zod.null()]),
+  "comments": zod.array(zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "text": zod.string().min(1).max(updateBoardResponseDataCardsItemCommentsItemTextMax),
+  "createdAt": zod.coerce.date()
+})).max(updateBoardResponseDataCardsItemCommentsMax),
+  "activity": zod.array(zod.object({
+  "id": zod.string(),
+  "actor": zod.string(),
+  "action": zod.enum(['created', 'edited', 'moved', 'commented']),
+  "detail": zod.string().max(updateBoardResponseDataCardsItemActivityItemDetailMax),
+  "createdAt": zod.coerce.date()
+})).max(updateBoardResponseDataCardsItemActivityMax),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date(),
   "updatedBy": zod.string()
@@ -4055,6 +4331,88 @@ export const UpdateBoardResponse = zod.object({
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
+
+
+/**
+ * @summary Add a comment to a board card
+ */
+export const CreateBoardCardCommentParams = zod.object({
+  "boardId": zod.coerce.string(),
+  "cardId": zod.coerce.string()
+})
+
+export const createBoardCardCommentBodyTextMax = 4000;
+
+
+
+export const CreateBoardCardCommentBody = zod.object({
+  "text": zod.string().min(1).max(createBoardCardCommentBodyTextMax)
+})
+
+export const createBoardCardCommentResponseTextMax = 4000;
+
+
+
+export const CreateBoardCardCommentResponse = zod.object({
+  "id": zod.string(),
+  "author": zod.string(),
+  "text": zod.string().min(1).max(createBoardCardCommentResponseTextMax),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * @summary Upload a private board card attachment
+ */
+export const UploadBoardCardAssetParams = zod.object({
+  "boardId": zod.coerce.string()
+})
+
+export const uploadBoardCardAssetQueryFileNameMax = 255;
+
+
+
+export const UploadBoardCardAssetQueryParams = zod.object({
+  "fileName": zod.coerce.string().max(uploadBoardCardAssetQueryFileNameMax)
+})
+
+export const uploadBoardCardAssetResponseNameMax = 255;
+
+export const uploadBoardCardAssetResponseContentTypeMax = 100;
+
+
+
+
+export const UploadBoardCardAssetResponse = zod.object({
+  "type": zod.enum(['file']),
+  "id": zod.string(),
+  "name": zod.string().max(uploadBoardCardAssetResponseNameMax),
+  "contentType": zod.string().max(uploadBoardCardAssetResponseContentTypeMax),
+  "size": zod.number().int().min(1),
+  "objectPath": zod.string()
+})
+
+
+/**
+ * @summary Download a private board card attachment
+ */
+export const GetBoardCardAssetParams = zod.object({
+  "boardId": zod.coerce.string(),
+  "assetId": zod.coerce.string()
+})
+
+export const GetBoardCardAssetResponse = zod.unknown()
+
+
+/**
+ * @summary Delete an unreferenced private board upload
+ */
+export const DeleteUnattachedBoardCardAssetParams = zod.object({
+  "boardId": zod.coerce.string(),
+  "assetId": zod.coerce.string()
+})
+
+export const DeleteUnattachedBoardCardAssetResponse = zod.void()
 
 
 /**

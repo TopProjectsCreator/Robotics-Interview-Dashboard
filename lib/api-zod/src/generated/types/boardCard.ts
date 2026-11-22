@@ -5,7 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { BoardCardActivity } from './boardCardActivity';
+import type { BoardCardAttachment } from './boardCardAttachment';
+import type { BoardCardComment } from './boardCardComment';
+import type { BoardCardCover } from './boardCardCover';
 import type { BoardCardPriority } from './boardCardPriority';
+import type { BoardChecklistItem } from './boardChecklistItem';
+import type { BoardLabel } from './boardLabel';
 
 export interface BoardCard {
   id: string;
@@ -26,11 +32,17 @@ export interface BoardCard {
   startDate: Date | null;
   /** @nullable */
   dueDate: Date | null;
-  /**
-     * @maxItems 12
-     * @items.maxLength 40
-     */
-  labels: string[];
+  /** @maxItems 12 */
+  labels: BoardLabel[];
+  /** @maxItems 100 */
+  checklist: BoardChecklistItem[];
+  /** @maxItems 20 */
+  attachments: BoardCardAttachment[];
+  cover: BoardCardCover | null;
+  /** @maxItems 500 */
+  comments: BoardCardComment[];
+  /** @maxItems 80 */
+  activity: BoardCardActivity[];
   createdAt: Date;
   updatedAt: Date;
   updatedBy: string;

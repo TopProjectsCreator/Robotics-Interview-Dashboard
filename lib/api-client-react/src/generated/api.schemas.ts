@@ -3351,6 +3351,109 @@ export const BoardCardPriority = {
   low: 'low',
 } as const;
 
+export type BoardLabel = string | {
+  /**
+     * @minLength 1
+     * @maxLength 40
+     */
+  name: string;
+  /** @pattern ^#[0-9a-fA-F]{6}$ */
+  color: string;
+};
+
+export interface BoardChecklistItem {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+  completed: boolean;
+}
+
+export type BoardCardFileAttachmentType = typeof BoardCardFileAttachmentType[keyof typeof BoardCardFileAttachmentType];
+
+
+export const BoardCardFileAttachmentType = {
+  file: 'file',
+} as const;
+
+export interface BoardCardFileAttachment {
+  type: BoardCardFileAttachmentType;
+  id: string;
+  /** @maxLength 255 */
+  name: string;
+  /** @maxLength 100 */
+  contentType: string;
+  /** @minimum 1 */
+  size: number;
+  objectPath: string;
+}
+
+export type BoardCardLinkAttachmentType = typeof BoardCardLinkAttachmentType[keyof typeof BoardCardLinkAttachmentType];
+
+
+export const BoardCardLinkAttachmentType = {
+  link: 'link',
+} as const;
+
+export interface BoardCardLinkAttachment {
+  type: BoardCardLinkAttachmentType;
+  id: string;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  label: string;
+  /** @maxLength 2048 */
+  url: string;
+}
+
+export type BoardCardAttachment = BoardCardFileAttachment | BoardCardLinkAttachment;
+
+export type BoardCardCover = {
+  type: 'color';
+  /** @pattern ^#[0-9a-fA-F]{6}$ */
+  color: string;
+} | {
+  type: 'image';
+  assetId: string;
+};
+
+export interface BoardCardComment {
+  id: string;
+  author: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  text: string;
+  createdAt: string;
+}
+
+export type BoardCardActivityAction = typeof BoardCardActivityAction[keyof typeof BoardCardActivityAction];
+
+
+export const BoardCardActivityAction = {
+  created: 'created',
+  edited: 'edited',
+  moved: 'moved',
+  commented: 'commented',
+} as const;
+
+export interface BoardCardActivity {
+  id: string;
+  actor: string;
+  action: BoardCardActivityAction;
+  /** @maxLength 240 */
+  detail: string;
+  createdAt: string;
+}
+
 export interface BoardCard {
   id: string;
   /**
@@ -3370,11 +3473,17 @@ export interface BoardCard {
   startDate: string | null;
   /** @nullable */
   dueDate: string | null;
-  /**
-     * @maxItems 12
-     * @items.maxLength 40
-     */
-  labels: string[];
+  /** @maxItems 12 */
+  labels: BoardLabel[];
+  /** @maxItems 100 */
+  checklist: BoardChecklistItem[];
+  /** @maxItems 20 */
+  attachments: BoardCardAttachment[];
+  cover: BoardCardCover | null;
+  /** @maxItems 500 */
+  comments: BoardCardComment[];
+  /** @maxItems 80 */
+  activity: BoardCardActivity[];
   createdAt: string;
   updatedAt: string;
   updatedBy: string;
@@ -3477,11 +3586,10 @@ export interface BoardCardInput {
   startDate?: string | null;
   /** @nullable */
   dueDate?: string | null;
-  /**
-     * @maxItems 12
-     * @items.maxLength 40
-     */
-  labels?: string[];
+  /** @maxItems 12 */
+  labels?: BoardLabel[];
+  /** @maxItems 100 */
+  checklist?: BoardChecklistItem[];
 }
 
 export type BoardCardPatchPriority = typeof BoardCardPatchPriority[keyof typeof BoardCardPatchPriority];
@@ -3509,11 +3617,13 @@ export interface BoardCardPatch {
   startDate?: string | null;
   /** @nullable */
   dueDate?: string | null;
-  /**
-     * @maxItems 12
-     * @items.maxLength 40
-     */
-  labels?: string[];
+  /** @maxItems 12 */
+  labels?: BoardLabel[];
+  /** @maxItems 100 */
+  checklist?: BoardChecklistItem[];
+  /** @maxItems 20 */
+  attachments?: BoardCardAttachment[];
+  cover?: BoardCardCover | null;
 }
 
 export type BoardOperationInputOperation = typeof BoardOperationInputOperation[keyof typeof BoardOperationInputOperation];
@@ -3560,6 +3670,14 @@ export interface BoardOperationInput {
   description?: string;
   /** @maxLength 32 */
   color?: string;
+}
+
+export interface BoardCardCommentInput {
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  text: string;
 }
 
 /**
@@ -5837,6 +5955,13 @@ export const GetInterviewWhiteboardByIdScope = {
   direct: 'direct',
   channel: 'channel',
 } as const;
+
+export type UploadBoardCardAssetParams = {
+/**
+ * @maxLength 255
+ */
+fileName: string;
+};
 
 export type GetDisplayStateParams = {
 /**

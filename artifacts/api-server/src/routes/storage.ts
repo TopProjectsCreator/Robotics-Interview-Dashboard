@@ -1467,6 +1467,9 @@ async function teamScopedObjectAllowed(
   if (parts[0] === "generated" && parts[1] === "cad") {
     return parts.length === 4 && parts[2] === teamId;
   }
+  // Board-card uploads are readable only through the board-authorized asset
+  // route, which also checks direct and invite-only conversation membership.
+  if (parts[0] === "board-assets") return false;
   return true;
 }
 

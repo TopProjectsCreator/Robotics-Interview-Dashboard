@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
+import express, { Router, type IRouter, type Request, type Response as ExpressResponse } from "express";
 import { assistantBuilderRunsTable, assistantBuilderSubagentsTable, assistantConversationSharesTable, assistantConversationsTable, assistantMessagesTable, assistantPromptRunsTable, assistantSkillsTable, chatChannelMembersTable, chatChannelsTable, chatCustomEmojisTable, chatMessageReadsTable, chatMessageReactionsTable, chatPollsTable, chatPollVotesTable, chatProductivitySettingsTable, chatProductivitySnapshotsTable, dashboardChartsTable, db, DEFAULT_TEAM_ID, pool, applicantsTable, displaySettingsTable, importsTable, chatSettingsTable, interviewChatMessagesTable, interviewQueueTable, interviewWhiteboardsTable, presenceHeartbeatsTable, scheduledChatMessagesTable, seatingSettingsTable, interviewerAccountsTable, runWithInstance, type DbInstance } from "@workspace/db";
 import * as dbRuntime from "@workspace/db";
 import { assistantToolPoliciesTable, teamRolesTable } from "@workspace/db/schema";
@@ -178,6 +178,14 @@ import {
   UpdateBoardBody,
   UpdateBoardParams,
   UpdateBoardResponse,
+  CreateBoardCardCommentBody,
+  CreateBoardCardCommentParams,
+  CreateBoardCardCommentResponse,
+  UploadBoardCardAssetParams,
+  UploadBoardCardAssetQueryParams,
+  UploadBoardCardAssetResponse,
+  GetBoardCardAssetParams,
+  DeleteUnattachedBoardCardAssetParams,
   UpdateCalendarBody,
   UpdateCalendarParams,
   UpdateCalendarResponse,
@@ -4841,6 +4849,41 @@ function pageWindow(query: unknown): { limit: number; before?: Date } {  const r
 }
 
 const MAX_WHITEBOARD_DATA_BYTES = 1_500_000;
+const MAX_BOARD_CARD_ASSET_BYTES = 20 * 1024 * 1024;
+const BOARD_CARD_ASSET_CONTENT_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+]);
+const BOARD_ASSET_OBJECT_PATH = /^\/objects\/(?:secondary\/)?board-assets\/([^/]+)\/([^/]+)\/([^/]+)$/;
+
+function boardAssetPaths(data: ReturnType<typeof parseBoardData>): Set<string> {
+  return new Set((data?.cards ?? []).flatMap((card) =>
+    card.attachments.flatMap((attachment) => attachment.type === "file" ? [attachment.objectPath] : []),
+  ));
+}
+
+function boardAssetBelongsTo(asset: { id: string; objectPath: string }, teamId: string, boardId: string): boolean {
+  const match = BOARD_ASSET_OBJECT_PATH.exec(asset.objectPath);
+  return Boolean(match && match[1] === teamId && match[2] === boardId && match[3] === asset.id);
+}
+
+function validBoardAssetBytes(data: Buffer, contentType: string): boolean {
+  if (contentType === "image/png") {
+    return data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  }
+  if (contentType === "image/jpeg") return data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
+  if (contentType === "image/webp") return data.length >= 12 && data.toString("ascii", 0, 4) === "RIFF" && data.toString("ascii", 8, 12) === "WEBP";
+  if (contentType === "application/pdf") return data.subarray(0, 5).toString("ascii") === "%PDF-";
+  return true;
+}
+
+function safeBoardAssetName(value: string): string {
+  return value.trim().replace(/[\\/\u0000-\u001f\u007f]/g, "_").slice(0, 255) || "attachment";
+}
 
 function normalizeWhiteboardData(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -5197,6 +5240,15 @@ router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<v
       return { ok: false as const, status: 404, error: "Board not found." };
     }
 
+    if (parsed.data.operation === "update_card" && parsed.data.cardPatch?.attachments) {
+      const invalidAsset = parsed.data.cardPatch.attachments.some((attachment) =>
+        attachment.type === "file" && !boardAssetBelongsTo(attachment, teamId, params.data.boardId),
+      );
+      if (invalidAsset) {
+        return { ok: false as const, status: 400, error: "Choose only files uploaded to this board." };
+      }
+    }
+    const previousAssetPaths = boardAssetPaths(current);
     const applied = applyBoardOperation(current, parsed.data, account.displayName);
     if (!applied.ok) return applied;
     const data = JSON.stringify(applied.data);
@@ -5211,15 +5263,217 @@ router.patch("/boards/:boardId", requireCoordinator, async (req, res): Promise<v
       })
       .where(and(eq(interviewWhiteboardsTable.id, existing.id), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
       .returning();
-    return { ok: true as const, board: updated, conversation };
+    return { ok: true as const, board: updated, conversation, previousAssetPaths };
   });
 
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
     return;
   }
+  const nextData = parseBoardData(result.board.data);
+  const nextAssetPaths = boardAssetPaths(nextData);
+  for (const objectPath of result.previousAssetPaths) {
+    if (nextAssetPaths.has(objectPath)) continue;
+    try {
+      await objectStorageService.deleteObject(objectPath);
+    } catch (error) {
+      req.log.warn({ err: error, boardId: params.data.boardId }, "Could not remove an unreferenced board card file");
+    }
+  }
   pushRealtimeHint("interview_whiteboards");
   res.json(UpdateBoardResponse.parse(boardResponse(result.board, result.conversation)));
+});
+
+router.post(
+  "/boards/:boardId/cards/:cardId/comments",
+  requireCoordinator,
+  async (req, res): Promise<void> => {
+    const accountId = authenticatedInterviewerId(req);
+    const account = accountId ? await accountById(accountId, req) : undefined;
+    const params = CreateBoardCardCommentParams.safeParse(req.params);
+    const parsed = CreateBoardCardCommentBody.safeParse(req.body);
+    if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+    if (!params.success || !parsed.success || !parsed.data.text.trim()) {
+      res.status(400).json({ error: "Comment text must contain 1 to 4,000 characters." });
+      return;
+    }
+    const teamId = await requestTeamId(req);
+    const result = await db.transaction(async (tx) => {
+      const [existing] = await tx.select().from(interviewWhiteboardsTable)
+        .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
+        .limit(1)
+        .for("update");
+      const conversation = existing
+        ? await whiteboardConversationForAccount(existing, account.displayName, channelViewerFor(account), teamId)
+        : null;
+      const data = existing ? parseBoardData(existing.data) : null;
+      const card = data?.cards.find((item) => item.id === params.data.cardId);
+      if (!existing || !conversation || !data || !card) {
+        return { ok: false as const, status: 404, error: "Board card not found." };
+      }
+      if (card.comments.length >= 500) {
+        return { ok: false as const, status: 413, error: "This card has reached its comment limit." };
+      }
+      const now = new Date();
+      const comment = {
+        id: randomUUID(),
+        author: account.displayName,
+        text: parsed.data.text.trim().slice(0, 4000),
+        createdAt: now,
+      };
+      const activity = {
+        id: randomUUID(),
+        actor: account.displayName,
+        action: "commented" as const,
+        detail: "Added a comment",
+        createdAt: now,
+      };
+      const updatedData = {
+        ...data,
+        cards: data.cards.map((item) => item.id === card.id
+          ? { ...item, comments: [...item.comments, comment], activity: [...item.activity, activity].slice(-80) }
+          : item),
+      };
+      const serialized = JSON.stringify(updatedData);
+      if (Buffer.byteLength(serialized, "utf8") > MAX_WHITEBOARD_DATA_BYTES) {
+        return { ok: false as const, status: 413, error: "This board is too large to save another comment." };
+      }
+      await tx.update(interviewWhiteboardsTable)
+        .set({ data: serialized, updatedAt: now })
+        .where(and(eq(interviewWhiteboardsTable.id, existing.id), teamFilter(interviewWhiteboardsTable.teamId, teamId)));
+      return { ok: true as const, comment };
+    });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    pushRealtimeHint("interview_whiteboards");
+    res.status(201).json(CreateBoardCardCommentResponse.parse(result.comment));
+  },
+);
+
+router.post(
+  "/boards/:boardId/assets",
+  requireCoordinator,
+  express.raw({ type: [...BOARD_CARD_ASSET_CONTENT_TYPES], limit: MAX_BOARD_CARD_ASSET_BYTES }),
+  async (req, res): Promise<void> => {
+    const accountId = authenticatedInterviewerId(req);
+    const account = accountId ? await accountById(accountId, req) : undefined;
+    const params = UploadBoardCardAssetParams.safeParse(req.params);
+    const query = UploadBoardCardAssetQueryParams.safeParse(req.query);
+    const data = req.body as Buffer | undefined;
+    const contentType = req.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+    if (
+      !params.success ||
+      !/^[A-Za-z0-9-]{8,128}$/.test(params.data.boardId) ||
+      !query.success ||
+      !Buffer.isBuffer(data) ||
+      data.length === 0 ||
+      data.length > MAX_BOARD_CARD_ASSET_BYTES ||
+      !BOARD_CARD_ASSET_CONTENT_TYPES.has(contentType) ||
+      !validBoardAssetBytes(data, contentType)
+    ) {
+      res.status(400).json({ error: "Choose a valid PNG, JPEG, WebP, PDF, text, or CSV file up to 20 MB." });
+      return;
+    }
+    const teamId = await requestTeamId(req);
+    const [board] = await db.select().from(interviewWhiteboardsTable)
+      .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
+      .limit(1);
+    const conversation = board
+      ? await whiteboardConversationForAccount(board, account.displayName, channelViewerFor(account), teamId)
+      : null;
+    if (!board || !conversation || !parseBoardData(board.data)) {
+      res.status(404).json({ error: "Board not found." });
+      return;
+    }
+    const id = randomUUID();
+    const name = safeBoardAssetName(query.data.fileName);
+    try {
+      const objectPath = await objectStorageService.uploadBoardCardAsset(data, contentType, teamId, params.data.boardId, id);
+      res.status(201).json(UploadBoardCardAssetResponse.parse({
+        type: "file",
+        id,
+        name,
+        contentType,
+        size: data.length,
+        objectPath,
+      }));
+    } catch (error) {
+      req.log.error({ err: error, boardId: params.data.boardId }, "Could not store a board card attachment");
+      res.status(503).json({ error: "File storage is temporarily unavailable. Try again shortly." });
+    }
+  },
+);
+
+router.get("/boards/:boardId/assets/:assetId", requireAdmin, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId, req) : undefined;
+  const params = GetBoardCardAssetParams.safeParse(req.params);
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!params.success) { res.status(400).json({ error: "Invalid board attachment request." }); return; }
+  const teamId = await requestTeamId(req);
+  const [board] = await db.select().from(interviewWhiteboardsTable)
+    .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
+    .limit(1);
+  const conversation = board
+    ? await whiteboardConversationForAccount(board, account.displayName, channelViewerFor(account), teamId)
+    : null;
+  const parsedBoard = board ? parseBoardData(board.data) : null;
+  const attachment = parsedBoard?.cards.flatMap((card) => card.attachments)
+    .find((candidate): candidate is Extract<typeof candidate, { type: "file" }> =>
+      candidate.type === "file" && candidate.id === params.data.assetId,
+    );
+  if (!board || !conversation || !attachment || !boardAssetBelongsTo(attachment, teamId, params.data.boardId)) {
+    res.status(404).json({ error: "Board attachment not found." });
+    return;
+  }
+  try {
+    const file = await objectStorageService.downloadObject(attachment.objectPath);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Type", attachment.contentType || file.contentType);
+    res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(attachment.name)}`);
+    res.status(200).send(file.data);
+  } catch (error) {
+    req.log.warn({ err: error, boardId: params.data.boardId, assetId: params.data.assetId }, "Could not read board card attachment");
+    res.status(404).json({ error: "Board attachment not found." });
+  }
+});
+
+router.delete("/boards/:boardId/assets/:assetId", requireCoordinator, async (req, res): Promise<void> => {
+  const accountId = authenticatedInterviewerId(req);
+  const account = accountId ? await accountById(accountId, req) : undefined;
+  const params = DeleteUnattachedBoardCardAssetParams.safeParse(req.params);
+  if (!account) { res.status(401).json({ error: "Authentication required" }); return; }
+  if (!params.success) { res.status(400).json({ error: "Invalid board attachment request." }); return; }
+  const teamId = await requestTeamId(req);
+  const [board] = await db.select().from(interviewWhiteboardsTable)
+    .where(and(eq(interviewWhiteboardsTable.id, params.data.boardId), teamFilter(interviewWhiteboardsTable.teamId, teamId)))
+    .limit(1);
+  const conversation = board
+    ? await whiteboardConversationForAccount(board, account.displayName, channelViewerFor(account), teamId)
+    : null;
+  const data = board ? parseBoardData(board.data) : null;
+  if (!board || !conversation || !data) {
+    res.status(404).json({ error: "Board not found." });
+    return;
+  }
+  const referenced = data.cards.some((card) => card.attachments.some((attachment) =>
+    attachment.type === "file" && attachment.id === params.data.assetId,
+  ));
+  if (referenced) {
+    res.status(409).json({ error: "This upload is still attached to a card." });
+    return;
+  }
+  try {
+    await objectStorageService.deleteObject(`/objects/board-assets/${teamId}/${params.data.boardId}/${params.data.assetId}`);
+    res.status(204).end();
+  } catch (error) {
+    req.log.warn({ err: error, boardId: params.data.boardId, assetId: params.data.assetId }, "Could not remove an unused board card upload");
+    res.status(404).json({ error: "Board attachment not found." });
+  }
 });
 
 router.post("/spreadsheets", requireCoordinator, async (req, res): Promise<void> => {

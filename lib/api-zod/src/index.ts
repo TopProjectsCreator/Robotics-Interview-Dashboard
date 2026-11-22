@@ -14,5 +14,8 @@ export { GetFtcEventProfileParams } from "./generated/api";
 export type { GetFtcEventProfileParams as GetFtcEventProfileQuery } from "./generated/types/getFtcEventProfileParams";
 export { SearchModelsByProviderParams } from "./generated/api";
 export type { SearchModelsByProviderParams as SearchModelsByProviderQuery } from "./generated/types/searchModelsByProviderParams";
+// Orval emits this parameter schema and a generated parameter type with the same name.
+export { UploadBoardCardAssetParams } from './generated/api';
+export type { UploadBoardCardAssetParams as UploadBoardCardAssetPathParams } from './generated/types/uploadBoardCardAssetParams';
 export * from './generated/api';
 export * from './generated/types/index';

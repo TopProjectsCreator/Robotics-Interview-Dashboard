@@ -487,7 +487,10 @@ function boardReadView(
       return columnA - columnB || a.position - b.position;
     })
     .filter((card) => !query || [
-      card.title, card.description, card.assignee ?? "", ...card.labels,
+      card.title,
+      card.description,
+      card.assignee ?? "",
+      ...card.labels.map((label) => typeof label === "string" ? label : label.name),
     ].some((value) => value.toLowerCase().includes(query)));
   const offset = safeNumber(args.offset, 0, 0, cards.length);
   const limit = safeNumber(args.limit, 40, 1, 50);

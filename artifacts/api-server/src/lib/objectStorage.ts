@@ -318,6 +318,15 @@ export function toStoragePath(objectPath: string): string {
   ) {
     return `generated/cad/${parts[2]}/${parts[3]}`;
   }
+  if (
+    parts.length === 4 &&
+    parts[0] === 'board-assets' &&
+    /^[A-Za-z0-9_-]{1,128}$/.test(parts[1]) &&
+    /^[A-Za-z0-9-]{8,128}$/.test(parts[2]) &&
+    /^[A-Za-z0-9-]{8,128}$/.test(parts[3])
+  ) {
+    return `board-assets/${parts[1]}/${parts[2]}/${parts[3]}`;
+  }
   throw new ObjectNotFoundError();
 }
 
@@ -636,6 +645,17 @@ export class ObjectStorageService {
     const id = randomUUID();
     const path = `team-branding/${teamId}/${id}`;
     const { instance } = await writeWithFailover("Failed to store team background", async (target) => {
+      const { error } = await supabaseFor(target)
+        .storage.from(storageBucket(target))
+        .upload(path, data, { contentType, upsert: false });
+      if (error) throw new Error(error.message);
+    });
+    return `${objectPathPrefix(instance)}${path}`;
+  }
+
+  async uploadBoardCardAsset(data: Buffer, contentType: string, teamId: string, boardId: string, assetId: string): Promise<string> {
+    const path = `board-assets/${teamId}/${boardId}/${assetId}`;
+    const { instance } = await writeWithFailover("Failed to store board card attachment", async (target) => {
       const { error } = await supabaseFor(target)
         .storage.from(storageBucket(target))
         .upload(path, data, { contentType, upsert: false });

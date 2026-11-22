@@ -9,6 +9,7 @@ import { interviewerAccountsTable } from "../../../../lib/db/src/schema/intervie
 import { revokedSessionsTable } from "../../../../lib/db/src/schema/sessions.ts";
 import { interviewWhiteboardsTable } from "../../../../lib/db/src/schema/whiteboards.ts";
 import { assistantSkillsTable } from "../../../../lib/db/src/schema/assistant.ts";
+import { chatChannelsTable, chatChannelMembersTable } from "../../../../lib/db/src/schema/interview.ts";
 import { teamsTable, DEFAULT_TEAM_ID, normalizeTeamName } from "../../../../lib/db/src/schema/teams.ts";
 import { applyBoardOperation, initialBoardData, parseBoardData } from "./boardOperations.ts";
 
@@ -147,6 +148,104 @@ test("cards can be moved between columns and reordered within a column", () => {
   assert.deepEqual(planned.map((card) => card.position), [0, 1]);
 });
 
+test("legacy string labels and cards without collaboration fields remain readable", () => {
+  let data = initialBoardData();
+  const added = addCard(data, "Legacy intake checklist");
+  data = added.data;
+  const legacy = structuredClone(data);
+  const card = legacy.cards[0];
+  card.labels = ["hardware", "handoff"];
+  delete card.checklist;
+  delete card.attachments;
+  delete card.cover;
+  delete card.comments;
+  delete card.activity;
+
+  const parsed = parseBoardData(JSON.stringify(legacy));
+  assert.ok(parsed);
+  assert.deepEqual(parsed.cards[0].labels.map((label) => label.name), ["hardware", "handoff"]);
+  assert.deepEqual(parsed.cards[0].checklist, []);
+  assert.deepEqual(parsed.cards[0].attachments, []);
+  assert.equal(parsed.cards[0].cover, null);
+  assert.deepEqual(parsed.cards[0].comments, []);
+  assert.deepEqual(parsed.cards[0].activity, []);
+});
+
+test("checklists, colored labels, and card history persist through board operations", () => {
+  let data = initialBoardData();
+  const added = addCard(data, "Verify odometry");
+  data = added.data;
+  const card = added.card;
+  assert.equal(card.activity[0].actor, "Alex");
+  assert.equal(card.activity[0].action, "created");
+
+  data = apply(data, {
+    operation: "update_card",
+    cardId: card.id,
+    cardPatch: {
+      labels: [{ name: "robotics", color: "#16869a" }],
+      checklist: [
+        { id: "step-1", title: "Check encoder direction", completed: false },
+        { id: "step-2", title: "Compare wheel distances", completed: true },
+      ],
+    },
+  });
+  const updated = data.cards.find((item) => item.id === card.id);
+  assert.equal(updated.labels[0].name, "robotics");
+  assert.equal(updated.labels[0].color, "#16869a");
+  assert.deepEqual(updated.checklist.map((item) => item.completed), [false, true]);
+  assert.equal(updated.activity.at(-1).action, "edited");
+  assert.equal(updated.activity.at(-1).actor, "Alex");
+
+  data = apply(data, {
+    operation: "move_card",
+    cardId: card.id,
+    targetColumnId: "planned",
+  });
+  const moved = data.cards.find((item) => item.id === card.id);
+  assert.equal(moved.activity.at(-1).action, "moved");
+  assert.equal(moved.activity.at(-1).actor, "Alex");
+  const reloaded = parseBoardData(JSON.stringify(data));
+  assert.equal(reloaded.cards[0].checklist[1].completed, true);
+  assert.equal(reloaded.cards[0].activity.at(-1).action, "moved");
+});
+
+test("unsafe web links and cross-shape covers are rejected", () => {
+  const added = addCard(initialBoardData(), "Attach a safe reference");
+  const unsafeLink = applyBoardOperation(added.data, {
+    operation: "update_card",
+    cardId: added.card.id,
+    cardPatch: {
+      attachments: [{ type: "link", id: "link-1", label: "unsafe", url: "javascript:alert(1)" }],
+    },
+  }, "Alex");
+  assert.equal(unsafeLink.ok, false);
+
+  const missingCover = applyBoardOperation(added.data, {
+    operation: "update_card",
+    cardId: added.card.id,
+    cardPatch: { cover: { type: "image", assetId: "not-attached" } },
+  }, "Alex");
+  assert.equal(missingCover.ok, false);
+
+  const nonImageCover = applyBoardOperation(added.data, {
+    operation: "update_card",
+    cardId: added.card.id,
+    cardPatch: {
+      attachments: [{
+        type: "file",
+        id: "asset-12345678",
+        name: "spec.pdf",
+        contentType: "application/pdf",
+        size: 12,
+        objectPath: "/objects/board-assets/team-a/board-12345678/asset-12345678",
+      }],
+      cover: { type: "image", assetId: "asset-12345678" },
+    },
+  }, "Alex");
+  assert.equal(nonImageCover.ok, false, "only image attachments can be used as image covers");
+});
+
 test("sequential edits preserve changes to different cards", () => {
   let data = initialBoardData();
   let added = addCard(data, "Inspect lidar mount");
@@ -281,14 +380,46 @@ test("coordinator board and assistant skill operations remain persisted and team
     role: "interviewer",
     teamId: "team-a",
   };
-  const accounts = [account, otherCoordinator, interviewer];
+  const outsiderCoordinator = {
+    id: "board-direct-outsider",
+    displayName: "Casey",
+    normalizedName: "casey",
+    passwordHash: "configured",
+    role: "coordinator",
+    teamId: "team-a",
+  };
+  const accounts = [account, otherCoordinator, interviewer, outsiderCoordinator];
   const board = {
     id: "board-persistence-fixture",
+    teamId: account.teamId,
     title: "Persistence check",
     data: JSON.stringify(initialBoardData()),
     createdBy: account.displayName,
     conversationScope: "shared",
     conversationPeer: null,
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+  };
+  const directBoard = {
+    id: "board-direct-fixture",
+    teamId: account.teamId,
+    title: "Private handoff",
+    data: JSON.stringify(initialBoardData()),
+    createdBy: "Alex",
+    conversationScope: "direct",
+    conversationPeer: "Alex\u001fMorgan",
+    createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+  };
+  const privateChannel = { id: "channel-private", teamId: account.teamId, name: "Invite only" };
+  const channelBoard = {
+    id: "board-channel-fixture",
+    teamId: account.teamId,
+    title: "Private channel board",
+    data: JSON.stringify(initialBoardData()),
+    createdBy: "Alex",
+    conversationScope: "channel",
+    conversationPeer: privateChannel.id,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
   };
@@ -316,6 +447,24 @@ test("coordinator board and assistant skill operations remain persisted and team
       updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     },
   ];
+  const storedBoardAssets = new Map();
+  const deletedBoardAssetPaths = [];
+  class MockObjectStorageService {
+    async uploadBoardCardAsset(data, contentType, teamId, boardId, assetId) {
+      const objectPath = `/objects/board-assets/${teamId}/${boardId}/${assetId}`;
+      storedBoardAssets.set(objectPath, { data: Buffer.from(data), contentType });
+      return objectPath;
+    }
+    async downloadObject(objectPath) {
+      const file = storedBoardAssets.get(objectPath);
+      if (!file) throw new Error("File not found");
+      return file;
+    }
+    async deleteObject(objectPath) {
+      deletedBoardAssetPaths.push(objectPath);
+      storedBoardAssets.delete(objectPath);
+    }
+  }
   // Collect every bound Param value, recursing into nested chunks: team
   // scoping wraps id lookups in and(...), so the id is no longer always the
   // first top-level chunk.
@@ -338,8 +487,14 @@ test("coordinator board and assistant skill operations remain persisted and team
     if (table === interviewerAccountsTable) {
       return accounts.filter((candidate) => params.includes(candidate.id));
     }
+    if (table === chatChannelsTable) {
+      return params.includes(privateChannel.id) && params.includes(privateChannel.teamId) ? [privateChannel] : [];
+    }
+    if (table === chatChannelMembersTable) return [];
     if (table === interviewWhiteboardsTable) {
-      return params.includes(board.id) ? [board] : [];
+      return [board, directBoard, channelBoard].filter((candidate) =>
+        params.includes(candidate.id) && params.includes(candidate.teamId),
+      );
     }
     if (table === assistantSkillsTable) {
       return skillRows.filter((skill) => params.includes(skill.teamId));
@@ -399,6 +554,12 @@ test("coordinator board and assistant skill operations remain persisted and team
           Object.assign(board, values);
           return Promise.resolve([board]);
         },
+        then(resolve, reject) {
+          if (table !== interviewWhiteboardsTable) return Promise.resolve().then(resolve, reject);
+          assert.ok(paramValues(clause).includes(board.id));
+          Object.assign(board, values);
+          return Promise.resolve().then(resolve, reject);
+        },
       };
       return updateQuery;
     },
@@ -455,6 +616,8 @@ test("coordinator board and assistant skill operations remain persisted and team
       interviewerAccountsTable,
       revokedSessionsTable,
       interviewWhiteboardsTable,
+      chatChannelsTable,
+      chatChannelMembersTable,
       assistantSkillsTable,
       teamsTable,
       DEFAULT_TEAM_ID,
@@ -466,6 +629,9 @@ test("coordinator board and assistant skill operations remain persisted and team
       secondaryPool: () => null,
       hasSecondary: () => false,
     },
+  });
+  mock.module("../lib/objectStorage", {
+    namedExports: { ObjectStorageService: MockObjectStorageService },
   });
   t.after(() => mock.restoreAll());
 
@@ -524,10 +690,91 @@ test("coordinator board and assistant skill operations remain persisted and team
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-    assert.equal((await request(undefined, "GET", "/assistant/skills")).status, 401);
     const coordinatorSession = session;
     const interviewerSession = createInterviewerSession(interviewer.id);
     const otherCoordinatorSession = createInterviewerSession(otherCoordinator.id);
+    const outsiderCoordinatorSession = createInterviewerSession(outsiderCoordinator.id);
+
+    const taskCardId = patchedBoard.data.cards.find((card) => card.title === "Confirm saved task").id;
+    const commentPath = `/boards/${board.id}/cards/${taskCardId}/comments`;
+    assert.equal((await request(undefined, "POST", commentPath, { text: "No session" })).status, 401);
+    assert.equal((await request(interviewerSession, "POST", commentPath, { text: "Not a coordinator" })).status, 403);
+    assert.equal((await request(otherCoordinatorSession, "GET", path)).status, 404, "another team's board remains hidden");
+    const directCommentPath = `/boards/${directBoard.id}/cards/unknown-card/comments`;
+    assert.equal((await request(outsiderCoordinatorSession, "GET", `/boards/${directBoard.id}`)).status, 404, "direct boards remain limited to their conversation participants");
+    assert.equal((await request(outsiderCoordinatorSession, "POST", directCommentPath, { text: "Not a participant" })).status, 404);
+    assert.equal((await request(interviewerSession, "GET", `/boards/${channelBoard.id}`)).status, 404, "invite-only channel boards remain hidden from nonmembers");
+    const blockedDirectUpload = await fetch(`${baseUrl}/boards/${directBoard.id}/assets?fileName=private.png`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${outsiderCoordinatorSession}`, "content-type": "image/png" },
+      body: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    });
+    assert.equal(blockedDirectUpload.status, 404);
+    const commentResponse = await request(coordinatorSession, "POST", commentPath, {
+      text: "Check the encoder direction before the next run.",
+      author: "Forged author",
+    });
+    assert.equal(commentResponse.status, 201);
+    const comment = await commentResponse.json();
+    assert.equal(comment.author, "Alex", "comment authors must come from the authenticated session");
+    assert.equal(comment.text, "Check the encoder direction before the next run.");
+    const afterComment = await (await request(coordinatorSession, "GET", path)).json();
+    const commentedCard = afterComment.data.cards.find((card) => card.id === taskCardId);
+    assert.equal(commentedCard.comments[0].id, comment.id);
+    assert.equal(commentedCard.activity.at(-1).actor, "Alex", "activity actors must come from the authenticated session");
+    assert.equal(commentedCard.activity.at(-1).action, "commented");
+    const invalidComment = await request(coordinatorSession, "POST", commentPath, { text: " " });
+    assert.equal(invalidComment.status, 400);
+    const unknownAssetId = "00000000-0000-4000-8000-000000000000";
+    assert.equal((await request(undefined, "GET", `/boards/${board.id}/assets/${unknownAssetId}`)).status, 401);
+    assert.equal((await request(otherCoordinatorSession, "GET", `/boards/${board.id}/assets/${unknownAssetId}`)).status, 404);
+    assert.equal((await request(undefined, "POST", `/boards/${board.id}/assets?fileName=test.png`, {})).status, 401);
+    const invalidImage = await fetch(`${baseUrl}/boards/${board.id}/assets?fileName=bad.png`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${coordinatorSession}`, "content-type": "image/png" },
+      body: Buffer.from("not a png"),
+    });
+    assert.equal(invalidImage.status, 400, "the upload route rejects a mismatched file signature");
+    const validImageBytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+    const uploadResponse = await fetch(`${baseUrl}/boards/${board.id}/assets?fileName=odometry-cover.png`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${coordinatorSession}`, "content-type": "image/png" },
+      body: validImageBytes,
+    });
+    assert.equal(uploadResponse.status, 201);
+    const uploadedAsset = await uploadResponse.json();
+    assert.equal(uploadedAsset.name, "odometry-cover.png");
+    const fileAttachment = { ...uploadedAsset, type: "file" };
+    const secondCardResponse = await request(coordinatorSession, "PATCH", path, {
+      operation: "create_card",
+      card: { title: "Share the same cover", columnId: "backlog" },
+    });
+    assert.equal(secondCardResponse.status, 200);
+    const secondCard = (await secondCardResponse.json()).data.cards.find((card) => card.title === "Share the same cover");
+
+    const attach = (cardId) => request(coordinatorSession, "PATCH", path, {
+      operation: "update_card",
+      cardId,
+      cardPatch: { attachments: [fileAttachment], cover: { type: "image", assetId: uploadedAsset.id } },
+    });
+    assert.equal((await attach(taskCardId)).status, 200);
+    assert.equal((await attach(secondCard.id)).status, 200);
+    assert.equal((await request(coordinatorSession, "DELETE", `/boards/${board.id}/assets/${uploadedAsset.id}`)).status, 409);
+    const downloadedAsset = await request(coordinatorSession, "GET", `/boards/${board.id}/assets/${uploadedAsset.id}`);
+    assert.equal(downloadedAsset.status, 200);
+    assert.deepEqual(Buffer.from(await downloadedAsset.arrayBuffer()), validImageBytes);
+
+    const detach = (cardId) => request(coordinatorSession, "PATCH", path, {
+      operation: "update_card",
+      cardId,
+      cardPatch: { attachments: [], cover: null },
+    });
+    assert.equal((await detach(taskCardId)).status, 200);
+    assert.equal(deletedBoardAssetPaths.length, 0, "a file still attached to another card must not be deleted");
+    assert.equal((await detach(secondCard.id)).status, 200);
+    assert.deepEqual(deletedBoardAssetPaths, [uploadedAsset.objectPath], "the final detach removes the private object");
+
+    assert.equal((await request(undefined, "GET", "/assistant/skills")).status, 401);
     assert.equal((await request(interviewerSession, "GET", "/assistant/skills")).status, 403);
 
     const listA = await request(coordinatorSession, "GET", "/assistant/skills");

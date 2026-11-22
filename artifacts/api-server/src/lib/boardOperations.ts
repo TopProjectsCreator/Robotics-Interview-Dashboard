@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type {
+  BoardCardActivity,
+  BoardCardAttachment,
   BoardCardInput,
   BoardCardPatch,
   BoardData,
+  BoardLabel,
   BoardOperationInput,
 } from "@workspace/api-zod";
 
@@ -22,11 +25,92 @@ function fail(error: string, status = 400): OperationResult {
   return { ok: false, error, status };
 }
 
-function normalizeLabels(labels: string[] | undefined): string[] {
-  return [...new Set((labels ?? [])
-    .map((label) => label.trim().slice(0, 40))
-    .filter(Boolean))]
-    .slice(0, 12);
+const LABEL_COLORS = ["#16869a", "#6474c8", "#c17b26", "#3e8b66", "#b24e5b", "#8258a8"];
+const BOARD_ASSET_PATH = /^\/objects\/(?:secondary\/)?board-assets\/[A-Za-z0-9_-]{1,128}\/[A-Za-z0-9-]{8,128}\/[A-Za-z0-9-]{8,128}$/;
+
+function normalizeLabels(labels: BoardLabel[] | undefined): BoardData["cards"][number]["labels"] {
+  const unique = new Map<string, BoardData["cards"][number]["labels"][number]>();
+  for (const [index, label] of (labels ?? []).entries()) {
+    const name = (typeof label === "string" ? label : label.name).trim().slice(0, 40);
+    if (!name) continue;
+    const color = typeof label === "string"
+      ? LABEL_COLORS[index % LABEL_COLORS.length]
+      : /^#[0-9a-f]{6}$/i.test(label.color) ? label.color.toLowerCase() : LABEL_COLORS[index % LABEL_COLORS.length];
+    if (!unique.has(name.toLowerCase())) unique.set(name.toLowerCase(), { name, color });
+  }
+  return [...unique.values()].slice(0, 12);
+}
+
+function normalizeChecklist(items: BoardCardInput["checklist"] | BoardCardPatch["checklist"] | undefined) {
+  const unique = new Set<string>();
+  return (items ?? []).slice(0, 100).map((item) => ({
+    id: item.id.trim().slice(0, 80),
+    title: item.title.trim().slice(0, 200),
+    completed: Boolean(item.completed),
+  })).filter((item) => {
+    if (!item.id || !item.title || unique.has(item.id)) return false;
+    unique.add(item.id);
+    return true;
+  });
+}
+
+function isValidBoardLink(value: string): boolean {
+  if (value.length > 2048) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") &&
+      !url.username && !url.password && Boolean(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeAttachments(attachments: BoardCardAttachment[] | undefined): BoardCardAttachment[] | null {
+  const result: BoardCardAttachment[] = [];
+  const ids = new Set<string>();
+  for (const attachment of attachments ?? []) {
+    if (!attachment.id || ids.has(attachment.id)) return null;
+    ids.add(attachment.id);
+    if (attachment.type === "file") {
+      if (
+        !attachment.name.trim() ||
+        attachment.name.length > 255 ||
+        attachment.contentType.length > 100 ||
+        !Number.isSafeInteger(attachment.size) ||
+        attachment.size < 1 ||
+        !BOARD_ASSET_PATH.test(attachment.objectPath)
+      ) return null;
+      result.push({ ...attachment, name: attachment.name.trim().slice(0, 255) });
+      continue;
+    }
+    const label = attachment.label.trim().slice(0, 120);
+    if (!label || !isValidBoardLink(attachment.url)) return null;
+    result.push({ ...attachment, label });
+  }
+  return result.slice(0, 20);
+}
+
+function isImageCardAsset(attachments: BoardCardAttachment[], assetId: string): boolean {
+  return attachments.some((attachment) =>
+    attachment.type === "file" && attachment.id === assetId && attachment.contentType.startsWith("image/"),
+  );
+}
+
+function recordCardActivity(
+  card: BoardData["cards"][number],
+  action: BoardCardActivity["action"],
+  actor: string,
+  detail: string,
+  now: Date,
+): BoardData["cards"][number] {
+  const activity: BoardCardActivity = {
+    id: randomUUID(),
+    actor,
+    action,
+    detail: detail.slice(0, 240),
+    createdAt: now,
+  };
+  return { ...card, activity: [...card.activity, activity].slice(-80) };
 }
 
 function normalizedDate(value: string | Date | null | undefined): Date | null {
@@ -69,6 +153,11 @@ function normalizeCardInput(
       startDate,
       dueDate,
       labels: normalizeLabels(input.labels),
+      checklist: normalizeChecklist(input.checklist),
+      attachments: [],
+      cover: null,
+      comments: [],
+      activity: [],
       createdAt: now,
       updatedAt: now,
       updatedBy: "",
@@ -113,12 +202,12 @@ function moveOneCard(
     insertAt = destination.findIndex((item) => item.id === beforeCardId);
     if (insertAt < 0) return { error: "The target card is not in that column.", status: 400 };
   }
-  destination.splice(insertAt, 0, {
+  destination.splice(insertAt, 0, recordCardActivity({
     ...card,
     columnId: targetColumnId,
     updatedAt: now,
     updatedBy: actor,
-  });
+  }, "moved", actor, `Moved to ${targetColumnId}`, now));
   const updatedDestination = destination.map((item, position) => ({ ...item, position }));
   const affectedColumns = [card.columnId, targetColumnId];
   const next = cards.filter((item) => item.id !== cardId && item.columnId !== targetColumnId)
@@ -183,6 +272,56 @@ export function parseBoardData(raw: string): BoardData | null {
       const dueDate = card.dueDate == null ? null : normalizedDate(card.dueDate as string | Date);
       const createdAt = new Date(card.createdAt as string | Date);
       const updatedAt = new Date(card.updatedAt as string | Date);
+      const checklist = card.checklist === undefined ? [] : card.checklist;
+      const attachments = card.attachments === undefined ? [] : card.attachments;
+      const cover = card.cover === undefined ? null : card.cover;
+      const comments = card.comments === undefined ? [] : card.comments;
+      const activity = card.activity === undefined ? [] : card.activity;
+      const parsedAttachments = Array.isArray(attachments)
+        ? normalizeAttachments(attachments as BoardCardAttachment[])
+        : null;
+      const parsedComments = Array.isArray(comments) ? comments.map((comment) => {
+        if (!comment || typeof comment !== "object") return null;
+        const record = comment as Record<string, unknown>;
+        const createdAt = new Date(record.createdAt as string | Date);
+        return typeof record.id === "string" &&
+          typeof record.author === "string" &&
+          typeof record.text === "string" &&
+          record.text.length > 0 && record.text.length <= 4000 &&
+          !Number.isNaN(createdAt.getTime())
+          ? { id: record.id, author: record.author, text: record.text, createdAt }
+          : null;
+      }) : null;
+      const parsedActivity = Array.isArray(activity) ? activity.map((entry) => {
+        if (!entry || typeof entry !== "object") return null;
+        const record = entry as Record<string, unknown>;
+        const createdAt = new Date(record.createdAt as string | Date);
+        return typeof record.id === "string" &&
+          typeof record.actor === "string" &&
+          ["created", "edited", "moved", "commented"].includes(record.action as string) &&
+          typeof record.detail === "string" && record.detail.length <= 240 &&
+          !Number.isNaN(createdAt.getTime())
+          ? {
+              id: record.id,
+              actor: record.actor,
+              action: record.action as BoardCardActivity["action"],
+              detail: record.detail,
+              createdAt,
+            }
+          : null;
+      }) : null;
+      const parsedCover = cover === null
+        ? null
+        : cover && typeof cover === "object" &&
+            (cover as Record<string, unknown>).type === "color" &&
+            typeof (cover as Record<string, unknown>).color === "string" &&
+            /^#[0-9a-f]{6}$/i.test((cover as Record<string, unknown>).color as string)
+          ? cover as BoardData["cards"][number]["cover"]
+          : cover && typeof cover === "object" &&
+              (cover as Record<string, unknown>).type === "image" &&
+              typeof (cover as Record<string, unknown>).assetId === "string"
+            ? cover as BoardData["cards"][number]["cover"]
+            : undefined;
       if (
         typeof card.id !== "string" ||
         typeof card.title !== "string" ||
@@ -195,8 +334,32 @@ export function parseBoardData(raw: string): BoardData | null {
         (typeof card.assignee !== "string" && card.assignee !== null) ||
         (card.startDate != null && !startDate) ||
         (card.dueDate != null && !dueDate) ||
-        Array.isArray(card.labels) === false ||
-        !(card.labels as unknown[]).every((label) => typeof label === "string") ||
+        !Array.isArray(card.labels) ||
+        !(card.labels as unknown[]).every((label) =>
+          typeof label === "string" ||
+          Boolean(label && typeof label === "object" &&
+            typeof (label as Record<string, unknown>).name === "string" &&
+            typeof (label as Record<string, unknown>).color === "string"),
+        ) ||
+        !Array.isArray(checklist) ||
+        checklist.length > 100 ||
+        !checklist.every((item) => Boolean(item && typeof item === "object" &&
+          typeof (item as Record<string, unknown>).id === "string" &&
+          typeof (item as Record<string, unknown>).title === "string" &&
+          typeof (item as Record<string, unknown>).completed === "boolean")) ||
+        !Array.isArray(attachments) ||
+        attachments.length > 20 ||
+        !Array.isArray(comments) ||
+        comments.length > 500 ||
+        !Array.isArray(activity) ||
+        activity.length > 80 ||
+        !parsedAttachments ||
+        parsedComments?.some((comment) => !comment) ||
+        parsedActivity?.some((entry) => !entry) ||
+        !parsedComments ||
+        !parsedActivity ||
+        parsedCover === undefined ||
+        (parsedCover?.type === "image" && !isImageCardAsset(parsedAttachments, parsedCover.assetId)) ||
         Number.isNaN(createdAt.getTime()) ||
         Number.isNaN(updatedAt.getTime()) ||
         typeof card.updatedBy !== "string"
@@ -212,7 +375,12 @@ export function parseBoardData(raw: string): BoardData | null {
         assignee: card.assignee as string | null,
         startDate,
         dueDate,
-        labels: card.labels as string[],
+        labels: normalizeLabels(card.labels as BoardLabel[]),
+        checklist: normalizeChecklist(checklist as BoardCardInput["checklist"]),
+        attachments: parsedAttachments,
+        cover: parsedCover,
+        comments: parsedComments.filter((comment): comment is NonNullable<typeof comment> => comment !== null),
+        activity: parsedActivity.filter((entry): entry is NonNullable<typeof entry> => entry !== null),
         createdAt,
         updatedAt,
         updatedBy: card.updatedBy,
@@ -275,6 +443,7 @@ export function applyBoardOperation(
       }
       card.card.updatedBy = actor;
       card.card.position = sortColumnCards(data.cards, card.card.columnId).length;
+      Object.assign(card.card, recordCardActivity(card.card, "created", actor, "Created card", now));
       data.cards.push(card.card);
       return { ok: true, data };
     }
@@ -292,6 +461,16 @@ export function applyBoardOperation(
       next.description = (next.description ?? "").trim().slice(0, 12_000);
       next.assignee = next.assignee?.trim().slice(0, 80) || null;
       next.labels = normalizeLabels(next.labels);
+      next.checklist = normalizeChecklist(next.checklist);
+      const attachments = normalizeAttachments(next.attachments);
+      if (!attachments) return fail("Attachments must be valid private files or web links.");
+      next.attachments = attachments;
+      if (next.cover?.type === "color" && !/^#[0-9a-f]{6}$/i.test(next.cover.color)) {
+        return fail("Choose a valid card cover color.");
+      }
+      if (next.cover?.type === "image" && !isImageCardAsset(next.attachments, next.cover.assetId)) {
+        return fail("An image cover must use an image file attached to this card.");
+      }
       const startDate = normalizedDate(next.startDate);
       const dueDate = normalizedDate(next.dueDate);
       if (next.startDate && !startDate) return fail("Enter a valid start date.");
@@ -303,6 +482,7 @@ export function applyBoardOperation(
       next.dueDate = dueDate;
       next.updatedAt = now;
       next.updatedBy = actor;
+      Object.assign(next, recordCardActivity(next, "edited", actor, "Edited card details", now));
       data.cards = data.cards.map((card) => card.id === existing.id ? next : card);
       return { ok: true, data };
     }
@@ -356,6 +536,7 @@ export function applyBoardOperation(
         if (!created.card) return fail(created.error ?? "Card details are invalid.");
         created.card.position = position++;
         created.card.updatedBy = actor;
+        Object.assign(created.card, recordCardActivity(created.card, "created", actor, "Created card", now));
         data.cards.push(created.card);
       }
       return { ok: true, data };
@@ -379,6 +560,9 @@ export function applyBoardOperation(
         updatedAt: now,
         updatedBy: actor,
       }));
+      for (let index = 0; index < additions.length; index += 1) {
+        Object.assign(additions[index], recordCardActivity(additions[index], "moved", actor, `Moved to ${operation.targetColumnId}`, now));
+      }
       data.cards = normalizeColumnPositions(keep.filter((card) => card.columnId !== operation.targetColumnId)
         .concat(destination, additions), affectedColumns);
       return { ok: true, data };
@@ -441,7 +625,7 @@ export function applyBoardOperation(
       }
       const targetCards = sortColumnCards(data.cards, targetColumnId);
       const moved = sortColumnCards(data.cards, column.id).map((card) => ({
-        ...card,
+        ...recordCardActivity(card, "moved", actor, `Moved to ${targetColumnId}`, now),
         columnId: targetColumnId,
         position: targetCards.length + card.position,
         updatedAt: now,

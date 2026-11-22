@@ -5,7 +5,11 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { BoardCardAttachment } from './boardCardAttachment';
+import type { BoardCardCover } from './boardCardCover';
 import type { BoardCardPatchPriority } from './boardCardPatchPriority';
+import type { BoardChecklistItem } from './boardChecklistItem';
+import type { BoardLabel } from './boardLabel';
 
 export interface BoardCardPatch {
   /**
@@ -22,9 +26,11 @@ export interface BoardCardPatch {
   startDate?: Date | null;
   /** @nullable */
   dueDate?: Date | null;
-  /**
-     * @maxItems 12
-     * @items.maxLength 40
-     */
-  labels?: string[];
+  /** @maxItems 12 */
+  labels?: BoardLabel[];
+  /** @maxItems 100 */
+  checklist?: BoardChecklistItem[];
+  /** @maxItems 20 */
+  attachments?: BoardCardAttachment[];
+  cover?: BoardCardCover | null;
 }

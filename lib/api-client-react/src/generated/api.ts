@@ -70,6 +70,9 @@ import type {
   BlockedIp,
   BlockedIpList,
   Board,
+  BoardCardComment,
+  BoardCardCommentInput,
+  BoardCardFileAttachment,
   BoardCreateInput,
   BoardOperationInput,
   Broadcast,
@@ -339,6 +342,7 @@ import type {
   UpdateFeatureRequestInput,
   UpdateTeamBranding,
   UpdateTeamThemeSetting,
+  UploadBoardCardAssetParams,
   UploadCadModelFileParams,
   UploadInput,
   UploadPartsRobotPreviewFileParams,
@@ -10366,6 +10370,316 @@ export const useUpdateBoard = <TError = ErrorType<unknown>,
         TContext
       > => {
       return useMutation(getUpdateBoardMutationOptions(options));
+    }
+
+export const getCreateBoardCardCommentUrl = (boardId: string,
+    cardId: string,) => {
+
+
+
+
+  return `/api/boards/${boardId}/cards/${cardId}/comments`
+}
+
+/**
+ * @summary Add a comment to a board card
+ */
+export const createBoardCardComment = async (boardId: string,
+    cardId: string,
+    boardCardCommentInput: BoardCardCommentInput, options?: Parameters<typeof customFetch>[1]): Promise<BoardCardComment> => {
+
+  return customFetch<BoardCardComment>(getCreateBoardCardCommentUrl(boardId,cardId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(boardCardCommentInput)
+  }
+);}
+
+
+
+
+
+export const getCreateBoardCardCommentMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBoardCardComment>>, TError,{boardId: string;cardId: string;data: BodyType<BoardCardCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createBoardCardComment>>, TError,{boardId: string;cardId: string;data: BodyType<BoardCardCommentInput>}, TContext> => {
+
+const mutationKey = ['createBoardCardComment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createBoardCardComment>>, {boardId: string;cardId: string;data: BodyType<BoardCardCommentInput>}> = (props) => {
+          const {boardId,cardId,data} = props ?? {};
+
+          return  createBoardCardComment(boardId,cardId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateBoardCardCommentMutationResult = NonNullable<Awaited<ReturnType<typeof createBoardCardComment>>>
+    export type CreateBoardCardCommentMutationBody = BodyType<BoardCardCommentInput>
+    export type CreateBoardCardCommentMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Add a comment to a board card
+ */
+export const useCreateBoardCardComment = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createBoardCardComment>>, TError,{boardId: string;cardId: string;data: BodyType<BoardCardCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createBoardCardComment>>,
+        TError,
+        {boardId: string;cardId: string;data: BodyType<BoardCardCommentInput>},
+        TContext
+      > => {
+      return useMutation(getCreateBoardCardCommentMutationOptions(options));
+    }
+
+export const getUploadBoardCardAssetUrl = (boardId: string,
+    params: UploadBoardCardAssetParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/boards/${boardId}/assets?${stringifiedParams}` : `/api/boards/${boardId}/assets`
+}
+
+/**
+ * @summary Upload a private board card attachment
+ */
+export const uploadBoardCardAsset = async (boardId: string,
+    uploadBoardCardAssetBody: Blob,
+    params: UploadBoardCardAssetParams, options?: Parameters<typeof customFetch>[1]): Promise<BoardCardFileAttachment> => {
+
+  return customFetch<BoardCardFileAttachment>(getUploadBoardCardAssetUrl(boardId,params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: uploadBoardCardAssetBody
+  }
+);}
+
+
+
+
+
+export const getUploadBoardCardAssetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadBoardCardAsset>>, TError,{boardId: string;data: BodyType<Blob>;params: UploadBoardCardAssetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadBoardCardAsset>>, TError,{boardId: string;data: BodyType<Blob>;params: UploadBoardCardAssetParams}, TContext> => {
+
+const mutationKey = ['uploadBoardCardAsset'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadBoardCardAsset>>, {boardId: string;data: BodyType<Blob>;params: UploadBoardCardAssetParams}> = (props) => {
+          const {boardId,data,params} = props ?? {};
+
+          return  uploadBoardCardAsset(boardId,data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadBoardCardAssetMutationResult = NonNullable<Awaited<ReturnType<typeof uploadBoardCardAsset>>>
+    export type UploadBoardCardAssetMutationBody = BodyType<Blob>
+    export type UploadBoardCardAssetMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Upload a private board card attachment
+ */
+export const useUploadBoardCardAsset = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadBoardCardAsset>>, TError,{boardId: string;data: BodyType<Blob>;params: UploadBoardCardAssetParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadBoardCardAsset>>,
+        TError,
+        {boardId: string;data: BodyType<Blob>;params: UploadBoardCardAssetParams},
+        TContext
+      > => {
+      return useMutation(getUploadBoardCardAssetMutationOptions(options));
+    }
+
+export const getGetBoardCardAssetUrl = (boardId: string,
+    assetId: string,) => {
+
+
+
+
+  return `/api/boards/${boardId}/assets/${assetId}`
+}
+
+/**
+ * @summary Download a private board card attachment
+ */
+export const getBoardCardAsset = async (boardId: string,
+    assetId: string, options?: Parameters<typeof customFetch>[1]): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetBoardCardAssetUrl(boardId,assetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetBoardCardAssetQueryKey = (boardId: string,
+    assetId: string,) => {
+    return [
+    `/api/boards/${boardId}/assets/${assetId}`
+    ] as const;
+    }
+
+
+export const getGetBoardCardAssetQueryOptions = <TData = Awaited<ReturnType<typeof getBoardCardAsset>>, TError = ErrorType<unknown>>(boardId: string,
+    assetId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBoardCardAsset>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetBoardCardAssetQueryKey(boardId,assetId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getBoardCardAsset>>> = ({ signal }) => getBoardCardAsset(boardId,assetId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: boardId !== null && boardId !== undefined && assetId !== null && assetId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getBoardCardAsset>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetBoardCardAssetQueryResult = NonNullable<Awaited<ReturnType<typeof getBoardCardAsset>>>
+export type GetBoardCardAssetQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Download a private board card attachment
+ */
+
+export function useGetBoardCardAsset<TData = Awaited<ReturnType<typeof getBoardCardAsset>>, TError = ErrorType<unknown>>(
+ boardId: string,
+    assetId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getBoardCardAsset>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetBoardCardAssetQueryOptions(boardId,assetId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteUnattachedBoardCardAssetUrl = (boardId: string,
+    assetId: string,) => {
+
+
+
+
+  return `/api/boards/${boardId}/assets/${assetId}`
+}
+
+/**
+ * @summary Delete an unreferenced private board upload
+ */
+export const deleteUnattachedBoardCardAsset = async (boardId: string,
+    assetId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteUnattachedBoardCardAssetUrl(boardId,assetId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteUnattachedBoardCardAssetMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUnattachedBoardCardAsset>>, TError,{boardId: string;assetId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteUnattachedBoardCardAsset>>, TError,{boardId: string;assetId: string}, TContext> => {
+
+const mutationKey = ['deleteUnattachedBoardCardAsset'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteUnattachedBoardCardAsset>>, {boardId: string;assetId: string}> = (props) => {
+          const {boardId,assetId} = props ?? {};
+
+          return  deleteUnattachedBoardCardAsset(boardId,assetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteUnattachedBoardCardAssetMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUnattachedBoardCardAsset>>>
+
+    export type DeleteUnattachedBoardCardAssetMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Delete an unreferenced private board upload
+ */
+export const useDeleteUnattachedBoardCardAsset = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUnattachedBoardCardAsset>>, TError,{boardId: string;assetId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteUnattachedBoardCardAsset>>,
+        TError,
+        {boardId: string;assetId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteUnattachedBoardCardAssetMutationOptions(options));
     }
 
 export const getCreateSpreadsheetUrl = () => {

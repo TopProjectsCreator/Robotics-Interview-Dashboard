@@ -18,6 +18,9 @@ export function BoardChatCard({ boardId, fallbackTitle, onOpen }: BoardChatCardP
   const board = query.data as Board | undefined;
   const title = board?.title ?? fallbackTitle;
   const description = board?.data.description;
+  const cards = board?.data.cards ?? [];
+  const checklistCount = cards.reduce((total, card) => total + card.checklist.length, 0);
+  const completedChecklistCount = cards.reduce((total, card) => total + card.checklist.filter(item => item.completed).length, 0);
 
   return (
     <button
@@ -36,6 +39,9 @@ export function BoardChatCard({ boardId, fallbackTitle, onOpen }: BoardChatCardP
         <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
           {description || "No description yet"}
         </span>
+        {board && <span className="mt-1 block text-[10px] text-muted-foreground" data-testid={`text-board-summary-${boardId}`}>
+          {cards.length} {cards.length === 1 ? "card" : "cards"}{checklistCount ? ` · ${completedChecklistCount}/${checklistCount} subtasks complete` : ""}
+        </span>}
       </span>
       <ChevronRight size={16} className="ml-auto shrink-0 text-primary" />
     </button>

@@ -1,4 +1,4 @@
-import { useMemo, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { confirmAction } from "@/lib/dialogs";
 import {
@@ -9,10 +9,14 @@ import {
   ClipboardList,
   Columns3,
   GripVertical,
+  Image as ImageIcon,
   LayoutGrid,
   List,
   LoaderCircle,
+  Link2,
+  MessageSquare,
   MoreHorizontal,
+  Paperclip,
   Pencil,
   Plus,
   Search,
@@ -25,11 +29,17 @@ import {
   getGetBoardQueryKey,
   useGetBoard,
   useUpdateBoard,
+  useCreateBoardCardComment,
+  uploadBoardCardAsset,
+  deleteUnattachedBoardCardAsset,
   type Board,
   type BoardCard,
+  type BoardCardActivity,
+  type BoardCardAttachment,
   type BoardCardInput,
   type BoardCardPatch,
   type BoardColumn,
+  type BoardLabel,
   type BoardOperationInput,
 } from "@workspace/api-client-react";
 
@@ -45,8 +55,24 @@ type CardDraft = {
   assignee: string;
   startDate: string;
   dueDate: string;
-  labels: string;
+  labels: BoardLabel[];
 };
+
+const labelPalette = ["#16869a", "#6474c8", "#c17b26", "#3e8b66", "#b24e5b", "#8258a8"];
+
+function labelName(label: BoardLabel) {
+  return typeof label === "string" ? label : label.name;
+}
+
+function normalizedLabels(labels: BoardLabel[]) {
+  return labels.map((label, index) => typeof label === "string"
+    ? { name: label, color: labelPalette[index % labelPalette.length] }
+    : label);
+}
+
+function assetUrl(boardId: string, assetId: string) {
+  return `${import.meta.env.BASE_URL}api/boards/${encodeURIComponent(boardId)}/assets/${encodeURIComponent(assetId)}`;
+}
 
 const priorityMeta: Record<BoardCard["priority"], { label: string; color: string; bg: string }> = {
   urgent: { label: "Urgent", color: "hsl(5 70% 48%)", bg: "hsl(5 72% 95%)" },
@@ -102,7 +128,7 @@ function CardForm({ draft, setDraft, onSubmit, onCancel, saving, assignees, colu
   const update = (patch: Partial<CardDraft>) => setDraft({ ...draft, ...patch });
   const mentions = boardBriefMentions(assignees);
   return <form onSubmit={onSubmit} className="space-y-4">
-    <label className="block"><FieldLabel>Card title</FieldLabel><input required maxLength={200} autoFocus value={draft.title} onChange={e => update({ title: e.target.value })} data-testid="input-card-title" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-base md:text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="e.g. Confirm autonomous navigation" /></label>
+    <label className="block"><FieldLabel>Card title</FieldLabel><input required maxLength={200} value={draft.title} onChange={e => update({ title: e.target.value })} data-testid="input-card-title" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-base md:text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="e.g. Confirm autonomous navigation" /></label>
     <div><FieldLabel>Brief</FieldLabel><BoardBriefEditor value={draft.description} onChange={description => update({ description })} mentions={mentions} /></div>
     <div className="grid grid-cols-2 gap-3">
       <label><FieldLabel>Priority</FieldLabel><select value={draft.priority} onChange={e => update({ priority: e.target.value as BoardCard["priority"] })} data-testid="select-card-priority" className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-base md:text-sm outline-none focus:border-primary">{Object.keys(priorityMeta).map(value => <option key={value} value={value}>{priorityMeta[value as BoardCard["priority"]].label}</option>)}</select></label>
@@ -113,23 +139,173 @@ function CardForm({ draft, setDraft, onSubmit, onCancel, saving, assignees, colu
       <label><FieldLabel>Start date</FieldLabel><input type="date" value={draft.startDate} onChange={e => update({ startDate: e.target.value })} data-testid="input-card-start-date" className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-base md:text-sm outline-none focus:border-primary" /></label>
       <label><FieldLabel>Due date</FieldLabel><input type="date" value={draft.dueDate} onChange={e => update({ dueDate: e.target.value })} data-testid="input-card-due-date" className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-base md:text-sm outline-none focus:border-primary" /></label>
     </div>
-    <label className="block"><FieldLabel>Labels</FieldLabel><input value={draft.labels} onChange={e => update({ labels: e.target.value })} data-testid="input-card-labels" className="w-full rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="handoff, onsite, hardware" /><span className="mt-1 block text-[11px] text-muted-foreground">Separate labels with commas.</span></label>
+     <fieldset className="space-y-2"><legend><FieldLabel>Color labels</FieldLabel></legend>{draft.labels.map((label, index) => { const item = normalizedLabels([label])[0]; return <div key={`${item.name}-${index}`} className="flex items-center gap-2"><input value={item.name} maxLength={40} onChange={event => update({ labels: draft.labels.map((current, currentIndex) => currentIndex === index ? { ...item, name: event.target.value } : current) })} aria-label={`Label ${index + 1} name`} data-testid={`input-card-label-${index}`} className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="e.g. hardware" /><input type="color" value={item.color} onChange={event => update({ labels: draft.labels.map((current, currentIndex) => currentIndex === index ? { ...item, color: event.target.value } : current) })} aria-label={`Label ${index + 1} color`} data-testid={`input-card-label-color-${index}`} className="h-10 w-12 cursor-pointer rounded-lg border border-input bg-background p-1" /><Button label={`remove-label-${index + 1}`} variant="quiet" onClick={() => update({ labels: draft.labels.filter((_, currentIndex) => currentIndex !== index) })}><X size={14} /></Button></div>; })}<Button label="add-label" variant="secondary" onClick={() => update({ labels: [...draft.labels, { name: "", color: labelPalette[draft.labels.length % labelPalette.length] }] })} disabled={draft.labels.length >= 12}><Plus size={13} />Add label</Button></fieldset>
     <div className="flex justify-end gap-2 border-t border-border pt-4">{onCancel && <Button label="cancel-card" onClick={onCancel}>Cancel</Button>}<Button label={submitLabel} type="submit" variant="primary" disabled={saving}>{saving && <LoaderCircle size={14} className="animate-spin" />}{submitLabel}</Button></div>
   </form>;
 }
 
-function CardTile({ card, onOpen, selected, onSelect, onDragStart, onDrop, columns, onMove, onMoveUp, onMoveDown }: { card: BoardCard; onOpen: () => void; selected: boolean; onSelect: () => void; onDragStart: (event: DragEvent) => void; onDrop: (event: DragEvent) => void; columns: BoardColumn[]; onMove: (columnId: string) => void; onMoveUp?: () => void; onMoveDown?: () => void }) {
-  return <article draggable onDragStart={onDragStart} onDragOver={event => { event.preventDefault(); event.stopPropagation(); }} onDrop={onDrop} onClick={onOpen} data-testid={`card-board-${card.id}`} className="group cursor-pointer rounded-xl border border-border bg-card p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-md">
-    <div className="flex items-start gap-2"><input type="checkbox" checked={selected} onChange={event => { event.stopPropagation(); onSelect(); }} onClick={event => event.stopPropagation()} aria-label={`Select ${card.title}`} data-testid={`checkbox-card-${card.id}`} className="mt-0.5 h-3.5 w-3.5 accent-[hsl(var(--primary))]" /><GripVertical size={14} className="mt-0.5 shrink-0 text-muted-foreground/50" /><h3 className="min-w-0 flex-1 text-sm font-semibold leading-5 text-card-foreground">{card.title}</h3><MoreHorizontal size={15} className="shrink-0 text-muted-foreground/60" /></div>
-     {card.description && <BoardBriefPreview value={card.description} className="mt-2 line-clamp-2 pl-[3.5rem] text-xs leading-5 text-muted-foreground" />}
-    <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-[3.5rem]"><PriorityBadge priority={card.priority} />{card.labels.slice(0, 2).map(label => <span key={label} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-[10px] font-medium text-muted-foreground"><Tag size={10} />{label}</span>)}</div>
-    <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2 pl-[3.5rem]"><span className={`inline-flex items-center gap-1 text-[10px] ${card.dueDate && new Date(`${card.dueDate}T23:59:59`).getTime() < Date.now() ? "font-semibold text-destructive" : "text-muted-foreground"}`}><CalendarDays size={12} />{dateLabel(card.dueDate)}</span><span className="flex items-center gap-1">{(onMoveUp || onMoveDown) && <span className="flex items-center gap-0.5">{onMoveUp && <button type="button" onClick={event => { event.stopPropagation(); onMoveUp(); }} aria-label={`Move ${card.title} up`} data-testid={`button-card-up-${card.id}`} className="touch-target flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground"><ChevronUp size={15} aria-hidden="true" /></button>}{onMoveDown && <button type="button" onClick={event => { event.stopPropagation(); onMoveDown(); }} aria-label={`Move ${card.title} down`} data-testid={`button-card-down-${card.id}`} className="touch-target flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground"><ChevronDown size={15} aria-hidden="true" /></button>}</span>}<Avatar name={card.assignee} /></span></div>
-    {columns.length > 1 && <div className="mt-2 pl-[3.5rem]"><label className="sr-only" htmlFor={`card-column-${card.id}`}>Column for {card.title}</label><select id={`card-column-${card.id}`} value={card.columnId} onClick={event => event.stopPropagation()} onChange={event => onMove(event.target.value)} aria-label={`Move ${card.title} to a column`} data-testid={`select-card-column-${card.id}`} className="touch-target h-9 w-full rounded-lg border border-border bg-background px-2 text-base md:text-[11px] text-muted-foreground outline-none focus:border-primary">{columns.map(column => <option key={column.id} value={column.id}>{column.title}</option>)}</select></div>}
+function CardTile({ card, boardId, onOpen, selected, onSelect, onDragStart, onDrop, columns, onMove, onMoveUp, onMoveDown }: { card: BoardCard; boardId: string; onOpen: () => void; selected: boolean; onSelect: () => void; onDragStart: (event: DragEvent) => void; onDrop: (event: DragEvent) => void; columns: BoardColumn[]; onMove: (columnId: string) => void; onMoveUp?: () => void; onMoveDown?: () => void }) {
+  const completed = card.checklist.filter(item => item.completed).length;
+  const coverAssetId = card.cover?.type === "image" ? card.cover.assetId : null;
+  const coverImage = coverAssetId ? card.attachments.find((attachment): attachment is Extract<BoardCardAttachment, { type: "file" }> => attachment.type === "file" && attachment.id === coverAssetId) : undefined;
+  return <article draggable onDragStart={onDragStart} onDragOver={event => { event.preventDefault(); event.stopPropagation(); }} onDrop={onDrop} data-testid={`card-board-${card.id}`} className="group rounded-xl border border-border bg-card p-3 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/45 hover:shadow-md">
+    {coverImage && <img src={assetUrl(boardId, coverImage.id)} alt="" loading="lazy" className="mb-3 h-24 w-full rounded-lg object-cover" data-testid={`img-card-cover-${card.id}`} />}
+    {card.cover?.type === "color" && <div aria-hidden="true" className="mb-3 h-2 rounded-full" style={{ backgroundColor: card.cover.color }} />}
+    <div className="flex items-start gap-2"><input type="checkbox" checked={selected} onChange={onSelect} aria-label={`Select ${card.title}`} data-testid={`checkbox-card-${card.id}`} className="mt-0.5 h-3.5 w-3.5 accent-[hsl(var(--primary))]" /><GripVertical size={14} className="mt-0.5 shrink-0 text-muted-foreground/50" /><h3 className="min-w-0 flex-1 text-sm font-semibold leading-5 text-card-foreground"><button type="button" onClick={onOpen} data-testid={`button-card-title-${card.id}`} className="w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{card.title}</button></h3><MoreHorizontal size={15} aria-hidden="true" className="shrink-0 text-muted-foreground/60" /></div>
+    {card.description && <BoardBriefPreview value={card.description} className="mt-2 line-clamp-2 pl-[3.5rem] text-xs leading-5 text-muted-foreground" />}
+    <div className="mt-3 flex flex-wrap items-center gap-1.5 pl-[3.5rem]"><PriorityBadge priority={card.priority} />{card.labels.slice(0, 2).map((label, index) => { const item = normalizedLabels([label])[0]; return <span key={`${item.name}-${index}`} className="inline-flex items-center gap-1 rounded-full border bg-muted px-2 py-1 text-[10px] font-medium text-foreground" style={{ borderColor: `${item.color}80` }}><span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: item.color }} />{item.name}</span>; })}{card.labels.length > 2 && <span className="text-[10px] text-muted-foreground">+{card.labels.length - 2}</span>}</div>
+    {card.checklist.length > 0 && <div className="mt-2 pl-[3.5rem]" data-testid={`text-checklist-progress-${card.id}`} aria-label={`${completed} of ${card.checklist.length} checklist items complete`}><div className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><ClipboardList size={12} />{completed} / {card.checklist.length} complete</div><div className="mt-1 h-1 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-all" style={{ width: `${completed / card.checklist.length * 100}%` }} /></div></div>}
+    <div className="mt-3 flex items-center justify-between gap-2 border-t border-border/70 pt-2 pl-[3.5rem]"><span className={`inline-flex items-center gap-1 text-[10px] ${card.dueDate && new Date(`${card.dueDate}T23:59:59`).getTime() < Date.now() ? "font-semibold text-destructive" : "text-muted-foreground"}`}><CalendarDays size={12} />{dateLabel(card.dueDate)}</span><span className="flex items-center gap-1">{(onMoveUp || onMoveDown) && <span className="flex items-center gap-0.5">{onMoveUp && <button type="button" onClick={onMoveUp} aria-label={`Move ${card.title} up`} data-testid={`button-card-up-${card.id}`} className="touch-target flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground"><ChevronUp size={15} aria-hidden="true" /></button>}{onMoveDown && <button type="button" onClick={onMoveDown} aria-label={`Move ${card.title} down`} data-testid={`button-card-down-${card.id}`} className="touch-target flex h-11 w-11 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-accent hover:text-foreground"><ChevronDown size={15} aria-hidden="true" /></button>}</span>}<Avatar name={card.assignee} /></span></div>
+    {columns.length > 1 && <div className="mt-2 pl-[3.5rem]"><label className="sr-only" htmlFor={`card-column-${card.id}`}>Column for {card.title}</label><select id={`card-column-${card.id}`} value={card.columnId} onChange={event => onMove(event.target.value)} aria-label={`Move ${card.title} to a column`} data-testid={`select-card-column-${card.id}`} className="touch-target h-9 w-full rounded-lg border border-border bg-background px-2 text-base md:text-[11px] text-muted-foreground outline-none focus:border-primary">{columns.map(column => <option key={column.id} value={column.id}>{column.title}</option>)}</select></div>}
   </article>;
 }
 
+function CardCollaboration({ boardId, card, onPatch, onComment }: {
+  boardId: string;
+  card: BoardCard;
+  onPatch: (patch: BoardCardPatch) => Promise<boolean>;
+  onComment: (text: string) => Promise<boolean>;
+}) {
+  const [checklistTitle, setChecklistTitle] = useState("");
+  const [commentText, setCommentText] = useState("");
+  const [linkLabel, setLinkLabel] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const [coverColor, setCoverColor] = useState(card.cover?.type === "color" ? card.cover.color : "#16869a");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const commit = async (patch: BoardCardPatch) => {
+    setBusy(true);
+    setError("");
+    try {
+      if (!await onPatch(patch)) setError("Could not save this card change. Please retry.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const addChecklistItem = async (event: FormEvent) => {
+    event.preventDefault();
+    const title = checklistTitle.trim();
+    if (!title || card.checklist.length >= 100) return;
+    const saved = await onPatch({
+      checklist: [...card.checklist, { id: crypto.randomUUID(), title, completed: false }],
+    });
+    if (saved) setChecklistTitle("");
+    else setError("Could not save this checklist item. Please retry.");
+  };
+  const addLink = async (event: FormEvent) => {
+    event.preventDefault();
+    const label = linkLabel.trim();
+    const rawUrl = linkUrl.trim();
+    try {
+      const url = new URL(rawUrl);
+      if (!label || !["http:", "https:"].includes(url.protocol) || url.username || url.password) throw new Error();
+    } catch {
+      setError("Enter a label and a valid http or https link.");
+      return;
+    }
+    const saved = await onPatch({
+      attachments: [...card.attachments, { type: "link", id: crypto.randomUUID(), label, url: rawUrl }],
+    });
+    if (saved) { setLinkLabel(""); setLinkUrl(""); setError(""); }
+    else setError("Could not save this link. Please retry.");
+  };
+  const uploadFile = async (file: File) => {
+    setBusy(true);
+    setError("");
+    let uploaded: Extract<BoardCardAttachment, { type: "file" }> | undefined;
+    try {
+      uploaded = await uploadBoardCardAsset(boardId, file, { fileName: file.name }, {
+        headers: { "Content-Type": file.type || "application/octet-stream" },
+      });
+      const nextAttachments = [...card.attachments, uploaded];
+      const patch: BoardCardPatch = { attachments: nextAttachments };
+      if (uploaded.contentType.startsWith("image/") && !card.cover) {
+        patch.cover = { type: "image", assetId: uploaded.id };
+      }
+      if (!await onPatch(patch)) {
+        await deleteUnattachedBoardCardAsset(boardId, uploaded.id).catch(() => undefined);
+        setError("The upload finished, but the card could not save it. Try uploading again.");
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The file could not be uploaded.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const addComment = async (event: FormEvent) => {
+    event.preventDefault();
+    const text = commentText.trim();
+    if (!text) return;
+    setBusy(true);
+    setError("");
+    try {
+      if (await onComment(text)) setCommentText("");
+      else setError("Could not post the comment. Please retry.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const attachmentFiles = card.attachments.filter((item): item is Extract<BoardCardAttachment, { type: "file" }> => item.type === "file");
+  const progress = card.checklist.filter(item => item.completed).length;
+  return <section className="mt-5 space-y-5 border-t border-border pt-5" aria-label="Card collaboration">
+    <section aria-labelledby="checklist-heading">
+      <div className="mb-2 flex items-center justify-between"><h3 id="checklist-heading" className="text-sm font-semibold">Checklist</h3><span className="text-xs text-muted-foreground">{progress} of {card.checklist.length} complete</span></div>
+      {card.checklist.length > 0 && <ul className="space-y-1.5">{card.checklist.map((item, index) => <li key={item.id} className="flex min-h-11 items-center gap-2 rounded-lg bg-muted/50 px-2"><input type="checkbox" checked={item.completed} disabled={busy} onChange={() => void commit({ checklist: card.checklist.map(candidate => candidate.id === item.id ? { ...candidate, completed: !candidate.completed } : candidate) })} aria-label={`Mark ${item.title} ${item.completed ? "incomplete" : "complete"}`} data-testid={`checkbox-checklist-${item.id}`} className="h-4 w-4 accent-[hsl(var(--primary))]" /><span className={`min-w-0 flex-1 break-words text-sm ${item.completed ? "text-muted-foreground line-through" : "text-foreground"}`}>{item.title}</span><button type="button" disabled={busy} onClick={() => void commit({ checklist: card.checklist.filter(candidate => candidate.id !== item.id) })} aria-label={`Remove ${item.title}`} data-testid={`button-remove-checklist-${item.id}`} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"><X size={14} /></button><span className="sr-only">Item {index + 1} of {card.checklist.length}</span></li>)}</ul>}
+      <form onSubmit={addChecklistItem} className="mt-2 flex gap-2"><input value={checklistTitle} onChange={event => setChecklistTitle(event.target.value)} maxLength={200} aria-label="New checklist item" data-testid="input-checklist-item" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="Add a subtask" /><Button label="add-checklist-item" type="submit" disabled={busy || !checklistTitle.trim() || card.checklist.length >= 100}><Plus size={14} />Add</Button></form>
+    </section>
+
+    <section aria-labelledby="attachments-heading">
+      <h3 id="attachments-heading" className="mb-2 text-sm font-semibold">Files, links, and cover</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-accent ${busy ? "pointer-events-none opacity-50" : ""}`}><Paperclip size={14} />Upload file<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv" disabled={busy} onChange={event => { const file = event.currentTarget.files?.[0]; if (file) void uploadFile(file); event.currentTarget.value = ""; }} aria-label="Upload a card attachment" data-testid="input-card-attachment" className="sr-only" /></label>
+        {attachmentFiles.length === 0 && card.attachments.filter(item => item.type === "link").length === 0 && <span className="text-xs text-muted-foreground">No attachments yet.</span>}
+      </div>
+      {card.attachments.length > 0 && <ul className="mt-2 space-y-1">{card.attachments.map(item => <li key={item.id} className="flex min-h-10 items-center gap-2 rounded-lg border border-border/70 px-2 text-xs">
+        {item.type === "file" ? <><Paperclip size={13} className="shrink-0 text-muted-foreground" /><a href={assetUrl(boardId, item.id)} download={item.name} target="_blank" rel="noreferrer" data-testid={`link-board-attachment-${item.id}`} className="min-w-0 flex-1 truncate font-medium text-primary underline-offset-2 hover:underline">{item.name}</a><span className="shrink-0 text-muted-foreground">{Math.max(1, Math.round(item.size / 1024))} KB</span>{item.contentType.startsWith("image/") && <Button label={`set-cover-${item.id}`} variant="quiet" onClick={() => void commit({ cover: { type: "image", assetId: item.id } })}><ImageIcon size={14} />Cover</Button>}</> : <><Link2 size={13} className="shrink-0 text-muted-foreground" /><a href={item.url} target="_blank" rel="noopener noreferrer" data-testid={`link-board-reference-${item.id}`} className="min-w-0 flex-1 truncate font-medium text-primary underline-offset-2 hover:underline">{item.label}</a><span className="sr-only">{item.url}</span></>}
+        <Button label={`remove-attachment-${item.id}`} variant="quiet" onClick={() => { const attachments = card.attachments.filter(candidate => candidate.id !== item.id); const cover = card.cover?.type === "image" && card.cover.assetId === item.id ? null : card.cover; void commit({ attachments, cover }); }} disabled={busy}><X size={13} /></Button>
+      </li>)}</ul>}
+      <form onSubmit={addLink} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_auto]"><input value={linkLabel} onChange={event => setLinkLabel(event.target.value)} maxLength={120} aria-label="Link label" data-testid="input-card-link-label" className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="Link name" /><input type="url" value={linkUrl} onChange={event => setLinkUrl(event.target.value)} maxLength={2048} aria-label="Web link URL" data-testid="input-card-link-url" className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="https://" /><Button label="add-card-link" type="submit" disabled={busy || !linkLabel.trim() || !linkUrl.trim()}><Plus size={13} />Add link</Button></form>
+      <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-xs font-medium text-muted-foreground">Color cover</span><input type="color" value={coverColor} onChange={event => setCoverColor(event.target.value)} aria-label="Card cover color" data-testid="input-card-cover-color" className="h-10 w-12 cursor-pointer rounded-lg border border-input bg-background p-1" /><Button label="set-card-color-cover" onClick={() => void commit({ cover: { type: "color", color: coverColor } })} disabled={busy}><ImageIcon size={13} />Set color</Button>{card.cover && <Button label="remove-card-cover" variant="quiet" onClick={() => void commit({ cover: null })} disabled={busy}>Remove cover</Button>}</div>
+    </section>
+
+    <section aria-labelledby="comments-heading">
+      <h3 id="comments-heading" className="mb-2 flex items-center gap-2 text-sm font-semibold"><MessageSquare size={15} />Team discussion <span className="text-xs font-normal text-muted-foreground">{card.comments.length}</span></h3>
+      {card.comments.length === 0 ? <p className="rounded-lg bg-muted/50 px-3 py-3 text-xs text-muted-foreground">No comments yet. Add context for the next handoff.</p> : <ul className="max-h-56 space-y-2 overflow-y-auto">{card.comments.map(comment => <li key={comment.id} className="rounded-lg border border-border/70 p-3" data-testid={`comment-board-card-${comment.id}`}><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold">{comment.author}</span><time dateTime={new Date(comment.createdAt).toISOString()} className="text-[10px] text-muted-foreground">{dateTimeLabel(new Date(comment.createdAt).toISOString())}</time></div><p className="mt-1 whitespace-pre-wrap break-words text-sm">{comment.text}</p></li>)}</ul>}
+      <form onSubmit={addComment} className="mt-2 space-y-2"><textarea value={commentText} onChange={event => setCommentText(event.target.value)} maxLength={4000} rows={3} aria-label="Write a comment" data-testid="textarea-board-comment" className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="Share a handoff note or a useful detail" /><div className="flex justify-end"><Button label="post-board-comment" type="submit" variant="primary" disabled={busy || !commentText.trim()}>Post comment</Button></div></form>
+    </section>
+
+    <section aria-labelledby="activity-heading">
+      <h3 id="activity-heading" className="mb-2 text-sm font-semibold">Activity history</h3>
+      {card.activity.length === 0 ? <p className="text-xs text-muted-foreground">No card activity yet.</p> : <ol className="space-y-2 border-l border-border pl-4">{[...card.activity].reverse().map((entry: BoardCardActivity) => <li key={entry.id} className="relative text-xs"><span aria-hidden="true" className="absolute -left-[1.32rem] top-1 h-2 w-2 rounded-full bg-primary" /><span className="font-semibold">{entry.actor}</span><span className="text-muted-foreground"> {entry.detail}</span><time dateTime={new Date(entry.createdAt).toISOString()} className="mt-0.5 block text-[10px] text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</time></li>)}</ol>}
+    </section>
+    {error && <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert" data-testid="status-card-collaboration-error">{error}</p>}
+  </section>;
+}
+
 function ModalShell({ title, eyebrow, onClose, children, width = "max-w-xl" }: { title: string; eyebrow?: string; onClose: () => void; children: ReactNode; width?: string }) {
-  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/35 p-3 backdrop-blur-[2px] sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div role="dialog" aria-modal="true" className={`max-h-[92dvh] w-full ${width} overflow-y-auto rounded-2xl border border-border bg-card p-5 shadow-2xl sm:p-6`}><div className="mb-5 flex items-start justify-between gap-4"><div>{eyebrow && <p className="mono text-[10px] font-bold uppercase tracking-[.16em] text-primary">{eyebrow}</p>}<h2 className="mt-1 text-xl font-semibold tracking-tight text-card-foreground">{title}</h2></div><Button label="close-dialog" variant="quiet" onClick={onClose}><X size={18} /></Button></div>{children}</div></div>;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    titleRef.current?.focus();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onCloseRef.current(); return; }
+      if (event.key !== "Tab" || !dialogRef.current) return;
+      const focusable = [...dialogRef.current.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex="0"]')];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => { document.removeEventListener("keydown", keydown); previous?.focus(); };
+  }, []);
+  return <div className="fixed inset-0 z-[100] flex items-center justify-center bg-foreground/35 p-2 backdrop-blur-[2px] sm:p-6" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="board-modal-title" className={`max-h-[96dvh] w-full ${width} overflow-y-auto rounded-2xl border border-border bg-card p-4 shadow-2xl sm:max-h-[92dvh] sm:p-6`}><div className="mb-5 flex items-start justify-between gap-4"><div>{eyebrow && <p className="mono text-[10px] font-bold uppercase tracking-[.16em] text-primary">{eyebrow}</p>}<h2 id="board-modal-title" ref={titleRef} tabIndex={-1} className="mt-1 text-xl font-semibold tracking-tight text-card-foreground focus:outline-none">{title}</h2></div><Button label="close-dialog" variant="quiet" onClick={onClose}><X size={18} /></Button></div>{children}</div></div>;
 }
 
 function LoadingBoard() {
@@ -140,6 +316,7 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   const queryClient = useQueryClient();
   const query = useGetBoard(boardId, { query: { queryKey: getGetBoardQueryKey(boardId), refetchInterval: streamHealthy ? false : (3_000 )} });
   const updateBoard = useUpdateBoard();
+  const createCardComment = useCreateBoardCardComment();
   const [view, setView] = useState<ViewMode>("board");
   const [search, setSearch] = useState("");
   const [priorityFilter, setPriorityFilter] = useState<BoardCard["priority"] | "all">("all");
@@ -149,7 +326,7 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   const [modal, setModal] = useState<Modal>(null);
   const [modalColumn, setModalColumn] = useState<BoardColumn | null>(null);
   const [draftColumnId, setDraftColumnId] = useState("");
-  const [draft, setDraft] = useState<CardDraft>({ title: "", description: "", priority: "normal", assignee: "", startDate: "", dueDate: "", labels: "" });
+  const [draft, setDraft] = useState<CardDraft>({ title: "", description: "", priority: "normal", assignee: "", startDate: "", dueDate: "", labels: [] });
   const [bulkText, setBulkText] = useState("");
   const [columnTitle, setColumnTitle] = useState("");
   const [columnColor, setColumnColor] = useState("#16869a");
@@ -162,8 +339,9 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   const board = query.data as Board | undefined;
   const columns = useMemo(() => [...(board?.data?.columns ?? [])].sort((a, b) => a.position - b.position), [board?.data?.columns]);
   const cards = useMemo(() => board?.data?.cards ?? [], [board?.data?.cards]);
+  const currentActiveCard = activeCard ? cards.find(card => card.id === activeCard.id) ?? activeCard : null;
   const filteredCards = useMemo(() => cards.filter(card => {
-    const haystack = `${card.title} ${boardBriefPlainText(card.description)} ${card.labels.join(" ")} ${card.assignee ?? ""}`.toLowerCase();
+    const haystack = `${card.title} ${boardBriefPlainText(card.description)} ${card.labels.map(labelName).join(" ")} ${card.assignee ?? ""}`.toLowerCase();
     return (!search.trim() || haystack.includes(search.trim().toLowerCase())) && (priorityFilter === "all" || card.priority === priorityFilter) && (assigneeFilter === "all" || card.assignee === assigneeFilter);
   }), [cards, search, priorityFilter, assigneeFilter]);
   const orderedCards = useMemo(() => [...filteredCards].sort((a, b) => sort === "title"
@@ -187,19 +365,36 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   };
 
   const beginCreate = (columnId = columns[0]?.id ?? "") => {
-    setActiveCard(null); setDraftColumnId(columnId); setDraft({ title: "", description: "", priority: "normal", assignee: "", startDate: "", dueDate: "", labels: "" }); setModal("card");
+    setActiveCard(null); setDraftColumnId(columnId); setDraft({ title: "", description: "", priority: "normal", assignee: "", startDate: "", dueDate: "", labels: [] }); setModal("card");
   };
   const beginEdit = (card: BoardCard) => {
-    setActiveCard(card); setDraftColumnId(card.columnId); setDraft({ title: card.title, description: card.description, priority: card.priority, assignee: card.assignee ?? "", startDate: card.startDate ?? "", dueDate: card.dueDate ?? "", labels: card.labels.join(", ") }); setModal(null);
+    setActiveCard(card); setDraftColumnId(card.columnId); setDraft({ title: card.title, description: card.description, priority: card.priority, assignee: card.assignee ?? "", startDate: card.startDate ?? "", dueDate: card.dueDate ?? "", labels: normalizedLabels(card.labels).map(label => ({ ...label })) }); setModal(null);
+  };
+  const patchCard = async (cardId: string, cardPatch: BoardCardPatch) => {
+    const result = await apply({ operation: "update_card", cardId, cardPatch });
+    return Boolean(result);
+  };
+  const postCardComment = async (cardId: string, text: string) => {
+    try {
+      await createCardComment.mutateAsync({ boardId, cardId, data: { text } });
+      await queryClient.invalidateQueries({ queryKey: getGetBoardQueryKey(boardId) });
+      await query.refetch();
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not post this comment.");
+      return false;
+    }
   };
   const submitCard = async (event: FormEvent) => {
     event.preventDefault();
-    const labels = draft.labels.split(",").map(value => value.trim()).filter(Boolean).slice(0, 12);
+    const labels = normalizedLabels(draft.labels).map(label => ({ ...label, name: label.name.trim() }))
+      .filter(label => label.name && /^#[0-9a-f]{6}$/i.test(label.color))
+      .slice(0, 12);
     if (!draft.title.trim()) return;
-    if (activeCard) {
+    if (currentActiveCard) {
       const patch: BoardCardPatch = { title: draft.title.trim(), description: draft.description, priority: draft.priority, assignee: draft.assignee || null, startDate: draft.startDate || null, dueDate: draft.dueDate || null, labels };
-      const result = await apply({ operation: "update_card", cardId: activeCard.id, cardPatch: patch });
-      if (result && draftColumnId !== activeCard.columnId) await apply({ operation: "move_card", cardId: activeCard.id, targetColumnId: draftColumnId, beforeCardId: null });
+      const result = await apply({ operation: "update_card", cardId: currentActiveCard.id, cardPatch: patch });
+      if (result && draftColumnId !== currentActiveCard.columnId) await apply({ operation: "move_card", cardId: currentActiveCard.id, targetColumnId: draftColumnId, beforeCardId: null });
       if (result) setActiveCard(null);
     } else {
       const result = await apply({ operation: "create_card", card: { title: draft.title.trim(), description: draft.description, columnId: draftColumnId || undefined, priority: draft.priority, assignee: draft.assignee || null, startDate: draft.startDate || null, dueDate: draft.dueDate || null, labels } as BoardCardInput });
@@ -209,8 +404,8 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
 
   const openDetail = (card: BoardCard) => beginEdit(card);
   const deleteCard = async () => {
-    if (!activeCard || !(await confirmAction({ title: `Delete "${activeCard.title}"?`, danger: true, confirmLabel: "Delete" }))) return;
-    const result = await apply({ operation: "delete_card", cardId: activeCard.id });
+    if (!currentActiveCard || !(await confirmAction({ title: `Delete "${currentActiveCard.title}"?`, danger: true, confirmLabel: "Delete" }))) return;
+    const result = await apply({ operation: "delete_card", cardId: currentActiveCard.id });
     if (result) setActiveCard(null);
   };
   const handleDrop = async (event: DragEvent, targetColumnId: string, beforeCardId?: string) => {
@@ -290,20 +485,20 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
         const columnCards = filteredCards.filter(card => card.columnId === column.id).sort((a, b) => a.position - b.position);
         return <section key={column.id} onDragOver={event => event.preventDefault()} onDrop={event => void handleDrop(event, column.id)} className="w-[min(86vw,330px)] min-w-[280px] shrink-0 rounded-2xl border border-border bg-muted/35 p-2.5 sm:w-[310px]" data-testid={`column-board-${column.id}`}>
           <div className="flex items-center gap-2 px-2 py-2"><span className="h-2 w-2 rounded-full" style={{ background: column.color }} /><h2 className="min-w-0 flex-1 truncate text-sm font-semibold">{column.title}</h2><span className="rounded-full bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground">{columnCards.length}</span><div className="relative"><button type="button" onClick={() => { setModalColumn(column); setColumnTitle(column.title); setColumnColor(column.color); setModal("renameColumn"); }} aria-label={`Manage ${column.title}`} data-testid={`button-manage-column-${column.id}`} className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><MoreHorizontal size={16} /></button></div></div>
-           <div className="space-y-2">{columnCards.map((card, cardIndex) => <CardTile key={card.id} card={card} columns={columns} selected={selected.includes(card.id)} onSelect={() => setSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id])} onOpen={() => openDetail(card)} onDragStart={event => { event.dataTransfer.setData("text/board-card", card.id); event.dataTransfer.effectAllowed = "move"; }} onDrop={event => void handleDrop(event, column.id, card.id)} onMove={columnId => void apply({ operation: "move_card", cardId: card.id, targetColumnId: columnId, beforeCardId: null })} onMoveUp={cardIndex > 0 ? () => void apply({ operation: "move_card", cardId: card.id, targetColumnId: card.columnId, beforeCardId: columnCards[cardIndex - 1].id }) : undefined} onMoveDown={cardIndex < columnCards.length - 1 ? () => void apply({ operation: "move_card", cardId: card.id, targetColumnId: card.columnId, beforeCardId: columnCards[cardIndex + 2]?.id ?? null }) : undefined} />)}</div>
+            <div className="space-y-2">{columnCards.map((card, cardIndex) => <CardTile key={card.id} boardId={boardId} card={card} columns={columns} selected={selected.includes(card.id)} onSelect={() => setSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id])} onOpen={() => openDetail(card)} onDragStart={event => { event.dataTransfer.setData("text/board-card", card.id); event.dataTransfer.effectAllowed = "move"; }} onDrop={event => void handleDrop(event, column.id, card.id)} onMove={columnId => void apply({ operation: "move_card", cardId: card.id, targetColumnId: columnId, beforeCardId: null })} onMoveUp={cardIndex > 0 ? () => void apply({ operation: "move_card", cardId: card.id, targetColumnId: card.columnId, beforeCardId: columnCards[cardIndex - 1].id }) : undefined} onMoveDown={cardIndex < columnCards.length - 1 ? () => void apply({ operation: "move_card", cardId: card.id, targetColumnId: card.columnId, beforeCardId: columnCards[cardIndex + 2]?.id ?? null }) : undefined} />)}</div>
           <button type="button" onClick={() => beginCreate(column.id)} data-testid={`button-add-card-${column.id}`} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/50 hover:bg-card hover:text-primary"><Plus size={14} />Add card</button>
         </section>;
       })}<button type="button" onClick={() => { setColumnTitle(""); setModal("column"); }} data-testid="button-add-column-empty" className="flex h-14 min-w-[170px] items-center justify-center gap-2 rounded-xl border border-dashed border-border text-xs font-semibold text-muted-foreground hover:border-primary/50 hover:text-primary"><Plus size={15} />Add column</button></div>}
-      {view === "table" && <div className="overflow-x-auto rounded-2xl border border-border bg-card"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border bg-muted/35 text-[10px] uppercase tracking-[.12em] text-muted-foreground"><tr><th className="w-10 px-4 py-3" /><th className="px-4 py-3">Card</th><th className="px-4 py-3">Column</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assignee</th><th className="px-4 py-3">Due</th><th className="px-4 py-3">Updated</th></tr></thead><tbody className="divide-y divide-border">{orderedCards.map(card => <tr key={card.id} onClick={() => openDetail(card)} className="cursor-pointer transition hover:bg-accent/50" data-testid={`row-card-${card.id}`}><td className="px-4 py-3"><input type="checkbox" checked={selected.includes(card.id)} onClick={e => e.stopPropagation()} onChange={() => setSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id])} aria-label={`Select ${card.title}`} /></td><td className="max-w-[280px] px-4 py-3"><p className="font-semibold">{card.title}</p>{card.description ? <BoardBriefPreview value={card.description} className="mt-1 line-clamp-2 text-xs text-muted-foreground" /> : <p className="mt-1 text-xs text-muted-foreground">No brief added</p>}</td><td className="px-4 py-3 text-xs text-muted-foreground">{columns.find(column => column.id === card.columnId)?.title ?? "Unsorted"}</td><td className="px-4 py-3"><PriorityBadge priority={card.priority} /></td><td className="px-4 py-3"><span className="inline-flex items-center gap-2 text-xs">{card.assignee && <Avatar name={card.assignee} />}{card.assignee ?? "Unassigned"}</span></td><td className="px-4 py-3 text-xs text-muted-foreground">{dateLabel(card.dueDate)}</td><td className="px-4 py-3 text-xs text-muted-foreground">{dateTimeLabel(card.updatedAt)}</td></tr>)}</tbody></table>{filteredCards.length === 0 && <EmptyResults />}</div>}
-      {view === "list" && <div className="mx-auto max-w-4xl space-y-2">{orderedCards.length ? orderedCards.map(card => <div key={card.id} onClick={() => openDetail(card)} data-testid={`list-card-${card.id}`} className="flex cursor-pointer items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition hover:border-primary/40 hover:shadow-sm"><input type="checkbox" checked={selected.includes(card.id)} onClick={e => e.stopPropagation()} onChange={() => setSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id])} aria-label={`Select ${card.title}`} /><span className="h-8 w-1 rounded-full" style={{ background: priorityMeta[card.priority].color }} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{card.title}</p>{card.description ? <BoardBriefPreview value={card.description} className="mt-1 line-clamp-2 text-xs text-muted-foreground" /> : <p className="mt-1 text-xs text-muted-foreground">No brief added</p>}</div><span className="hidden text-xs text-muted-foreground sm:block">{columns.find(column => column.id === card.columnId)?.title}</span><PriorityBadge priority={card.priority} /><Avatar name={card.assignee} /></div>) : <EmptyResults />}</div>}
+      {view === "table" && <div className="overflow-x-auto rounded-2xl border border-border bg-card"><table className="w-full min-w-[760px] text-left text-sm"><thead className="border-b border-border bg-muted/35 text-[10px] uppercase tracking-[.12em] text-muted-foreground"><tr><th className="w-10 px-4 py-3" /><th className="px-4 py-3">Card</th><th className="px-4 py-3">Column</th><th className="px-4 py-3">Priority</th><th className="px-4 py-3">Assignee</th><th className="px-4 py-3">Due</th><th className="px-4 py-3">Updated</th></tr></thead><tbody className="divide-y divide-border">{orderedCards.map(card => <tr key={card.id} className="transition hover:bg-accent/50" data-testid={`row-card-${card.id}`}><td className="px-4 py-3"><input type="checkbox" checked={selected.includes(card.id)} onChange={() => setSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id])} aria-label={`Select ${card.title}`} /></td><td className="max-w-[280px] px-4 py-3"><button type="button" onClick={() => openDetail(card)} data-testid={`table-open-card-${card.id}`} className="text-left font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{card.title}</button>{card.description ? <BoardBriefPreview value={card.description} className="mt-1 line-clamp-2 text-xs text-muted-foreground" /> : <p className="mt-1 text-xs text-muted-foreground">No brief added</p>}{card.checklist.length > 0 && <p className="mt-1 text-[10px] text-muted-foreground">{card.checklist.filter(item => item.completed).length} / {card.checklist.length} subtasks complete</p>}</td><td className="px-4 py-3 text-xs text-muted-foreground">{columns.find(column => column.id === card.columnId)?.title ?? "Unsorted"}</td><td className="px-4 py-3"><PriorityBadge priority={card.priority} /></td><td className="px-4 py-3"><span className="inline-flex items-center gap-2 text-xs">{card.assignee && <Avatar name={card.assignee} />}{card.assignee ?? "Unassigned"}</span></td><td className="px-4 py-3 text-xs text-muted-foreground">{dateLabel(card.dueDate)}</td><td className="px-4 py-3 text-xs text-muted-foreground">{dateTimeLabel(card.updatedAt)}</td></tr>)}</tbody></table>{filteredCards.length === 0 && <EmptyResults />}</div>}
+      {view === "list" && <div className="mx-auto max-w-4xl space-y-2">{orderedCards.length ? orderedCards.map(card => <div key={card.id} data-testid={`list-card-${card.id}`} className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition hover:border-primary/40 hover:shadow-sm"><input type="checkbox" onChange={() => setSelected(current => current.includes(card.id) ? current.filter(id => id !== card.id) : [...current, card.id])} checked={selected.includes(card.id)} aria-label={`Select ${card.title}`} /><span className="h-8 w-1 rounded-full" style={{ background: priorityMeta[card.priority].color }} /><div className="min-w-0 flex-1"><button type="button" onClick={() => openDetail(card)} data-testid={`list-open-card-${card.id}`} className="max-w-full truncate text-left text-sm font-semibold hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary">{card.title}</button>{card.description ? <BoardBriefPreview value={card.description} className="mt-1 line-clamp-2 text-xs text-muted-foreground" /> : <p className="mt-1 text-xs text-muted-foreground">No brief added</p>}{card.checklist.length > 0 && <p className="mt-1 text-[10px] text-muted-foreground">{card.checklist.filter(item => item.completed).length} / {card.checklist.length} subtasks complete</p>}<div className="mt-1 flex flex-wrap gap-1">{card.labels.slice(0, 2).map((label, index) => { const item = normalizedLabels([label])[0]; return <span key={`${item.name}-${index}`} className="rounded-full border px-2 py-0.5 text-[10px] text-foreground" style={{ borderColor: `${item.color}80` }}>{item.name}</span>; })}</div></div><span className="hidden text-xs text-muted-foreground sm:block">{columns.find(column => column.id === card.columnId)?.title}</span><PriorityBadge priority={card.priority} /><Avatar name={card.assignee} /></div>) : <EmptyResults />}</div>}
       {view === "timeline" && <Timeline cards={filteredCards} columns={columns} onOpen={openDetail} />}
       {view !== "board" && filteredCards.length === 0 && view !== "list" && <EmptyResults />}
     </main>
-    {modal === "boardDetails" && <ModalShell title="Edit board details" eyebrow="Board settings" onClose={() => setModal(null)}><form onSubmit={submitBoardDetails} className="space-y-4"><label className="block"><FieldLabel>Board name</FieldLabel><input required autoFocus maxLength={120} value={boardTitleDraft} onChange={event => setBoardTitleDraft(event.target.value)} aria-label="Board name" data-testid="input-board-title" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-base md:text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="Name this board" /></label><label className="block"><FieldLabel>Description</FieldLabel><textarea maxLength={500} rows={4} value={boardDescriptionDraft} onChange={event => setBoardDescriptionDraft(event.target.value)} aria-label="Board description" data-testid="input-board-description" className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-base md:text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="What is this board for? Give teammates useful context." /></label><p className="-mt-2 text-[11px] text-muted-foreground">Shown on the board card in chat. You can leave it blank.</p><div className="flex justify-end gap-2 border-t border-border pt-4"><Button label="cancel-board-details" onClick={() => setModal(null)}>Cancel</Button><Button label="save-board-details" type="submit" variant="primary" disabled={saving || !boardTitleDraft.trim()}>{saving && <LoaderCircle size={14} className="animate-spin" />}Save details</Button></div></form></ModalShell>}
+    {modal === "boardDetails" && <ModalShell title="Edit board details" eyebrow="Board settings" onClose={() => setModal(null)}><form onSubmit={submitBoardDetails} className="space-y-4"><label className="block"><FieldLabel>Board name</FieldLabel><input required maxLength={120} value={boardTitleDraft} onChange={event => setBoardTitleDraft(event.target.value)} aria-label="Board name" data-testid="input-board-title" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-base md:text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="Name this board" /></label><label className="block"><FieldLabel>Description</FieldLabel><textarea maxLength={500} rows={4} value={boardDescriptionDraft} onChange={event => setBoardDescriptionDraft(event.target.value)} aria-label="Board description" data-testid="input-board-description" className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-base md:text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder="What is this board for? Give teammates useful context." /></label><p className="-mt-2 text-[11px] text-muted-foreground">Shown on the board card in chat. You can leave it blank.</p><div className="flex justify-end gap-2 border-t border-border pt-4"><Button label="cancel-board-details" onClick={() => setModal(null)}>Cancel</Button><Button label="save-board-details" type="submit" variant="primary" disabled={saving || !boardTitleDraft.trim()}>{saving && <LoaderCircle size={14} className="animate-spin" />}Save details</Button></div></form></ModalShell>}
     {modal === "card" && <ModalShell title="New coordination card" eyebrow="Add handoff" onClose={() => setModal(null)}><CardForm draft={draft} setDraft={setDraft} onSubmit={submitCard} onCancel={() => setModal(null)} saving={saving} assignees={assignees} columns={columns} columnId={draftColumnId} onColumnChange={setDraftColumnId} submitLabel="Create card" /></ModalShell>}
-    {activeCard && <ModalShell title="Edit coordination card" eyebrow="Card detail" onClose={() => setActiveCard(null)}><CardForm draft={draft} setDraft={setDraft} onSubmit={submitCard} onCancel={() => setActiveCard(null)} saving={saving} assignees={assignees} columns={columns} columnId={draftColumnId} onColumnChange={setDraftColumnId} submitLabel="Save changes" /><div className="mt-3 border-t border-border pt-3"><Button label="delete-card" variant="danger" onClick={() => void deleteCard()} disabled={saving}><Trash2 size={14} />Delete card</Button><p className="mt-2 text-[11px] text-muted-foreground">Created {dateTimeLabel(activeCard.createdAt)} · Last updated by {activeCard.updatedBy}</p></div></ModalShell>}
-    {modal === "bulk" && <ModalShell title="Add a run of cards" eyebrow="Bulk add" onClose={() => setModal(null)}><form onSubmit={submitBulk}><p className="mb-3 text-sm text-muted-foreground">One card per line. New cards land in {columns[0]?.title ?? "the first column"}.</p><textarea required value={bulkText} onChange={e => setBulkText(e.target.value)} autoFocus data-testid="textarea-bulk-card-titles" className="min-h-48 w-full resize-y rounded-xl border border-input bg-background p-3 text-base md:text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder={"Verify battery safety\nCheck manipulator handoff\nReview final rubric"} /><div className="mt-4 flex justify-end gap-2"><Button label="cancel-bulk-add" onClick={() => setModal(null)}>Cancel</Button><Button label="create-bulk-cards" type="submit" variant="primary" disabled={saving}>{saving && <LoaderCircle size={14} className="animate-spin" />}Add cards</Button></div></form></ModalShell>}
-    {(modal === "column" || modal === "renameColumn") && <ModalShell title={modal === "column" ? "Create a column" : "Rename column"} eyebrow="Board structure" onClose={() => setModal(null)}><form onSubmit={submitColumn} className="space-y-4"><label><FieldLabel>Column name</FieldLabel><input required maxLength={80} autoFocus value={columnTitle} onChange={e => setColumnTitle(e.target.value)} data-testid="input-column-title" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-base md:text-sm outline-none focus:border-primary" placeholder="Ready for interview" /></label><label><FieldLabel>Accent color</FieldLabel><div className="flex items-center gap-3"><input type="color" value={columnColor} onChange={e => setColumnColor(e.target.value)} data-testid="input-column-color" className="h-10 w-14 cursor-pointer rounded-lg border border-input bg-background p-1" /><span className="font-mono text-xs text-muted-foreground">{columnColor}</span></div></label><div className="flex justify-between gap-2 border-t border-border pt-4">{modal === "renameColumn" && modalColumn && <Button label="delete-column" variant="danger" onClick={() => { void deleteColumn(modalColumn); setModal(null); }}><Trash2 size={14} />Delete column</Button>}<div className="ml-auto flex gap-2"><Button label="cancel-column" onClick={() => setModal(null)}>Cancel</Button><Button label="save-column" type="submit" variant="primary" disabled={saving}>{saving && <LoaderCircle size={14} className="animate-spin" />}{modal === "column" ? "Create column" : "Save column"}</Button></div></div></form></ModalShell>}
+    {currentActiveCard && <ModalShell title={currentActiveCard.title} eyebrow="Card detail" onClose={() => setActiveCard(null)} width="max-w-3xl"><CardForm draft={draft} setDraft={setDraft} onSubmit={submitCard} onCancel={() => setActiveCard(null)} saving={saving} assignees={assignees} columns={columns} columnId={draftColumnId} onColumnChange={setDraftColumnId} submitLabel="Save changes" /><CardCollaboration boardId={boardId} card={currentActiveCard} onPatch={patch => patchCard(currentActiveCard.id, patch)} onComment={text => postCardComment(currentActiveCard.id, text)} /><div className="mt-5 border-t border-border pt-3"><Button label="delete-card" variant="danger" onClick={() => void deleteCard()} disabled={saving}><Trash2 size={14} />Delete card</Button><p className="mt-2 text-[11px] text-muted-foreground">Created {dateTimeLabel(currentActiveCard.createdAt)} · Last updated by {currentActiveCard.updatedBy}</p></div></ModalShell>}
+     {modal === "bulk" && <ModalShell title="Add a run of cards" eyebrow="Bulk add" onClose={() => setModal(null)}><form onSubmit={submitBulk}><p className="mb-3 text-sm text-muted-foreground">One card per line. New cards land in {columns[0]?.title ?? "the first column"}.</p><textarea required value={bulkText} onChange={e => setBulkText(e.target.value)} data-testid="textarea-bulk-card-titles" className="min-h-48 w-full resize-y rounded-xl border border-input bg-background p-3 text-base md:text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" placeholder={"Verify battery safety\nCheck manipulator handoff\nReview final rubric"} /><div className="mt-4 flex justify-end gap-2"><Button label="cancel-bulk-add" onClick={() => setModal(null)}>Cancel</Button><Button label="create-bulk-cards" type="submit" variant="primary" disabled={saving}>{saving && <LoaderCircle size={14} className="animate-spin" />}Add cards</Button></div></form></ModalShell>}
+     {(modal === "column" || modal === "renameColumn") && <ModalShell title={modal === "column" ? "Create a column" : "Rename column"} eyebrow="Board structure" onClose={() => setModal(null)}><form onSubmit={submitColumn} className="space-y-4"><label><FieldLabel>Column name</FieldLabel><input required maxLength={80} value={columnTitle} onChange={e => setColumnTitle(e.target.value)} data-testid="input-column-title" className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-base md:text-sm outline-none focus:border-primary" placeholder="Ready for interview" /></label><label><FieldLabel>Accent color</FieldLabel><div className="flex items-center gap-3"><input type="color" value={columnColor} onChange={e => setColumnColor(e.target.value)} data-testid="input-column-color" className="h-10 w-14 cursor-pointer rounded-lg border border-input bg-background p-1" /><span className="font-mono text-xs text-muted-foreground">{columnColor}</span></div></label><div className="flex justify-between gap-2 border-t border-border pt-4">{modal === "renameColumn" && modalColumn && <Button label="delete-column" variant="danger" onClick={() => { void deleteColumn(modalColumn); setModal(null); }}><Trash2 size={14} />Delete column</Button>}<div className="ml-auto flex gap-2"><Button label="cancel-column" onClick={() => setModal(null)}>Cancel</Button><Button label="save-column" type="submit" variant="primary" disabled={saving}>{saving && <LoaderCircle size={14} className="animate-spin" />}{modal === "column" ? "Create column" : "Save column"}</Button></div></div></form></ModalShell>}
   </div>;
 }
 
