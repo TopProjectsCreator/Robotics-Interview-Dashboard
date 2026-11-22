@@ -212,6 +212,21 @@ function appRelativeWorkspaceUrl(path: string): string {
   return `${base}${path}`;
 }
 
+/**
+ * Last-resort text extraction for DOCX files the full-fidelity renderer cannot
+ * handle (corrupt files, exotic features, or environments missing the DOM APIs
+ * docx-preview relies on). DOMPurify is applied only to Mammoth's HTML string
+ * here; docx-preview's own trusted DOM is never passed through it.
+ */
+async function mammothDocxFallback(buffer: ArrayBuffer): Promise<string> {
+  const mammoth = await import("mammoth");
+  const converted = await mammoth.convertToHtml({
+    arrayBuffer: buffer,
+    buffer,
+  } as unknown as Parameters<typeof mammoth.convertToHtml>[0]);
+  return DOMPurify.sanitize(converted.value, { USE_PROFILES: { html: true } });
+}
+
 type WorkspaceFileViewerProps = {
   /** Original file name, which selects the renderer exactly like chat. */
   name: string;
@@ -234,10 +249,15 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
   const [text, setText] = useState<string | null>(null);
   const [sheets, setSheets] = useState<WorkspaceAttachmentSheet[]>([]);
   const [documentHtml, setDocumentHtml] = useState<string | null>(null);
+  // Raw DOCX bytes are kept so docx-preview can build real DOM (tables,
+  // images, styles) into its own container instead of a sanitized HTML string.
+  const [docxBuffer, setDocxBuffer] = useState<ArrayBuffer | null>(null);
+  const [docxRenderFailed, setDocxRenderFailed] = useState(false);
   const [failed, setFailed] = useState(false);
   const [mediaPlaybackFailed, setMediaPlaybackFailed] = useState(false);
   const [imageFallback, setImageFallback] = useState<"converting" | "unavailable" | null>(null);
   const attachmentBlobRef = useRef<Blob | null>(null);
+  const docxContainerRef = useRef<HTMLDivElement | null>(null);
   const objectUrlsRef = useRef<Set<string>>(new Set());
   const attemptedHeicConversionRef = useRef(false);
   const imageOperationRef = useRef(0);
@@ -256,6 +276,8 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     setText(null);
     setSheets([]);
     setDocumentHtml(null);
+    setDocxBuffer(null);
+    setDocxRenderFailed(false);
     setCalendarText(null);
     setFailed(false);
     setMediaPlaybackFailed(false);
@@ -319,15 +341,12 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
           return;
         }
         if (resolvedKind === "document" && /\.(docx)$/i.test(name)) {
+          // Full-fidelity rendering happens in the effect below, once React
+          // has mounted the dedicated container ref. Keep the bytes around so
+          // the same effect can fall back to Mammoth's text extraction.
           ensureDownloadUrl();
-          const mammoth = await import("mammoth");
           const documentBytes = await blob.arrayBuffer();
-          const converted = await mammoth.convertToHtml({
-            arrayBuffer: documentBytes,
-            buffer: documentBytes,
-          } as unknown as Parameters<typeof mammoth.convertToHtml>[0]);
-          const clean = DOMPurify.sanitize(converted.value, { USE_PROFILES: { html: true } });
-          if (active) setDocumentHtml(clean);
+          if (active) setDocxBuffer(documentBytes);
           return;
         }
         setObjectUrl(sourceUrl);
@@ -344,6 +363,64 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
       createdUrls.clear();
     };
   }, [name, src]);
+
+  /**
+   * DOCX files are rendered by docx-preview into a dedicated DOM container so
+   * tables, images, headers/footers and character/paragraph formatting survive
+   * instead of being flattened to text. Nothing from this DOM is ever fed to
+   * dangerouslySetInnerHTML. On any failure we retry with Mammoth's text
+   * preview, and if that also fails we leave the existing download card in
+   * place — never a blank box.
+   */
+  useEffect(() => {
+    if (!docxBuffer || !docxContainerRef.current) return;
+    let active = true;
+    const container = docxContainerRef.current;
+    container.replaceChildren();
+
+    const fallBackToText = async () => {
+      try {
+        const html = await mammothDocxFallback(docxBuffer);
+        if (!active) return;
+        if (!html.trim()) throw new Error("No readable DOCX content");
+        setDocumentHtml(html);
+      } catch {
+        if (active) setFailed(true);
+      } finally {
+        if (active) setDocxRenderFailed(true);
+      }
+    };
+
+    void (async () => {
+      try {
+        const { renderAsync } = await import("docx-preview");
+        await renderAsync(docxBuffer, container, undefined, {
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+          ignoreFonts: false,
+          breakPages: false,
+          renderHeaders: true,
+          renderFooters: true,
+          // Embedded images become self-contained data: URLs. docx-preview
+          // parses only the docx bytes; it never fetches external image URLs.
+          useBase64URL: true,
+        });
+        if (!active) return;
+        // A missing page element means the library silently bailed out; treat
+        // it like a thrown error so the user still gets a usable preview.
+        // (The injected <style> tag alone is not a successful render.)
+        if (!container.querySelector("section.docx")) await fallBackToText();
+      } catch {
+        if (active) await fallBackToText();
+      }
+    })();
+
+    return () => {
+      active = false;
+      container.replaceChildren();
+    };
+  }, [docxBuffer]);
 
   const handleImageError = async () => {
     if (!isHeicWorkspaceAttachment(name, contentType) || attemptedHeicConversionRef.current) {
@@ -420,6 +497,27 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
           </WorkspaceAttachmentPreview>
         )
       : <div className="my-2 h-24 animate-pulse rounded-xl bg-[#edf4f3]" aria-label={`Loading ${name}`} />;
+
+  // Word documents render as real pages (tables, images, styles) into this
+  // container. The container is intentionally owned by docx-preview, not by
+  // React children, so its generated DOM is never sanitized or replaced by a
+  // sanitized HTML string.
+  if (kind === "document" && /\.docx$/i.test(name) && docxBuffer && !docxRenderFailed && documentHtml === null)
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
+          </div>
+          <div
+            ref={docxContainerRef}
+            data-testid="docx-preview"
+            aria-label={`Preview of ${name}`}
+            className="docx-preview-host max-h-[560px] overflow-auto rounded-lg border border-[#eef3f2] bg-white dark:border-[#2a3f52]"
+          />
+        </div>
+      </WorkspaceAttachmentPreview>
+    );
 
   if (calendarText !== null)
     return (

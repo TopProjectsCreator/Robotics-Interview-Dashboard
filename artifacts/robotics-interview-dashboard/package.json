@@ -116,6 +116,7 @@
     "@yume-chan/adb": "^2.6.4",
     "@yume-chan/adb-daemon-webusb": "^2.3.2",
     "@yume-chan/stream-extra": "^2.6.1",
+    "docx-preview": "^0.4.1",
     "dompurify": "^3.4.15",
     "emoji-picker-react": "^4.22.2",
     "fflate": "^0.8.3",
