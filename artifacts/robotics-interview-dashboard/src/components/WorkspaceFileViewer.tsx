@@ -146,6 +146,27 @@ function normalizeWorkspaceFileType(type: string): string {
   return type.split(";")[0]?.trim().toLowerCase() ?? "";
 }
 
+function declaredTypeIsGeneric(type: string): boolean {
+  return !type || type === "application/octet-stream" || type === "";
+}
+
+/** MIME inferred from the filename when the server reports a generic type. */
+function mimeForPreviewName(name: string, declared: string): string {
+  if (declared && declared !== "application/octet-stream" && declared !== "text/plain") return declared;
+  const extension = name.split(".").pop()?.toLowerCase() ?? "";
+  const byExtension: Record<string, string> = {
+    pdf: "application/pdf",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    doc: "application/msword",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    xls: "application/vnd.ms-excel",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    zip: "application/zip",
+    ics: "text/calendar",
+  };
+  return byExtension[extension] ?? declared ?? "application/octet-stream";
+}
+
 function isHeicWorkspaceAttachment(name: string, contentType: string): boolean {
   return /^image\/hei[cf]$/i.test(contentType) || /\.hei[cf]$/i.test(name);
 }
@@ -311,7 +332,13 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         const blob = await response.blob();
         const resolvedType = responseType || normalizeWorkspaceFileType(blob.type);
         if (!active) return;
-        const sourceUrl = URL.createObjectURL(blob);
+        // Re-wrap when the server returned a generic type: a blob: iframe
+        // whose type isn't application/pdf makes the browser download the PDF
+        // instead of rendering it (with a different, generated filename).
+        const previewBlob = declaredTypeIsGeneric(resolvedType)
+          ? new Blob([blob], { type: mimeForPreviewName(name, resolvedType) })
+          : blob;
+        const sourceUrl = URL.createObjectURL(previewBlob);
         createdUrls.add(sourceUrl);
         attachmentBlobRef.current = blob;
         setDownloadUrl(sourceUrl);

@@ -6316,9 +6316,9 @@ function chatFileType(file: File): string {
   ].includes(declared)) return declared;
   const extension = file.name.split(".").pop()?.toLowerCase();
   if (CHAT_EXTENSION_TYPES[extension ?? ""]) return CHAT_EXTENSION_TYPES[extension ?? ""];
-  // Keep the picker in sync with the server allow-list. Unknown application
-  // types are rejected server-side, so don't queue files that cannot upload.
-  return "";
+  // Any other file type is still accepted: it uploads as application/octet-stream
+  // and renders as a Download card in the shared viewer. No file type is refused.
+  return declared && declared !== "" ? declared : "application/octet-stream";
 }
 function nameClipboardChatFile(file: File, index: number): File {
   if (file.name.trim()) return file;
