@@ -61,7 +61,11 @@ export function permissionForRoute(method: string, rawPath: string): PermissionI
   }
   if (path.startsWith("/queue/custom-emojis")) return read ? "chat.view" : "chat.manage";
   if (path.startsWith("/queue")) {
-    if (path.startsWith("/queue/labels") || path.startsWith("/queue/settings")) return read ? "queue.view" : "queue.manage";
+    // The interviewer-label roster powers the chat DM picker, so anyone who
+    // can open chat may read it. Requiring queue.view here returned 403 for
+    // interviewers, leaving the DM list empty and unread badges stuck forever.
+    if (path.startsWith("/queue/labels")) return read ? "chat.view" : "queue.manage";
+    if (path.startsWith("/queue/settings")) return read ? "queue.view" : "queue.manage";
     return read ? "queue.view" : "queue.manage";
   }
 

@@ -6792,7 +6792,13 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
           ...(conversationChannelId ? { channelId: conversationChannelId } : {}),
         },
       }, {
-        onSuccess: () => { void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) }); },
+        onSuccess: () => {
+          // The unread badge / conversation list is a DIFFERENT query from the
+          // message list. Invalidating only the chat query left the badge stale
+          // after a receipt was written, so reading a message never cleared it.
+          void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
+          void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
+        },
         onError: () => unreadIds.forEach((id) => markedReadMessagesRef.current.delete(`${conversationId}:${id}`)),
       });
     }, { root, threshold: 0.2 });
@@ -7634,14 +7640,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
       for (const file of picked) {
         const type = chatFileType(file);
         if (!type) { setChatImageError(`"${file.name}" is not a supported attachment.`); return; }
-        const maxFileBytes = chatFileType(file) === "model/x-parasolid"
-          ? CHAT_MAX_PARASOLID_FILE_BYTES
-          : CHAT_MAX_FILE_BYTES;
-        if (file.size > maxFileBytes) {
-          const maxMegabytes = Math.floor(maxFileBytes / (1024 * 1024));
-          setChatImageError(`"${file.name}" is too big (max ${maxMegabytes} MB).`);
-          return;
-        }
+        // No hard file-size cap: anything above the 40 MB part size goes
+        // through the chunked upload path (40 MB parts), so large CAD models,
+        // archives, or videos work like any other attachment.
         let id: string;
         try {
           id = crypto.randomUUID();
@@ -8073,10 +8074,16 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
     voiceStreamRef.current?.getTracks().forEach(track => track.stop());
   }, []);
   useEffect(() => {
+    // Wait until the label roster has actually loaded. On a cold open the
+    // labels array starts empty, so this guard used to clear a valid ?peer=
+    // deep link (and any DM selected before the roster arrived). That left the
+    // DM un-openable, so no read receipt could ever be written and the unread
+    // badge stayed stuck.
+    if (interviewerLabelsQuery.isPending) return;
     if (conversationPeer && !interviewerLabels.some(label => label.toLowerCase() === conversationPeer.toLowerCase() && label.toLowerCase() !== activeInterviewer.toLowerCase())) {
       setConversationPeer(null);
     }
-  }, [activeInterviewer, conversationPeer, interviewerLabels]);
+  }, [activeInterviewer, conversationPeer, interviewerLabels, interviewerLabelsQuery.isPending]);
   // A channel that disappears (deleted or membership revoked) drops the
   // viewer back to the team channel instead of a dead 400 conversation.
   useEffect(() => {
