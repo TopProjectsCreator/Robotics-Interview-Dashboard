@@ -7083,7 +7083,7 @@ export const SearchPartsCatalogResponse = zod.object({
   "catalogTotal": zod.number().int(),
   "catalogOffset": zod.number().int(),
   "catalogLimit": zod.number().int(),
-  "liveSearchStatus": zod.enum(['available', 'unavailable']).describe('Whether current live supplier-page discovery providers responded.')
+  "liveSearchStatus": zod.enum(['available', 'partial', 'unavailable']).describe('Whether all, some, or none of the individual live supplier search requests completed successfully.')
 })
 
 

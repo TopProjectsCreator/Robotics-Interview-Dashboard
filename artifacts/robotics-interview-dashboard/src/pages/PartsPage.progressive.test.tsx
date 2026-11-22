@@ -508,6 +508,7 @@ describe("progressive Parts search", () => {
         status: "available",
         providerCount: 19,
         failedProviderCount: 0,
+        providerFailures: [],
         resultCount: 2,
       });
     });
@@ -819,6 +820,7 @@ describe("progressive Parts search", () => {
         status: "available",
         providerCount: 2,
         failedProviderCount: 0,
+        providerFailures: [],
         resultCount: 1,
       });
     });
@@ -861,6 +863,7 @@ describe("progressive Parts search", () => {
         status: "available",
         providerCount: 2,
         failedProviderCount: 0,
+        providerFailures: [],
         resultCount: 1,
       });
     });
@@ -946,6 +949,7 @@ describe("progressive Parts search", () => {
         status: "available",
         providerCount: 2,
         failedProviderCount: 0,
+        providerFailures: [],
         resultCount: 1,
       });
     });
@@ -986,6 +990,12 @@ describe("progressive Parts search", () => {
         status: "partial",
         providerCount: 4,
         failedProviderCount: 1,
+        providerFailures: [{
+          provider: "tavily",
+          category: "upstream_http",
+          statusCode: 429,
+          count: 1,
+        }],
         resultCount: 1,
       });
     });
@@ -995,7 +1005,7 @@ describe("progressive Parts search", () => {
 
     expect(await screen.findByText("Early result part")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Some suppliers could not be reached: 1 of 4 search providers failed",
+      "Some suppliers could not be reached: 1 of 4 live search requests failed (Tavily: HTTP 429 (1 request))",
     );
     expect(screen.getByRole("status")).toHaveTextContent("Some suppliers could not be reached");
   });
@@ -1007,6 +1017,10 @@ describe("progressive Parts search", () => {
         status: "unavailable",
         providerCount: 4,
         failedProviderCount: 4,
+        providerFailures: [
+          { provider: "exa", category: "timeout", count: 1 },
+          { provider: "tavily", category: "upstream_http", statusCode: 429, count: 3 },
+        ],
         resultCount: 0,
       });
     });
@@ -1015,12 +1029,56 @@ describe("progressive Parts search", () => {
     startSearch("total outage");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "all 4 search providers could not be reached",
+      "all 4 live search requests failed",
     );
+    expect(screen.getByRole("alert")).toHaveTextContent("Exa: timed out (1 request)");
+    expect(screen.getByRole("alert")).toHaveTextContent("Tavily: HTTP 429 (3 requests)");
     expect(screen.getByRole("status")).toHaveTextContent(
       "Search complete, but suppliers did not return live results",
     );
     expect(screen.queryByText("No matching supplier products or indexed catalog records were found.")).not.toBeInTheDocument();
+  });
+
+  it("keeps saved Stockroom matches visible when every live provider fails", async () => {
+    mocks.teamInventory.set("team-a", [{
+      id: "saved-shaft-collar",
+      vendorKey: "andymark",
+      vendorName: "AndyMark",
+      name: "8 mm shaft collar",
+      sku: "COLLAR-SAVED",
+      category: "Hardware",
+      description: "A part already saved in Stockroom.",
+      productUrl: "https://www.andymark.com/products/saved-shaft-collar",
+      imageUrl: null,
+      storageLocation: null,
+      inventoryNotes: null,
+      quantityOwned: 0,
+      quantityAssigned: 0,
+      quantityAvailable: 0,
+      allocations: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    }]);
+    mocks.consumeSearch.mockImplementation(async (_params, onEvent) => {
+      await onEvent({
+        type: "complete",
+        status: "unavailable",
+        providerCount: 2,
+        failedProviderCount: 2,
+        providerFailures: [
+          { provider: "exa", category: "upstream_http", statusCode: 503, count: 1 },
+          { provider: "tavily", category: "timeout", count: 1 },
+        ],
+        resultCount: 0,
+      });
+    });
+
+    const page = await renderPartsPage();
+    startSearch("8 mm shaft collar");
+
+    expect(await within(page.container).findByText("8 mm shaft collar")).toBeInTheDocument();
+    expect(await within(page.container).findByText("Saved supplier item")).toBeInTheDocument();
+    expect(await within(page.container).findByRole("alert")).toHaveTextContent("Exa: HTTP 503");
   });
 
   it("keeps early results and reports partial coverage if the stream closes early", async () => {
@@ -1065,6 +1123,7 @@ describe("progressive Parts search", () => {
           status: "available",
           providerCount: 2,
           failedProviderCount: 0,
+          providerFailures: [],
           resultCount: 1,
         });
         return;
@@ -1075,6 +1134,7 @@ describe("progressive Parts search", () => {
         status: "available",
         providerCount: 2,
         failedProviderCount: 0,
+        providerFailures: [],
         resultCount: 1,
       });
     });

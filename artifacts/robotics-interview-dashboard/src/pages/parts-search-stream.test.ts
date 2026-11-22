@@ -33,6 +33,7 @@ describe("Parts supplier search stream client", () => {
       status: "available",
       providerCount: 2,
       failedProviderCount: 0,
+      providerFailures: [],
       resultCount: 1,
     };
     const encodedResult = JSON.stringify(resultEvent) + "\n";

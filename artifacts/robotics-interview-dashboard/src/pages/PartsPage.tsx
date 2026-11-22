@@ -75,6 +75,10 @@ type PartsOrderLine = { product: DraftProduct; quantity: number };
 
 const PARTS_ORDER_DRAFT_KEY = "robotics-parts-order-draft-v1";
 const PARTS_REFRESH_INTERVAL_MS = 5_000;
+type PartsSearchProviderFailures = Extract<
+  PartsCatalogSearchStreamEvent,
+  { type: "complete" }
+>["providerFailures"];
 
 const VENDOR_GROUPS: PartsVendor["group"][] = [
   "General Parts",
@@ -113,6 +117,24 @@ function formatApproximateDuration(seconds: number): string {
   return hours === 0
     ? `${days} day${days === 1 ? "" : "s"}`
     : `${days} day${days === 1 ? "" : "s"} ${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
+function formatProviderFailures(failures: PartsSearchProviderFailures): string {
+  if (!Array.isArray(failures)) return "";
+  return failures.map((failure) => {
+    const provider = failure.provider === "exa" ? "Exa" : "Tavily";
+    const reason = failure.category === "upstream_http" && failure.statusCode
+      ? `HTTP ${failure.statusCode}`
+      : failure.category === "timeout"
+        ? "timed out"
+        : failure.category === "network"
+          ? "network error"
+          : failure.category === "invalid_response"
+            ? "returned an invalid response"
+            : "reported an error";
+    const requests = failure.count === 1 ? "1 request" : `${failure.count} requests`;
+    return `${provider}: ${reason} (${requests})`;
+  }).join("; ");
 }
 
 function readPartsOrderDraft(): PartsOrderLine[] {
@@ -1003,13 +1025,14 @@ export default function PartsPage({ demoMode = false }: { demoMode?: boolean } =
         if (event.type !== "complete") return;
         receivedCompletion = true;
         setSearchStatus(event.status);
+        const providerFailureDetails = formatProviderFailures(event.providerFailures);
         if (event.status === "partial") {
           setSearchError(
-            `Some suppliers could not be reached: ${event.failedProviderCount} of ${event.providerCount} search providers failed. Verified products found so far are shown below.`,
+            `Some suppliers could not be reached: ${event.failedProviderCount} of ${event.providerCount} live search requests failed${providerFailureDetails ? ` (${providerFailureDetails})` : ""}. Verified products found so far are shown below.`,
           );
         } else if (event.status === "unavailable") {
           setSearchError(
-            `Supplier search is temporarily unavailable: all ${event.failedProviderCount} search providers could not be reached. Saved product matches may still appear below; try again shortly.`,
+            `Supplier search is temporarily unavailable: all ${event.failedProviderCount} live search requests failed${providerFailureDetails ? ` (${providerFailureDetails})` : ""}. Saved product matches may still appear below; try again shortly.`,
           );
         } else if (event.resultCount === 0) {
           setSearchError("No verified supplier products matched this search. Try a broader term or search again.");

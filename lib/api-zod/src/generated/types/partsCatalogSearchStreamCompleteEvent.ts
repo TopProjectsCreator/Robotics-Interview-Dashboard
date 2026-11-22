@@ -5,16 +5,25 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { PartsCatalogSearchProviderFailure } from './partsCatalogSearchProviderFailure';
 import type { PartsCatalogSearchStreamCompleteEventStatus } from './partsCatalogSearchStreamCompleteEventStatus';
 
 export interface PartsCatalogSearchStreamCompleteEvent {
   type: 'complete';
   /** Whether all live discovery providers responded successfully. */
   status: PartsCatalogSearchStreamCompleteEventStatus;
-  /** @minimum 0 */
+  /**
+     * Number of individual live provider requests, not distinct provider backends.
+     * @minimum 0
+     */
   providerCount: number;
-  /** @minimum 0 */
+  /**
+     * Number of individual live provider requests that failed.
+     * @minimum 0
+     */
   failedProviderCount: number;
+  /** Aggregated provider failures with safe categories and no upstream response bodies. */
+  providerFailures: PartsCatalogSearchProviderFailure[];
   /** @minimum 0 */
   resultCount: number;
 }

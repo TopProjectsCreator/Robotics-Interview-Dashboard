@@ -804,6 +804,64 @@ type PublicCatalogSearchCandidate = {
   description: string;
 };
 
+type PartsSearchProvider = "exa" | "tavily";
+type PartsSearchFailureCategory =
+  | "timeout"
+  | "network"
+  | "upstream_http"
+  | "invalid_response"
+  | "provider_error";
+type PartsSearchProviderFailure = {
+  provider: PartsSearchProvider;
+  category: PartsSearchFailureCategory;
+  statusCode?: number;
+};
+type PartsSearchProviderFailureSummary = PartsSearchProviderFailure & { count: number };
+
+class PartsSearchProviderRequestError extends Error implements PartsSearchProviderFailure {
+  constructor(
+    readonly provider: PartsSearchProvider,
+    readonly category: PartsSearchFailureCategory,
+    readonly statusCode?: number,
+  ) {
+    super("Parts search provider request failed.");
+  }
+}
+
+function partsSearchProviderFailure(
+  provider: PartsSearchProvider,
+  error: unknown,
+): PartsSearchProviderFailure {
+  if (error instanceof PartsSearchProviderRequestError) {
+    return {
+      provider: error.provider,
+      category: error.category,
+      ...(error.statusCode === undefined ? {} : { statusCode: error.statusCode }),
+    };
+  }
+  const name = isRecord(error) && typeof error.name === "string" ? error.name : "";
+  return {
+    provider,
+    category: name === "TimeoutError" || name === "AbortError" ? "timeout" : "network",
+  };
+}
+
+function summarizePartsSearchProviderFailures(
+  failures: PartsSearchProviderFailure[],
+): PartsSearchProviderFailureSummary[] {
+  const grouped = new Map<string, PartsSearchProviderFailureSummary>();
+  for (const failure of failures) {
+    const key = `${failure.provider}:${failure.category}:${failure.statusCode ?? ""}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      grouped.set(key, { ...failure, count: 1 });
+    }
+  }
+  return [...grouped.values()];
+}
+
 type PublicCatalogSearchResult = PublicCatalogSearchCandidate & {
   title: string;
   description: string;
@@ -1077,29 +1135,49 @@ async function searchWithTavily(
   const expandedQuery = searchVariants.length > 1
     ? `${query} (also listed as ${searchVariants.slice(1).join(", ")})`
     : query;
-  const response = await tavilySearchQueue(() =>
-    fetch("https://api.tavily.com/search", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "X-Tavily-Access-Mode": "keyless",
-      },
-      body: JSON.stringify({
-        query: `Official supplier product pages matching: ${expandedQuery}`,
-        search_depth: "basic",
-        max_results: 20,
-        include_domains: allowedVendors.map((vendor) => vendor.domain),
+  let response: Response;
+  try {
+    response = await tavilySearchQueue(() =>
+      fetch("https://api.tavily.com/search", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "X-Tavily-Access-Mode": "keyless",
+        },
+        body: JSON.stringify({
+          query: `Official supplier product pages matching: ${expandedQuery}`,
+          search_depth: "basic",
+          max_results: 20,
+          include_domains: allowedVendors.map((vendor) => vendor.domain),
+        }),
+        signal: AbortSignal.timeout(10_000),
       }),
-      signal: AbortSignal.timeout(10_000),
-    }),
-  );
-  if (!response.ok) throw new Error(`Tavily search returned ${response.status}`);
-  const payload: unknown = await response.json();
-  if (!isRecord(payload) || !Array.isArray(payload.results)) {
-    throw new Error("Tavily search returned an invalid response");
+    );
+  } catch (error) {
+    const failure = partsSearchProviderFailure("tavily", error);
+    throw new PartsSearchProviderRequestError(failure.provider, failure.category);
+  }
+  if (!response.ok) {
+    throw new PartsSearchProviderRequestError("tavily", "upstream_http", response.status);
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      const failure = partsSearchProviderFailure("tavily", error);
+      throw new PartsSearchProviderRequestError(failure.provider, failure.category);
+    }
+    throw new PartsSearchProviderRequestError("tavily", "invalid_response");
+  }
+  if (
+    !isRecord(payload) ||
+    !Array.isArray(payload.results) ||
+    payload.results.some((item) => !isRecord(item) || typeof item.url !== "string")
+  ) {
+    throw new PartsSearchProviderRequestError("tavily", "invalid_response");
   }
   return payload.results
-    .filter(isRecord)
     .map((item) => toPublicCatalogSearchResult(item, allowedVendors))
     .filter((item): item is PublicCatalogSearchResult => item !== null);
 }
@@ -1134,44 +1212,71 @@ async function searchWithExa(
   const expandedQuery = searchVariants.length > 1
     ? `${query} (also listed as ${searchVariants.slice(1).join(", ")})`
     : query;
-  const response = await exaSearchQueue(() =>
-    fetch("https://mcp.exa.ai/mcp?tools=web_search_exa", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: `parts-${Date.now()}`,
-        method: "tools/call",
-        params: {
-          name: "web_search_exa",
-          arguments: {
-            query: `Official supplier product pages matching "${expandedQuery}" from ${vendorScope}`,
-            objective:
-              "Return relevant product or catalog pages hosted on the listed suppliers' own domains. Exclude third-party stores and unrelated pages.",
-            numResults: 30,
-          },
+  let response: Response;
+  try {
+    response = await exaSearchQueue(() =>
+      fetch("https://mcp.exa.ai/mcp?tools=web_search_exa", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
         },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: `parts-${Date.now()}`,
+          method: "tools/call",
+          params: {
+            name: "web_search_exa",
+            arguments: {
+              query: `Official supplier product pages matching "${expandedQuery}" from ${vendorScope}`,
+              objective:
+                "Return relevant product or catalog pages hosted on the listed suppliers' own domains. Exclude third-party stores and unrelated pages.",
+              numResults: 30,
+            },
+          },
+        }),
+        signal: AbortSignal.timeout(10_000),
       }),
-      signal: AbortSignal.timeout(10_000),
-    }),
-  );
-  if (!response.ok) throw new Error(`Exa search returned ${response.status}`);
-  const envelope = parseSseResponse(await response.text());
-  if (!isRecord(envelope) || !isRecord(envelope.result) || envelope.result.isError) {
-    throw new Error("Exa search returned an invalid response");
+    );
+  } catch (error) {
+    const failure = partsSearchProviderFailure("exa", error);
+    throw new PartsSearchProviderRequestError(failure.provider, failure.category);
+  }
+  if (!response.ok) {
+    throw new PartsSearchProviderRequestError("exa", "upstream_http", response.status);
+  }
+  let envelope: unknown;
+  try {
+    envelope = parseSseResponse(await response.text());
+  } catch (error) {
+    if (!(error instanceof SyntaxError)) {
+      const failure = partsSearchProviderFailure("exa", error);
+      throw new PartsSearchProviderRequestError(failure.provider, failure.category);
+    }
+    throw new PartsSearchProviderRequestError("exa", "invalid_response");
+  }
+  if (isRecord(envelope) && "error" in envelope) {
+    throw new PartsSearchProviderRequestError("exa", "provider_error");
+  }
+  if (!isRecord(envelope) || !isRecord(envelope.result)) {
+    throw new PartsSearchProviderRequestError("exa", "invalid_response");
+  }
+  if (envelope.result.isError) {
+    throw new PartsSearchProviderRequestError("exa", "provider_error");
   }
   const content = envelope.result.content;
-  if (!Array.isArray(content)) throw new Error("Exa search returned no results");
-  const textBlock = content.find(
+  if (!Array.isArray(content)) {
+    throw new PartsSearchProviderRequestError("exa", "invalid_response");
+  }
+  if (content.length === 0) return [];
+  const textBlocks = content.filter(
     (item) => isRecord(item) && item.type === "text" && typeof item.text === "string",
   );
-  if (!isRecord(textBlock) || typeof textBlock.text !== "string") {
-    throw new Error("Exa search result was empty");
+  if (textBlocks.length === 0) {
+    throw new PartsSearchProviderRequestError("exa", "invalid_response");
   }
-  return parseExaSearchResults(textBlock.text, allowedVendors);
+  const text = textBlocks.map((item) => String(item.text)).join("\n");
+  return parseExaSearchResults(text, allowedVendors);
 }
 
 async function enrichOfficialProductPage(
@@ -1268,6 +1373,7 @@ export async function searchPublicCatalog(
     onComplete?: (summary: {
       providerCount: number;
       failedProviderCount: number;
+      providerFailures: PartsSearchProviderFailureSummary[];
       resultCount: number;
     }) => void | Promise<void>;
   } = {},
@@ -1279,6 +1385,7 @@ export async function searchPublicCatalog(
     await options.onComplete?.({
       providerCount: 0,
       failedProviderCount: 0,
+      providerFailures: [],
       resultCount: 0,
     });
     return [];
@@ -1290,21 +1397,34 @@ export async function searchPublicCatalog(
   const focusedTavilyVendors = vendor
     ? allowedVendors
     : allowedVendors.filter((item) => item.publicProductFeedUrl);
-  const providerRequests = options.includePartialDetails
+  const tavilyVendorGroups: VendorConfig[][] = [];
+  for (let index = 0; index < focusedTavilyVendors.length; index += 4) {
+    tavilyVendorGroups.push(focusedTavilyVendors.slice(index, index + 4));
+  }
+  const providerRequests: Array<{
+    provider: PartsSearchProvider;
+    promise: Promise<PublicCatalogSearchCandidate[]>;
+  }> = options.includePartialDetails
     ? [
-        ...vendorGroups.map((group) => searchWithExa(query, group)),
-        ...focusedTavilyVendors.map((item) => searchWithTavily(query, [item])),
+        ...vendorGroups.map((group) => ({
+          provider: "exa" as const,
+          promise: searchWithExa(query, group),
+        })),
+        ...tavilyVendorGroups.map((group) => ({
+          provider: "tavily" as const,
+          promise: searchWithTavily(query, group),
+        })),
       ]
     : vendorGroups.flatMap((group) => [
-      searchWithTavily(query, group),
-      searchWithExa(query, group),
+      { provider: "tavily" as const, promise: searchWithTavily(query, group) },
+      { provider: "exa" as const, promise: searchWithExa(query, group) },
     ]);
 
   if (options.onResult) {
     const seen = new Set<string>();
     const candidateCounts = new Map(allowedVendors.map((item) => [item.key, 0]));
     const verifiedResults: PublicCatalogSearchResult[] = [];
-    let failedProviderCount = 0;
+    const providerFailures: PartsSearchProviderFailure[] = [];
     const candidatesPerVendor = options.maxCandidatesPerVendor ?? 8;
     let activeEnrichments = 0;
     const enrichmentWaiters: Array<() => void> = [];
@@ -1323,12 +1443,12 @@ export async function searchPublicCatalog(
       }
     };
 
-    await Promise.all(providerRequests.map(async (providerRequest) => {
+    await Promise.all(providerRequests.map(async ({ provider, promise }) => {
       let providerCandidates: PublicCatalogSearchCandidate[];
       try {
-        providerCandidates = await providerRequest;
-      } catch {
-        failedProviderCount += 1;
+        providerCandidates = await promise;
+      } catch (error) {
+        providerFailures.push(partsSearchProviderFailure(provider, error));
         return;
       }
 
@@ -1370,17 +1490,30 @@ export async function searchPublicCatalog(
 
     await options.onComplete?.({
       providerCount: providerRequests.length,
-      failedProviderCount,
+      failedProviderCount: providerFailures.length,
+      providerFailures: summarizePartsSearchProviderFailures(providerFailures),
       resultCount: verifiedResults.length,
     });
     return verifiedResults;
   }
 
-  const providerResults = await Promise.allSettled(providerRequests);
-  const combined = providerResults.flatMap((result) =>
-    result.status === "fulfilled" ? result.value : [],
-  );
-  if (providerResults.every((result) => result.status === "rejected")) {
+  const providerFailures: PartsSearchProviderFailure[] = [];
+  const providerResults = await Promise.all(providerRequests.map(async ({ provider, promise }) => {
+    try {
+      return await promise;
+    } catch (error) {
+      providerFailures.push(partsSearchProviderFailure(provider, error));
+      return [];
+    }
+  }));
+  const combined = providerResults.flat();
+  if (providerResults.length > 0 && providerFailures.length === providerRequests.length) {
+    await options.onComplete?.({
+      providerCount: providerRequests.length,
+      failedProviderCount: providerFailures.length,
+      providerFailures: summarizePartsSearchProviderFailures(providerFailures),
+      resultCount: 0,
+    });
     throw new Error("All keyless catalog search providers are unavailable.");
   }
 
@@ -1421,6 +1554,12 @@ export async function searchPublicCatalog(
       }
     }
   }
+  await options.onComplete?.({
+    providerCount: providerRequests.length,
+    failedProviderCount: providerFailures.length,
+    providerFailures: summarizePartsSearchProviderFailures(providerFailures),
+    resultCount: verifiedResults.length,
+  });
   return verifiedResults;
 }
 
@@ -1454,9 +1593,18 @@ export async function runAssistantPartsTool(
         blockedVendorKeys,
       );
       let products: PublicCatalogSearchResult[] = [];
-      let liveSearchStatus: "available" | "unavailable" = "available";
+      let liveSearchStatus: "available" | "partial" | "unavailable" = "available";
       try {
-        products = await searchPublicCatalog(query, vendor, { blockedVendorKeys });
+        products = await searchPublicCatalog(query, vendor, {
+          blockedVendorKeys,
+          onComplete: ({ providerCount, failedProviderCount }) => {
+            liveSearchStatus = failedProviderCount === 0
+              ? "available"
+              : failedProviderCount >= providerCount
+                ? "unavailable"
+                : "partial";
+          },
+        });
       } catch {
         liveSearchStatus = "unavailable";
       }
@@ -2739,12 +2887,25 @@ router.get("/parts/catalog/search", requireAdmin, async (req, res): Promise<void
     const blockedVendorKeys = await readBlockedVendorKeys(teamId);
     const syncedCatalog = await searchSyncedCatalog(query, vendor, limit, offset, teamId, blockedVendorKeys);
     let results: PublicCatalogSearchResult[] = [];
-    let liveSearchStatus: "available" | "unavailable" = "available";
+    let liveSearchStatus: "available" | "partial" | "unavailable" = "available";
     try {
       results = await searchPublicCatalog(query, vendor, {
         maxCandidatesPerVendor: 40,
         includePartialDetails: true,
         blockedVendorKeys,
+        onComplete: ({ providerCount, failedProviderCount, providerFailures }) => {
+          liveSearchStatus = failedProviderCount === 0
+            ? "available"
+            : failedProviderCount >= providerCount
+              ? "unavailable"
+              : "partial";
+          if (providerFailures.length > 0) {
+            req.log.warn(
+              { providerFailures },
+              "Parts live search requests failed",
+            );
+          }
+        },
       });
     } catch (error) {
       if (syncedCatalog.total === 0) throw error;
@@ -2838,17 +2999,24 @@ router.get("/parts/catalog/search/stream", requireAdmin, async (req, res): Promi
         resultCount += 1;
         writeEvent({ type: "result", result: validated });
       },
-      onComplete: ({ providerCount, failedProviderCount }) => {
+      onComplete: ({ providerCount, failedProviderCount, providerFailures }) => {
         const status = failedProviderCount === 0
           ? "available"
           : failedProviderCount >= providerCount
             ? "unavailable"
             : "partial";
+        if (providerFailures.length > 0) {
+          req.log.warn(
+            { providerFailures },
+            "Parts live search requests failed",
+          );
+        }
         writeEvent({
           type: "complete",
           status,
           providerCount,
           failedProviderCount,
+          providerFailures,
           resultCount,
         });
       },

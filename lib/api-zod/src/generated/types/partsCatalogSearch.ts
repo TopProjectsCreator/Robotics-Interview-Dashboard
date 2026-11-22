@@ -17,6 +17,6 @@ export interface PartsCatalogSearch {
   catalogTotal: number;
   catalogOffset: number;
   catalogLimit: number;
-  /** Whether current live supplier-page discovery providers responded. */
+  /** Whether all, some, or none of the individual live supplier search requests completed successfully. */
   liveSearchStatus: PartsCatalogSearchLiveSearchStatus;
 }

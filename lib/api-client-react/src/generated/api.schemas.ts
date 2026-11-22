@@ -707,13 +707,14 @@ export interface PartsOrderLimitCheck {
 }
 
 /**
- * Whether current live supplier-page discovery providers responded.
+ * Whether all, some, or none of the individual live supplier search requests completed successfully.
  */
 export type PartsCatalogSearchLiveSearchStatus = typeof PartsCatalogSearchLiveSearchStatus[keyof typeof PartsCatalogSearchLiveSearchStatus];
 
 
 export const PartsCatalogSearchLiveSearchStatus = {
   available: 'available',
+  partial: 'partial',
   unavailable: 'unavailable',
 } as const;
 
@@ -725,7 +726,7 @@ export interface PartsCatalogSearch {
   catalogTotal: number;
   catalogOffset: number;
   catalogLimit: number;
-  /** Whether current live supplier-page discovery providers responded. */
+  /** Whether all, some, or none of the individual live supplier search requests completed successfully. */
   liveSearchStatus: PartsCatalogSearchLiveSearchStatus;
 }
 
@@ -755,14 +756,53 @@ export const PartsCatalogSearchStreamCompleteEventStatus = {
   unavailable: 'unavailable',
 } as const;
 
+export type PartsCatalogSearchProviderFailureProvider = typeof PartsCatalogSearchProviderFailureProvider[keyof typeof PartsCatalogSearchProviderFailureProvider];
+
+
+export const PartsCatalogSearchProviderFailureProvider = {
+  exa: 'exa',
+  tavily: 'tavily',
+} as const;
+
+export type PartsCatalogSearchProviderFailureCategory = typeof PartsCatalogSearchProviderFailureCategory[keyof typeof PartsCatalogSearchProviderFailureCategory];
+
+
+export const PartsCatalogSearchProviderFailureCategory = {
+  timeout: 'timeout',
+  network: 'network',
+  upstream_http: 'upstream_http',
+  invalid_response: 'invalid_response',
+  provider_error: 'provider_error',
+} as const;
+
+export interface PartsCatalogSearchProviderFailure {
+  provider: PartsCatalogSearchProviderFailureProvider;
+  category: PartsCatalogSearchProviderFailureCategory;
+  /**
+     * @minimum 100
+     * @maximum 599
+     */
+  statusCode?: number;
+  /** @minimum 1 */
+  count: number;
+}
+
 export interface PartsCatalogSearchStreamCompleteEvent {
   type: 'complete';
   /** Whether all live discovery providers responded successfully. */
   status: PartsCatalogSearchStreamCompleteEventStatus;
-  /** @minimum 0 */
+  /**
+     * Number of individual live provider requests, not distinct provider backends.
+     * @minimum 0
+     */
   providerCount: number;
-  /** @minimum 0 */
+  /**
+     * Number of individual live provider requests that failed.
+     * @minimum 0
+     */
   failedProviderCount: number;
+  /** Aggregated provider failures with safe categories and no upstream response bodies. */
+  providerFailures: PartsCatalogSearchProviderFailure[];
   /** @minimum 0 */
   resultCount: number;
 }

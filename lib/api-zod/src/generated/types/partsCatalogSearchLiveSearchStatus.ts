@@ -7,12 +7,13 @@
  */
 
 /**
- * Whether current live supplier-page discovery providers responded.
+ * Whether all, some, or none of the individual live supplier search requests completed successfully.
  */
 export type PartsCatalogSearchLiveSearchStatus = typeof PartsCatalogSearchLiveSearchStatus[keyof typeof PartsCatalogSearchLiveSearchStatus];
 
 
 export const PartsCatalogSearchLiveSearchStatus = {
   available: 'available',
+  partial: 'partial',
   unavailable: 'unavailable',
 } as const;
