@@ -8294,6 +8294,9 @@ function InterviewChatPanel({ applicantIds, tall = false, demoMode = false }: { 
         onSuccess: () => {
           if (replyingTo?.id === item.id) setReplyingTo(null);
           setOlderChat(current => current.filter(message => message.id !== item.id));
+          qc.setQueryData<NonNullable<typeof chat.data>>(getGetInterviewChatQueryKey(chatParams), current =>
+            current ? { ...current, items: current.items.filter(message => message.id !== item.id) } : undefined,
+          );
           void qc.invalidateQueries({ queryKey: getGetInterviewChatQueryKey(chatParams) });
           void qc.invalidateQueries({ queryKey: getGetChatConversationsQueryKey() });
         },

@@ -498,7 +498,7 @@ describe("chat attachment round trip", () => {
     expect(storageRequest?.[1]).toMatchObject({ method: "DELETE", credentials: "include" });
   });
 
-  it("lets a coordinator ghost a deleted message and removes it from the shared chat", async () => {
+  it("clears a stale tombstone when the server confirms another coordinator already ghosted it", async () => {
     const deletedMessage: StoredMessage = {
       id: "ghost-target",
       author: "Jordan",
@@ -513,6 +513,8 @@ describe("chat attachment round trip", () => {
       deletedAt: "2026-09-30T12:05:00.000Z",
     };
     let isGhosted = false;
+    let finishChatRefetch: ((response: Response) => void) | undefined;
+    let conversationFetches = 0;
     const requests: Array<{ url: URL; init?: RequestInit }> = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const rawUrl = input instanceof Request ? input.url : String(input);
@@ -524,12 +526,20 @@ describe("chat attachment round trip", () => {
       }
       if (url.pathname === "/api/queue/chat/ghost-target/ghost" && init?.method === "POST") {
         isGhosted = true;
+        // A 204 represents either the first successful transition or a
+        // confirmed retry; the UI's tombstone is still cached at this point.
         return new Response(null, { status: 204 });
       }
       if (url.pathname === "/api/queue/chat") {
-        return jsonResponse({ items: isGhosted ? [] : [deletedMessage], scope: "shared", peer: null });
+        if (isGhosted) {
+          return new Promise<Response>(resolve => {
+            finishChatRefetch = resolve;
+          });
+        }
+        return jsonResponse({ items: [deletedMessage], scope: "shared", peer: null });
       }
       if (url.pathname === "/api/queue/chat/conversations") {
+        conversationFetches += 1;
         return jsonResponse({ items: [], shared: null, channels: [] });
       }
       if (url.pathname === "/api/queue/chat/channels") return jsonResponse({ items: [] });
@@ -560,6 +570,14 @@ describe("chat attachment round trip", () => {
       expect(requests.some(({ url, init }) =>
         url.pathname === "/api/queue/chat/ghost-target/ghost" && init?.method === "POST",
       )).toBe(true);
+      expect(finishChatRefetch).toBeTypeOf("function");
+    });
+    expect(screen.queryByTestId("chat-message-deleted-ghost-target")).not.toBeInTheDocument();
+    expect(screen.queryByText(/already ghosted/i)).not.toBeInTheDocument();
+    await waitFor(() => expect(conversationFetches).toBeGreaterThan(1));
+
+    finishChatRefetch?.(jsonResponse({ items: [], scope: "shared", peer: null }));
+    await waitFor(() => {
       expect(screen.queryByTestId("chat-message-deleted-ghost-target")).not.toBeInTheDocument();
     });
     const ghostRequest = requests.find(({ url, init }) =>

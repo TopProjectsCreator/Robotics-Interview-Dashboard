@@ -229,6 +229,7 @@ import {
   assistantChatPostAuthorizationFailure,
   ghostDeletedChatMessageAuthorizationFailure,
 } from "../lib/interviewChatAuthorization";
+import { chatGhostState, resolveChatGhostTransition } from "../lib/chatGhosting";
 import { presenceSessionHash, accountNamesById } from "./presence";
 import { getAccountStats } from "../lib/presence";
 import { formatPresenceStats, resolvePresenceUser } from "../lib/assistantPresenceStats";
@@ -7401,42 +7402,68 @@ router.post("/queue/chat/:messageId/ghost", requireAdmin, async (req, res): Prom
   }).from(interviewChatMessagesTable)
     .where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
     .limit(1);
-  if (!existingMessage) {
+  const existingState = chatGhostState(existingMessage);
+  if (existingState === "missing") {
     res.status(404).json({ error: "Message not found." });
     return;
   }
-  if (!existingMessage.deletedAt) {
+  if (existingState === "not-deleted") {
     res.status(409).json({ error: "Only deleted messages can be ghosted." });
     return;
   }
-  if (existingMessage.ghostedAt) {
-    res.status(409).json({ error: "This message was already ghosted." });
+  if (existingState === "already-ghosted") {
+    res.status(204).end();
     return;
   }
 
-  const ghosted = await db.transaction(async (tx) => {
-    const [updated] = await tx.update(interviewChatMessagesTable)
-      .set({ ghostedAt: new Date(), ghostedBy: account.id })
-      .where(and(
-        eq(interviewChatMessagesTable.id, messageId),
-        isNotNull(interviewChatMessagesTable.deletedAt),
-        isNull(interviewChatMessagesTable.ghostedAt),
-        teamFilter(interviewChatMessagesTable.teamId, teamId),
-      ))
-      .returning({ id: interviewChatMessagesTable.id });
-    if (!updated) return false;
+  const ghostOutcome = await resolveChatGhostTransition(
+    () => db.transaction(async (tx) => {
+      const [updated] = await tx.update(interviewChatMessagesTable)
+        .set({ ghostedAt: new Date(), ghostedBy: account.id })
+        .where(and(
+          eq(interviewChatMessagesTable.id, messageId),
+          isNotNull(interviewChatMessagesTable.deletedAt),
+          isNull(interviewChatMessagesTable.ghostedAt),
+          teamFilter(interviewChatMessagesTable.teamId, teamId),
+        ))
+        .returning({ id: interviewChatMessagesTable.id });
+      if (!updated) return false;
 
-    // Keep replies in the conversation without retaining a visible reference
-    // to a tombstone that no longer appears in chat.
-    await tx.update(interviewChatMessagesTable)
-      .set({ parentMessageId: null })
-      .where(and(
-        eq(interviewChatMessagesTable.parentMessageId, messageId),
-        teamFilter(interviewChatMessagesTable.teamId, teamId),
-      ));
-    return true;
-  });
-  if (!ghosted) {
+      // Keep replies in the conversation without retaining a visible reference
+      // to a tombstone that no longer appears in chat.
+      await tx.update(interviewChatMessagesTable)
+        .set({ parentMessageId: null })
+        .where(and(
+          eq(interviewChatMessagesTable.parentMessageId, messageId),
+          teamFilter(interviewChatMessagesTable.teamId, teamId),
+        ));
+      return true;
+    }),
+    async () => {
+      // Another coordinator may have completed the transition after our first
+      // read. Only report success after confirming that persisted state.
+      const [currentMessage] = await db.select({
+        deletedAt: interviewChatMessagesTable.deletedAt,
+        ghostedAt: interviewChatMessagesTable.ghostedAt,
+      }).from(interviewChatMessagesTable)
+        .where(and(eq(interviewChatMessagesTable.id, messageId), teamFilter(interviewChatMessagesTable.teamId, teamId)))
+        .limit(1);
+      return currentMessage;
+    },
+  );
+  if (ghostOutcome !== "transitioned") {
+    if (ghostOutcome === "already-ghosted") {
+      res.status(204).end();
+      return;
+    }
+    if (ghostOutcome === "missing") {
+      res.status(404).json({ error: "Message not found." });
+      return;
+    }
+    if (ghostOutcome === "not-deleted") {
+      res.status(409).json({ error: "Only deleted messages can be ghosted." });
+      return;
+    }
     res.status(409).json({ error: "This message was already ghosted." });
     return;
   }
