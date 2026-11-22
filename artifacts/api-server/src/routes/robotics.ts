@@ -424,6 +424,7 @@ const pendingAssistantQuestions = new Map<string, {
 let assistantPromptDispatcherStarted = false;
 const BUILDER_RUN_HEARTBEAT_MS = 10_000;
 const BUILDER_RUN_STALE_MS = 90_000;
+const BUILDER_ANSWER_POLL_MS = 3_000;
 const objectStorageService = new ObjectStorageService();
 
 async function waitForBuilderSubagents(
@@ -622,7 +623,13 @@ async function enqueueCustomWorkspaceBuilderPrompt(input: {
 
 const ASSISTANT_PROMPT_STALE_MS = 60_000;
 const ASSISTANT_PROMPT_INSTANCE_RETRY_MS = 15_000;
+// A crash can only strand a prompt briefly. Re-scanning the entire history of
+// settled runs on every 1.5s dispatcher tick re-downloaded 50 full rows forever
+// and was the dominant source of Supabase (pooler) egress.
+const ASSISTANT_RECOVERY_POLL_MS = 15_000;
+const ASSISTANT_RECOVERY_LOOKBACK_MS = 10 * 60_000;
 const assistantPromptInstanceRetryAfter = new Map<DbInstance, number>();
+const lastAssistantRecoveryAt = new Map<DbInstance, number>();
 
 function assistantPromptWorkerProof(runId: string, teamId: string, accountId: string): string {
   const secret = process.env.SESSION_SECRET || "development-session-secret";
@@ -988,9 +995,12 @@ async function executeQueuedAssistantPrompt(run: {
 }
 
 async function recoverStaleAssistantPromptRuns(instance: DbInstance): Promise<void> {
-  if ((assistantPromptInstanceRetryAfter.get(instance) ?? 0) > Date.now()) return;
+  const now = Date.now();
+  if ((assistantPromptInstanceRetryAfter.get(instance) ?? 0) > now) return;
+  if ((lastAssistantRecoveryAt.get(instance) ?? 0) + ASSISTANT_RECOVERY_POLL_MS > now) return;
+  lastAssistantRecoveryAt.set(instance, now);
   try {
-    const staleBefore = new Date(Date.now() - ASSISTANT_PROMPT_STALE_MS);
+    const staleBefore = new Date(now - ASSISTANT_PROMPT_STALE_MS);
     const staleRuns = await runWithInstance(instance, () => db.select().from(assistantPromptRunsTable).where(and(
       eq(assistantPromptRunsTable.status, "running"),
       lt(assistantPromptRunsTable.updatedAt, staleBefore),
@@ -1159,12 +1169,24 @@ async function recoverStaleAssistantPromptRuns(instance: DbInstance): Promise<vo
         ));
       }));
     }
-    const settledBuilderPrompts = await runWithInstance(instance, () => db.select().from(assistantPromptRunsTable).where(and(
+    // Only recently-settled runs can still need recovery. Without the lower
+    // bound every historical failed run is re-selected on each tick, which
+    // returned 50 full rows (~6 KB each) every 1.5 seconds indefinitely.
+    const recoveryWindowStart = new Date(now - ASSISTANT_RECOVERY_LOOKBACK_MS);
+    const settledBuilderPrompts = await runWithInstance(instance, () => db.select({
+      id: assistantPromptRunsTable.id,
+      teamId: assistantPromptRunsTable.teamId,
+      accountId: assistantPromptRunsTable.accountId,
+      status: assistantPromptRunsTable.status,
+      payload: assistantPromptRunsTable.payload,
+      cancelRequested: assistantPromptRunsTable.cancelRequested,
+    }).from(assistantPromptRunsTable).where(and(
       or(
         eq(assistantPromptRunsTable.status, "completed"),
         eq(assistantPromptRunsTable.status, "failed"),
       ),
       lt(assistantPromptRunsTable.updatedAt, staleBefore),
+      gt(assistantPromptRunsTable.updatedAt, recoveryWindowStart),
     )).limit(50));
     for (const settledPrompt of settledBuilderPrompts) {
       const builderRunId = customWorkspaceBuilderRunId(settledPrompt.payload);
@@ -4882,7 +4904,7 @@ function validBoardAssetBytes(data: Buffer, contentType: string): boolean {
 }
 
 function safeBoardAssetName(value: string): string {
-  return value.trim().replace(/[\\/\u0000-\u001f\u007f]/g, "_").slice(0, 255) || "attachment";
+  return value.trim().replace(/[\\/\p{Cc}]/gu, "_").slice(0, 255) || "attachment";
 }
 
 function normalizeWhiteboardData(value: unknown): string | null {
@@ -10421,6 +10443,11 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
   }
   const promptAbort = new AbortController();
   activeAssistantPromptControllers.set(promptRunId, promptAbort);
+  // A disconnected SSE client used to leave the controller live while a builder
+  // question was open, so the answerPoll interval kept polling indefinitely.
+  res.on("close", () => {
+    if (!res.writableEnded) promptAbort.abort();
+  });
   const promptHeartbeat = setInterval(() => {
     void db.select({ cancelRequested: assistantPromptRunsTable.cancelRequested })
       .from(assistantPromptRunsTable)
@@ -10602,7 +10629,15 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
         finish({ error: "The coordinator did not answer before the question expired." });
       }, 20 * 60 * 1000);
       const answerPoll = builderRunId ? setInterval(() => {
-        void db.select().from(assistantBuilderRunsTable).where(and(
+        // Only the four fields actually inspected. Selecting the whole row
+        // downloads prompt/questions/answers/activities/result (~10 KB) every
+        // second for every open builder question.
+        void db.select({
+          status: assistantBuilderRunsTable.status,
+          questionId: assistantBuilderRunsTable.questionId,
+          questions: assistantBuilderRunsTable.questions,
+          answers: assistantBuilderRunsTable.answers,
+        }).from(assistantBuilderRunsTable).where(and(
           eq(assistantBuilderRunsTable.id, builderRunId),
           eq(assistantBuilderRunsTable.teamId, teamId),
           eq(assistantBuilderRunsTable.coordinatorId, account.id),
@@ -10617,7 +10652,7 @@ router.post("/assistant/ask/stream", requireAdmin, async (req, res): Promise<voi
             Object.keys(run.answers ?? {}).length > 0
           ) finish(run.answers);
         }).catch((error) => req.log.warn({ err: error }, "Builder answer could not be reloaded"));
-      }, 1000) : undefined;
+      }, BUILDER_ANSWER_POLL_MS) : undefined;
       promptAbort.signal.addEventListener("abort", abortQuestion, { once: true });
       if (promptAbort.signal.aborted) {
         abortQuestion();

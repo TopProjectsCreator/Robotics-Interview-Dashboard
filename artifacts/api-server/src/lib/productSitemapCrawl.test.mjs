@@ -194,6 +194,28 @@ test("pages with no Product block return null instead of throwing", () => {
   assert.equal(parseSchemaOrgProduct(""), null);
 });
 
+test("product fetch rejects an off-domain redirect before requesting its destination", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  globalThis.fetch = async (input) => {
+    requests.push(String(input));
+    return new Response(null, {
+      status: 302,
+      headers: { location: "http://127.0.0.1/internal" },
+    });
+  };
+  try {
+    const { fetchProductPage } = await import("./productSitemapCrawl.ts");
+    await assert.rejects(
+      fetchProductPage("https://www.gobilda.com/test-product/", TARGET),
+      /supplier's HTTPS website/,
+    );
+    assert.deepEqual(requests, ["https://www.gobilda.com/test-product/"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("a malformed JSON-LD block does not abort a later valid one", () => {
   const html = `<script type="application/ld+json">{ not json </script>${PRODUCT_HTML}`;
   assert.ok(parseSchemaOrgProduct(html));

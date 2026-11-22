@@ -58,7 +58,7 @@ test("sitemap-crawled suppliers publish their sitemap on their own host", () => 
   const crawled = VENDORS.filter((vendor) => vendor.productSitemapUrl);
   assert.deepEqual(
     crawled.map((vendor) => vendor.key).sort(),
-    ["gobilda", "platypus-robotics", "rev-robotics", "servocity"],
+    ["axon-robotics", "gobilda", "platypus-robotics", "rev-robotics", "servocity"],
   );
 
   for (const vendor of crawled) {

@@ -108,6 +108,15 @@ function decodeEntities(value: string): string {
     .replace(/\\u002f/gi, "/");
 }
 
+function isSupplierHttpsUrl(value: URL, domain: string): boolean {
+  const normalizedDomain = domain.toLowerCase().replace(/^www\./, "");
+  const host = value.hostname.toLowerCase().replace(/^www\./, "");
+  return value.protocol === "https:" &&
+    !value.username &&
+    !value.password &&
+    (host === normalizedDomain || host.endsWith(`.${normalizedDomain}`));
+}
+
 /**
  * Reads `<loc>` entries out of a sitemap document and keeps only https URLs on
  * the supplier's own host. A sitemap is an untrusted remote document, so an
@@ -129,9 +138,7 @@ export function parseSitemapProductUrls(
     } catch {
       continue;
     }
-    if (parsed.protocol !== "https:") continue;
-    const host = parsed.hostname.toLowerCase().replace(/^www\./, "");
-    if (host !== domain && !host.endsWith(`.${domain}`)) continue;
+    if (!isSupplierHttpsUrl(parsed, domain)) continue;
     const normalized = parsed.toString();
     if (seen.has(normalized)) continue;
     seen.add(normalized);
@@ -288,20 +295,42 @@ export function crawlDelay(ms: number = PRODUCT_CRAWL_DELAY_MS): Promise<void> {
   });
 }
 
-async function fetchText(url: string, accept: string, timeoutMs: number): Promise<string> {
-  const response = await fetch(url, {
-    headers: { accept },
-    redirect: "follow",
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  if (!response.ok) throw new Error(`Request returned ${response.status}.`);
-  return response.text();
+async function fetchText(
+  url: string,
+  domain: string,
+  accept: string,
+  timeoutMs: number,
+): Promise<string> {
+  let requested = new URL(url);
+  for (let redirects = 0; redirects <= 4; redirects += 1) {
+    if (!isSupplierHttpsUrl(requested, domain)) {
+      throw new Error("Catalog request must stay on the supplier's HTTPS website.");
+    }
+    const response = await fetch(requested, {
+      headers: { accept },
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error("Catalog request returned a redirect without a destination.");
+      requested = new URL(location, requested);
+      continue;
+    }
+    if (!response.ok) throw new Error(`Request returned ${response.status}.`);
+    const finalUrl = response.url ? new URL(response.url) : requested;
+    if (!isSupplierHttpsUrl(finalUrl, domain)) {
+      throw new Error("Catalog request redirected outside the supplier's website.");
+    }
+    return response.text();
+  }
+  throw new Error("Catalog request exceeded its redirect limit.");
 }
 
 export async function fetchSitemapProductUrls(
   target: SitemapCrawlTarget,
 ): Promise<string[]> {
-  const xml = await fetchText(target.sitemapUrl, "application/xml,text/xml,*/*", 30_000);
+  const xml = await fetchText(target.sitemapUrl, target.domain, "application/xml,text/xml,*/*", 30_000);
   return parseSitemapProductUrls(xml, target);
 }
 
@@ -319,6 +348,15 @@ export async function fetchProductPage(
   if (parsed.protocol !== "https:" || (host !== domain && !host.endsWith(`.${domain}`))) {
     throw new Error("Product URL is outside the supplier website.");
   }
-  const html = await fetchText(productUrl, "text/html", 30_000);
-  return parseSchemaOrgProduct(html, domain === "gobilda.com");
+  const html = await fetchText(productUrl, domain, "text/html", 30_000);
+  const product = parseSchemaOrgProduct(html, domain === "gobilda.com");
+  if (!product) return null;
+  try {
+    if (!isSupplierHttpsUrl(new URL(product.productUrl), domain)) {
+      return { ...product, productUrl };
+    }
+  } catch {
+    return { ...product, productUrl };
+  }
+  return product;
 }

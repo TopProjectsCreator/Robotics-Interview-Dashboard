@@ -191,10 +191,9 @@ async function requestHtml(
   cookieJar: Map<string, string>,
   body?: URLSearchParams,
 ): Promise<string> {
-  const requested = new URL(url);
-  if (requested.protocol !== "https:" || requested.hostname.toLowerCase().replace(/^www\./, "") !== BWTLINK_DOMAIN) {
-    throw new Error("BWTLink catalog requests must stay on its official HTTPS domain.");
-  }
+  let requested = new URL(url);
+  let method = body ? "POST" : "GET";
+  let requestBody = body;
   const headers = new Headers({
     accept: "text/html,application/xhtml+xml",
     ...(body ? { "content-type": "application/x-www-form-urlencoded; charset=UTF-8" } : {}),
@@ -203,20 +202,50 @@ async function requestHtml(
   if (cookieJar.size > 0) {
     headers.set("cookie", [...cookieJar.entries()].map(([name, value]) => `${name}=${value}`).join("; "));
   }
-  const response = await fetchImpl(requested, {
-    method: body ? "POST" : "GET",
-    headers,
-    body,
-    redirect: "follow",
-    signal: AbortSignal.timeout(20_000),
-  });
-  collectResponseCookies(response, cookieJar);
-  if (!response.ok) throw new Error(`BWTLink catalog returned HTTP ${response.status}.`);
-  const finalUrl = response.url ? new URL(response.url) : requested;
-  if (finalUrl.protocol !== "https:" || finalUrl.hostname.toLowerCase().replace(/^www\./, "") !== BWTLINK_DOMAIN) {
-    throw new Error("BWTLink catalog redirected outside its official domain.");
+  for (let redirects = 0; redirects <= 4; redirects += 1) {
+    if (
+      requested.protocol !== "https:" ||
+      requested.username ||
+      requested.password ||
+      requested.hostname.toLowerCase().replace(/^www\./, "") !== BWTLINK_DOMAIN
+    ) {
+      throw new Error("BWTLink catalog requests must stay on its official HTTPS domain.");
+    }
+    const response = await fetchImpl(requested, {
+      method,
+      headers,
+      body: requestBody,
+      redirect: "manual",
+      signal: AbortSignal.timeout(20_000),
+    });
+    collectResponseCookies(response, cookieJar);
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error("BWTLink catalog returned a redirect without a destination.");
+      requested = new URL(location, requested);
+      // Match fetch's POST redirect behavior, but validate the destination
+      // before making the next request so cookies and form data stay private.
+      if (
+        ((response.status === 301 || response.status === 302) && method === "POST") ||
+        (response.status === 303 && method !== "HEAD")
+      ) {
+        method = "GET";
+        requestBody = undefined;
+        headers.delete("content-type");
+      }
+      continue;
+    }
+    if (!response.ok) throw new Error(`BWTLink catalog returned HTTP ${response.status}.`);
+    const finalUrl = response.url ? new URL(response.url) : requested;
+    if (
+      finalUrl.protocol !== "https:" ||
+      finalUrl.hostname.toLowerCase().replace(/^www\./, "") !== BWTLINK_DOMAIN
+    ) {
+      throw new Error("BWTLink catalog redirected outside its official domain.");
+    }
+    return response.text();
   }
-  return response.text();
+  throw new Error("BWTLink catalog exceeded its redirect limit.");
 }
 
 function pause(milliseconds: number): Promise<void> {

@@ -136,3 +136,19 @@ test("Offset full sync requires all site-listed collections and keeps partial pr
     /at least 12 are required/,
   );
 });
+
+test("Offset rejects an off-domain redirect before requesting its destination", async () => {
+  const requests = [];
+  const fetchImpl = async (input) => {
+    requests.push(String(input));
+    return new Response(null, {
+      status: 302,
+      headers: { location: "http://127.0.0.1/internal" },
+    });
+  };
+  await assert.rejects(
+    collectOffsetRoboticsCatalog({ fetchImpl, requestDelayMs: 0 }),
+    /official HTTPS domain/,
+  );
+  assert.deepEqual(requests, ["https://offsetrobotics.com/"]);
+});

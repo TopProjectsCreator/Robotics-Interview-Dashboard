@@ -8,3 +8,5 @@ When tests use `node --experimental-strip-types`, dynamically imported TypeScrip
 **Why:** The API-server unit runner relies on Node's built-in type stripping rather than a full TypeScript transpiler, so importing a route can load non-erasable syntax from unrelated modules before the test executes, even when the application build handles it.
 
 **How to apply:** Before dynamically importing a route from an `.mjs` test, check the full import graph and ensure the resolver handles sibling `.ts` modules and directory barrels. Use transform-types for route tests when a transitive dependency prevents strip-only loading rather than changing unrelated production TypeScript just to satisfy the test loader.
+
+Source barrels need explicit directory-index exports too: Node's TypeScript loader may resolve a relative directory export as `directory.ts` instead of its `index.ts`, causing unrelated tests to fail before assertions. Check for one shared module-loading error beneath many suite failures, then use an explicit `./directory/index` export or remove a redundant barrel export.

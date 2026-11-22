@@ -18,5 +18,3 @@ export type { SearchModelsByProviderParams as SearchModelsByProviderQuery } from
 export { UploadBoardCardAssetParams } from './generated/api';
 export type { UploadBoardCardAssetParams as UploadBoardCardAssetPathParams } from './generated/types/uploadBoardCardAssetParams';
 export * from './generated/api';
-export * from './generated/types/index';
-export * from './generated/types';

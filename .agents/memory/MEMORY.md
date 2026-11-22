@@ -91,3 +91,7 @@
 - [Supabase CLI multi-account profiles](supabase-cli-multi-account-profiles.md) — v3 uses per-profile keyring tokens; file fallback shares one token, and built-in profile names are environments not accounts.
 - [Supabase CLI browser login protocol](supabase-cli-browser-login-protocol.md) — drive login via P-256 ECDH + AES-GCM directly; no keyring means separate SUPABASE_HOME stores per account.
 - [Railway prod log triage](railway-prod-log-triage.md) — pull logs, scan both error messages and non-2xx; "failed" logs can be 200s.
+- [Local OpenCode plugin shape](opencode-local-plugin-shape.md) — .opencode/plugins/ auto-loads; plain object export + type-only SDK import stays dependency-free.
+- [Auto-backgrounding OpenCode tools](opencode-auto-background-hooks.md) — rewrite tool input in execute.before; shell timeout needs 2.3+, subagents have no timeout field.
+- [Supabase egress diagnosis](supabase-egress-diagnosis.md) — no egress API; use metrics counters + pg_stat_statements, and treat 402 exceed_egress_quota as the signal.
+- [Poll loop full-row egress](poll-loop-full-row-egress.md) — project polled columns, bound recovery scans, abort SSE polls on disconnect.

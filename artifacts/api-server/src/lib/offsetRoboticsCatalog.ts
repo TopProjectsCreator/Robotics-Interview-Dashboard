@@ -147,21 +147,40 @@ async function fetchOfficialHtml(
   url: string,
   fetchImpl: typeof fetch,
 ): Promise<string> {
-  const requested = new URL(url);
-  if (requested.protocol !== "https:" || requested.hostname.toLowerCase().replace(/^www\./, "") !== OFFSET_DOMAIN) {
-    throw new Error("Offset catalog request must stay on its official HTTPS domain.");
+  let requested = new URL(url);
+  for (let redirects = 0; redirects <= 4; redirects += 1) {
+    if (
+      requested.protocol !== "https:" ||
+      requested.username ||
+      requested.password ||
+      requested.hostname.toLowerCase().replace(/^www\./, "") !== OFFSET_DOMAIN
+    ) {
+      throw new Error("Offset catalog request must stay on its official HTTPS domain.");
+    }
+    const response = await fetchImpl(requested, {
+      headers: { accept: "text/html,application/xhtml+xml" },
+      redirect: "manual",
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get("location");
+      if (!location) throw new Error("Offset catalog returned a redirect without a destination.");
+      requested = new URL(location, requested);
+      continue;
+    }
+    if (!response.ok) throw new Error(`Offset catalog returned HTTP ${response.status}.`);
+    const finalUrl = response.url ? new URL(response.url) : requested;
+    if (
+      finalUrl.protocol !== "https:" ||
+      finalUrl.username ||
+      finalUrl.password ||
+      finalUrl.hostname.toLowerCase().replace(/^www\./, "") !== OFFSET_DOMAIN
+    ) {
+      throw new Error("Offset catalog redirected outside its official domain.");
+    }
+    return response.text();
   }
-  const response = await fetchImpl(requested, {
-    headers: { accept: "text/html,application/xhtml+xml" },
-    redirect: "follow",
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) throw new Error(`Offset catalog returned HTTP ${response.status}.`);
-  const finalUrl = response.url ? new URL(response.url) : requested;
-  if (finalUrl.protocol !== "https:" || finalUrl.hostname.toLowerCase().replace(/^www\./, "") !== OFFSET_DOMAIN) {
-    throw new Error("Offset catalog redirected outside its official domain.");
-  }
-  return response.text();
+  throw new Error("Offset catalog exceeded its redirect limit.");
 }
 
 function pause(milliseconds: number): Promise<void> {

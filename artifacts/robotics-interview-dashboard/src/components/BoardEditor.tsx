@@ -21,7 +21,6 @@ import {
   Plus,
   Search,
   Table2,
-  Tag,
   Trash2,
   X,
 } from "lucide-react";
@@ -373,7 +372,7 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   const board = query.data as Board | undefined;
   const boardTitle = typeof board?.title === "string" ? board.title : "Board";
   const boardDescription = typeof board?.data?.description === "string" ? board.data.description : "";
-  const columns = useMemo(() => (Array.isArray(board?.data?.columns) ? [...board!.data!.columns] : []).sort((a, b) => a.position - b.position), [board?.data?.columns]);
+  const columns = useMemo(() => (Array.isArray(board?.data?.columns) ? [...board.data.columns] : []).sort((a, b) => a.position - b.position), [board]);
   // Normalize once here: every view and the detail dialog consume these cards.
   const cards = useMemo<BoardCard[]>(() => {
     const raw = board?.data?.cards;

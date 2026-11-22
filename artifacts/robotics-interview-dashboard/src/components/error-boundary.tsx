@@ -35,7 +35,7 @@ function toError(value: unknown): Error {
   }
 }
 
-function DefaultFallback({ error, resetError }: ErrorFallbackProps) {
+function DefaultFallback({ error: _error, resetError }: ErrorFallbackProps) {
   return (
     <div className="min-h-[100dvh] w-full flex items-center justify-center bg-gray-50 p-6">
       <div className="max-w-lg w-full text-center">

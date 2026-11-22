@@ -78,3 +78,19 @@ test("BWTLink full sync rejects incomplete tab inventories", async () => {
     /at least 6 are required/,
   );
 });
+
+test("BWTLink rejects an off-domain redirect before requesting its destination", async () => {
+  const requests = [];
+  const fetchImpl = async (input) => {
+    requests.push(String(input));
+    return new Response(null, {
+      status: 302,
+      headers: { location: "http://127.0.0.1/internal" },
+    });
+  };
+  await assert.rejects(
+    collectBwtLinkCatalog({ fetchImpl, requestDelayMs: 0 }),
+    /official HTTPS domain/,
+  );
+  assert.deepEqual(requests, ["https://bwtlink.com/ProductLists.aspx"]);
+});
