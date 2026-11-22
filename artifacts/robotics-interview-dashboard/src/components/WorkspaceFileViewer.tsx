@@ -76,6 +76,33 @@ type WorkspaceAttachmentKind =
   | "text"
   | "video";
 
+function triggerWorkspaceAttachmentDownload(url: string, name: string): void {
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name;
+  anchor.style.position = "fixed";
+  anchor.style.left = "-10000px";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+}
+
+function WorkspaceAttachmentDownloadButton({ name, url }: { name: string; url: string }) {
+  return (
+    <button
+      type="button"
+      data-testid="workspace-attachment-download"
+      onClick={(event) => {
+        event.stopPropagation();
+        triggerWorkspaceAttachmentDownload(url, name);
+      }}
+      className="inline-flex w-fit items-center rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#16869a] hover:bg-[#f7faf9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#16869a] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#8fd7e0] dark:hover:bg-[#1c3542]"
+    >
+      Download {name}
+    </button>
+  );
+}
+
 export function WorkspaceAttachmentPreview({
   name,
   downloadUrl,
@@ -88,16 +115,7 @@ export function WorkspaceAttachmentPreview({
   return (
     <div className="my-2 space-y-2">
       {children}
-      {downloadUrl && (
-        <a
-          href={downloadUrl}
-          download={name}
-          data-testid="workspace-attachment-download"
-          className="inline-flex w-fit items-center rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#16869a] hover:bg-[#f7faf9] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#8fd7e0] dark:hover:bg-[#1c3542]"
-        >
-          Download {name}
-        </a>
-      )}
+      {downloadUrl && <WorkspaceAttachmentDownloadButton name={name} url={downloadUrl} />}
     </div>
   );
 }
@@ -457,7 +475,9 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     return (
       <div className="my-2 rounded-xl border border-[#e0b8b4] bg-[#fff8f7] p-3 text-xs text-[#a34d46] dark:border-[#70413b] dark:bg-[#2c1d1d] dark:text-[#f1aaa4]" role="alert">
         <p>Couldn’t preview {name}. The file may be malformed or use unsupported content.</p>
-        <a href={objectUrl ?? appRelativeWorkspaceUrl(src)} download={name} className="mt-1 inline-block font-semibold underline underline-offset-2">Download {name}</a>
+        <div className="mt-2">
+          <WorkspaceAttachmentDownloadButton name={name} url={objectUrl ?? appRelativeWorkspaceUrl(src)} />
+        </div>
       </div>
     );
   if (mediaPlaybackFailed && (kind === "video" || kind === "audio")) {

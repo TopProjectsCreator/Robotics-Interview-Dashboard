@@ -193,7 +193,7 @@ const fixtures: Fixture[] = [
     assertPreview: container => {
       expect(container.querySelector('[data-testid="chat-3mf-attachment"]')).toBeInTheDocument();
       expect(container).toHaveTextContent("3MF model");
-      expect(container.querySelector("a[download='bracket.3mf']")).toHaveAttribute("href", expect.stringMatching(/^blob:/));
+      expect(container.querySelector('[data-testid="workspace-attachment-download"]')).toHaveTextContent("Download bracket.3mf");
     },
   },
   {
@@ -203,7 +203,7 @@ const fixtures: Fixture[] = [
     assertPreview: container => {
       expect(container.querySelector('[data-testid="chat-parasolid-attachment"]')).toBeInTheDocument();
       expect(container).toHaveTextContent("Parasolid 3D preview");
-      expect(container.querySelector("a[download='robot.x_t']")).toHaveAttribute("href", expect.stringMatching(/^blob:/));
+      expect(container.querySelector('[data-testid="workspace-attachment-download"]')).toHaveTextContent("Download robot.x_t");
     },
   },
   {
@@ -212,7 +212,7 @@ const fixtures: Fixture[] = [
     body: new Blob([new Uint8Array([0x50, 0x61, 0x72, 0x61, 0x53, 0x6f, 0x6c, 0x69, 0x64])], { type: "model/x-parasolid" }),
     assertPreview: container => {
       expect(container.querySelector('[data-testid="chat-parasolid-attachment"]')).toBeInTheDocument();
-      expect(container.querySelector("a[download='robot.x_b']")).toBeInTheDocument();
+      expect(container.querySelector('[data-testid="workspace-attachment-download"]')).toHaveTextContent("Download robot.x_b");
     },
   },
   {
@@ -487,10 +487,7 @@ describe("chat attachment inline previews", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(`Couldn’t preview ${fixture.name}`);
-    expect(within(alert).getByRole("link", { name: `Download ${fixture.name}` })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/^blob:/),
-    );
+    expect(within(alert).getByRole("button", { name: `Download ${fixture.name}` })).toHaveAttribute("type", "button");
     expect(container.querySelector("iframe")).not.toBeInTheDocument();
   });
 

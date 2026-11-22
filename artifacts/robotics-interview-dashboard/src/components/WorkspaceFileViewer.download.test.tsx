@@ -1,5 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { fireEvent } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { strToU8, zipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -26,6 +25,7 @@ vi.mock("./CadThreeMfViewer", () => ({
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -49,9 +49,30 @@ describe("workspace attachment downloads", () => {
     const { container } = render(<WorkspaceFileViewer name={name} src={`/api/storage/objects/${name}`} />);
 
     await waitFor(() => expect(container.querySelector(preview)).not.toBeNull());
-    const download = await screen.findByRole("link", { name: `Download ${name}` });
-    expect(download).toHaveAttribute("download", name);
-    expect(download).toHaveAttribute("href", expect.stringMatching(/^blob:/));
+    const download = await screen.findByRole("button", { name: `Download ${name}` });
+    expect(download).toHaveAttribute("type", "button");
+  });
+
+  it("does not start downloading when the viewer mounts; clicking the action downloads the original blob", async () => {
+    const clickedAnchors: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clickedAnchors.push(this);
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("original document bytes", { status: 200, headers: { "content-type": "text/plain" } })),
+    );
+    const { container } = render(<WorkspaceFileViewer name="notes.txt" src="/api/storage/objects/notes.txt" />);
+
+    expect(await screen.findByTestId("text-attachment-preview")).toHaveTextContent("original document bytes");
+    expect(container.querySelector('a[download]')).not.toBeInTheDocument();
+    expect(clickSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Download notes.txt" }));
+
+    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(clickedAnchors[0]?.download).toBe("notes.txt");
+    expect(clickedAnchors[0]?.href).toMatch(/^blob:/);
   });
 
   it("keeps the archive and an extracted text member downloadable", async () => {
@@ -63,7 +84,7 @@ describe("workspace attachment downloads", () => {
     render(<WorkspaceFileViewer name="bundle.zip" src="/api/storage/objects/bundle.zip" />);
 
     await screen.findByTestId("chat-archive-preview");
-    expect(screen.getByRole("link", { name: "Download bundle.zip" })).toHaveAttribute("download", "bundle.zip");
+    expect(screen.getByRole("button", { name: "Download bundle.zip" })).toHaveAttribute("type", "button");
     fireEvent.click(screen.getByTestId("chat-archive-entry-notes/readme.txt"));
     expect(await screen.findByText("Archive notes")).toBeInTheDocument();
 

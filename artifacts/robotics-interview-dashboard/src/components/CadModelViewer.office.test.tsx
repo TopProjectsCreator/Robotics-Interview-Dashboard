@@ -41,11 +41,10 @@ describe("CAD workspace office and JSON previews", () => {
       <CadModelViewer name={fixture.name} src={`/api/storage/objects/${fixture.name}`} contentType={fixture.contentType} />,
     );
     const preview = await screen.findByTestId("text-attachment-preview");
-    const download = screen.getByRole("link", { name: `Download ${fixture.name}` });
+    const download = screen.getByRole("button", { name: `Download ${fixture.name}` });
 
     expect(preview).toHaveTextContent(fixture.expectedText);
-    expect(download).toHaveAttribute("download", fixture.name);
-    expect(download).toHaveAttribute("href", expect.stringMatching(/^blob:/));
+    expect(download).toHaveAttribute("type", "button");
     expect(cadRenderFormat(fixture.name, fixture.contentType)).toBe(workspaceAttachmentKind(fixture.name, fixture.contentType));
     expect(container.querySelector("iframe")).not.toBeInTheDocument();
     if (isJson) {
@@ -70,8 +69,7 @@ describe("CAD workspace office and JSON previews", () => {
     const src = `/api/storage/objects/${name}`;
     render(<CadModelViewer name={name} src={src} contentType={contentType} />);
 
-    expect(screen.getByRole("link", { name: `Download ${name}` })).toHaveAttribute("href", src);
-    expect(screen.getByRole("link", { name: `Download ${name}` })).toHaveAttribute("download", name);
+    expect(screen.getByRole("button", { name: `Download ${name}` })).toHaveAttribute("type", "button");
   });
 
   it("uses extension MIME defaults when workspace files have vague browser types", () => {
@@ -101,9 +99,6 @@ describe("CAD workspace office and JSON previews", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(`Couldn’t preview ${fixture.name}`);
-    expect(within(alert).getByRole("link", { name: `Download ${fixture.name}` })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/^blob:/),
-    );
+    expect(within(alert).getByRole("button", { name: `Download ${fixture.name}` })).toHaveAttribute("type", "button");
   });
 });

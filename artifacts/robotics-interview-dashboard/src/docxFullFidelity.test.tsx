@@ -1,5 +1,5 @@
 import { strToU8, zipSync } from "fflate";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { WorkspaceFileViewer } from "./components/WorkspaceFileViewer";
@@ -74,6 +74,7 @@ function docxWithTableAndImage(): Blob {
 }
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -98,14 +99,18 @@ describe("full-fidelity DOCX preview", () => {
     container.remove();
   });
 
-  it("shows tables and images inline in WorkspaceFileViewer, with a download link", async () => {
+  it("shows tables and images inline and downloads only after an explicit click", async () => {
+    const clickedAnchors: HTMLAnchorElement[] = [];
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (this: HTMLAnchorElement) {
+      clickedAnchors.push(this);
+    });
     const blob = docxWithTableAndImage();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(await blob.arrayBuffer(), { status: 200, headers: { "content-type": blob.type } })),
     );
 
-    const { container } = render(<WorkspaceFileViewer name="notes.docx" src="/api/storage/objects/notes.docx" />);
+    const { container, rerender } = render(<WorkspaceFileViewer name="notes.docx" src="/api/storage/objects/notes.docx" />);
 
     const preview = await waitFor(() => {
       const element = container.querySelector('[data-testid="docx-preview"]');
@@ -118,8 +123,27 @@ describe("full-fidelity DOCX preview", () => {
     });
     expect(preview).toHaveTextContent("Ada Lovelace");
     expect(container).toHaveTextContent("document preview");
-    const download = await screen.findByRole("link", { name: "Download notes.docx" });
-    expect(download).toHaveAttribute("href", expect.stringMatching(/^blob:/));
+    expect(await screen.findByRole("button", { name: "Download notes.docx" })).toHaveAttribute("type", "button");
+    expect(container.querySelector('a[download]')).not.toBeInTheDocument();
+    expect(clickSpy).not.toHaveBeenCalled();
+
+    rerender(<WorkspaceFileViewer name="other-channel.docx" src="/api/storage/objects/other-channel.docx" />);
+
+    const nextPreview = await waitFor(() => {
+      const element = container.querySelector('[data-testid="docx-preview"]');
+      expect(element).not.toBeNull();
+      return element as HTMLElement;
+    });
+    await waitFor(() => expect(nextPreview.querySelector("table")).not.toBeNull());
+    const nextDownload = await screen.findByRole("button", { name: "Download other-channel.docx" });
+    expect(container.querySelector('a[download]')).not.toBeInTheDocument();
+    expect(clickSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(nextDownload);
+
+    expect(clickSpy).toHaveBeenCalledOnce();
+    expect(clickedAnchors[0]?.download).toBe("other-channel.docx");
+    expect(clickedAnchors[0]?.href).toMatch(/^blob:/);
   });
 
   it("never leaves a blank box when a DOCX cannot be rendered or extracted", async () => {
@@ -137,9 +161,6 @@ describe("full-fidelity DOCX preview", () => {
 
     const alert = await screen.findByRole("alert", undefined, { timeout: 15_000 });
     expect(alert).toHaveTextContent("Couldn’t preview broken.docx");
-    expect(within(alert).getByRole("link", { name: "Download broken.docx" })).toHaveAttribute(
-      "href",
-      expect.stringMatching(/^blob:/),
-    );
+    expect(within(alert).getByRole("button", { name: "Download broken.docx" })).toHaveAttribute("type", "button");
   });
 });
