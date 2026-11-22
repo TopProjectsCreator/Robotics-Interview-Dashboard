@@ -5,7 +5,7 @@ import { ChatStlViewer } from "./ChatStlViewer";
 import { ChatStepViewer } from "./ChatStepViewer";
 import { CadThreeMfViewer } from "./CadThreeMfViewer";
 import { CadMeshViewer } from "./CadMeshViewer";
-import { WorkspaceFileViewer } from "./WorkspaceFileViewer";
+import { WorkspaceAttachmentPreview, WorkspaceFileViewer } from "./WorkspaceFileViewer";
 
 type CadModelViewerProps = {
   /** Original file name, which selects the renderer. */
@@ -24,15 +24,47 @@ type CadModelViewerProps = {
 export function CadModelViewer({ name, src, contentType, height }: CadModelViewerProps) {
   const format = cadRenderFormat(name, contentType);
 
-  if (format === "glb") return <ChatGlbViewer name={name} src={src} />;
-  if (format === "stl") return <ChatStlViewer name={name} src={src} />;
-  if (format === "obj" || format === "ply") {
-    return <CadMeshViewer name={name} src={src} height={height} />;
+  if (format === "glb") {
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={src}>
+        <ChatGlbViewer name={name} src={src} />
+      </WorkspaceAttachmentPreview>
+    );
   }
-  if (format === "three-mf") return <CadThreeMfViewer name={name} src={src} height={height} />;
-  if (format === "parasolid") return <ChatParasolidViewer name={name} src={src} />;
+  if (format === "stl") {
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={src}>
+        <ChatStlViewer name={name} src={src} />
+      </WorkspaceAttachmentPreview>
+    );
+  }
+  if (format === "obj" || format === "ply") {
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={src}>
+        <CadMeshViewer name={name} src={src} height={height} />
+      </WorkspaceAttachmentPreview>
+    );
+  }
+  if (format === "three-mf") {
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={src}>
+        <CadThreeMfViewer name={name} src={src} height={height} />
+      </WorkspaceAttachmentPreview>
+    );
+  }
+  if (format === "parasolid") {
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={src}>
+        <ChatParasolidViewer name={name} src={src} />
+      </WorkspaceAttachmentPreview>
+    );
+  }
   if (format === "step" || format === "iges" || format === "brep") {
-    return <ChatStepViewer name={name} src={src} />;
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={src}>
+        <ChatStepViewer name={name} src={src} />
+      </WorkspaceAttachmentPreview>
+    );
   }
   if (format && !isCadRenderFormat(format)) {
     return <WorkspaceFileViewer name={name} src={src} />;

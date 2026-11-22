@@ -41,8 +41,11 @@ describe("CAD workspace office and JSON previews", () => {
       <CadModelViewer name={fixture.name} src={`/api/storage/objects/${fixture.name}`} contentType={fixture.contentType} />,
     );
     const preview = await screen.findByTestId("text-attachment-preview");
+    const download = screen.getByRole("link", { name: `Download ${fixture.name}` });
 
     expect(preview).toHaveTextContent(fixture.expectedText);
+    expect(download).toHaveAttribute("download", fixture.name);
+    expect(download).toHaveAttribute("href", expect.stringMatching(/^blob:/));
     expect(cadRenderFormat(fixture.name, fixture.contentType)).toBe(workspaceAttachmentKind(fixture.name, fixture.contentType));
     expect(container.querySelector("iframe")).not.toBeInTheDocument();
     if (isJson) {
@@ -54,6 +57,21 @@ describe("CAD workspace office and JSON previews", () => {
         expect.objectContaining({ extractAttachments: false }),
       );
     }
+  });
+
+  it.each([
+    { name: "robot.glb", contentType: "model/gltf-binary" },
+    { name: "robot.stl", contentType: "model/stl" },
+    { name: "frame.obj", contentType: "model/obj" },
+    { name: "bracket.3mf", contentType: "model/3mf" },
+    { name: "bracket.step", contentType: "model/step" },
+    { name: "assembly.x_t", contentType: "model/x-parasolid" },
+  ])("$name keeps a download action beside its 3D preview", ({ name, contentType }) => {
+    const src = `/api/storage/objects/${name}`;
+    render(<CadModelViewer name={name} src={src} contentType={contentType} />);
+
+    expect(screen.getByRole("link", { name: `Download ${name}` })).toHaveAttribute("href", src);
+    expect(screen.getByRole("link", { name: `Download ${name}` })).toHaveAttribute("download", name);
   });
 
   it("uses extension MIME defaults when workspace files have vague browser types", () => {

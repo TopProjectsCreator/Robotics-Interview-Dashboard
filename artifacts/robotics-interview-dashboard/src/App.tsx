@@ -1929,7 +1929,7 @@ function renderInlineMarkdown(text: string, mentionPeople: readonly ChatMentionP
     if (image) {
       const customEmoji = image[1].startsWith("emoji:");
       nodes.push(image[2].startsWith("/api/storage/")
-        ? <AuthenticatedChatImage key={tokenKey} src={image[2]} alt={customEmoji ? `:${image[1].slice("emoji:".length)}:` : image[1]} inline={customEmoji} />
+        ? <AuthenticatedChatImage key={tokenKey} src={image[2]} alt={customEmoji ? `:${image[1].slice("emoji:".length)}:` : image[1]} inline={customEmoji} downloadable={!customEmoji} />
         : <img key={tokenKey} src={image[2]} alt={image[1]} loading="lazy" className="my-2 block max-w-full rounded-xl border border-[#dce9e8]" />);
       cursor = match.index + token.length;
       continue;
@@ -2165,8 +2165,38 @@ function useEffectiveTeamBranding(teamId?: string, interviewerId?: string, enabl
   });
 }
 
-function AuthenticatedChatImage({ src, alt, inline = false, className }: { src: string; alt: string; inline?: boolean; className?: string }) {
+function chatImageDownloadName(alt: string, contentType: string): string {
+  const base = alt.trim().replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").slice(0, 80) || "image";
+  if (/\.[a-z0-9]{1,8}$/i.test(base)) return base;
+  const extensions: Record<string, string> = {
+    "image/avif": "avif",
+    "image/bmp": "bmp",
+    "image/gif": "gif",
+    "image/heic": "heic",
+    "image/heif": "heif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/svg+xml": "svg",
+    "image/webp": "webp",
+  };
+  return `${base}.${extensions[contentType] ?? "img"}`;
+}
+
+function AuthenticatedChatImage({
+  src,
+  alt,
+  inline = false,
+  className,
+  downloadable = false,
+}: {
+  src: string;
+  alt: string;
+  inline?: boolean;
+  className?: string;
+  downloadable?: boolean;
+}) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [contentType, setContentType] = useState("");
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -2186,6 +2216,7 @@ function AuthenticatedChatImage({ src, alt, inline = false, className }: { src: 
       .then(blob => {
         if (!active) return;
         createdUrl = URL.createObjectURL(blob);
+        setContentType(blob.type.split(";")[0]?.trim().toLowerCase() ?? "");
         setObjectUrl(createdUrl);
       })
       .catch(() => {
@@ -2207,7 +2238,19 @@ function AuthenticatedChatImage({ src, alt, inline = false, className }: { src: 
   if (!objectUrl) return inline
     ? <span className="inline-block h-5 w-5 animate-pulse align-[-0.25em] rounded bg-[#edf4f3]" role="img" aria-label={`Loading ${alt}`} />
     : <span className={className ?? "my-2 block h-24 w-36 animate-pulse rounded-xl bg-[#edf4f3]"} aria-label="Loading image" />;
-  return <img src={objectUrl} alt={alt} loading="lazy" className={inline ? "mx-0.5 inline-block h-5 w-5 align-[-0.25em] rounded object-contain" : className ?? "my-2 block max-w-full rounded-xl border border-[#dce9e8]"} />;
+  const image = <img src={objectUrl} alt={alt} loading="lazy" className={inline ? "mx-0.5 inline-block h-5 w-5 align-[-0.25em] rounded object-contain" : className ?? "my-2 block max-w-full rounded-xl border border-[#dce9e8]"} />;
+  if (downloadable) {
+    const downloadName = chatImageDownloadName(alt, contentType);
+    return (
+      <figure className="my-2 inline-flex max-w-full flex-col items-start gap-1">
+        {image}
+        <a href={objectUrl} download={downloadName} className="text-[11px] font-semibold text-[#16869a] underline underline-offset-2 dark:text-[#8fd7e0]">
+          Download {downloadName}
+        </a>
+      </figure>
+    );
+  }
+  return image;
 }
 
 function AuthenticatedChatAttachment({ src, name }: { src: string; name: string }) {

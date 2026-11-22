@@ -70,6 +70,7 @@
 - [Maildrop bearer-key limitation](maildrop-bearer-key-limitation.md) — official Maildrop docs currently say its API requires no auth, so saved team Bearer keys cannot yet be verified upstream.
 - [Applicant drawer close rule](applicant-detail-drawer-roster.md) — the applicant drawer closes on a server 400/404 or a miss in the unfiltered roster, but never because a filter narrowed the list.
 - [Streaming large object downloads](streaming-large-object-download.md) — large CAD objects must be streamed to disk, never buffered in memory, because the instance has a 512 MB ceiling.
+- [Attachment download invariant](attachment-download-invariant.md) — every file preview must retain a visible download for the original bytes, including transformed previews and archive entries.
 - [Persisted CAD previews](persisted-cad-previews.md) — a finished CAD preview is stored under a path-derived id so it can be found again after the instance restarts.
 - [Mobile browser fixtures](mobile-browser-fixtures.md) — import the app’s shared stylesheet into component-level browser fixtures so mobile hit testing matches the real UI.
 - [Shared Parts supplier catalog](shared-parts-supplier-catalog.md) — supplier product rows are shared across teams; stock and saved inventory details remain team-specific.

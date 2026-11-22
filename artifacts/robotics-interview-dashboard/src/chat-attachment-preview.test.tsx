@@ -393,6 +393,8 @@ describe("chat attachment inline previews", () => {
       expect(container.querySelector("img[alt='Generated image']")).toBeInTheDocument();
       expect(container.querySelector("iframe[title='brief.pdf']")).toBeInTheDocument();
     });
+    const imageDownload = await screen.findByRole("link", { name: "Download Generated image.png" });
+    expect(imageDownload).toHaveAttribute("href", expect.stringMatching(/^blob:/));
     expect(container.querySelector("svg circle")).toBeInTheDocument();
     expect(container.querySelector('[data-testid="chat-mini-tool"]')).toHaveTextContent("Build checklist");
     const renderedResourceAttributes = Array.from(container.querySelectorAll("[src], [href], [poster]"))

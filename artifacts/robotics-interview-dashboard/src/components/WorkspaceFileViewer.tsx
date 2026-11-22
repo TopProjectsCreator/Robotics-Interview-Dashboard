@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import DOMPurify from "dompurify";
 
 import { getStoredAuthToken } from "../authSession";
@@ -76,6 +76,32 @@ type WorkspaceAttachmentKind =
   | "text"
   | "video";
 
+export function WorkspaceAttachmentPreview({
+  name,
+  downloadUrl,
+  children,
+}: {
+  name: string;
+  downloadUrl: string | null;
+  children: ReactNode;
+}) {
+  return (
+    <div className="my-2 space-y-2">
+      {children}
+      {downloadUrl && (
+        <a
+          href={downloadUrl}
+          download={name}
+          data-testid="workspace-attachment-download"
+          className="inline-flex w-fit items-center rounded-lg border border-[#d5e0e0] bg-white px-3 py-1.5 text-xs font-semibold text-[#16869a] hover:bg-[#f7faf9] dark:border-[#355663] dark:bg-[#172b38] dark:text-[#8fd7e0] dark:hover:bg-[#1c3542]"
+        >
+          Download {name}
+        </a>
+      )}
+    </div>
+  );
+}
+
 function workspaceAttachmentExtension(name: string): string {
   return name.split(".").pop()?.toLowerCase() ?? "";
 }
@@ -144,12 +170,10 @@ function WorkspaceAttachmentDocument({
   name,
   html,
   objectUrl,
-  downloadUrl,
 }: {
   name: string;
   html: string | null;
   objectUrl: string | null;
-  downloadUrl: string;
 }) {
   // Unknown formats always keep a usable way to get the original file. A
   // download-only card replaces the iframe when no object URL could be made,
@@ -159,7 +183,6 @@ function WorkspaceAttachmentDocument({
       <div className="my-2 rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]" role="status">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · file ready to download</p>
-          <a href={downloadUrl} download={name} className="shrink-0 text-[11px] font-semibold text-[#16869a] underline underline-offset-2">Download</a>
         </div>
       </div>
     );
@@ -168,7 +191,6 @@ function WorkspaceAttachmentDocument({
       <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]">
         <div className="mb-2 flex items-center justify-between gap-3">
           <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
-          <a href={downloadUrl} download={name} className="shrink-0 text-[11px] font-semibold text-[#16869a] underline underline-offset-2">Download</a>
         </div>
         <div className="prose prose-sm max-w-none text-[#52666e] dark:text-[#a8bac8]" dangerouslySetInnerHTML={{ __html: html }} />
       </div>
@@ -178,7 +200,6 @@ function WorkspaceAttachmentDocument({
     <div className="rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]">
       <div className="mb-2 flex items-center justify-between gap-3">
         <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
-        <a href={downloadUrl} download={name} className="shrink-0 text-[11px] font-semibold text-[#16869a] underline underline-offset-2">Download</a>
       </div>
       <iframe title={name} src={objectUrl ?? undefined} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" />
     </div>
@@ -206,6 +227,7 @@ type WorkspaceFileViewerProps = {
  */
 export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const [attachmentBlob, setAttachmentBlob] = useState<Blob | null>(null);
   const [calendarText, setCalendarText] = useState<string | null>(null);
   const [contentType, setContentType] = useState("");
@@ -229,6 +251,7 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     const controller = new AbortController();
     const token = getStoredAuthToken();
     setObjectUrl(null);
+    setDownloadUrl(null);
     setContentType("");
     setText(null);
     setSheets([]);
@@ -251,15 +274,15 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         const blob = await response.blob();
         const resolvedType = responseType || normalizeWorkspaceFileType(blob.type);
         if (!active) return;
+        const sourceUrl = URL.createObjectURL(blob);
+        createdUrls.add(sourceUrl);
+        attachmentBlobRef.current = blob;
+        setDownloadUrl(sourceUrl);
+        setAttachmentBlob(blob);
         setContentType(resolvedType);
         const resolvedKind = workspaceAttachmentKind(name, resolvedType);
         const ensureDownloadUrl = () => {
-          if (attachmentBlobRef.current && objectUrlsRef.current.size) return;
-          const url = URL.createObjectURL(blob);
-          createdUrls.add(url);
-          attachmentBlobRef.current = blob;
-          setAttachmentBlob(blob);
-          setObjectUrl(url);
+          setObjectUrl(sourceUrl);
         };
         if (isOfficePreviewAttachment(name, resolvedType)) {
           ensureDownloadUrl();
@@ -275,7 +298,6 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
         }
         if (resolvedKind === "calendar") {
           const raw = await blob.text();
-          setAttachmentBlob(blob);
           if (active) setCalendarText(raw.slice(0, 250000));
           return;
         }
@@ -308,10 +330,7 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
           if (active) setDocumentHtml(clean);
           return;
         }
-        const createdUrl = URL.createObjectURL(blob);
-        createdUrls.add(createdUrl);
-        attachmentBlobRef.current = blob;
-        if (active) { setAttachmentBlob(blob); setObjectUrl(createdUrl); }
+        setObjectUrl(sourceUrl);
       })
       .catch(() => {
         if (active) setFailed(true);
@@ -366,30 +385,48 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     );
   if (mediaPlaybackFailed && (kind === "video" || kind === "audio")) {
     return (
-      <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
-        Couldn’t play {name} in this browser. Try opening it in an app that supports this format.
-      </div>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
+          Couldn’t play {name} in this browser. Try opening it in an app that supports this format.
+        </div>
+      </WorkspaceAttachmentPreview>
     );
   }
   if (kind === "image" && imageFallback === "converting") {
     return (
-      <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
-        Preparing a preview for {name}…
-      </div>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
+          Preparing a preview for {name}…
+        </div>
+      </WorkspaceAttachmentPreview>
     );
   }
   if (kind === "image" && imageFallback === "unavailable") {
     return (
-      <div className="my-2 rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
-        {isHeicWorkspaceAttachment(name, contentType)
-          ? `Couldn’t preview ${name}. Try opening it in an app that supports HEIC.`
-          : `Couldn’t preview ${name} in this browser.`}
-      </div>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs text-[#52666e]" role="status">
+          {isHeicWorkspaceAttachment(name, contentType)
+            ? `Couldn’t preview ${name}. Try opening it in an app that supports HEIC.`
+            : `Couldn’t preview ${name} in this browser.`}
+        </div>
+      </WorkspaceAttachmentPreview>
     );
   }
   if (!objectUrl && text === null && !sheets.length && documentHtml === null && calendarText === null)
-    return <div className="my-2 h-24 animate-pulse rounded-xl bg-[#edf4f3]" aria-label={`Loading ${name}`} />;
-  if (calendarText !== null) return <IcalViewer name={name} text={calendarText} />;
+    return downloadUrl
+      ? (
+          <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+            <div className="h-24 animate-pulse rounded-xl bg-[#edf4f3]" aria-label={`Loading ${name}`} />
+          </WorkspaceAttachmentPreview>
+        )
+      : <div className="my-2 h-24 animate-pulse rounded-xl bg-[#edf4f3]" aria-label={`Loading ${name}`} />;
+
+  if (calendarText !== null)
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <IcalViewer name={name} text={calendarText} />
+      </WorkspaceAttachmentPreview>
+    );
   if (text !== null) {
     const extension = workspaceAttachmentExtension(name);
     const delimiter = extension === "tsv" ? "\t" : text.split("\n")[0]?.includes("\t") ? "\t" : ",";
@@ -397,94 +434,123 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
       ["csv", "tsv"].includes(extension) || contentType === "text/csv" || contentType === "text/tab-separated-values";
     const rows = isDelimited ? parseDelimitedWorkspacePreview(text, delimiter) : [];
     return (
-      <div className="my-2 space-y-2">
-        {rows.length > 0 ? (
-          <ChatAttachmentTableFallback rows={rows} label={name} />
-        ) : (
-          <pre aria-label={`Preview of ${name}`} data-testid="text-attachment-preview" className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e] dark:border-[#2a3f52] dark:bg-[#10232d] dark:text-[#a8bac8]">
-            {text}
-          </pre>
-        )}
-      </div>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="space-y-2">
+          {rows.length > 0 ? (
+            <ChatAttachmentTableFallback rows={rows} label={name} />
+          ) : (
+            <pre aria-label={`Preview of ${name}`} data-testid="text-attachment-preview" className="max-h-[360px] overflow-auto whitespace-pre-wrap rounded-xl border border-[#dce9e8] bg-[#f7faf9] p-3 text-xs leading-5 text-[#52666e] dark:border-[#2a3f52] dark:bg-[#10232d] dark:text-[#a8bac8]">
+              {text}
+            </pre>
+          )}
+        </div>
+      </WorkspaceAttachmentPreview>
     );
   }
   if (sheets.length)
     return (
-      <div className="my-2 space-y-3">
-        {sheets.map((sheet) => (
-          <ChatAttachmentTableFallback key={sheet.name} rows={sheet.rows} label={`${name} · ${sheet.name}`} />
-        ))}
-      </div>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <div className="space-y-3">
+          {sheets.map((sheet) => (
+            <ChatAttachmentTableFallback key={sheet.name} rows={sheet.rows} label={`${name} · ${sheet.name}`} />
+          ))}
+        </div>
+      </WorkspaceAttachmentPreview>
     );
   if (kind === "image" && objectUrl)
     return (
-      <img
-        src={objectUrl}
-        alt={name}
-        loading="lazy"
-        onError={() => void handleImageError()}
-        className="my-2 block max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] object-contain"
-      />
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <img
+          src={objectUrl}
+          alt={name}
+          loading="lazy"
+          onError={() => void handleImageError()}
+          className="block max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] object-contain"
+        />
+      </WorkspaceAttachmentPreview>
     );
   if (kind === "video" && objectUrl)
     return (
-      <video
-        src={objectUrl}
-        controls
-        preload="metadata"
-        onError={() => setMediaPlaybackFailed(true)}
-        className="my-2 max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]"
-      />
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <video
+          src={objectUrl}
+          controls
+          preload="metadata"
+          onError={() => setMediaPlaybackFailed(true)}
+          className="max-h-[520px] max-w-full rounded-xl border border-[#dce9e8] bg-[#183a4b]"
+        />
+      </WorkspaceAttachmentPreview>
     );
   if (kind === "audio" && objectUrl)
-    return <audio src={objectUrl} controls onError={() => setMediaPlaybackFailed(true)} className="my-2 w-full max-w-[440px]" />;
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <audio src={objectUrl} controls onError={() => setMediaPlaybackFailed(true)} className="w-full max-w-[440px]" />
+      </WorkspaceAttachmentPreview>
+    );
   if (kind === "pdf" && objectUrl)
-    return <iframe title={name} src={objectUrl} className="my-2 h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />;
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <iframe title={name} src={objectUrl} className="h-[520px] w-full rounded-xl border border-[#dce9e8] bg-white" />
+      </WorkspaceAttachmentPreview>
+    );
   if (kind === "archive" && attachmentBlob)
-    return <ChatArchiveViewer name={name} blob={attachmentBlob} />;
+    return (
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <ChatArchiveViewer name={name} blob={attachmentBlob} />
+      </WorkspaceAttachmentPreview>
+    );
   if (kind === "parasolid" && objectUrl)
     return (
-      <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
-        <ChatParasolidViewer name={name} src={objectUrl} />
-      </Suspense>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
+          <ChatParasolidViewer name={name} src={objectUrl} />
+        </Suspense>
+      </WorkspaceAttachmentPreview>
     );
   if (kind === "model" && objectUrl)
     return (
-      <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
-        <ChatGlbViewer name={name} src={objectUrl} />
-      </Suspense>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
+          <ChatGlbViewer name={name} src={objectUrl} />
+        </Suspense>
+      </WorkspaceAttachmentPreview>
     );
   if (kind === "stl" && objectUrl)
     return (
-      <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
-        <ChatStlViewer name={name} src={objectUrl} />
-      </Suspense>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
+          <ChatStlViewer name={name} src={objectUrl} />
+        </Suspense>
+      </WorkspaceAttachmentPreview>
     );
   if (kind === "3mf" && objectUrl)
     return (
-      <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
-        <CadThreeMfViewer name={name} src={objectUrl} />
-      </Suspense>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
+          <CadThreeMfViewer name={name} src={objectUrl} />
+        </Suspense>
+      </WorkspaceAttachmentPreview>
     );
   if ((kind === "obj" || kind === "ply") && objectUrl)
     return (
-      <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
-        <CadMeshViewer name={name} src={objectUrl} />
-      </Suspense>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
+          <CadMeshViewer name={name} src={objectUrl} />
+        </Suspense>
+      </WorkspaceAttachmentPreview>
     );
   if (kind === "step" && objectUrl)
     return (
-      <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
-        <ChatStepViewer name={name} src={objectUrl} />
-      </Suspense>
+      <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+        <Suspense fallback={<p className="text-xs text-[#7c8c91]">Loading preview…</p>}>
+          <ChatStepViewer name={name} src={objectUrl} />
+        </Suspense>
+      </WorkspaceAttachmentPreview>
     );
   return (
-    <WorkspaceAttachmentDocument
-      name={name}
-      html={documentHtml}
-      objectUrl={objectUrl}
-      downloadUrl={objectUrl ?? appRelativeWorkspaceUrl(src)}
-    />
+    <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
+      <WorkspaceAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />
+    </WorkspaceAttachmentPreview>
   );
 }
 

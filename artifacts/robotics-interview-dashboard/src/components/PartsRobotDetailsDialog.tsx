@@ -1,6 +1,6 @@
 import { shouldUseChunkedUpload, uploadChunked } from "@/lib/chunkedUpload";
 import { confirmAction } from "@/lib/dialogs";
-import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import {
@@ -139,6 +139,12 @@ function PreviewPanel({ robot }: { robot: PartsRobot }) {
       Download {preview.fileName}
     </a>
   );
+  const withDownload = (viewer: ReactNode) => (
+    <div className="space-y-2" data-testid={`preview-robot-cad-${robot.id}`}>
+      {viewer}
+      <div>{downloadLink}</div>
+    </div>
+  );
 
   if (isImagePreview(preview.contentType)) {
     return (
@@ -167,10 +173,10 @@ function PreviewPanel({ robot }: { robot: PartsRobot }) {
   }
 
   if (preview.contentType === "model/gltf-binary" || lowerName.endsWith(".glb")) {
-    return <ChatGlbViewer name={preview.fileName} src={src} />;
+    return withDownload(<ChatGlbViewer name={preview.fileName} src={src} />);
   }
   if (preview.contentType === "model/stl" || lowerName.endsWith(".stl")) {
-    return <ChatStlViewer name={preview.fileName} src={src} />;
+    return withDownload(<ChatStlViewer name={preview.fileName} src={src} />);
   }
   if (
     preview.contentType === "model/obj" ||
@@ -178,13 +184,13 @@ function PreviewPanel({ robot }: { robot: PartsRobot }) {
     lowerName.endsWith(".obj") ||
     lowerName.endsWith(".ply")
   ) {
-    return <CadMeshViewer name={preview.fileName} src={src} />;
+    return withDownload(<CadMeshViewer name={preview.fileName} src={src} />);
   }
   if (preview.contentType === "model/3mf" || lowerName.endsWith(".3mf")) {
-    return <CadThreeMfViewer name={preview.fileName} src={src} />;
+    return withDownload(<CadThreeMfViewer name={preview.fileName} src={src} />);
   }
   if (preview.contentType === "model/x-parasolid" || lowerName.endsWith(".x_t") || lowerName.endsWith(".x_b")) {
-    return <ChatParasolidViewer name={preview.fileName} src={src} />;
+    return withDownload(<ChatParasolidViewer name={preview.fileName} src={src} />);
   }
   if (
     preview.contentType === "model/step" ||
@@ -194,7 +200,7 @@ function PreviewPanel({ robot }: { robot: PartsRobot }) {
     preview.contentType === "model/brep" ||
     [".step", ".stp", ".iges", ".igs", ".brep", ".brp"].some((extension) => lowerName.endsWith(extension))
   ) {
-    return <ChatStepViewer name={preview.fileName} src={src} />;
+    return withDownload(<ChatStepViewer name={preview.fileName} src={src} />);
   }
   return (
     <div className="rounded-xl border border-border bg-muted/30 p-4 text-sm text-muted-foreground" role="alert">

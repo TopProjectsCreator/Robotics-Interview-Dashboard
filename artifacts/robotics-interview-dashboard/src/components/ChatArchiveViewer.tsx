@@ -23,14 +23,21 @@ const TEXT_LIKE = /\.(txt|md|csv|tsv|json|yaml|yml|xml|html?|css|js|jsx|ts|tsx|p
 const ENTRY_MIME_TYPES: Record<string, string> = {
   avif: "image/avif",
   bmp: "image/bmp",
+  csv: "text/csv",
   gif: "image/gif",
+  ics: "text/calendar",
+  ifb: "text/calendar",
+  json: "application/json",
   jpeg: "image/jpeg",
   jpg: "image/jpeg",
+  md: "text/markdown",
   mp3: "audio/mpeg",
   mp4: "video/mp4",
   pdf: "application/pdf",
   png: "image/png",
   svg: "image/svg+xml",
+  tsv: "text/tab-separated-values",
+  txt: "text/plain",
   wav: "audio/wav",
   webm: "video/webm",
   webp: "image/webp",
@@ -93,12 +100,12 @@ export function ChatArchiveViewer({ name, blob }: ChatArchiveViewerProps) {
     try {
       const bytes = await listing.read(entry.path);
       const format = classifyFile(entry.name, "");
+      const mime = ENTRY_MIME_TYPES[entryExtension(entry.name)] ?? "application/octet-stream";
+      const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
+      entryUrlRef.current = url;
       if (TEXT_LIKE.test(entry.name) || format === "text") {
-        setEntryData({ text: new TextDecoder("utf-8", { fatal: false }).decode(bytes).slice(0, 250000) });
+        setEntryData({ text: new TextDecoder("utf-8", { fatal: false }).decode(bytes).slice(0, 250000), url });
       } else {
-        const mime = ENTRY_MIME_TYPES[entryExtension(entry.name)] ?? "application/octet-stream";
-        const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
-        entryUrlRef.current = url;
         setEntryData({ url });
       }
     } catch (cause) {
@@ -161,10 +168,12 @@ export function ChatArchiveViewer({ name, blob }: ChatArchiveViewerProps) {
                     : classifyFile(selected.name, "") === "audio"
                       ? <audio src={entryData.url} controls className="w-full" />
                       : <p className="text-xs text-[#7c8c91]">This file is ready to download.</p>}
-              <a href={entryData.url} download={selected.name} className="text-xs font-semibold text-[#16869a] underline underline-offset-2">
-                Download {selected.name}
-              </a>
             </div>
+          )}
+          {entryData?.url && (
+            <a href={entryData.url} download={selected.name} className="mt-2 inline-block text-xs font-semibold text-[#16869a] underline underline-offset-2">
+              Download {selected.name}
+            </a>
           )}
         </div>
       )}

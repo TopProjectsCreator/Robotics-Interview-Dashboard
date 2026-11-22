@@ -24,6 +24,10 @@ vi.mock("@workspace/api-client-react", () => ({
   useCreatePartsPriceSnapshot: () => ({ mutateAsync: mocks.createSnapshot, isPending: false }),
 }));
 
+vi.mock("@/components/ChatGlbViewer", () => ({
+  ChatGlbViewer: ({ name }: { name: string }) => <div data-testid="mock-chat-glb-viewer">{name}</div>,
+}));
+
 const robot = {
   id: "robot-1",
   name: "Scout",
@@ -83,7 +87,7 @@ const detail = {
   unpricedPartCount: 1,
 };
 
-function renderDialog(onClose = vi.fn(), onPreviewReplaced = vi.fn()) {
+function renderDialog(onClose = vi.fn(), onPreviewReplaced = vi.fn(), robotOverride = robot) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -91,7 +95,7 @@ function renderDialog(onClose = vi.fn(), onPreviewReplaced = vi.fn()) {
     ...render(
       <QueryClientProvider client={queryClient}>
         <PartsRobotDetailsDialog
-          robot={robot}
+          robot={robotOverride}
           onClose={onClose}
           onPreviewReplaced={onPreviewReplaced}
         />
@@ -139,6 +143,30 @@ describe("PartsRobotDetailsDialog", () => {
       "href",
       expect.stringContaining("/api/storage/objects/preview-1234"),
     );
+  });
+
+  it("keeps a CAD model downloadable while showing its preview", () => {
+    const cadRobot = {
+      ...robot,
+      preview: {
+        ...robot.preview,
+        fileName: "scout.glb",
+        contentType: "model/gltf-binary",
+      },
+    };
+    mocks.getDetails.mockReturnValue({
+      data: { ...detail, robot: cadRobot },
+      isLoading: false,
+      isError: false,
+    });
+    renderDialog(vi.fn(), vi.fn(), cadRobot);
+
+    expect(screen.getByTestId("mock-chat-glb-viewer")).toHaveTextContent("scout.glb");
+    expect(screen.getByRole("link", { name: "Download scout.glb" })).toHaveAttribute(
+      "href",
+      expect.stringContaining("/api/storage/objects/preview-1234"),
+    );
+    expect(screen.getByRole("link", { name: "Download scout.glb" })).toHaveAttribute("download", "scout.glb");
   });
 
   it("saves part costs separately from supplier quote snapshots", async () => {
