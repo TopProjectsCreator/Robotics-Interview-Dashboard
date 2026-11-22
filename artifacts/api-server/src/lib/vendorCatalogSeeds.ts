@@ -1,19 +1,18 @@
 /**
- * Hand-collected vendor catalog seeds.
+ * Last-known vendor catalog snapshots.
  *
- * Several suppliers expose no verified public full-catalog feed, so automated
- * feed sync can only report them as discovery sources with zero indexed
- * items. Each seed below is a transcribed/scraped listing snapshot collected
- * with keyless tools (see each seed file's header for provenance) so the
- * Parts workspace synced-catalog search still covers these vendors.
+ * These snapshots bootstrap or backstop vendors without a verified public
+ * full-catalog feed. Where an official sitemap or public listing adapter exists,
+ * the scheduled sync refreshes the snapshot from that source; otherwise a seed
+ * remains a dated fallback rather than evidence of a fresh upstream check.
  *
  * Coverage honesty rule: a seed reports `synced` ("Complete feed") only when
  * its source pagination was walked to an empty page. Anything scoped, sampled
  * or otherwise short of full enumeration stays `search_only` ("Discovery
  * only") with the scope stated in the message. Live search remains
  * discovery-only either way. The catalog sync merges each seed for its vendor
- * on every run (see collectPublicVendorCatalog), so re-syncs never wipe
- * seeded rows.
+ * when its source cannot be refreshed, so a temporary supplier outage does not
+ * wipe the last-known catalog rows.
  */
 import { REV_CATALOG_SEED } from "./revCatalogSeed";
 import { STUDICA_CATALOG_SEED } from "./studicaCatalogSeed";

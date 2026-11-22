@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { Router, type IRouter } from "express";
 import {
+  partsCatalogLoadAllowsWork,
+  samplePartsCatalogResourceUsage,
+} from "../lib/partsCatalogLoad";
+import {
   CreatePartsPriceSnapshotBody,
   CreatePartsPriceSnapshotParams,
   CreatePartsPriceSnapshotResponse,
@@ -76,6 +80,8 @@ import {
   catalogSearchVariants,
   isRelevantCatalogSearchResult,
 } from "../lib/partsSearchTerms";
+import { collectOffsetRoboticsCatalog } from "../lib/offsetRoboticsCatalog";
+import { collectBwtLinkCatalog } from "../lib/bwtlinkCatalog";
 import {
   VENDOR_CATALOG_SEEDS,
   vendorSeedSyncMessage,
@@ -99,6 +105,7 @@ import {
   fetchProductPage,
   fetchSitemapProductUrls,
   productUrlSlug,
+  pendingSitemapProductUrls,
   type SitemapCrawlTarget,
 } from "../lib/productSitemapCrawl";
 import {
@@ -1905,6 +1912,7 @@ const SITEMAP_CRAWL_FLUSH_EVERY = 12;
  * terminal on its first attempt, because that answer will not change.
  */
 const PRODUCT_CRAWL_MAX_ATTEMPTS = 3;
+const SITEMAP_FULL_REFRESH_INTERVAL_SECONDS = 30 * 24 * 60 * 60;
 
 /**
  * How long a refused sitemap URL stays refused before the crawl tries it once
@@ -2183,6 +2191,52 @@ async function recordSkippedProducts(
   );
 }
 
+/**
+ * Starts an initial or 30-day product-page refresh cycle, or returns the active
+ * cycle's timestamp. Product rows older than that timestamp are the durable
+ * work queue, so a process restart does not lose the refresh cursor.
+ */
+async function beginOrReadSitemapRefresh(vendorKey: string): Promise<Date | null> {
+  const started = await pool.query(
+    `insert into "parts_catalog_sitemap_refresh_state"
+       ("vendor_key", "refresh_started_at", "last_completed_at")
+     values ($1, now(), null)
+     on conflict ("vendor_key") do update
+       set "refresh_started_at" = now()
+     where "parts_catalog_sitemap_refresh_state"."refresh_started_at" is null
+       and (
+         "parts_catalog_sitemap_refresh_state"."last_completed_at" is null
+         or "parts_catalog_sitemap_refresh_state"."last_completed_at"
+              < now() - make_interval(secs => $2::int)
+       )
+     returning "refresh_started_at"`,
+    [vendorKey, SITEMAP_FULL_REFRESH_INTERVAL_SECONDS],
+  );
+  const startedAt =
+    (started.rows[0] as { refresh_started_at?: Date | string } | undefined)?.refresh_started_at;
+  if (startedAt) return startedAt instanceof Date ? startedAt : new Date(startedAt);
+
+  const existing = await pool.query(
+    `select "refresh_started_at"
+     from "parts_catalog_sitemap_refresh_state"
+     where "vendor_key" = $1`,
+    [vendorKey],
+  );
+  const existingStartedAt =
+    (existing.rows[0] as { refresh_started_at?: Date | string | null } | undefined)?.refresh_started_at;
+  if (!existingStartedAt) return null;
+  return existingStartedAt instanceof Date ? existingStartedAt : new Date(existingStartedAt);
+}
+
+async function completeSitemapRefresh(vendorKey: string): Promise<void> {
+  await pool.query(
+    `update "parts_catalog_sitemap_refresh_state"
+     set "refresh_started_at" = null, "last_completed_at" = now()
+     where "vendor_key" = $1 and "refresh_started_at" is not null`,
+    [vendorKey],
+  );
+}
+
 async function crawlSitemapSlice(
   vendor: VendorConfig,
   sitemapUrl: string,
@@ -2193,16 +2247,16 @@ async function crawlSitemapSlice(
 
   // Every row for the vendor, not just the ones carrying a URL: an empty result is
   // what tells the seed bootstrap below that this is the vendor's first pass.
-  const indexed = await pool.query(
-    `select "product_url" from "parts_catalog_items" where "vendor_key" = $1`,
+  let indexed = await pool.query(
+    `select "product_url", "updated_at"
+     from "parts_catalog_items"
+     where "vendor_key" = $1 and "team_id" is null and "is_manual" = false`,
     [vendor.key],
   );
-  const indexedRows = indexed.rows as { product_url: string | null }[];
-  const known = new Set<string>(
-    indexedRows
-      .map((row) => row.product_url)
-      .filter((productUrl): productUrl is string => productUrl !== null),
-  );
+  let indexedRows = indexed.rows as {
+    product_url: string | null;
+    updated_at: Date | string | null;
+  }[];
 
   // URLs the crawl has recently refused. The pending set is "sitemap URLs minus
   // indexed URLs", so a sitemap entry that yields no product record never gains a
@@ -2272,19 +2326,48 @@ async function crawlSitemapSlice(
           ftcTeamPrice: null,
           supplierPriceCurrency: null,
         });
-        // Registered as known so the diff below asks only for what the seed missed.
-        if (record.productUrl) known.add(record.productUrl);
       }
       await flush();
+      indexed = await pool.query(
+        `select "product_url", "updated_at"
+         from "parts_catalog_items"
+         where "vendor_key" = $1 and "team_id" is null and "is_manual" = false`,
+        [vendor.key],
+      );
+      indexedRows = indexed.rows as {
+        product_url: string | null;
+        updated_at: Date | string | null;
+      }[];
     }
   }
 
-  const pending = sitemapUrls.filter(
-    (url) => !known.has(url) && (unproductive.get(url) ?? 0) < PRODUCT_CRAWL_MAX_ATTEMPTS,
+  const known = new Set<string>(
+    indexedRows
+      .map((row) => row.product_url)
+      .filter((productUrl): productUrl is string => productUrl !== null),
+  );
+  const refreshStartedAt = await beginOrReadSitemapRefresh(vendor.key);
+  const refreshStartedAtMs = refreshStartedAt?.getTime() ?? null;
+  const pending = pendingSitemapProductUrls(
+    sitemapUrls,
+    indexedRows.map((row) => {
+      if (!row.product_url || !row.updated_at) {
+        return { productUrl: row.product_url, updatedAt: null };
+      }
+      const updatedAt = row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at);
+      return {
+        productUrl: row.product_url,
+        updatedAt: Number.isFinite(updatedAt.getTime()) ? updatedAt.getTime() : null,
+      };
+    }),
+    refreshStartedAtMs,
+    unproductive,
+    PRODUCT_CRAWL_MAX_ATTEMPTS,
   );
   const slice = pending.slice(0, Math.max(0, budget));
   /** Sitemap URLs this slice refuses or fails again, and why. */
   const skips: { productUrl: string; reason: string; attempts: number }[] = [];
+  const checkedExisting: string[] = [];
   for (const productUrl of slice) {
     try {
       const product = await fetchProductPage(productUrl, target);
@@ -2310,6 +2393,9 @@ async function crawlSitemapSlice(
       } else {
         // A page with no product JSON-LD is a settled answer rather than a
         // transient fault, so record it as terminal instead of asking again.
+        if (refreshStartedAtMs !== null && known.has(productUrl)) {
+          checkedExisting.push(productUrl);
+        }
         skips.push({
           productUrl,
           reason: "not-a-product",
@@ -2329,6 +2415,14 @@ async function crawlSitemapSlice(
   }
   await flush();
   await recordSkippedProducts(vendor.key, skips);
+  if (checkedExisting.length > 0) {
+    await pool.query(
+      `update "parts_catalog_items" set "updated_at" = now()
+       where "vendor_key" = $1 and "product_url" = any($2::text[])
+         and "team_id" is null and "is_manual" = false`,
+      [vendor.key, checkedExisting],
+    );
+  }
 
   // An attempted URL only counts as still owed when it failed transiently and has
   // attempts left; everything else either gained a catalog row or was given up on.
@@ -2353,12 +2447,20 @@ async function crawlSitemapSlice(
       ? ` ${skippedCount} sitemap URL(s) are not product pages or failed repeatedly, and are no longer retried.`
       : "";
   const enumerated = `${sitemapUrls.length} sitemap URL(s)`;
+  const refreshFinished = remaining === 0 && refreshStartedAtMs !== null;
+  if (refreshFinished) await completeSitemapRefresh(vendor.key);
+  const refreshNote = refreshStartedAtMs !== null
+    ? refreshFinished
+      ? "The full product-page refresh is complete. "
+      : "The existing catalog is being refreshed from its product pages. "
+    : "";
   // Counted from the catalog rather than derived from this slice: the whole
   // point of flushing is that the running total survives a restart this slice
   // did not, so the honest figure is whatever the database now holds.
   const total = await pool.query(
     `select count(*)::int as "total" from "parts_catalog_items"
-     where "vendor_key" = $1 and "product_url" is not null`,
+     where "vendor_key" = $1 and "product_url" is not null
+       and "team_id" is null and "is_manual" = false`,
     [vendor.key],
   );
   const itemCount = Number((total.rows[0] as { total: number } | undefined)?.total ?? 0);
@@ -2373,7 +2475,7 @@ async function crawlSitemapSlice(
       itemCount,
       created,
       updated,
-      message: `Product sitemap enumerated (${enumerated}); ${itemCount} product(s) are indexed and nothing is left to fetch. Incremental checks now cost one request per run.${skippedNote}`,
+      message: `${refreshNote}Product sitemap enumerated (${enumerated}); ${itemCount} product(s) are indexed and nothing is left to fetch. Incremental checks now cost one request per run.${skippedNote}`,
     };
   }
   return {
@@ -2391,7 +2493,7 @@ async function crawlSitemapSlice(
       SITEMAP_CRAWL_PAGE_BUDGET,
       SITEMAP_CRAWL_BACKLOG_DELAY_MS,
     ) ?? undefined,
-    message: `Product sitemap enumerated (${enumerated}); ${itemCount} product(s) indexed and ${remaining} still to crawl. The background crawler continues automatically at ${PRODUCT_CRAWL_DELAY_MS / 1000}s per product page.${skippedNote}`,
+    message: `${refreshNote}Product sitemap enumerated (${enumerated}); ${itemCount} product(s) indexed and ${remaining} still to crawl. The background crawler continues automatically at ${PRODUCT_CRAWL_DELAY_MS / 1000}s per product page.${skippedNote}`,
   };
 }
 
@@ -2404,6 +2506,123 @@ async function collectPublicVendorCatalog(
   // supplies both the inventory and the incremental change signal.
   if (vendor.productSitemapUrl) {
     return collectSitemapCrawledCatalog(vendor, sitemapBudget);
+  }
+  if (vendor.key === "offset-robotics") {
+    const seed = VENDOR_CATALOG_SEEDS.get(vendor.key);
+    const seedRecords: CatalogFeedRecord[] = seed?.records.map((record) => ({
+      vendorKey: record.vendorKey,
+      externalKey: record.externalKey,
+      name: record.name,
+      sku: record.sku,
+      category: record.category,
+      description: record.description,
+      productUrl: record.productUrl,
+      imageUrl: record.imageUrl,
+    })) ?? [];
+    try {
+      const catalog = await collectOffsetRoboticsCatalog();
+      const liveRecords: CatalogFeedRecord[] = catalog.records.map((record) => ({
+        vendorKey: vendor.key,
+        externalKey: record.externalKey,
+        name: record.name,
+        sku: null,
+        category: record.category,
+        description: null,
+        productUrl: record.productUrl,
+        imageUrl: record.imageUrl,
+        supplierPrice: record.supplierPrice,
+        supplierPriceCurrency: record.supplierPriceCurrency,
+        stockStatus: record.stockStatus,
+      }));
+      const completeSnapshot =
+        catalog.records.length > 0 &&
+        catalog.failedCollections.length === 0 &&
+        catalog.collectionsFetched === catalog.collectionsFound &&
+        catalog.collectionsFound >= 12;
+      const records = completeSnapshot
+        ? liveRecords
+        : [
+            ...new Map(
+              [...seedRecords, ...liveRecords].map((record) => [record.externalKey, record]),
+            ).values(),
+          ];
+      return {
+        vendor,
+        status: completeSnapshot ? ("synced" as const) : ("incomplete" as const),
+        source: vendor.catalogSourceUrl,
+        records,
+        completeSnapshot,
+        message: completeSnapshot
+          ? `The official storefront listed ${catalog.records.length} products across ${catalog.collectionsFetched} collections; all collections were read and the full catalog was refreshed.`
+          : `Only ${catalog.collectionsFetched} of ${catalog.collectionsFound} official storefront collections were read; last-known seed entries were retained and the refresh will retry.`,
+      };
+    } catch (error) {
+      logger.warn({ err: error, vendorKey: vendor.key }, "Offset Robotics catalog refresh failed");
+      return {
+        vendor,
+        status: "incomplete" as const,
+        source: vendor.catalogSourceUrl,
+        records: seedRecords,
+        message: "The official storefront could not be fully read; the last-known catalog snapshot was retained for retry.",
+      };
+    }
+  }
+  if (vendor.key === "bwtlink") {
+    const seed = VENDOR_CATALOG_SEEDS.get(vendor.key);
+    const seedRecords: CatalogFeedRecord[] = seed?.records.map((record) => ({
+      vendorKey: record.vendorKey,
+      externalKey: record.externalKey,
+      name: record.name,
+      sku: record.sku,
+      category: record.category,
+      description: record.description,
+      productUrl: record.productUrl,
+      imageUrl: record.imageUrl,
+    })) ?? [];
+    try {
+      const catalog = await collectBwtLinkCatalog();
+      const liveRecords: CatalogFeedRecord[] = catalog.records.map((record) => ({
+        vendorKey: vendor.key,
+        externalKey: record.externalKey,
+        name: record.name,
+        sku: null,
+        category: record.category,
+        description: null,
+        productUrl: record.productUrl,
+        imageUrl: record.imageUrl,
+      }));
+      const completeSnapshot =
+        catalog.records.length > 0 &&
+        catalog.failedTabs.length === 0 &&
+        catalog.tabsFetched === catalog.tabsFound &&
+        catalog.tabsFound >= 6;
+      const records = completeSnapshot
+        ? liveRecords
+        : [
+            ...new Map(
+              [...seedRecords, ...liveRecords].map((record) => [record.externalKey, record]),
+            ).values(),
+          ];
+      return {
+        vendor,
+        status: completeSnapshot ? ("synced" as const) : ("incomplete" as const),
+        source: vendor.catalogSourceUrl,
+        records,
+        completeSnapshot,
+        message: completeSnapshot
+          ? `All ${catalog.tabsFetched} public catalog tabs were read; ${catalog.records.length} products are indexed from the current storefront.`
+          : `Only ${catalog.tabsFetched} of ${catalog.tabsFound} public catalog tabs were read; last-known seed entries were retained and the refresh will retry.`,
+      };
+    } catch (error) {
+      logger.warn({ err: error, vendorKey: vendor.key }, "BWTLink catalog refresh failed");
+      return {
+        vendor,
+        status: "incomplete" as const,
+        source: vendor.catalogSourceUrl,
+        records: seedRecords,
+        message: "The official product listing could not be fully read; the last-known catalog snapshot was retained for retry.",
+      };
+    }
   }
   // WestCoast Products (and any future feed vendor with a UCP catalog API)
   // publishes live price/currency/availability at its UCP endpoint. The feed
@@ -2573,9 +2792,9 @@ export async function saveCatalogFeedRecords(records: CatalogFeedRecord[]) {
            "description" = coalesce(excluded."description", "parts_catalog_items"."description"),
            "product_url" = coalesce(excluded."product_url", "parts_catalog_items"."product_url"),
             "image_url" = coalesce(excluded."image_url", "parts_catalog_items"."image_url"),
-            "supplier_price" = excluded."supplier_price",
-            "ftc_team_price" = excluded."ftc_team_price",
-            "supplier_price_currency" = excluded."supplier_price_currency",
+            "supplier_price" = coalesce(excluded."supplier_price", "parts_catalog_items"."supplier_price"),
+            "ftc_team_price" = coalesce(excluded."ftc_team_price", "parts_catalog_items"."ftc_team_price"),
+            "supplier_price_currency" = coalesce(excluded."supplier_price_currency", "parts_catalog_items"."supplier_price_currency"),
             "stock_status" = coalesce(excluded."stock_status", "parts_catalog_items"."stock_status"),
            "is_manual" = "parts_catalog_items"."is_manual" or excluded."is_manual",
            "updated_at" = now()
@@ -3114,6 +3333,18 @@ export async function syncPublicPartsCatalogs(options: { agentProfileUrl?: strin
     const counts = collection.records.length > 0
       ? await saveCatalogFeedRecords(collection.records)
       : { created: 0, updated: 0 };
+    if ("completeSnapshot" in collection && collection.completeSnapshot === true) {
+      await pool.query(
+        `update "parts_catalog_items"
+         set "stock_status" = 'discontinued', "updated_at" = now()
+         where "vendor_key" = $1
+           and "team_id" is null and "is_manual" = false
+           and "product_url" is not null
+           and not ("external_key" = any($2::text[]))
+           and "stock_status" is distinct from 'discontinued'`,
+        [collection.vendor.key, collection.records.map((record) => record.externalKey)],
+      );
+    }
     vendorResults[index] = {
       vendorKey: collection.vendor.key,
       vendorName: collection.vendor.name,
@@ -3175,13 +3406,10 @@ export async function syncPublicPartsCatalogs(options: { agentProfileUrl?: strin
 }
 
 /**
- * Product pages fetched per slice. At the hosts' declared 10s delay this is about
- * ten minutes of work, and still lands inside the lease below if every page hits
- * the 30s request timeout. The sitemap suppliers total roughly 7,900 product
- * pages, so a full first pass is about a day of polite background fetching; every
- * later check costs a single sitemap request per supplier.
+ * Smaller slices let the scheduler re-check CPU and memory regularly while
+ * keeping each bounded crawl inside the cross-instance maintenance lease.
  */
-const SITEMAP_CRAWL_PAGE_BUDGET = 60;
+const SITEMAP_CRAWL_PAGE_BUDGET = 20;
 
 /**
  * Gap between slices while a supplier still has URLs to crawl. Kept short so the
@@ -3189,6 +3417,7 @@ const SITEMAP_CRAWL_PAGE_BUDGET = 60;
  * inside the slice is what paces the crawl.
  */
 const SITEMAP_CRAWL_BACKLOG_DELAY_MS = 60 * 1000;
+const SITEMAP_CRAWL_DEFERRED_DELAY_MS = 5 * 60 * 1000;
 
 /**
  * Once a supplier has converged, the crawler stops fetching product pages and
@@ -3201,38 +3430,38 @@ let sitemapCrawlTimer: ReturnType<typeof setTimeout> | null = null;
 const sitemapCrawlStopped = false;
 
 /**
- * How long a crawler lease is held before another instance may take over.
- *
- * Sized for the timeout path, not the happy path: a page normally costs about
- * 10s (delay only), but `fetchProductPage` allows a 30s request timeout, so a
- * slice of 60 pages against a slow supplier can take up to ~40 minutes. A lease
- * shorter than that would let a second instance start crawling alongside a
- * healthy one. A crashed instance still frees the lease long before the nightly
- * first pass would be missed.
+ * How long a catalog maintenance lease is held before another instance may take
+ * over if the owner crashes or becomes unresponsive.
  */
 const SITEMAP_CRAWL_LEASE_SECONDS = 45 * 60;
 
 /**
- * Takes the cross-instance crawl lease. Autoscaled deployments run several
- * server instances against one database, and without this every instance would
- * fetch the same sitemap and crawl the same pending products — multiplying the
- * request rate against a host that asks for a delay between fetches. Mirrors the
- * lease the scheduled supplier sync already uses for the same reason.
- *
- * Returns true when this instance may crawl.
+ * One persisted lease serializes scheduled feed syncs and sitemap slices across
+ * API instances so multiple catalog jobs do not run at the same time.
  */
-async function claimSitemapCrawlLease(): Promise<boolean> {
+export async function claimPartsCatalogMaintenanceLease(): Promise<string | null> {
+  const claimToken = randomUUID();
   const claim = await pool.query(
-    `insert into "parts_catalog_crawl_state" ("id", "claimed_at")
-     values ('global', now())
-     on conflict ("id") do update set "claimed_at" = now()
+    `insert into "parts_catalog_crawl_state" ("id", "claimed_at", "claim_token")
+     values ('global', now(), $1)
+     on conflict ("id") do update
+       set "claimed_at" = now(), "claim_token" = excluded."claim_token"
      where "parts_catalog_crawl_state"."claimed_at" is null
         or "parts_catalog_crawl_state"."claimed_at"
-             < now() - make_interval(secs => $1::int)
+             < now() - make_interval(secs => $2::int)
      returning "id"`,
-    [SITEMAP_CRAWL_LEASE_SECONDS],
+    [claimToken, SITEMAP_CRAWL_LEASE_SECONDS],
   );
-  return claim.rowCount !== 0;
+  return claim.rowCount !== 0 ? claimToken : null;
+}
+
+export async function releasePartsCatalogMaintenanceLease(claimToken: string): Promise<void> {
+  await pool.query(
+    `update "parts_catalog_crawl_state"
+     set "claimed_at" = null, "claim_token" = null
+     where "id" = 'global' and "claim_token" = $1`,
+    [claimToken],
+  );
 }
 
 /**
@@ -3245,88 +3474,104 @@ async function claimSitemapCrawlLease(): Promise<boolean> {
  * bookkeeping instead — a restart costs a single slice rather than the whole run,
  * and no tick blocks the event loop.
  */
-async function runSitemapCrawlSlices(): Promise<boolean> {
-  // A lost lease means another instance is mid-slice, so come back soon rather
-  // than sleeping the converged interval and stalling the first pass.
-  if (!(await claimSitemapCrawlLease())) return true;
-
-  const states = await readPartsSupplierSyncStates();
-  const due = VENDORS.filter((vendor) => {
-    if (!vendor.productSitemapUrl) return false;
-    const state = states.get(vendor.key);
-    // No converged run yet: a first pass is still owed.
-    if (state?.status !== "synced") return true;
-    return Date.now() - state.checkedAt.getTime() >= SITEMAP_RECHECK_MS;
-  });
-  if (due.length === 0) return false;
-
-  // One supplier per slice, oldest check first. Crawling every sitemap supplier
-  // back to back would run for hours and outlive the lease above, so a slice stays
-  // at 60 pages (~10 minutes at the declared delay) however many suppliers are
-  // configured. Rotation is read back from persisted `checkedAt`, so it survives a
-  // restart without a cursor anyone has to keep.
-  const vendor = due.reduce((best, candidate) => {
-    const bestAt = states.get(best.key)?.checkedAt.getTime() ?? 0;
-    const candidateAt = states.get(candidate.key)?.checkedAt.getTime() ?? 0;
-    return candidateAt < bestAt ? candidate : best;
-  });
-
-  // Another supplier still waiting counts as backlog: this one advancing does not
-  // mean the rest should sleep for the converged interval.
-  let backlogRemains = due.length > 1;
-  try {
-    const collection = await collectSitemapCrawledCatalog(vendor, SITEMAP_CRAWL_PAGE_BUDGET);
-    await savePartsSupplierSyncState(vendor.key, {
-      status: collection.status,
-      checkedAt: new Date(),
-      itemCount: collection.itemCount,
-      source: collection.source,
-      message: collection.message,
-      remainingPages:
-        collection.status === "incomplete" && "remainingPages" in collection
-          ? collection.remainingPages
-          : undefined,
-      estimatedSecondsRemaining:
-        collection.status === "incomplete" && "estimatedSecondsRemaining" in collection
-          ? collection.estimatedSecondsRemaining
-          : undefined,
+async function runSitemapCrawlSlices(): Promise<{ backlogRemains: boolean; deferred: boolean }> {
+  const readDueVendors = async () => {
+    const states = await readPartsSupplierSyncStates();
+    const due = VENDORS.filter((vendor) => {
+      if (!vendor.productSitemapUrl) return false;
+      const state = states.get(vendor.key);
+      if (state?.status !== "synced") return true;
+      return Date.now() - state.checkedAt.getTime() >= SITEMAP_RECHECK_MS;
     });
-    if (collection.status === "incomplete") backlogRemains = true;
-    logger.info(
-      {
-        vendorKey: vendor.key,
-        status: collection.status,
-        itemCount: collection.itemCount,
-        // The crawl persists incrementally so a mid-slice restart keeps its
-        // work; these counts are reported by the crawl, not saved here.
-        created: collection.created,
-        updated: collection.updated,
-      },
-      "Sitemap crawl slice processed",
-    );
-  } catch (error) {
-    backlogRemains = true;
-    const previous = (await readPartsSupplierSyncStates()).get(vendor.key);
-    await savePartsSupplierSyncState(vendor.key, {
-      status: "unavailable",
-      checkedAt: new Date(),
-      itemCount: previous?.itemCount ?? 0,
-      source: vendor.productSitemapUrl as string,
-      message: "The background product sitemap crawl could not be advanced; it will retry automatically.",
-    });
-    logger.warn({ err: error, vendorKey: vendor.key }, "Sitemap crawl slice failed");
+    return { states, due };
+  };
+
+  // Avoid sampling resources when every sitemap catalog is already current.
+  if ((await readDueVendors()).due.length === 0) {
+    return { backlogRemains: false, deferred: false };
   }
-  return backlogRemains;
+
+  const resourceUsage = await samplePartsCatalogResourceUsage();
+  if (!partsCatalogLoadAllowsWork(resourceUsage)) {
+    logger.debug(
+      {
+        cpuPercent: resourceUsage.cpuPercent,
+        memoryPercent: resourceUsage.memoryPercent,
+      },
+      "Sitemap catalog crawl deferred until resource use is low",
+    );
+    return { backlogRemains: true, deferred: true };
+  }
+
+  const leaseToken = await claimPartsCatalogMaintenanceLease();
+  if (!leaseToken) return { backlogRemains: true, deferred: true };
+
+  try {
+    const { states, due } = await readDueVendors();
+    if (due.length === 0) return { backlogRemains: false, deferred: false };
+
+    // One supplier per slice, oldest check first. Persisted `checkedAt` rotates
+    // suppliers fairly and survives restarts without an in-memory cursor.
+    const vendor = due.reduce((best, candidate) => {
+      const bestAt = states.get(best.key)?.checkedAt.getTime() ?? 0;
+      const candidateAt = states.get(candidate.key)?.checkedAt.getTime() ?? 0;
+      return candidateAt < bestAt ? candidate : best;
+    });
+
+    let backlogRemains = due.length > 1;
+    try {
+      const collection = await collectSitemapCrawledCatalog(vendor, SITEMAP_CRAWL_PAGE_BUDGET);
+      await savePartsSupplierSyncState(vendor.key, {
+        status: collection.status,
+        checkedAt: new Date(),
+        itemCount: collection.itemCount,
+        source: collection.source,
+        message: collection.message,
+        remainingPages:
+          collection.status === "incomplete" && "remainingPages" in collection
+            ? collection.remainingPages
+            : undefined,
+        estimatedSecondsRemaining:
+          collection.status === "incomplete" && "estimatedSecondsRemaining" in collection
+            ? collection.estimatedSecondsRemaining
+            : undefined,
+      });
+      if (collection.status === "incomplete") backlogRemains = true;
+      logger.info(
+        {
+          vendorKey: vendor.key,
+          status: collection.status,
+          itemCount: collection.itemCount,
+          created: collection.created,
+          updated: collection.updated,
+        },
+        "Sitemap crawl slice processed",
+      );
+    } catch (error) {
+      backlogRemains = true;
+      const previous = (await readPartsSupplierSyncStates()).get(vendor.key);
+      await savePartsSupplierSyncState(vendor.key, {
+        status: "unavailable",
+        checkedAt: new Date(),
+        itemCount: previous?.itemCount ?? 0,
+        source: vendor.productSitemapUrl as string,
+        message: "The background product sitemap crawl could not be advanced; it will retry automatically.",
+      });
+      logger.warn({ err: error, vendorKey: vendor.key }, "Sitemap crawl slice failed");
+    }
+    return { backlogRemains, deferred: false };
+  } finally {
+    await releasePartsCatalogMaintenanceLease(leaseToken);
+  }
 }
 
 /**
  * Starts the background crawler. Idempotent, and unref'd so it never holds the
  * process open on its own.
  *
- * Scheduling is a self-rescheduling timeout rather than an interval: a slice can
- * run for ten minutes, and an interval would keep firing while the previous
- * slice was still fetching. Waiting for completion also lets the delay adapt —
- * a minute while a backlog exists, six hours once every sitemap has converged.
+ * Scheduling is a self-rescheduling timeout rather than an interval. It pauses
+ * for five minutes when the server is busy, checks again after successful slices,
+ * and sleeps six hours after all sitemap catalogs have converged.
  */
 export function startSitemapCatalogCrawler(): void {
   if (sitemapCrawlTimer || sitemapCrawlStopped) return;
@@ -3334,12 +3579,18 @@ export function startSitemapCatalogCrawler(): void {
     if (sitemapCrawlStopped) return;
     sitemapCrawlTimer = setTimeout(() => {
       void runSitemapCrawlSlices()
-        .then((backlogRemains) => {
-          schedule(backlogRemains ? SITEMAP_CRAWL_BACKLOG_DELAY_MS : SITEMAP_RECHECK_MS);
+        .then(({ backlogRemains, deferred }) => {
+          schedule(
+            deferred
+              ? SITEMAP_CRAWL_DEFERRED_DELAY_MS
+              : backlogRemains
+                ? SITEMAP_CRAWL_BACKLOG_DELAY_MS
+                : SITEMAP_RECHECK_MS,
+          );
         })
         .catch((err) => {
           logger.error({ err }, "Sitemap crawl failed");
-          schedule(SITEMAP_CRAWL_BACKLOG_DELAY_MS);
+          schedule(SITEMAP_CRAWL_DEFERRED_DELAY_MS);
         });
     }, delayMs);
     sitemapCrawlTimer.unref();

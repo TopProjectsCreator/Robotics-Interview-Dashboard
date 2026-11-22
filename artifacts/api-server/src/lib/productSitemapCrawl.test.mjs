@@ -5,6 +5,7 @@ import test from "node:test";
 // load it without the extension-resolution hooks the seed tests need.
 const {
   parseSitemapProductUrls,
+  pendingSitemapProductUrls,
   parseSchemaOrgProduct,
   productUrlSlug,
   estimateSitemapCrawlSecondsRemaining,
@@ -78,6 +79,24 @@ test("sitemap parsing drops off-host and non-https entries", () => {
 test("sitemap parsing tolerates a host that merely ends with the domain", () => {
   const xml = `<urlset><url><loc>https://notgobilda.com/part/</loc></url></urlset>`;
   assert.deepEqual(parseSitemapProductUrls(xml, TARGET), []);
+});
+
+test("sitemap refresh queue includes new URLs and only stale known URLs", () => {
+  const urls = ["new", "fresh", "stale", "failed"];
+  const indexed = [
+    { productUrl: "fresh", updatedAt: 200 },
+    { productUrl: "stale", updatedAt: 50 },
+    { productUrl: "failed", updatedAt: 50 },
+  ];
+  const refused = new Map([["failed", 3]]);
+  assert.deepEqual(
+    pendingSitemapProductUrls(urls, indexed, 100, refused, 3),
+    ["new", "stale"],
+  );
+  assert.deepEqual(
+    pendingSitemapProductUrls(urls, indexed, null, new Map(), 3),
+    ["new"],
+  );
 });
 
 test("product JSON-LD yields every catalog field including stock state", () => {

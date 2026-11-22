@@ -9,7 +9,12 @@ import { pool, db, secondaryPool, hasSecondary, interviewQueueTable, runWithInst
 import { activeTeamDatabaseInstance } from "./lib/activeTeamDatabase";
 import { startInstanceHealthProbes, markInstanceFailure, markInstanceSuccess } from "./lib/instanceHealth";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
-import { startSitemapCatalogCrawler, syncPublicPartsCatalogs } from "./routes/parts";
+import {
+  claimPartsCatalogMaintenanceLease,
+  releasePartsCatalogMaintenanceLease,
+  startSitemapCatalogCrawler,
+  syncPublicPartsCatalogs,
+} from "./routes/parts";
 import { startAssistantPromptDispatcher, startAssistantScheduledTaskDispatcher, startScheduledChatDispatcher } from "./routes/robotics";
 import { startChatProductivityDispatcher } from "./lib/chatProductivity";
 import { sweepOrphanChunkUploads } from "./lib/chunkedUploads";
@@ -18,6 +23,10 @@ import { resumeStalePreviewJobs } from "./routes/storage";
 import { isDatabaseConnectionError } from "./lib/databaseErrors";
 import { warmFtcMentionSearchCache } from "./lib/ftcEvents";
 import { chatRevisionMigration } from "./lib/chatRevisionMigration";
+import {
+  partsCatalogLoadAllowsWork,
+  samplePartsCatalogResourceUsage,
+} from "./lib/partsCatalogLoad";
 
 initRealtime();
 
@@ -220,6 +229,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     "parts_catalog_sync_state",
     "parts_catalog_crawl_skips",
     "parts_catalog_crawl_state",
+    "parts_catalog_sitemap_refresh_state",
     "parts_vendor_blocks",
     "parts_inventory",
     "parts_robots",
@@ -694,12 +704,16 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `alter table "chat_productivity_settings"
        add column if not exists "custom_message" text not null default ''`,
     `create unique index if not exists "webauthn_credentials_credential_id_unique" on "webauthn_credentials" ("credential_id")`,
-    // Lease row for the background sitemap crawler. Autoscaled deployments run
-    // several server instances, so an in-process flag is not enough to stop two
-    // of them crawling the same supplier and doubling the request rate against a
-    // host that asks for a delay between fetches.
-    `create table if not exists "parts_catalog_crawl_state" ("id" text primary key check ("id" = 'global'), "claimed_at" timestamptz)`,
+    // Shared lease row serializes scheduled feed syncs and sitemap crawl slices
+    // across autoscaled API instances.
+    `create table if not exists "parts_catalog_crawl_state" ("id" text primary key check ("id" = 'global'), "claimed_at" timestamptz, "claim_token" text)`,
+    `alter table "parts_catalog_crawl_state" add column if not exists "claim_token" text`,
     `insert into "parts_catalog_crawl_state" ("id") values ('global') on conflict ("id") do nothing`,
+    `create table if not exists "parts_catalog_sitemap_refresh_state" (
+       "vendor_key" text primary key,
+       "refresh_started_at" timestamptz,
+       "last_completed_at" timestamptz
+     )`,
     // Sitemap URLs the crawl has stopped retrying. The pending set is "sitemap
     // URLs minus indexed URLs", so a URL that never yields a product row would
     // otherwise be re-fetched on every slice forever: the supplier could never
@@ -1479,40 +1493,58 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
 }
 
 async function syncPartsCatalogsIfDue(): Promise<void> {
-  const claim = await pool.query(
-    `insert into "parts_catalog_sync_state" ("id", "last_attempted_at")
-     values ('global', now())
-     on conflict ("id") do update set "last_attempted_at" = now()
-     where "parts_catalog_sync_state"."last_attempted_at" is null
-        or "parts_catalog_sync_state"."last_attempted_at" < now() - interval '24 hours'
-     returning "id"`,
-  );
-  if (claim.rowCount === 0) return;
-
-  logger.info("Starting scheduled public supplier catalog sync");
-  try {
-    const summary = await syncPublicPartsCatalogs();
-    await pool.query(
-      `update "parts_catalog_sync_state" set "last_completed_at" = now()
-       where "id" = 'global'`,
-    );
-    logger.info(
+  const resourceUsage = await samplePartsCatalogResourceUsage();
+  if (!partsCatalogLoadAllowsWork(resourceUsage)) {
+    logger.debug(
       {
-        vendors: summary.vendors.length,
-        totalItems: summary.totalItems,
-        created: summary.created,
-        updated: summary.updated,
-        availableVendors: summary.vendors.filter((vendor) => vendor.status === "synced").length,
+        cpuPercent: resourceUsage.cpuPercent,
+        memoryPercent: resourceUsage.memoryPercent,
       },
-      "Scheduled public supplier catalog sync completed",
+      "Scheduled supplier catalog sync deferred until resource use is low",
     );
-  } catch (error) {
-    await pool.query(
-      `update "parts_catalog_sync_state"
-       set "last_attempted_at" = now() - interval '23 hours'
-       where "id" = 'global'`,
+    return;
+  }
+
+  const leaseToken = await claimPartsCatalogMaintenanceLease();
+  if (!leaseToken) return;
+  try {
+    const claim = await pool.query(
+      `insert into "parts_catalog_sync_state" ("id", "last_attempted_at")
+       values ('global', now())
+       on conflict ("id") do update set "last_attempted_at" = now()
+       where "parts_catalog_sync_state"."last_attempted_at" is null
+          or "parts_catalog_sync_state"."last_attempted_at" < now() - interval '24 hours'
+       returning "id"`,
     );
-    logger.error({ err: error }, "Scheduled public supplier catalog sync failed");
+    if (claim.rowCount === 0) return;
+
+    logger.info("Starting scheduled public supplier catalog sync");
+    try {
+      const summary = await syncPublicPartsCatalogs();
+      await pool.query(
+        `update "parts_catalog_sync_state" set "last_completed_at" = now()
+         where "id" = 'global'`,
+      );
+      logger.info(
+        {
+          vendors: summary.vendors.length,
+          totalItems: summary.totalItems,
+          created: summary.created,
+          updated: summary.updated,
+          availableVendors: summary.vendors.filter((vendor) => vendor.status === "synced").length,
+        },
+        "Scheduled public supplier catalog sync completed",
+      );
+    } catch (error) {
+      await pool.query(
+        `update "parts_catalog_sync_state"
+         set "last_attempted_at" = now() - interval '23 hours'
+         where "id" = 'global'`,
+      );
+      logger.error({ err: error }, "Scheduled public supplier catalog sync failed");
+    }
+  } finally {
+    await releasePartsCatalogMaintenanceLease(leaseToken);
   }
 }
 
@@ -1546,7 +1578,7 @@ function startBackgroundWork(): void {
     void syncPartsCatalogsIfDue().catch((err) => {
       logger.error({ err }, "Unable to check scheduled public supplier catalog sync");
     });
-  }, 60 * 60 * 1000);
+  }, 5 * 60 * 1000);
   catalogRefreshCheck.unref();
   // Chunked uploads that nothing points at any more (a tab closed
   // mid-upload, an attachment that was removed) keep their parts in

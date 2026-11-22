@@ -140,6 +140,32 @@ export function parseSitemapProductUrls(
   return urls;
 }
 
+/**
+ * Produces the durable queue for a sitemap slice: unseen URLs are always due,
+ * while known URLs are fetched only when a full refresh is active and their
+ * last successful update predates that refresh.
+ */
+export function pendingSitemapProductUrls(
+  sitemapUrls: readonly string[],
+  indexedProducts: readonly { productUrl: string | null; updatedAt: number | null }[],
+  refreshStartedAt: number | null,
+  refusedAttempts: ReadonlyMap<string, number>,
+  maxAttempts: number,
+): string[] {
+  const indexedAt = new Map<string, number | null>();
+  for (const item of indexedProducts) {
+    if (item.productUrl) indexedAt.set(item.productUrl, item.updatedAt);
+  }
+  return sitemapUrls.filter((url) => {
+    const isKnown = indexedAt.has(url);
+    const updatedAt = indexedAt.get(url);
+    const refreshDue =
+      !isKnown ||
+      (refreshStartedAt !== null && (updatedAt === null || updatedAt === undefined || updatedAt < refreshStartedAt));
+    return refreshDue && (refusedAttempts.get(url) ?? 0) < maxAttempts;
+  });
+}
+
 type JsonRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is JsonRecord {
