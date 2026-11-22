@@ -187,39 +187,36 @@ function parseDelimitedWorkspacePreview(source: string, delimiter: string): stri
 function WorkspaceAttachmentDocument({
   name,
   html,
-  objectUrl,
 }: {
   name: string;
   html: string | null;
-  objectUrl: string | null;
 }) {
-  // Unknown formats always keep a usable way to get the original file. A
-  // download-only card replaces the iframe when no object URL could be made,
-  // so a failed/unsupported preview never leaves a blank error frame.
-  if (!html && !objectUrl)
+  // Never put an unrecognized document in an iframe: browsers may download
+  // Office files instead of rendering them, including when a chat remounts.
+  // The original file remains available from the explicit button below.
+  if (!html)
     return (
-      <div className="my-2 rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]" role="status">
+      <div
+        className="my-2 rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]"
+        role="status"
+        data-testid="unsupported-document-preview"
+      >
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · file ready to download</p>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · preview unavailable</p>
+            <p className="mt-1 text-xs text-[#667b82] dark:text-[#a8bac8]">
+              This document format can’t be rendered here. Download the original to open it.
+            </p>
+          </div>
         </div>
       </div>
     );
-  if (html) {
-    return (
-      <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
-        </div>
-        <div className="prose prose-sm max-w-none text-[#52666e] dark:text-[#a8bac8]" dangerouslySetInnerHTML={{ __html: html }} />
-      </div>
-    );
-  }
   return (
-    <div className="rounded-xl border border-[#dce9e8] bg-white p-3 dark:border-[#2a3f52] dark:bg-[#10232d]">
+    <div className="rounded-xl border border-[#dce9e8] bg-white p-4 dark:border-[#2a3f52] dark:bg-[#10232d]">
       <div className="mb-2 flex items-center justify-between gap-3">
         <p className="text-[10px] font-bold uppercase tracking-[.12em] text-[#16869a]">{name} · document preview</p>
       </div>
-      <iframe title={name} src={objectUrl ?? undefined} className="h-[360px] w-full rounded-lg border border-[#eef3f2] bg-[#f7faf9] dark:border-[#2a3f52] dark:bg-[#10232d]" />
+      <div className="prose prose-sm max-w-none text-[#52666e] dark:text-[#a8bac8]" dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   );
 }
@@ -667,7 +664,7 @@ export function WorkspaceFileViewer({ name, src }: WorkspaceFileViewerProps) {
     );
   return (
     <WorkspaceAttachmentPreview name={name} downloadUrl={downloadUrl}>
-      <WorkspaceAttachmentDocument name={name} html={documentHtml} objectUrl={objectUrl} />
+      <WorkspaceAttachmentDocument name={name} html={documentHtml} />
     </WorkspaceAttachmentPreview>
   );
 }

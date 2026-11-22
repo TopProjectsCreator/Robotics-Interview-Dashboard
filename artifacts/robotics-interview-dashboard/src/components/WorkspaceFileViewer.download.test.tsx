@@ -75,6 +75,32 @@ describe("workspace attachment downloads", () => {
     expect(clickedAnchors[0]?.href).toMatch(/^blob:/);
   });
 
+  it("does not embed unknown Office binaries in an iframe on mount or source change", async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const legacyWordHeader = new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(legacyWordHeader, { status: 200, headers: { "content-type": "application/octet-stream" } })),
+    );
+    const { container, rerender } = render(
+      <WorkspaceFileViewer name="office-object-id" src="/api/storage/objects/office-object-id" />,
+    );
+
+    expect(await screen.findByTestId("unsupported-document-preview")).toHaveTextContent("preview unavailable");
+    expect(container.querySelector("iframe")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download office-object-id" })).toBeInTheDocument();
+    expect(clickSpy).not.toHaveBeenCalled();
+
+    rerender(
+      <WorkspaceFileViewer name="next-office-object-id" src="/api/storage/objects/next-office-object-id" />,
+    );
+
+    expect(await screen.findByRole("button", { name: "Download next-office-object-id" })).toBeInTheDocument();
+    expect(screen.getByTestId("unsupported-document-preview")).toHaveTextContent("next-office-object-id");
+    expect(container.querySelector("iframe")).not.toBeInTheDocument();
+    expect(clickSpy).not.toHaveBeenCalled();
+  });
+
   it("keeps the archive and an extracted text member downloadable", async () => {
     const archive = zipSync({ "notes/readme.txt": strToU8("Archive notes") });
     vi.stubGlobal(
