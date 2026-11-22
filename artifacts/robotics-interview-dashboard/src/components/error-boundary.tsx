@@ -46,12 +46,9 @@ function DefaultFallback({ error, resetError }: ErrorFallbackProps) {
           This part of the app hit an error. The rest of the app is still
           running.
         </p>
-        {/* Dev only: messages can carry API responses and other internals. */}
-        {import.meta.env.DEV ? (
-          <pre className="mt-4 overflow-x-auto rounded bg-gray-100 p-3 text-left text-xs text-gray-800">
-            {error.message || String(error)}
-          </pre>
-        ) : null}
+        {/* The real error is logged to the console by componentDidCatch for
+            debugging. Never render its message here — even in dev builds it
+            can expose internals to anyone using the app. */}
         <button
           type="button"
           onClick={resetError}

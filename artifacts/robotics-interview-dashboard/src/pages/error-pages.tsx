@@ -532,10 +532,14 @@ export function NotFound() {
 }
 
 export function CrashFallback({ error, resetError }: ErrorFallbackProps) {
+  // The real error is logged to the console by ErrorBoundary.componentDidCatch
+  // for debugging — never show its message to users. Raw exceptions can leak
+  // internals (field names, API responses, implementation details).
+  void error;
   return (
     <ErrorStatePage
       config={ERROR_PAGES[500]}
-      target={error.message || "Unhandled render error"}
+      target="The control room"
       retry={resetError}
     />
   );

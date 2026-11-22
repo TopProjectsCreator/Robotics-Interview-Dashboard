@@ -16,11 +16,16 @@ export function BoardChatCard({ boardId, fallbackTitle, onOpen }: BoardChatCardP
     },
   });
   const board = query.data as Board | undefined;
-  const title = board?.title ?? fallbackTitle;
-  const description = board?.data.description;
-  const cards = board?.data.cards ?? [];
-  const checklistCount = cards.reduce((total, card) => total + card.checklist.length, 0);
-  const completedChecklistCount = cards.reduce((total, card) => total + card.checklist.filter(item => item.completed).length, 0);
+  const title = typeof board?.title === "string" ? board.title : fallbackTitle;
+  const description = typeof board?.data?.description === "string" ? board.data.description : undefined;
+  // Older boards predate per-card checklist/attachment fields. Never assume
+  // they exist: one malformed legacy card used to throw here and take down the
+  // whole chat with the error boundary. A malformed cards field is treated as
+  // empty, and so are any non-array per-card arrays.
+  const rawCards = board?.data?.cards;
+  const cards = Array.isArray(rawCards) ? rawCards : [];
+  const checklistCount = cards.reduce((total, card) => total + (Array.isArray(card?.checklist) ? card.checklist.length : 0), 0);
+  const completedChecklistCount = cards.reduce((total, card) => total + (Array.isArray(card?.checklist) ? card.checklist.filter(item => Boolean(item?.completed)).length : 0), 0);
 
   return (
     <button

@@ -61,7 +61,7 @@ type CardDraft = {
 const labelPalette = ["#16869a", "#6474c8", "#c17b26", "#3e8b66", "#b24e5b", "#8258a8"];
 
 function labelName(label: BoardLabel) {
-  return typeof label === "string" ? label : label.name;
+  return typeof label === "string" ? label : label?.name ?? "";
 }
 
 function normalizedLabels(labels: BoardLabel[]) {
@@ -80,6 +80,34 @@ const priorityMeta: Record<BoardCard["priority"], { label: string; color: string
   normal: { label: "Normal", color: "hsl(190 62% 36%)", bg: "hsl(185 58% 94%)" },
   low: { label: "Low", color: "hsl(151 47% 38%)", bg: "hsl(150 48% 94%)" },
 };
+
+// Legacy cards predate several per-card fields. Normalize them once when cards
+// are consumed so every render path (tiles, filters, table/list, detail view)
+// can rely on arrays and a valid priority/title instead of throwing.
+function safeCard(card: BoardCard): BoardCard {
+  const source = card && typeof card === "object" ? card : {} as BoardCard;
+  const text = (value: unknown) => typeof value === "string" ? value : "";
+  return {
+    ...source,
+    title: text(source.title),
+    description: text(source.description),
+    columnId: text(source.columnId),
+    position: typeof source.position === "number" && Number.isFinite(source.position) ? source.position : 0,
+    priority: Object.hasOwn(priorityMeta, source.priority) ? source.priority : "normal",
+    assignee: typeof source.assignee === "string" ? source.assignee : null,
+    startDate: typeof source.startDate === "string" ? source.startDate : null,
+    dueDate: typeof source.dueDate === "string" ? source.dueDate : null,
+    cover: source.cover && typeof source.cover === "object" ? source.cover : null,
+    labels: Array.isArray(source.labels) ? source.labels : [],
+    checklist: Array.isArray(source.checklist) ? source.checklist : [],
+    attachments: Array.isArray(source.attachments) ? source.attachments : [],
+    comments: Array.isArray(source.comments) ? source.comments : [],
+    activity: Array.isArray(source.activity) ? source.activity : [],
+    createdAt: text(source.createdAt),
+    updatedAt: text(source.updatedAt),
+    updatedBy: text(source.updatedBy),
+  };
+}
 
 function dateLabel(value: string | null) {
   if (!value) return "No date";
@@ -173,6 +201,12 @@ function CardCollaboration({ boardId, card, onPatch, onComment }: {
   const [coverColor, setCoverColor] = useState(card.cover?.type === "color" ? card.cover.color : "#16869a");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // The card is normalized via safeCard at every call site, but keep these
+  // guards local too so this section can never crash on legacy data.
+  const checklist = Array.isArray(card.checklist) ? card.checklist : [];
+  const attachments = Array.isArray(card.attachments) ? card.attachments : [];
+  const comments = Array.isArray(card.comments) ? card.comments : [];
+  const activity = Array.isArray(card.activity) ? card.activity : [];
 
   const commit = async (patch: BoardCardPatch) => {
     setBusy(true);
@@ -186,9 +220,9 @@ function CardCollaboration({ boardId, card, onPatch, onComment }: {
   const addChecklistItem = async (event: FormEvent) => {
     event.preventDefault();
     const title = checklistTitle.trim();
-    if (!title || card.checklist.length >= 100) return;
+    if (!title || checklist.length >= 100) return;
     const saved = await onPatch({
-      checklist: [...card.checklist, { id: crypto.randomUUID(), title, completed: false }],
+      checklist: [...checklist, { id: crypto.randomUUID(), title, completed: false }],
     });
     if (saved) setChecklistTitle("");
     else setError("Could not save this checklist item. Please retry.");
@@ -205,7 +239,7 @@ function CardCollaboration({ boardId, card, onPatch, onComment }: {
       return;
     }
     const saved = await onPatch({
-      attachments: [...card.attachments, { type: "link", id: crypto.randomUUID(), label, url: rawUrl }],
+      attachments: [...attachments, { type: "link", id: crypto.randomUUID(), label, url: rawUrl }],
     });
     if (saved) { setLinkLabel(""); setLinkUrl(""); setError(""); }
     else setError("Could not save this link. Please retry.");
@@ -218,7 +252,7 @@ function CardCollaboration({ boardId, card, onPatch, onComment }: {
       uploaded = await uploadBoardCardAsset(boardId, file, { fileName: file.name }, {
         headers: { "Content-Type": file.type || "application/octet-stream" },
       });
-      const nextAttachments = [...card.attachments, uploaded];
+      const nextAttachments = [...attachments, uploaded];
       const patch: BoardCardPatch = { attachments: nextAttachments };
       if (uploaded.contentType.startsWith("image/") && !card.cover) {
         patch.cover = { type: "image", assetId: uploaded.id };
@@ -247,38 +281,38 @@ function CardCollaboration({ boardId, card, onPatch, onComment }: {
     }
   };
 
-  const attachmentFiles = card.attachments.filter((item): item is Extract<BoardCardAttachment, { type: "file" }> => item.type === "file");
-  const progress = card.checklist.filter(item => item.completed).length;
+  const attachmentFiles = attachments.filter((item): item is Extract<BoardCardAttachment, { type: "file" }> => item?.type === "file");
+  const progress = checklist.filter(item => item?.completed).length;
   return <section className="mt-5 space-y-5 border-t border-border pt-5" aria-label="Card collaboration">
     <section aria-labelledby="checklist-heading">
-      <div className="mb-2 flex items-center justify-between"><h3 id="checklist-heading" className="text-sm font-semibold">Checklist</h3><span className="text-xs text-muted-foreground">{progress} of {card.checklist.length} complete</span></div>
-      {card.checklist.length > 0 && <ul className="space-y-1.5">{card.checklist.map((item, index) => <li key={item.id} className="flex min-h-11 items-center gap-2 rounded-lg bg-muted/50 px-2"><input type="checkbox" checked={item.completed} disabled={busy} onChange={() => void commit({ checklist: card.checklist.map(candidate => candidate.id === item.id ? { ...candidate, completed: !candidate.completed } : candidate) })} aria-label={`Mark ${item.title} ${item.completed ? "incomplete" : "complete"}`} data-testid={`checkbox-checklist-${item.id}`} className="h-4 w-4 accent-[hsl(var(--primary))]" /><span className={`min-w-0 flex-1 break-words text-sm ${item.completed ? "text-muted-foreground line-through" : "text-foreground"}`}>{item.title}</span><button type="button" disabled={busy} onClick={() => void commit({ checklist: card.checklist.filter(candidate => candidate.id !== item.id) })} aria-label={`Remove ${item.title}`} data-testid={`button-remove-checklist-${item.id}`} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"><X size={14} /></button><span className="sr-only">Item {index + 1} of {card.checklist.length}</span></li>)}</ul>}
-      <form onSubmit={addChecklistItem} className="mt-2 flex gap-2"><input value={checklistTitle} onChange={event => setChecklistTitle(event.target.value)} maxLength={200} aria-label="New checklist item" data-testid="input-checklist-item" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="Add a subtask" /><Button label="add-checklist-item" type="submit" disabled={busy || !checklistTitle.trim() || card.checklist.length >= 100}><Plus size={14} />Add</Button></form>
+      <div className="mb-2 flex items-center justify-between"><h3 id="checklist-heading" className="text-sm font-semibold">Checklist</h3><span className="text-xs text-muted-foreground">{progress} of {checklist.length} complete</span></div>
+      {checklist.length > 0 && <ul className="space-y-1.5">{checklist.map((item, index) => <li key={item.id} className="flex min-h-11 items-center gap-2 rounded-lg bg-muted/50 px-2"><input type="checkbox" checked={Boolean(item?.completed)} disabled={busy} onChange={() => void commit({ checklist: checklist.map(candidate => candidate.id === item.id ? { ...candidate, completed: !candidate.completed } : candidate) })} aria-label={`Mark ${item.title} ${item.completed ? "incomplete" : "complete"}`} data-testid={`checkbox-checklist-${item.id}`} className="h-4 w-4 accent-[hsl(var(--primary))]" /><span className={`min-w-0 flex-1 break-words text-sm ${item.completed ? "text-muted-foreground line-through" : "text-foreground"}`}>{item.title}</span><button type="button" disabled={busy} onClick={() => void commit({ checklist: checklist.filter(candidate => candidate.id !== item.id) })} aria-label={`Remove ${item.title}`} data-testid={`button-remove-checklist-${item.id}`} className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-50"><X size={14} /></button><span className="sr-only">Item {index + 1} of {checklist.length}</span></li>)}</ul>}
+      <form onSubmit={addChecklistItem} className="mt-2 flex gap-2"><input value={checklistTitle} onChange={event => setChecklistTitle(event.target.value)} maxLength={200} aria-label="New checklist item" data-testid="input-checklist-item" className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="Add a subtask" /><Button label="add-checklist-item" type="submit" disabled={busy || !checklistTitle.trim() || checklist.length >= 100}><Plus size={14} />Add</Button></form>
     </section>
 
     <section aria-labelledby="attachments-heading">
       <h3 id="attachments-heading" className="mb-2 text-sm font-semibold">Files, links, and cover</h3>
       <div className="flex flex-wrap items-center gap-2">
         <label className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-accent ${busy ? "pointer-events-none opacity-50" : ""}`}><Paperclip size={14} />Upload file<input type="file" accept="image/png,image/jpeg,image/webp,application/pdf,text/plain,text/csv" disabled={busy} onChange={event => { const file = event.currentTarget.files?.[0]; if (file) void uploadFile(file); event.currentTarget.value = ""; }} aria-label="Upload a card attachment" data-testid="input-card-attachment" className="sr-only" /></label>
-        {attachmentFiles.length === 0 && card.attachments.filter(item => item.type === "link").length === 0 && <span className="text-xs text-muted-foreground">No attachments yet.</span>}
+        {attachmentFiles.length === 0 && attachments.filter(item => item?.type === "link").length === 0 && <span className="text-xs text-muted-foreground">No attachments yet.</span>}
       </div>
-      {card.attachments.length > 0 && <ul className="mt-2 space-y-1">{card.attachments.map(item => <li key={item.id} className="flex min-h-10 items-center gap-2 rounded-lg border border-border/70 px-2 text-xs">
+      {attachments.length > 0 && <ul className="mt-2 space-y-1">{attachments.map(item => <li key={item?.id} className="flex min-h-10 items-center gap-2 rounded-lg border border-border/70 px-2 text-xs">
         {item.type === "file" ? <><Paperclip size={13} className="shrink-0 text-muted-foreground" /><a href={assetUrl(boardId, item.id)} download={item.name} target="_blank" rel="noreferrer" data-testid={`link-board-attachment-${item.id}`} className="min-w-0 flex-1 truncate font-medium text-primary underline-offset-2 hover:underline">{item.name}</a><span className="shrink-0 text-muted-foreground">{Math.max(1, Math.round(item.size / 1024))} KB</span>{item.contentType.startsWith("image/") && <Button label={`set-cover-${item.id}`} variant="quiet" onClick={() => void commit({ cover: { type: "image", assetId: item.id } })}><ImageIcon size={14} />Cover</Button>}</> : <><Link2 size={13} className="shrink-0 text-muted-foreground" /><a href={item.url} target="_blank" rel="noopener noreferrer" data-testid={`link-board-reference-${item.id}`} className="min-w-0 flex-1 truncate font-medium text-primary underline-offset-2 hover:underline">{item.label}</a><span className="sr-only">{item.url}</span></>}
-        <Button label={`remove-attachment-${item.id}`} variant="quiet" onClick={() => { const attachments = card.attachments.filter(candidate => candidate.id !== item.id); const cover = card.cover?.type === "image" && card.cover.assetId === item.id ? null : card.cover; void commit({ attachments, cover }); }} disabled={busy}><X size={13} /></Button>
+        <Button label={`remove-attachment-${item.id}`} variant="quiet" onClick={() => { const nextAttachments = attachments.filter(candidate => candidate.id !== item.id); const cover = card.cover?.type === "image" && card.cover.assetId === item.id ? null : card.cover; void commit({ attachments: nextAttachments, cover }); }} disabled={busy}><X size={13} /></Button>
       </li>)}</ul>}
       <form onSubmit={addLink} className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,0.7fr)_minmax(0,1fr)_auto]"><input value={linkLabel} onChange={event => setLinkLabel(event.target.value)} maxLength={120} aria-label="Link label" data-testid="input-card-link-label" className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="Link name" /><input type="url" value={linkUrl} onChange={event => setLinkUrl(event.target.value)} maxLength={2048} aria-label="Web link URL" data-testid="input-card-link-url" className="min-w-0 rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="https://" /><Button label="add-card-link" type="submit" disabled={busy || !linkLabel.trim() || !linkUrl.trim()}><Plus size={13} />Add link</Button></form>
       <div className="mt-3 flex flex-wrap items-center gap-2"><span className="text-xs font-medium text-muted-foreground">Color cover</span><input type="color" value={coverColor} onChange={event => setCoverColor(event.target.value)} aria-label="Card cover color" data-testid="input-card-cover-color" className="h-10 w-12 cursor-pointer rounded-lg border border-input bg-background p-1" /><Button label="set-card-color-cover" onClick={() => void commit({ cover: { type: "color", color: coverColor } })} disabled={busy}><ImageIcon size={13} />Set color</Button>{card.cover && <Button label="remove-card-cover" variant="quiet" onClick={() => void commit({ cover: null })} disabled={busy}>Remove cover</Button>}</div>
     </section>
 
     <section aria-labelledby="comments-heading">
-      <h3 id="comments-heading" className="mb-2 flex items-center gap-2 text-sm font-semibold"><MessageSquare size={15} />Team discussion <span className="text-xs font-normal text-muted-foreground">{card.comments.length}</span></h3>
-      {card.comments.length === 0 ? <p className="rounded-lg bg-muted/50 px-3 py-3 text-xs text-muted-foreground">No comments yet. Add context for the next handoff.</p> : <ul className="max-h-56 space-y-2 overflow-y-auto">{card.comments.map(comment => <li key={comment.id} className="rounded-lg border border-border/70 p-3" data-testid={`comment-board-card-${comment.id}`}><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold">{comment.author}</span><time dateTime={new Date(comment.createdAt).toISOString()} className="text-[10px] text-muted-foreground">{dateTimeLabel(new Date(comment.createdAt).toISOString())}</time></div><p className="mt-1 whitespace-pre-wrap break-words text-sm">{comment.text}</p></li>)}</ul>}
+      <h3 id="comments-heading" className="mb-2 flex items-center gap-2 text-sm font-semibold"><MessageSquare size={15} />Team discussion <span className="text-xs font-normal text-muted-foreground">{comments.length}</span></h3>
+      {comments.length === 0 ? <p className="rounded-lg bg-muted/50 px-3 py-3 text-xs text-muted-foreground">No comments yet. Add context for the next handoff.</p> : <ul className="max-h-56 space-y-2 overflow-y-auto">{comments.map(comment => <li key={comment.id} className="rounded-lg border border-border/70 p-3" data-testid={`comment-board-card-${comment.id}`}><div className="flex items-center justify-between gap-2"><span className="text-xs font-semibold">{comment.author}</span><time dateTime={new Date(comment.createdAt).toISOString()} className="text-[10px] text-muted-foreground">{dateTimeLabel(new Date(comment.createdAt).toISOString())}</time></div><p className="mt-1 whitespace-pre-wrap break-words text-sm">{comment.text}</p></li>)}</ul>}
       <form onSubmit={addComment} className="mt-2 space-y-2"><textarea value={commentText} onChange={event => setCommentText(event.target.value)} maxLength={4000} rows={3} aria-label="Write a comment" data-testid="textarea-board-comment" className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-base md:text-sm outline-none focus:border-primary" placeholder="Share a handoff note or a useful detail" /><div className="flex justify-end"><Button label="post-board-comment" type="submit" variant="primary" disabled={busy || !commentText.trim()}>Post comment</Button></div></form>
     </section>
 
     <section aria-labelledby="activity-heading">
       <h3 id="activity-heading" className="mb-2 text-sm font-semibold">Activity history</h3>
-      {card.activity.length === 0 ? <p className="text-xs text-muted-foreground">No card activity yet.</p> : <ol className="space-y-2 border-l border-border pl-4">{[...card.activity].reverse().map((entry: BoardCardActivity) => <li key={entry.id} className="relative text-xs"><span aria-hidden="true" className="absolute -left-[1.32rem] top-1 h-2 w-2 rounded-full bg-primary" /><span className="font-semibold">{entry.actor}</span><span className="text-muted-foreground"> {entry.detail}</span><time dateTime={new Date(entry.createdAt).toISOString()} className="mt-0.5 block text-[10px] text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</time></li>)}</ol>}
+      {activity.length === 0 ? <p className="text-xs text-muted-foreground">No card activity yet.</p> : <ol className="space-y-2 border-l border-border pl-4">{[...activity].reverse().map((entry: BoardCardActivity) => <li key={entry.id} className="relative text-xs"><span aria-hidden="true" className="absolute -left-[1.32rem] top-1 h-2 w-2 rounded-full bg-primary" /><span className="font-semibold">{entry.actor}</span><span className="text-muted-foreground"> {entry.detail}</span><time dateTime={new Date(entry.createdAt).toISOString()} className="mt-0.5 block text-[10px] text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</time></li>)}</ol>}
     </section>
     {error && <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive" role="alert" data-testid="status-card-collaboration-error">{error}</p>}
   </section>;
@@ -337,9 +371,15 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   const [sort, setSort] = useState<"position" | "priority" | "dueDate" | "title">("position");
 
   const board = query.data as Board | undefined;
-  const columns = useMemo(() => [...(board?.data?.columns ?? [])].sort((a, b) => a.position - b.position), [board?.data?.columns]);
-  const cards = useMemo(() => board?.data?.cards ?? [], [board?.data?.cards]);
-  const currentActiveCard = activeCard ? cards.find(card => card.id === activeCard.id) ?? activeCard : null;
+  const boardTitle = typeof board?.title === "string" ? board.title : "Board";
+  const boardDescription = typeof board?.data?.description === "string" ? board.data.description : "";
+  const columns = useMemo(() => (Array.isArray(board?.data?.columns) ? [...board!.data!.columns] : []).sort((a, b) => a.position - b.position), [board?.data?.columns]);
+  // Normalize once here: every view and the detail dialog consume these cards.
+  const cards = useMemo<BoardCard[]>(() => {
+    const raw = board?.data?.cards;
+    return (Array.isArray(raw) ? raw : []).filter(card => Boolean(card) && typeof card === "object").map(safeCard);
+  }, [board?.data?.cards]);
+  const currentActiveCard = activeCard ? cards.find(card => card.id === activeCard.id) ?? safeCard(activeCard) : null;
   const filteredCards = useMemo(() => cards.filter(card => {
     const haystack = `${card.title} ${boardBriefPlainText(card.description)} ${card.labels.map(labelName).join(" ")} ${card.assignee ?? ""}`.toLowerCase();
     return (!search.trim() || haystack.includes(search.trim().toLowerCase())) && (priorityFilter === "all" || card.priority === priorityFilter) && (assigneeFilter === "all" || card.assignee === assigneeFilter);
@@ -402,7 +442,7 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
     }
   };
 
-  const openDetail = (card: BoardCard) => beginEdit(card);
+  const openDetail = (card: BoardCard) => beginEdit(safeCard(card));
   const deleteCard = async () => {
     if (!currentActiveCard || !(await confirmAction({ title: `Delete "${currentActiveCard.title}"?`, danger: true, confirmLabel: "Delete" }))) return;
     const result = await apply({ operation: "delete_card", cardId: currentActiveCard.id });
@@ -417,8 +457,8 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
   };
   const beginEditBoardDetails = () => {
     if (!board) return;
-    setBoardTitleDraft(board.title);
-    setBoardDescriptionDraft(board.data.description);
+    setBoardTitleDraft(boardTitle);
+    setBoardDescriptionDraft(boardDescription);
     setError("");
     setModal("boardDetails");
   };
@@ -465,7 +505,7 @@ export function BoardEditor({ boardId, assignees, onClose }: BoardEditorProps) {
     <header className="shrink-0 border-b border-border bg-card/95 shadow-sm backdrop-blur">
       <div className="flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6"
         style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))", paddingLeft: "max(1rem, env(safe-area-inset-left))", paddingRight: "max(1rem, env(safe-area-inset-right))" }}>
-        <div className="flex min-w-0 flex-1 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ClipboardList size={18} /></div><div className="min-w-0"><p className="mono text-[9px] font-bold uppercase tracking-[.18em] text-primary">Coordination board</p><h1 className="truncate text-lg font-semibold tracking-tight">{board.title}</h1><p className="max-w-[560px] truncate text-xs text-muted-foreground">{board.data.description || "No description yet"}</p></div></div>
+        <div className="flex min-w-0 flex-1 items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"><ClipboardList size={18} /></div><div className="min-w-0"><p className="mono text-[9px] font-bold uppercase tracking-[.18em] text-primary">Coordination board</p><h1 className="truncate text-lg font-semibold tracking-tight">{boardTitle}</h1><p className="max-w-[560px] truncate text-xs text-muted-foreground">{boardDescription || "No description yet"}</p></div></div>
         <div className="flex items-center gap-2"><span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex"><span className={`h-1.5 w-1.5 rounded-full ${saving ? "bg-accent" : error || query.isError ? "bg-destructive" : "bg-primary"}`} />{saving ? "Saving" : error ? "Save issue" : query.isError ? "Sync issue" : "Live"}</span><Button label="edit-board-details" onClick={beginEditBoardDetails}><Pencil size={14} />Edit details</Button><Button label="close-editor" onClick={onClose}><X size={15} />Close</Button></div>
       </div>
       <div className="flex flex-wrap items-center gap-2 border-t border-border/70 px-4 py-2.5 sm:px-6"
