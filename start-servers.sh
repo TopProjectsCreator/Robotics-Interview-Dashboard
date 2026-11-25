@@ -4,6 +4,12 @@
 set -u
 cd "$(dirname "$0")"
 
+# Restore Railway + Supabase CLI credentials after a sandbox restart.
+# Credentials are stored in gitignored .dev-secrets/cli-creds/.
+if [ -x ./.dev-secrets/cli-creds/restore.sh ]; then
+  ./.dev-secrets/cli-creds/restore.sh
+fi
+
 # Secrets (DATABASE_URL, ADMIN_PASSWORD, SESSION_SECRET, Supabase keys)
 set -a
 # shellcheck source=/dev/null

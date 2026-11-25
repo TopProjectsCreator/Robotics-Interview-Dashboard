@@ -1,0 +1,10 @@
+---
+name: Product docs and the public briefing omit a large share of shipped features
+description: A code-level audit found dozens of real features absent from README.md, replit.md, and the public AGENTS.md briefing; never treat the briefing as a complete inventory.
+---
+
+A four-way code audit (chat/collaboration, parts/CAD/code, assistant/custom apps, settings/public surfaces + git history) found dozens of shipped capabilities that none of the product docs described. Examples: draft order tray and server-enforced order limits, supplier blocking/FTC pricing toggle, offer grouping and sitemap crawler, progressive Parasolid jobs, WASM STEP/IGES with triangle guards, FTC-aware Java lint rules, in-browser isomorphic-git, three deploy paths with different guarantees, thinking-level and Scripted tool-exposure modes, node:vm script sandbox, BYOK three-step wizard with SSRF checks, skills/MCP OAuth flows, recurring-task activation codes, five-round independent critique with visual QA and subagents, settings assistant with HMAC confirmations, breached-password multi-step acknowledgement, 10-card Operations tab, TinyURLs, board/calendar/spreadsheet power features, and deep chat semantics (slow mode presets, ghosting, pinned carousel, streaming export, cross-tab notifications).
+
+**Why:** The Nov 2026 docs refresh first relied on the public `AGENTS.md` briefing, which the user explicitly said is outdated and must not be used as a source. The briefing is a short marketing snapshot; the actual feature surface is far larger. The refreshed `README.md` and `replit.md` were rebuilt from router, OpenAPI paths, page/component code, API route bodies, and commit history.
+
+**How to apply:** For any "list all features" request, audit code directly and cross-check negative findings before documenting them. Confirmed absences: no low-stock alert implementation, no CAD model versioning/sharing/README editing, no code revision diff/restore (only snapshots with restore), and no free-text chat-message search. Keep these out of docs.

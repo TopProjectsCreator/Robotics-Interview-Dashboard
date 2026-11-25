@@ -27,9 +27,9 @@ describe("AgentsMdPage", () => {
     render(<AgentsMdPage />);
 
     const article = screen.getByTestId("agents-md-article");
-    await waitFor(() => expect(article).toHaveTextContent("The server is the referee."));
-    expect(article).toHaveTextContent("Cross-team reads return nothing — not filtered, absent.");
-    expect(article).toHaveTextContent("How it works, in plain words");
+    await waitFor(() => expect(article).toHaveTextContent("Server is referee"));
+    expect(article).toHaveTextContent("Cross-team reads return nothing");
+    expect(article).toHaveTextContent("Why it's safe");
 
     const navigation = screen.getByTestId("agents-md-toc-nav");
     const sectionHeadings = sourceSectionHeadings(canonicalBriefing);

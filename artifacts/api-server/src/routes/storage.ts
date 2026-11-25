@@ -40,7 +40,7 @@ import {
   authenticatedInterviewerId,
   requestTeamId,
   requireAdmin,
-  requireWolverinesCoordinator,
+  requireSiteOwner,
   requireWorkspaceAccess,
   requireWorkspaceAccessOrCoordinator,
 } from "../middlewares/adminAuth";
@@ -67,7 +67,9 @@ import { isTeamAssessmentFileReferenced } from "../lib/teamAssessmentRules";
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();
 
-router.get('/storage/cad-status', requireWolverinesCoordinator, async (req: Request, res: Response): Promise<void> => {
+// Failover status is operator-only: no ordinary user (including Wolverines
+// coordinators) should learn that uploads are being written to secondary storage.
+router.get('/storage/cad-status', requireSiteOwner, async (req: Request, res: Response): Promise<void> => {
   const status = getCadStorageStatus();
   if (
     status.usingBackupStorage &&

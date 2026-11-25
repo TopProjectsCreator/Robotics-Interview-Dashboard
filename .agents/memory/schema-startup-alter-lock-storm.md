@@ -1,0 +1,10 @@
+---
+name: Idempotent startup ALTERs can lock a busy table
+description: ALTER TABLE ... ADD COLUMN IF NOT EXISTS still takes ACCESS EXCLUSIVE; a startup migration loop on a busy chat table blocks all reads and starves the pg pool.
+---
+
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS` and `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` take ACCESS EXCLUSIVE even when the column/RLS already exists. Re-running these on every process start can stall a live app.
+
+**Why:** On 2026-11-23 prod's primary turned unresponsive: response times p50 610 ms, p90 7 s, max 472 s, with `pg-pool` "timeout exceeded when trying to connect". Direct `psql` to the primary answered in 0.5 s, so the DB was healthy. `pg_stat_activity` showed a repeating chain: a short `INSERT INTO interview_chat_messages` (no blockers) → a startup `ALTER TABLE interview_chat_messages ADD COLUMN IF NOT EXISTS ...` waiting on `Lock/relation` → every chat `SELECT` waiting on the ALTER. Postgres's FIFO lock queue makes the pending ALTER block all later readers, and the app's `DATABASE_POOL_MAX=4` pool (with a 120 s `connectionTimeoutMillis`) filled up. The startup list had 9 redundant ALTERs on that one table, each taking its turn.
+
+**How to apply:** Diagnose with `select pid, wait_event_type, pg_blocking_pids(pid), query from pg_stat_activity where state='active'` — not just slow HTTP timings. Make startup migrations true no-ops: check `information_schema.columns` before `ADD COLUMN IF NOT EXISTS`, `pg_trigger` before `CREATE OR REPLACE TRIGGER`, `pg_indexes` before `CREATE INDEX IF NOT EXISTS`, and `pg_class.relrowsecurity` before `ENABLE ROW LEVEL SECURITY`. **Also wrap every schema statement in `begin; set local lock_timeout = '3s'; ...; commit;`** — this is the general backstop for any DDL the no-op helpers miss; a blocked migration then fails fast and retries instead of blocking the app's own INSERTs. Sending a chat message took 30–60 s before this fix and 0.2 s after. Remember `connectionTimeoutMillis` controls pool acquisition, not query duration, so a saturated pool shows up as "timeout exceeded when trying to connect" with huge response times.

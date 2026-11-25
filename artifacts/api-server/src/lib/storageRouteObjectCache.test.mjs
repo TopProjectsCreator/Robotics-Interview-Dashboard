@@ -89,7 +89,7 @@ async function loadStorageObjectsRoute(t) {
       requestTeamId: async () => "default",
       requireAdmin: (_req, _res, next) => next(),
       requireCoordinator: (_req, _res, next) => next(),
-      requireWolverinesCoordinator: (_req, _res, next) => next(),
+      requireSiteOwner: (_req, _res, next) => next(),
       requireWorkspaceAccess: () => (_req, _res, next) => next(),
       requireWorkspaceAccessOrCoordinator: () => (_req, _res, next) => next(),
     },

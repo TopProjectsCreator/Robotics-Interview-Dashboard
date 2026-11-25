@@ -215,7 +215,7 @@ describe("CAD workspace tree", () => {
     expect(css).toMatch(/\.cad-library-sidebar\s*\{[^}]*overscroll-behavior-y:\s*contain/s);
   });
 
-  it("shows the failover notice when the permitted admin receives backup status", async () => {
+  it("shows the failover notice when the site owner receives backup status", async () => {
     renderPage(undefined, {
       usingBackupStorage: true,
       lastFailoverAt: "2026-10-15T10:00:00.000Z",

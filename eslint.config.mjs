@@ -9,6 +9,8 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/dist/**",
       "**/coverage/**",
+      // Gitignored local credentials/vendor bundles restored by start-servers.sh.
+      "**/.dev-secrets/**",
       "lib/api-client-react/src/generated/**",
       "lib/api-zod/src/generated/**",
       "artifacts/robotics-interview-dashboard/browser-tests/**",

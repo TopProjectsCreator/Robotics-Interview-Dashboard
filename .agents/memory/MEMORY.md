@@ -95,3 +95,28 @@
 - [Auto-backgrounding OpenCode tools](opencode-auto-background-hooks.md) — rewrite tool input in execute.before; shell timeout needs 2.3+, subagents have no timeout field.
 - [Supabase egress diagnosis](supabase-egress-diagnosis.md) — no egress API; use metrics counters + pg_stat_statements, and treat 402 exceed_egress_quota as the signal.
 - [Poll loop full-row egress](poll-loop-full-row-egress.md) — project polled columns, bound recovery scans, abort SSE polls on disconnect.
+- [Public agent briefing drift](public-agent-briefing-drift.md) — verify the public AGENTS.md briefing against code; it routinely lags the app and its dist copy.
+- [CAD failover notice owner-only](cad-failover-notice-owner-only.md) — storage failover status is creator-only; never widen the cad-status gate to coordinators.
+- [Site-owner gate semantics](site-owner-gate-semantics.md) — requireSiteOwner means the app creator, not a team coordinator; use it for creator-only features.
+- [adminAuth route test mocks](admin-auth-route-test-mocks.md) — route tests stub adminAuth exports; update every stub when a route changes its gate.
+- [Public briefing serving pipeline](public-briefing-serving-pipeline.md) — AGENTS.md is a Vite public asset with /agents.md alias and a rendered /agents page; sync dist manually.
+- [Root docs divergence](root-docs-divergence.md) — README.md is the exhaustive product catalog, replit.md the ops runbook; both rebuilt from code audits with the legacy workflow excluded.
+- [Undocumented shipped features](undocumented-shipped-features.md) — code audit found dozens of features absent from all docs; briefing is not a complete inventory; negative findings listed.
+- [Feature inventory audit method](feature-inventory-audit-method.md) — split the audit by subsystem and use router/OpenAPI/components/routes/commits with file:line evidence; never use AGENTS.md.
+- [Startup ALTER lock storm](schema-startup-alter-lock-storm.md) — idempotent ALTERs still take ACCESS EXCLUSIVE; check pg_blocking_pids, not just slow HTTP.
+- [Instance health probe gating](instance-health-probe-gating.md) — probes must start before schema; successful DDL must not reset failure counts.
+- [DM peer key substring match](dm-peer-key-substring-match.md) — match viewer as a whole chr(31) token; Yishaan is not Ishaan.
+- [Git LFS orphaned CAD asset](git-lfs-orphaned-cad-asset.md) — one 173 MB dead Parasolid .x_t drives all LFS bandwidth; check remote trees before assuming an LFS file is needed.
+- [Flat memory index under large context](memory-index-large-context.md) — with generous context, keep one flat complete index; folder-tree indexes add hops with no savings.
+- [Decouple memory index from file layout](memory-index-storage-decoupling.md) — files can move into topic folders while MEMORY.md stays flat and lists every memory.
+- [Memory directory consumers and nesting safety](memory-layout-tooling-consumers.md) — only the filing instruction, a recursive find, and two prose skill mentions read .agents/memory.
+- [Supabase→Railway migration state](supabase-railway-migration-state.md) — secondary restored to Railway PG; primary and Storage bytes blocked by 402.
+- [CLI credentials persist restarts](cli-credentials-persist-restarts.md) — auth copies in gitignored .dev-secrets/, restored by start-servers.sh.
+- [Briefing rewrite breaks agents test](briefing-rewrite-breaks-agents-test.md) — rewriting AGENTS.md requires updating agents-md.test.tsx's hard-coded phrase assertions.
+- [ESLint flat config ignores gitignore](eslint-flat-config-gitignore.md) — add gitignored dirs to eslint.config.mjs ignores or lint fails on vendored bundles.
+- [OpenCode v2 removed the GitHub action](opencode-v2-github-action-removal.md) — v2 has no action or `opencode github` command; pin v1.19.6 or rebuild with `opencode run`.
+- [OpenCode v2 run JSON output is delta text](opencode-v2-json-run-parser.md) — concatenate `part.text` per `part.id` from NDJSON to recover the answer.
+- [OpenCode free models need no API key](opencode-free-models-need-no-key.md) — big-pickle works with no OPENCODE_API_KEY; only free-quota 429s need a key.
+- [Porting the v1 OpenCode GitHub agent to v2](opencode-v2-github-port-gh-token.md) — pass GH_TOKEN so the agent can create issues/PRs, and avoid duplicate PRs from the dirty check.
+- [Railway cutover and prod fixes](railway-cutover-and-prod-fixes.md) — prod on Railway PG; DM/send/migration fixes deployed; push via token URL.
+- [Breached password override](breached-password-override.md) — exposed passwords need four risk dialogs + typed phrase; confirmLowExposure API flag.

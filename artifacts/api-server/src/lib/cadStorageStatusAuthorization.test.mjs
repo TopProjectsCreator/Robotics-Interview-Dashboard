@@ -15,7 +15,7 @@ registerHooks({
   },
 });
 
-test("CAD storage status access is limited to Wolverines coordinators", async (t) => {
+test("CAD storage status access is limited to the site owner", async (t) => {
   const previousNodeEnv = process.env.NODE_ENV;
   process.env.NODE_ENV = "test";
 
@@ -25,6 +25,7 @@ test("CAD storage status access is limited to Wolverines coordinators", async (t
     passwordHash: "password_hash",
     role: "role",
     teamId: "team_id",
+    isSiteOwner: "is_site_owner",
   };
   const revokedSessionsTable = { tokenHash: "token_hash" };
   mock.module("@workspace/db", {
@@ -69,7 +70,7 @@ test("CAD storage status access is limited to Wolverines coordinators", async (t
     else process.env.NODE_ENV = previousNodeEnv;
   });
 
-  const { createInterviewerSession, requireWolverinesCoordinator } =
+  const { createInterviewerSession, requireSiteOwner } =
     await import(`../middlewares/adminAuth.ts?cad-status-test=${Date.now()}`);
 
   async function requestFor(account) {
@@ -94,7 +95,7 @@ test("CAD storage status access is limited to Wolverines coordinators", async (t
     };
     let proceeded = false;
     await new Promise((resolve) => {
-      requireWolverinesCoordinator(req, res, () => {
+      requireSiteOwner(req, res, () => {
         proceeded = true;
         resolve();
       });
@@ -108,35 +109,38 @@ test("CAD storage status access is limited to Wolverines coordinators", async (t
     return { res, proceeded };
   }
 
-  await t.test("allows a Wolverines coordinator", async () => {
+  await t.test("allows the site owner", async () => {
     const { res, proceeded } = await requestFor({
-      id: "wolverines-coordinator",
+      id: "site-owner",
       role: "coordinator",
       teamId: "default",
+      isSiteOwner: true,
     });
     assert.equal(res.statusCode, 200);
     assert.equal(proceeded, true);
   });
 
-  await t.test("denies a non-admin Wolverines user without proceeding", async () => {
+  await t.test("denies a Wolverines coordinator who is not the site owner", async () => {
     const { res, proceeded } = await requestFor({
-      id: "wolverines-interviewer",
-      role: "interviewer",
+      id: "wolverines-coordinator",
+      role: "coordinator",
       teamId: "default",
+      isSiteOwner: false,
     });
     assert.equal(res.statusCode, 403);
     assert.equal(proceeded, false);
-    assert.deepEqual(res.body, { error: "Wolverines coordinators only" });
+    assert.deepEqual(res.body, { error: "Site owner only" });
   });
 
-  await t.test("denies another team's coordinator without proceeding", async () => {
+  await t.test("denies another team's coordinator who is not the site owner", async () => {
     const { res, proceeded } = await requestFor({
       id: "other-team-coordinator",
       role: "coordinator",
       teamId: "team-elsewhere",
+      isSiteOwner: false,
     });
     assert.equal(res.statusCode, 403);
     assert.equal(proceeded, false);
-    assert.deepEqual(res.body, { error: "Wolverines coordinators only" });
+    assert.deepEqual(res.body, { error: "Site owner only" });
   });
 });
