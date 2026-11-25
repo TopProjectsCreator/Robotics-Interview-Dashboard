@@ -12,7 +12,7 @@ const DATABASE_CONNECTION_CODES = new Set([
 ]);
 
 const DATABASE_CONNECTION_MESSAGE =
-  /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|connection terminated unexpectedly|connection timeout)\b/i;
+  /\b(?:ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|ENOTFOUND|EAI_AGAIN|connection terminated unexpectedly|connection timeout|timeout exceeded when trying to connect)\b/i;
 
 // Supavisor (Supabase's pooler) reports its own backend failures in Elixir
 // wording without a driver code: a paused or stopped project surfaces as

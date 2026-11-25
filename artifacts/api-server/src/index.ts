@@ -7,7 +7,7 @@ import { setupDocumentCollaboration } from "./lib/documentCollaboration";
 import { setupCodeCollaboration } from "./lib/codeCollaboration";
 import { pool, db, secondaryPool, hasSecondary, interviewQueueTable, runWithInstance } from "@workspace/db";
 import { activeTeamDatabaseInstance } from "./lib/activeTeamDatabase";
-import { startInstanceHealthProbes, markInstanceFailure, markInstanceSuccess } from "./lib/instanceHealth";
+import { startInstanceHealthProbes, markInstanceFailure } from "./lib/instanceHealth";
 import { syncInterviewerAccounts } from "./lib/interviewerAccounts";
 import {
   claimPartsCatalogMaintenanceLease,
@@ -155,6 +155,80 @@ function withSchemaTimeout<T>(query: Promise<T>, where: string): Promise<T> {
   });
 }
 
+// `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` still takes ACCESS EXCLUSIVE even
+// when the column is already there. On a busy table such as
+// interview_chat_messages a redundant startup ALTER queues behind writes and
+// every reader then queues behind the ALTER, starving the app's small pg pool.
+// Turn applied migrations into real no-ops by checking the catalog first.
+function skipAppliedAddColumn(sql: string): string {
+  const match = /^alter table "([a-z0-9_]+)" add column if not exists "([a-z0-9_]+)" ([\s\S]+)$/i.exec(sql.trim());
+  if (!match) return sql;
+  const table = match[1];
+  const column = match[2];
+  const definition = match[3].replace(/'/g, "''");
+  const tag = `$add_col_${table}_${column}$`;
+  return `do ${tag}
+begin
+  if to_regclass('public.${table}') is not null
+     and not exists (
+       select 1 from information_schema.columns
+       where table_schema = 'public' and table_name = '${table}' and column_name = '${column}'
+     ) then
+    execute 'alter table "${table}" add column "${column}" ${definition}';
+  end if;
+end
+${tag}`;
+}
+
+// CREATE OR REPLACE TRIGGER also takes a lock on the target table. Re-running
+// it on a busy table queues the app's own writes behind a startup migration.
+function skipAppliedCreateTrigger(sql: string): string {
+  const match = /^create or replace trigger (\w+)\s+after\b[\s\S]*?\bon (\w+)\b/i.exec(sql.trim());
+  if (!match) return sql;
+  const trigger = match[1];
+  const table = match[2];
+  const tag = `$add_trigger_${table}_${trigger}$`;
+  const escaped = sql.trim().replace(/'/g, "''");
+  return `do ${tag}
+begin
+  if not exists (
+    select 1 from pg_trigger
+     where tgname = '${trigger}' and tgrelid = 'public.${table}'::regclass
+  ) then
+    execute '${escaped}';
+  end if;
+end
+${tag}`;
+}
+
+// CREATE INDEX IF NOT EXISTS still takes a lock on the target table even when
+// the index exists. Skip it when already present.
+function skipAppliedCreateIndex(sql: string): string {
+  const match = /^create (unique )?index if not exists "([^"]+)" on "([^"]+)"/i.exec(sql.trim());
+  if (!match) return sql;
+  const index = match[2];
+  const table = match[3];
+  const tag = `$add_index_${table}_${index}$`;
+  const escaped = sql.trim().replace(/'/g, "''");
+  return `do ${tag}
+begin
+  if not exists (
+    select 1 from pg_indexes
+     where schemaname = 'public' and indexname = '${index}' and tablename = '${table}'
+  ) then
+    execute '${escaped}';
+  end if;
+end
+${tag}`;
+}
+
+// Backstop for any schema DDL the no-op helpers above do not cover: a
+// migration that cannot get its lock quickly must fail and retry on a later
+// pass instead of blocking the app's own reads and writes behind it.
+function withSchemaLockTimeout(sql: string): string {
+  return `begin; set local lock_timeout = '3s'; ${sql}; commit;`;
+}
+
 async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: boolean }> {
   const privateTableRlsStatements = [
     "applicants",
@@ -243,7 +317,11 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     DO $rls$
     BEGIN
       IF to_regclass('public.${tableName}') IS NOT NULL THEN
-        EXECUTE 'ALTER TABLE public.${tableName} ENABLE ROW LEVEL SECURITY';
+        -- ENABLE ROW LEVEL SECURITY takes ACCESS EXCLUSIVE even when already
+        -- enabled; skip it so a busy table is not locked on every startup.
+        IF NOT (SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass('public.${tableName}')) THEN
+          EXECUTE 'ALTER TABLE public.${tableName} ENABLE ROW LEVEL SECURITY';
+        END IF;
 
         IF NOT EXISTS (
           SELECT 1
@@ -1275,7 +1353,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
     `alter table "parts_supplier_sync_states" add column if not exists "estimated_seconds_remaining" integer`,
     ...chatRevisionMigration,
     ...privateTableRlsStatements,
-  ];
+  ].map(skipAppliedAddColumn).map(skipAppliedCreateTrigger).map(skipAppliedCreateIndex).map(withSchemaLockTimeout);
   let primaryReady = false;
   let primaryError: unknown;
   try {
@@ -1295,7 +1373,9 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
       for (const sql of pendingPrimary) {
         try {
           await withSchemaTimeout(pool.query(sql), "primary schema");
-          markInstanceSuccess("primary");
+          // Do NOT call markInstanceSuccess here: a single successful DDL
+          // statement resets the probe's failure count and can keep a saturated
+          // instance marked healthy forever. Probes own health state.
           consecutiveConnectionFailures = 0;
           primaryApplied += 1;
           if (primaryApplied % 100 === 0) {
@@ -1340,7 +1420,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
       // with the publishable key. All of it is idempotent DO blocks.
       try {
         for (const sql of privateTableRlsStatements) {
-          await withSchemaTimeout(pool.query(sql), "primary rls");
+          await withSchemaTimeout(pool.query(withSchemaLockTimeout(sql)), "primary rls");
         }
       } catch (err) {
         primaryReady = false;
@@ -1370,7 +1450,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
         for (const sql of pending) {
           try {
             await withSchemaTimeout(secondary.query(sql), "secondary schema");
-            markInstanceSuccess("secondary");
+            // Health is owned by the probes; see the primary loop above.
             consecutiveSecondaryFailures = 0;
             secondaryApplied += 1;
             if (secondaryApplied % 100 === 0) {
@@ -1406,7 +1486,7 @@ async function ensureSchema(): Promise<{ primaryReady: boolean; secondaryReady: 
         // Same deferred-table gap as primary: re-run RLS after every table exists.
         try {
           for (const sql of privateTableRlsStatements) {
-            await withSchemaTimeout(secondary.query(sql), "secondary rls");
+            await withSchemaTimeout(secondary.query(withSchemaLockTimeout(sql)), "secondary rls");
           }
           secondaryReady = true;
           logger.info("Secondary schema check passed");
@@ -1568,9 +1648,6 @@ setupWhiteboardCollaboration(server);
 setupCodeCollaboration(server);
 
 function startBackgroundWork(): void {
-  // Keep live health for both instances so a dead primary automatically hands
-  // team traffic to the secondary (and back again when it recovers).
-  startInstanceHealthProbes();
   void syncPartsCatalogsIfDue().catch((err) => {
     logger.error({ err }, "Unable to start scheduled public supplier catalog sync");
   });
@@ -1649,5 +1726,9 @@ server.listen(port, () => {
       })
       .catch((err) => scheduleSchemaRetry(err));
   };
+  // Start health probes immediately, independent of schema migration. If a
+  // schema pass stalls (e.g. an ALTER blocked behind writes), the app must
+  // still notice an unhealthy instance and route team traffic to the other one.
+  startInstanceHealthProbes();
   attemptSchema();
 });

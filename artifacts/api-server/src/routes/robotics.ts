@@ -5971,7 +5971,12 @@ router.get("/queue/chat/conversations", requireAdmin, async (req, res): Promise<
               )) as "isUnread"
          from interview_chat_messages m
         where m.conversation_scope = 'direct'
-          and position(lower($1) in lower(m.conversation_peer)) > 0
+          -- A bare substring match treats "Yishaan" as a conversation with
+          -- "Ishaan", so an old Clinton/Yishaan DM showed up as an unread
+          -- Clinton DM for Ishaan that no read receipt could ever clear.
+          -- Match the viewer as a whole label between unit separators.
+          and position(chr(31) || lower($1) || chr(31)
+                       in chr(31) || lower(m.conversation_peer) || chr(31)) > 0
           and m.ghosted_at is null
           and (m.team_id = $2 or ($2 = 'default' and m.team_id is null))
         order by m.conversation_peer, m.created_at desc`,
