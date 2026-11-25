@@ -91,7 +91,7 @@ import { useRealtimeSync } from "./useRealtimeSync";
 import { shouldUseChunkedUpload, uploadChunked } from "./lib/chunkedUpload";
 import { useGlobalChatNotifications } from "./useGlobalChatNotifications";
 import { useFaviconUnreadDot } from "./hooks/use-favicon-unread-dot";
-import { confirmAction, DialogHost, notify } from "./lib/dialogs";
+import { askValue, confirmAction, DialogHost, notify } from "./lib/dialogs";
 import { browserSupportsPasskeys, loginWithPasskeyFlow, registerPasskeyFlow } from "./lib/passkeyClient";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { Toaster } from "@/components/ui/toaster";
@@ -1274,11 +1274,11 @@ function SettingsModal({
         },
         onError: async error => {
           const issue = passwordSafetyIssue(error);
-          if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
-            if (!confirmLowExposure && issue.count && await confirmAction({ title: passwordExposureConfirmation(issue.count), danger: true, confirmLabel: "Use it anyway" })) {
-              changeInterviewerPassword(interviewerId, password, true);
-              return;
-            }
+          if (!confirmLowExposure && issue && issue.code !== "PASSWORD_CHECK_UNAVAILABLE" && await acknowledgeExposedPassword(issue.count)) {
+            changeInterviewerPassword(interviewerId, password, true);
+            return;
+          }
+          if (issue?.code === "PASSWORD_EXPOSURE_WARNING" || issue?.code === "PASSWORD_EXPOSURE_BLOCKED") {
             setRowNotice(current => ({ ...current, [interviewerId]: "Not saved — choose another password" }));
             setPasswordError("Password was not changed. Choose a different password.");
             return;
@@ -3393,8 +3393,53 @@ function passwordSafetyErrorMessage(issue: PasswordSafetyIssue | null): string |
   return `This password appears in known breach data ${issue.count} ${issue.count === 1 ? "time" : "times"}.`;
 }
 
-function passwordExposureConfirmation(count: number): string {
-  return `This password has appeared in known breach data ${count} ${count === 1 ? "time" : "times"}. A unique password is safer. Continue with it anyway?`;
+const EXPOSED_PASSWORD_PHRASE = "I UNDERSTAND THIS PASSWORD IS COMPROMISED";
+
+/**
+ * A breached password is allowed, but only after the user works through a
+ * deliberately long acknowledgement: four separate risk dialogs plus typing
+ * an exact phrase. Every step has a real "choose a different password" exit.
+ */
+async function acknowledgeExposedPassword(count: number): Promise<boolean> {
+  const steps = [
+    {
+      title: `This password has appeared in ${count} known breaches`,
+      detail: "Attackers have lists of these exact passwords. If you use it, a bot can sign in as you on the first try.",
+      confirmLabel: "I understand it is in breach data",
+    },
+    {
+      title: "Credential-stuffing risk",
+      detail: "People reuse passwords. A breached password is tried automatically against other sites and against this dashboard. Anyone who knows it can read your team's data.",
+      confirmLabel: "I understand the reuse risk",
+    },
+    {
+      title: "Your team's data is exposed",
+      detail: "This dashboard holds applicant records, chat history, files, and board content. Using a compromised password puts all of it at risk.",
+      confirmLabel: "I understand the data risk",
+    },
+    {
+      title: "Last chance: choose a different password",
+      detail: "You can still cancel. Choosing a unique password takes a few seconds and avoids all of these risks.",
+      confirmLabel: "Use the compromised password anyway",
+    },
+  ];
+  for (const step of steps) {
+    const accepted = await confirmAction({
+      title: step.title,
+      detail: step.detail,
+      danger: true,
+      confirmLabel: step.confirmLabel,
+      cancelLabel: "Choose a different password",
+    });
+    if (!accepted) return false;
+  }
+  const typed = await askValue({
+    title: "Type the acknowledgement to continue",
+    label: `Type this exactly: ${EXPOSED_PASSWORD_PHRASE}`,
+    detail: "This confirms you read the warnings and still want to use a password found in breach data.",
+    confirmLabel: "Use this password anyway",
+  });
+  return typed === EXPOSED_PASSWORD_PHRASE;
 }
 
 // This screen is retained for the legacy password flow, but routing uses AuthPage.
@@ -3714,11 +3759,11 @@ function Login() {
         },
         onError: async error => {
           const issue = passwordSafetyIssue(error);
-          if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
-            if (!confirmLowExposure && await confirmAction({ title: passwordExposureConfirmation(issue.count), danger: true, confirmLabel: "Use it anyway" })) {
-              setSelectedPassword(true);
-              return;
-            }
+          if (!confirmLowExposure && issue && issue.code !== "PASSWORD_CHECK_UNAVAILABLE" && await acknowledgeExposedPassword(issue.count)) {
+            setSelectedPassword(true);
+            return;
+          }
+          if (issue?.code === "PASSWORD_EXPOSURE_WARNING" || issue?.code === "PASSWORD_EXPOSURE_BLOCKED") {
             setError("Password not set. Choose a different password.");
             return;
           }
@@ -3786,11 +3831,11 @@ function Login() {
         },
         onError: async error => {
           const issue = passwordSafetyIssue(error);
-          if (issue?.code === "PASSWORD_EXPOSURE_WARNING") {
-            if (!confirmLowExposure && await confirmAction({ title: passwordExposureConfirmation(issue.count), danger: true, confirmLabel: "Use it anyway" })) {
-              createInterviewerAccount(true);
-              return;
-            }
+          if (!confirmLowExposure && issue && issue.code !== "PASSWORD_CHECK_UNAVAILABLE" && await acknowledgeExposedPassword(issue.count)) {
+            createInterviewerAccount(true);
+            return;
+          }
+          if (issue?.code === "PASSWORD_EXPOSURE_WARNING" || issue?.code === "PASSWORD_EXPOSURE_BLOCKED") {
             setError("Password not saved. Choose a different password.");
             return;
           }

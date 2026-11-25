@@ -13,8 +13,10 @@ test("warns for one or two matches until explicitly confirmed", () => {
   assert.deepEqual(assessPasswordExposure(2, true), { kind: "safe" });
 });
 
-test("blocks three or more matches even when confirmation is sent", () => {
-  assert.deepEqual(assessPasswordExposure(3, true), { kind: "blocked", count: 3 });
+test("blocks three or more matches unless the UI sends an explicit acknowledgement", () => {
+  // An explicit acknowledgement allows a heavily exposed password.
+  assert.deepEqual(assessPasswordExposure(3, true), { kind: "safe" });
+  assert.deepEqual(assessPasswordExposure(386, true), { kind: "safe" });
   assert.deepEqual(assessPasswordExposure(42), { kind: "blocked", count: 42 });
 });
 
